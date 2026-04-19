@@ -4,22 +4,22 @@ import { TierSheet } from './TierSheet.js';
 import type { TierFileState } from '../data/analysisFetch.js';
 
 /**
- * TopBar tier indicator pill (Decision 17, `[R-D17]`, AC14, AC15).
+ * TopBar tier indicator pill.
  *
  * Two states, both at full opacity (dim is the palette, never the state):
- *   - `BROWSER ANALYSIS` — `#665544` (dim brown)
- *   - `BROWSER + LOCAL ANALYSIS (N/6)` — `#CC99CC` (violet)
+ *   - `CORE ANALYSIS` — `#665544` (dim brown). First tier. Runs entirely
+ *     in the browser against the manifest: search, filters, sparklines,
+ *     exact-duplicate clusters, zombie heuristics.
+ *   - `CORE + EXTENDED ANALYSIS (N/6)` — `#CC99CC` (violet). Second tier
+ *     is populated by a local analyzer pass (Phase 7, not yet shipped);
+ *     `N/6` is how many of the reserved outputs exist on disk.
  *
- * The word `ANALYSIS` is load-bearing per `[R-D17]` and §4.4.1 of the
- * review: without it, a cold user parses bare `BROWSER` as "I'm in a
- * browser, of course" (chrome label), not as "there's another tier I
- * could unlock" (state label). Do NOT shorten to `BROWSER` or pivot
- * to an icon.
+ * The word `ANALYSIS` is load-bearing: without it, a bare `CORE` reads
+ * as a header label, not as a tier indicator. Keep it.
  *
  * The `N/6` count renders ONLY when any tier-2 file is present. In the
- * BROWSER-only state the pill is deliberately clean — no `(0/6)`,
- * because the review's §4.4.1 warning includes making sure the pill
- * reads as an invitation, not as a progress meter.
+ * CORE-only state the pill is deliberately clean — no `(0/6)` — so it
+ * reads as "state" not as a progress meter.
  *
  * Clicking opens `TierSheet` — one source of truth for per-file
  * present/absent state.
@@ -35,9 +35,7 @@ export function TierIndicator({ tierStatus, tierPresentCount, tierFiles }: TierI
   const [open, setOpen] = useState(false);
 
   const label =
-    tierStatus === 'browser'
-      ? 'BROWSER ANALYSIS'
-      : `BROWSER + LOCAL ANALYSIS (${tierPresentCount}/6)`;
+    tierStatus === 'browser' ? 'CORE ANALYSIS' : `CORE + EXTENDED ANALYSIS (${tierPresentCount}/6)`;
 
   const className =
     'lcars-tier-indicator ' +

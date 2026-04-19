@@ -16,7 +16,7 @@
  *   - `tierStatus`: `'browser'` when zero tier-2 files present,
  *     `'browser+local'` when any tier-2 file is present. Drives the
  *     TierIndicator pill copy + palette (`[R-D17]`).
- *   - `tierPresentCount`: N in the `BROWSER + LOCAL ANALYSIS (N/6)` copy.
+ *   - `tierPresentCount`: N in the `CORE + EXTENDED ANALYSIS (N/6)` copy.
  *   - `tierFiles`: per-filename `{present, generatedAt?}`. TierSheet
  *     enumerates all six with present/absent icon + timestamp.
  */

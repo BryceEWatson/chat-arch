@@ -127,19 +127,21 @@ Once you've used either, come back and follow
 
 ## How chat-arch compares
 
-| Tool                                                                                  | Stars | What it does                                              |
-| ------------------------------------------------------------------------------------- | ----- | --------------------------------------------------------- |
-| [`daaain/claude-code-log`](https://github.com/daaain/claude-code-log)                 | 943★  | Python CLI, JSONL → HTML. Live data only.                 |
-| [`simonw/claude-code-transcripts`](https://github.com/simonw/claude-code-transcripts) | 1.4k★ | Single-file static viewer.                                |
-| [`osteele/claude-chat-viewer`](https://github.com/osteele/claude-chat-viewer)         | 55★   | Privacy-Export ZIPs only.                                 |
-| [`1ch1n/mychatarchive`](https://github.com/1ch1n/mychatarchive)                       | 27★   | Multi-provider (Claude/ChatGPT/Grok/Cursor), no GUI.      |
-| [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage)                           | 13k★  | Cost-tracking CLI. Adjacent space.                        |
-| **chat-arch**                                                                         | —     | All four Claude surfaces unified, browser analytics, GUI. |
+| Tool                                                                                  | Stars | What it does                                                     |
+| ------------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------- |
+| [`daaain/claude-code-log`](https://github.com/daaain/claude-code-log)                 | 943★  | Python CLI, JSONL → HTML. Live data only.                        |
+| [`simonw/claude-code-transcripts`](https://github.com/simonw/claude-code-transcripts) | 1.4k★ | Single-file static viewer.                                       |
+| [`osteele/claude-chat-viewer`](https://github.com/osteele/claude-chat-viewer)         | 55★   | Privacy-Export ZIPs only.                                        |
+| [`1ch1n/mychatarchive`](https://github.com/1ch1n/mychatarchive)                       | 27★   | Multi-provider (Claude/ChatGPT/Grok/Cursor), no GUI.             |
+| [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage)                           | 13k★  | Cost-tracking CLI. Adjacent space.                               |
+| **chat-arch**                                                                         | —     | All four Claude surfaces unified, core + extended analysis, GUI. |
 
 The differentiator is **unified ingestion across all four Claude data
-surfaces** plus deterministic browser-tier analytics (exact-duplicate prompt
+surfaces** plus deterministic core-tier analysis (exact-duplicate prompt
 detection, heuristic zombie-project classification, cost-by-model rollup,
-sparkline timeline) computed on the user's own machine.
+sparkline timeline) computed on the user's own machine — everything needed
+to navigate the corpus is live the moment the viewer loads, no pre-compute
+step required.
 
 ## Repo layout
 
@@ -151,7 +153,7 @@ apps/
 packages/
   schema/            UnifiedSessionEntry + manifest types. Pure TypeScript.
   exporter/          CLI + parsers for the four input sources, plus the
-                     browser-tier analysis writers (duplicates.exact,
+                     core-tier analysis writers (duplicates.exact,
                      zombies.heuristic, meta).
   viewer/            React viewer. Mounts against
                      /chat-arch-data/manifest.json.

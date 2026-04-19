@@ -51,20 +51,22 @@ mobile, and a final 320px-fallback banner.
 `chat-arch` separates deterministic pure-function analysis from LLM-powered
 analysis:
 
-- **Browser tier (default).** The exporter computes everything that can be
+- **Core tier (default).** The exporter computes everything that can be
   derived with deterministic code — cost estimates, exact-match duplicate
   prompts, heuristic zombie-project classification — and writes them to
   `public/chat-arch-data/analysis/{duplicates.exact,zombies.heuristic,meta}.json`.
-  The viewer fetches these on mount and renders them directly.
-- **Local tier (planned).** A Claude-Code skill (`chat-arch-analyzer`, not
-  yet shipped) will read the manifest and write `{duplicates.semantic,
+  The viewer fetches these on mount and renders them directly. This tier
+  runs entirely in-browser against the manifest — no pre-compute step,
+  no external process.
+- **Extended tier (planned).** A Claude-Code skill (`chat-arch-analyzer`,
+  not yet shipped) will read the manifest and write `{duplicates.semantic,
 zombies.diagnosed, reloops, handoffs, cost-diagnoses, skill-seeds}.json`
   into the same directory. The viewer auto-detects these and surfaces them
-  in the same UI surfaces as the browser-tier outputs.
+  in the same UI surfaces as the core-tier outputs.
 
 **Never the same filename across tiers.** Re-running the exporter never
-overwrites a local-tier artifact, and vice versa. The `BROWSER ANALYSIS` /
-`BROWSER + LOCAL ANALYSIS (N/6)` pill in the TopBar reflects which tier files
+overwrites an extended-tier artifact, and vice versa. The `CORE ANALYSIS` /
+`CORE + EXTENDED ANALYSIS (N/6)` pill in the TopBar reflects which tier files
 are currently present; source-attribution micro-labels (`· exact`,
 `· heuristic`, `· estimate`, `· semantic`, `· diagnosed`) tell the user on
 every chip and KPI whether a given insight came from regex or judgment.

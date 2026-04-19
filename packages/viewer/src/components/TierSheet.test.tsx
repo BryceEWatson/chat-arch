@@ -67,7 +67,7 @@ describe('TierSheet (AC14 / AC15)', () => {
     expect(screen.getAllByText('present').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('header copy in BROWSER state names it as the active tier and flags extended as planned', () => {
+  it('header copy in CORE state names it as the active tier and flags extended as planned', () => {
     render(
       <TierSheet
         tierStatus="browser"
@@ -76,11 +76,11 @@ describe('TierSheet (AC14 / AC15)', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/BROWSER ANALYSIS/)).toBeDefined();
+    expect(screen.getByText(/CORE ANALYSIS/)).toBeDefined();
     expect(screen.getByText(/not yet shipped/)).toBeDefined();
   });
 
-  it('header copy in BROWSER+LOCAL state carries the N/6 count', () => {
+  it('header copy in CORE+EXTENDED state carries the N/6 count', () => {
     render(
       <TierSheet
         tierStatus="browser+local"
@@ -90,7 +90,7 @@ describe('TierSheet (AC14 / AC15)', () => {
       />,
     );
     expect(
-      screen.getByText(/BROWSER \+ LOCAL ANALYSIS — 3 of 6 extended views generated\./),
+      screen.getByText(/CORE \+ EXTENDED ANALYSIS — 3 of 6 extended views generated\./),
     ).toBeDefined();
   });
 

@@ -22,7 +22,7 @@ import { PHASE_7_RESERVED_FILES, type TierFileState } from '../data/analysisFetc
 export interface TierSheetProps {
   /** Current tier state. Drives the summary line at the top of the sheet. */
   tierStatus: 'browser' | 'browser+local';
-  /** N in `BROWSER + LOCAL ANALYSIS (N/6)`. Displayed in the sheet header. */
+  /** N in `CORE + EXTENDED ANALYSIS (N/6)`. Displayed in the sheet header. */
   tierPresentCount: number;
   /** Per-file present/absent + timestamp map from `fetchAnalysisTierStatus`. */
   tierFiles: Record<string, TierFileState>;
@@ -68,8 +68,8 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
 
   const headerCopy =
     tierStatus === 'browser'
-      ? 'BROWSER ANALYSIS — what you see now. Extended analysis is a planned second tier, not yet shipped.'
-      : `BROWSER + LOCAL ANALYSIS — ${tierPresentCount} of 6 extended views generated.`;
+      ? 'CORE ANALYSIS — what you see now. Extended analysis is a planned second tier, not yet shipped.'
+      : `CORE + EXTENDED ANALYSIS — ${tierPresentCount} of 6 extended views generated.`;
 
   return (
     <div
@@ -103,7 +103,7 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
         </header>
         <p className="lcars-tier-sheet__summary">{headerCopy}</p>
         <p className="lcars-tier-sheet__hint">
-          The browser tier is live — search, filters, cost sparklines, exact-duplicate clusters, and
+          The core tier is live — search, filters, cost sparklines, exact-duplicate clusters, and
           zombie-project heuristics all run in-page against your manifest. The extended tier is what
           LLM-assisted analysis over your full transcript corpus would add: semantic similarity, why
           a project stalled, problems you re-solved months apart, reusable prompt templates, cost
