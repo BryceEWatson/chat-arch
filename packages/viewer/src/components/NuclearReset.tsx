@@ -189,11 +189,16 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
                   type="text"
                   className="lcars-nuclear-dialog__confirm-input"
                   value={typed}
-                  onChange={(e) => setTyped(e.target.value)}
+                  // Uppercase the state on input so a lowercase `nuke` still
+                  // matches CONFIRM_WORD. The CSS already renders the visible
+                  // text as uppercase; keeping the state in sync with what the
+                  // user sees prevents a "I typed NUKE, why is confirm still
+                  // disabled?" moment.
+                  onChange={(e) => setTyped(e.target.value.toUpperCase())}
                   disabled={status === 'running'}
                   autoComplete="off"
                   autoCorrect="off"
-                  autoCapitalize="off"
+                  autoCapitalize="characters"
                   spellCheck={false}
                   aria-describedby="lcars-nuclear-title"
                 />
