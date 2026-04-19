@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { ViewportTier } from '../util/viewport.js';
 import { onActivate } from '../util/a11y.js';
 import { InfoPopover } from './InfoPopover.js';
+import { NuclearReset } from './NuclearReset.js';
 
 export type RescanStatus = 'idle' | 'running' | 'error' | 'ok';
 export type UploadStatus = 'idle' | 'running' | 'error' | 'ok';
@@ -83,6 +84,22 @@ export interface TopBarProps {
    *  set. Low-prominence affordance; the UpperPanel has the verbose
    *  `UNLOAD ZIP` chip for regular users. */
   onClearUpload?: () => void;
+
+  // ---- Delete All button (left cluster, trailing) ----
+
+  /**
+   * When true, render the `DELETE ALL` chip after the source buttons.
+   * Mirrors `scanAvailable` — a static-build deploy without an Astro
+   * backend has no `/api/clear` endpoint to call, so the button
+   * auto-hides. Reuses `onClearUpload` semantics (memory-only ZIP
+   * unload) as a pre-reload hook; the destructive confirm itself
+   * lives inside the NuclearReset component.
+   */
+  deleteAvailable?: boolean;
+  /** Host's upload-unload handler. Called by NuclearReset before the
+   *  post-wipe reload so state snapshots don't persist an orphaned
+   *  ZIP. Passed through from the outer viewer. */
+  onDeleteUnload?: () => void;
 }
 
 // How-to copy shown in the Upload Cloud hover tooltip. Lives up here
@@ -120,6 +137,8 @@ export function TopBar({
   hasCloudData = false,
   uploadActive = false,
   onClearUpload,
+  deleteAvailable = false,
+  onDeleteUnload,
 }: TopBarProps) {
   const placeholder = disabled
     ? 'exit detail view to search'
@@ -347,6 +366,10 @@ export function TopBar({
             </InfoPopover>
           </div>
         )}
+        <NuclearReset
+          available={deleteAvailable}
+          {...(onDeleteUnload ? { onUnload: onDeleteUnload } : {})}
+        />
       </div>
       <div className="lcars-top-bar__right">
         {rightSlot}

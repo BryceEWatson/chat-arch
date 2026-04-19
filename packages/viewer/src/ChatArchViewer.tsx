@@ -16,7 +16,6 @@ import { MidBar } from './components/MidBar.js';
 import { EmptyState } from './components/EmptyState.js';
 import { ErrorState } from './components/ErrorState.js';
 import { UploadPanel } from './components/UploadPanel.js';
-import { NuclearReset } from './components/NuclearReset.js';
 import { FilterBar } from './components/FilterBar.js';
 import { TierIndicator } from './components/TierIndicator.js';
 import {
@@ -712,7 +711,6 @@ export function ChatArchViewer({
         <div className="lcars-frame">
           <div className="lcars-loading">LOADING MANIFEST…</div>
         </div>
-        <NuclearReset available={rescanCtl.available} onUnload={onUnload} />
       </div>
     );
   }
@@ -739,6 +737,8 @@ export function ChatArchViewer({
             uploadStatus={uploadStatus}
             hasCloudData={false}
             {...(uploadHint ? { uploadHint } : {})}
+            deleteAvailable={rescanCtl.available}
+            onDeleteUnload={onUnload}
           />
           <main className="lcars-empty-main">
             <ErrorState
@@ -748,7 +748,6 @@ export function ChatArchViewer({
             <UploadPanel onLoaded={onUpload} variant="prominent" />
           </main>
         </div>
-        <NuclearReset available={rescanCtl.available} onUnload={onUnload} />
       </div>
     );
   }
@@ -872,6 +871,8 @@ export function ChatArchViewer({
           // UpperPanel chip (clears cache + filters + selection).
           uploadActive={uploadedData !== null}
           {...(uploadedData ? { onClearUpload: onUnload } : {})}
+          deleteAvailable={rescanCtl.available}
+          onDeleteUnload={onUnload}
         />
         <div className="lcars-body">
           <Sidebar
@@ -999,7 +1000,6 @@ export function ChatArchViewer({
           </div>
         </div>
       </div>
-      <NuclearReset available={rescanCtl.available} onUnload={onUnload} />
     </div>
   );
 }

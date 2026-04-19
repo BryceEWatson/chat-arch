@@ -1,39 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
-import { onActivate } from '../util/a11y.js';
 
 /**
- * Nuclear-reset affordance. Renders:
- *   - A tucked-away `⚠ RESET` chip in the bottom-left corner (deliberately
- *     low-prominence — this is the emergency exit, not a primary action).
- *   - A confirmation dialog that requires the user to type `NUKE` and
- *     explicitly click CONFIRM. Double-clicking the chip itself does
- *     nothing; every step is an intentional action.
+ * Destructive "wipe all local data" affordance. Renders inline in the
+ * TopBar's left cluster as a native `<button>`, visually distinct
+ * from the butterscotch SCAN LOCAL / UPLOAD CLOUD chips via the
+ * peach destructive palette. Sits *adjacent* to the two data-source
+ * buttons (intentionally — this is what undoes what they did) but is
+ * strongly color-coded so a user reaching for UPDATE CLOUD cannot
+ * confuse the two at a glance.
  *
- * What it wipes when the user confirms:
- *   - Everything under `apps/standalone/public/chat-arch-data/` on disk
- *     except `.gitkeep` — the scanned manifest, transcripts, analysis
- *     JSONs. The dev server wipe is a POST to `/api/clear`.
- *   - Every `chat-arch:*` key in this browser's localStorage — the demo
- *     banner dismissed flag, the boot-seen flag, anything future.
- *   - The currently-uploaded ZIP data (via the `onUnload` prop, if any).
+ * What confirmation does when the user commits:
+ *   - POST `/api/clear` → wipe everything under
+ *     `apps/standalone/public/chat-arch-data/` on disk (preserves
+ *     `.gitkeep`).
+ *   - Remove every `chat-arch:*` key in this browser's localStorage.
+ *   - Call `onUnload` (host's existing handler) to drop any in-memory
+ *     uploaded ZIP before reload.
+ *   - Reload the page with a cache-buster.
  *
- * After the wipe lands, the page reloads to a pristine state — the dev
- * server will re-seed the demo corpus on its next `pnpm dev` cycle, so
- * the viewer lands on either the demo (if the server auto-seeds on
- * boot) or the empty state otherwise.
+ * The gates: typed-`DELETE` confirmation (matches the button verb, not
+ * a theatrical "NUKE"); the CONFIRM button stays disabled until the
+ * word matches. Esc and backdrop-click dismiss (disabled while the
+ * request is in flight so a mid-wipe click doesn't misread as cancel).
  *
- * The chip auto-hides when `available === false` (no `/api/clear`
- * endpoint, i.e. static-build deploys without the Astro backend).
+ * Auto-hides when `available === false` — static-build deploys
+ * without the `/api/clear` endpoint get no surface for an endpoint
+ * that isn't there.
  */
 
 export interface NuclearResetProps {
-  /** True when the `/api/clear` endpoint is reachable. Controls chip visibility. */
+  /** True when `/api/clear` is reachable. Controls button visibility. */
   available: boolean;
-  /** Unloads any uploaded ZIP from in-memory viewer state. Called pre-reload. */
+  /** Host's unload handler — drops the in-memory uploaded ZIP before reload. */
   onUnload?: () => void;
 }
 
-const CONFIRM_WORD = 'NUKE';
+const CONFIRM_WORD = 'DELETE';
 const LOCAL_STORAGE_PREFIX = 'chat-arch:';
 
 export function NuclearReset({ available, onUnload }: NuclearResetProps) {
@@ -44,7 +46,7 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Autofocus the typed-confirmation input when the dialog opens so the
-  // user can hit the keyboard immediately — prevents a "where do I type
+  // user can start typing immediately — prevents a "where do I type
   // this?" moment.
   useEffect(() => {
     if (open) {
@@ -103,8 +105,8 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
         // on a fresh state — localStorage cleanup is best-effort.
       }
       // Unload the in-memory uploaded ZIP, if any, before reload so
-      // anything that snapshots React state during teardown doesn't
-      // persist a now-orphaned upload.
+      // nothing that snapshots React state during teardown persists a
+      // now-orphaned upload.
       try {
         onUnload?.();
       } catch {
@@ -125,19 +127,17 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
 
   return (
     <>
-      <div
-        className="lcars-nuclear-chip"
-        role="button"
-        tabIndex={0}
-        aria-label="Nuclear reset — wipe all chat-arch local data (manifest, transcripts, saved preferences, uploaded ZIP). Does not touch your Claude transcripts on disk."
-        aria-haspopup="dialog"
-        title="Nuclear reset — wipe all chat-arch local data"
-        onClick={() => setOpen(true)}
-        onKeyDown={(e) => onActivate(e, () => setOpen(true))}
-      >
-        <span className="lcars-nuclear-chip__icon" aria-hidden="true">
-          ⚠
-        </span>
+      <div className="lcars-top-bar__source-group lcars-top-bar__source-group--destructive">
+        <button
+          type="button"
+          className="lcars-top-bar__source-btn lcars-top-bar__source-btn--destructive"
+          aria-haspopup="dialog"
+          aria-label="Delete all local data — opens a confirmation dialog"
+          title="Delete all chat-arch local data (indexed manifest, transcripts, uploaded ZIP, saved preferences). Does not touch ~/.claude/ or %APPDATA%\Claude\."
+          onClick={() => setOpen(true)}
+        >
+          <span className="lcars-top-bar__source-btn-label">DELETE ALL</span>
+        </button>
       </div>
       {open && (
         <div
@@ -156,12 +156,12 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
           >
             <header className="lcars-nuclear-dialog__header">
               <h2 id="lcars-nuclear-title" className="lcars-nuclear-dialog__title">
-                NUCLEAR RESET
+                Delete all local data
               </h2>
             </header>
             <div id="lcars-nuclear-body" className="lcars-nuclear-dialog__body">
               <p className="lcars-nuclear-dialog__warning">
-                <strong>This is a destructive action.</strong> It will:
+                <strong>This cannot be undone.</strong> Confirming will:
               </p>
               <ul className="lcars-nuclear-dialog__list">
                 <li>
@@ -189,11 +189,6 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
                   type="text"
                   className="lcars-nuclear-dialog__confirm-input"
                   value={typed}
-                  // Uppercase the state on input so a lowercase `nuke` still
-                  // matches CONFIRM_WORD. The CSS already renders the visible
-                  // text as uppercase; keeping the state in sync with what the
-                  // user sees prevents a "I typed NUKE, why is confirm still
-                  // disabled?" moment.
                   onChange={(e) => setTyped(e.target.value.toUpperCase())}
                   disabled={status === 'running'}
                   autoComplete="off"
@@ -225,7 +220,7 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
                 disabled={!canConfirm}
                 aria-disabled={!canConfirm}
               >
-                {status === 'running' ? 'WIPING…' : 'CONFIRM NUKE'}
+                {status === 'running' ? 'DELETING…' : 'DELETE EVERYTHING'}
               </button>
             </footer>
           </div>

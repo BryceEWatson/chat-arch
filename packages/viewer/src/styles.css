@@ -3555,50 +3555,54 @@
   font-weight: 600;
 }
 
-/* --- nuclear reset affordance ---
-   Icon-only hazard dot tucked into the bottom-right corner, as far
-   from the SCAN LOCAL / UPLOAD CLOUD primary actions (top-left) as
-   the viewport allows. Deliberately tiny and muted — this is the
-   emergency exit, not a primary action. Hover / focus brightens to
-   the full peach hazard palette, and the tooltip + aria-label spell
-   out exactly what "reset" means so a user inspecting the dot never
-   has to guess before clicking. */
-.lcars-nuclear-chip {
-  position: fixed;
-  right: 10px;
-  bottom: 10px;
-  z-index: 40;
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px dashed rgba(255, 180, 120, 0.35);
-  color: rgba(255, 180, 120, 0.55);
-  cursor: pointer;
-  user-select: none;
-  opacity: 0.7;
-  transition:
-    color 120ms,
-    border-color 120ms,
-    background 120ms,
-    opacity 120ms,
-    transform 120ms;
+/* --- destructive "DELETE ALL" variant of the TopBar source chip ---
+   Sits adjacent to SCAN LOCAL / UPLOAD CLOUD in the top-bar's left
+   cluster (intentionally — this is what undoes what those two load),
+   but uses the peach hazard palette instead of butterscotch so a
+   user reaching for UPDATE CLOUD cannot mistake it for another
+   ingestion action. The border is solid (the other source chips
+   have semi-transparent borders); the background is solid peach;
+   the text is dark for contrast. At mobile where the top-bar bg is
+   black, the existing mobile-override (peach text on dark) is
+   unnecessary for this chip — the solid peach fill reads correctly
+   on either background. */
+.lcars-top-bar__source-group--destructive {
+  /* Add a small margin to separate visually from the source-group
+     immediately before it, since color alone may not cue enough at
+     narrow widths. */
+  margin-left: 4px;
 }
-.lcars-nuclear-chip:hover,
-.lcars-nuclear-chip:focus-visible {
-  outline: none;
-  color: var(--lcars-peach);
+.lcars-top-bar__source-btn--destructive {
+  background: var(--lcars-peach);
   border-color: var(--lcars-peach);
-  background: rgba(0, 0, 0, 0.9);
-  opacity: 1;
-  transform: scale(1.1);
+  color: var(--lcars-bg);
 }
-.lcars-nuclear-chip__icon {
-  font-size: 12px;
-  line-height: 1;
+.lcars-top-bar__source-btn--destructive:hover,
+.lcars-top-bar__source-btn--destructive:focus-visible {
+  /* Slightly brighter peach on hover — the default source-btn hover
+     flips to a solid black panel with sunflower text, which would
+     read as the destructive chip *de-escalating*. Keep the hazard
+     palette at commit time. */
+  background: #ff9a6a;
+  color: var(--lcars-bg);
+  box-shadow: 0 0 0 2px rgba(255, 140, 100, 0.4);
+}
+@media (max-width: 899px) {
+  /* Mobile override for the base source-btn inverts chrome to
+     butterscotch-on-dark. The destructive chip already has its own
+     solid-peach treatment that reads on either background, so pin
+     it back to those values here (otherwise the mobile inverted
+     rule would beat the desktop destructive rule on specificity). */
+  .lcars-top-bar__source-btn--destructive {
+    background: var(--lcars-peach);
+    border-color: var(--lcars-peach);
+    color: var(--lcars-bg);
+  }
+  .lcars-top-bar__source-btn--destructive:hover,
+  .lcars-top-bar__source-btn--destructive:focus-visible {
+    background: #ff9a6a;
+    color: var(--lcars-bg);
+  }
 }
 .lcars-nuclear-backdrop {
   position: fixed;
