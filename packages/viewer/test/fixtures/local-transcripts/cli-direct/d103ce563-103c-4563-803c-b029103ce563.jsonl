@@ -1,0 +1,5 @@
+{"type":"ai-title","aiTitle":"Debug flaky websocket reconnection","sessionId":"d103ce563-103c-4563-803c-b029103ce563"}
+{"type":"user","sessionId":"d103ce563-103c-4563-803c-b029103ce563","timestamp":"2026-03-02T10:00:00.000Z","cwd":"C:/Users/example/Projects/my.dotted.project","message":{"role":"user","content":"Why does the reconnect retry cap out at three attempts silently?"}}
+{"type":"assistant","sessionId":"d103ce563-103c-4563-803c-b029103ce563","timestamp":"2026-03-02T10:00:06.000Z","message":{"role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"The retry policy uses a hard-coded ceiling; the back-off doubles so the third attempt lands after the keep-alive window."}]}}
+this is a malformed line that should fall through to the _malformed handler
+{"type":"last-prompt","sessionId":"d103ce563-103c-4563-803c-b029103ce563","lastPrompt":"What unit test would catch this regression?"}

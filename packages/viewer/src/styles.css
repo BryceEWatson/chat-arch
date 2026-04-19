@@ -1,0 +1,3361 @@
+/*
+ * LCARS theme for Chat Archaeologist viewer.
+ *
+ * Single file. Exported as @chat-arch/viewer/style.css.
+ *
+ * Typography triad (do not mix jobs):
+ *   - Antonio         — chrome, ALL-CAPS labels, KPI values, titles, pills, mode strip
+ *   - IBM Plex Sans   — body prose inside cards and messages (≥12px paragraph text)
+ *   - JetBrains Mono  — model names, timestamps, code, keyboard hints, project labels, axis ticks
+ *
+ * Accent discipline (one job each):
+ *   - sunflower    → primary: titles, KPI values, strong text
+ *   - ice          → data/code: model names, inline code, highlighted keywords
+ *   - violet       → thinking blocks, copy-to-MD button
+ *   - peach        → cost bars, CLI-Direct badge
+ *   - butterscotch → chrome (top bar, mode bar, ALL-CAPS labels)
+ *
+ * Responsive strategy (mobile-first):
+ *   - Base rules target Tier C "mobile" (< 600px): vertical stack, horizontal
+ *     pill bar sidebar, no double-elbow chrome. LCARS identity comes from
+ *     palette + font + pill shapes.
+ *   - @media (min-width: 600px)  upgrades to Tier B "tablet": collapsed
+ *     56px icon-strip sidebar, full elbow chrome, wider search input.
+ *   - @media (min-width: 900px)  upgrades to Tier A "desktop": full 160px
+ *     sidebar with labels, wider top bar, three-column upper panel.
+ *
+ * Below 320px the consumer renders a dignified fallback banner
+ * (.lcars-root--narrow). That is the sole viewport gate now; the legacy
+ * "LCARS requires 900px" gate was replaced mid-Phase-5 at user direction.
+ *
+ * Accessibility note: all functional text uses either `--lcars-text` (#FFCC99)
+ * or black (#000) on a source-color chip — both pairs clear 4.5:1 on the
+ * #000 frame background. `--lcars-dim` (#665544) is reserved for placeholder
+ * em-dashes ("—") and similar inert glyphs.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+.lcars-root {
+  /* Crisp text on the black LCARS frame. Without these, Windows ClearType
+     produces color-fringed subpixel rendering that reads as "fuzzy" on dark
+     backgrounds. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
+  --lcars-sunflower: #ffcc99;
+  /* Pre-composited sunflower × 0.85 over black. Used as a solid background
+     color for inactive sidebar items so contrast (10.25:1 vs black text)
+     holds regardless of what ever gets rendered behind the item. Replaces
+     the earlier `opacity: 0.85` approach, which depended on the item
+     sitting on a pure-black surface. */
+  --lcars-sunflower-muted: #d9ad82;
+  --lcars-butterscotch: #dd9944;
+  --lcars-butterscotch-muted: #6a4a20;
+  --lcars-ice: #99ccff;
+  --lcars-violet: #cc99cc;
+  --lcars-peach: #ff9933;
+  --lcars-bg: #000000;
+  --lcars-bg-1: #07070a; /* card/panel surface */
+  --lcars-bg-2: #0d0d12; /* card hover */
+  --lcars-text: #ffcc99;
+  --lcars-dim: #665544;
+  --lcars-divider: rgba(221, 153, 68, 0.18);
+
+  /* Triad font stacks — see the header comment for when to reach for each. */
+  --lcars-font-chrome: 'Antonio', 'Oswald', 'Impact', sans-serif;
+  --lcars-font-prose: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --lcars-font-mono: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+  /* Back-compat alias — kept so any lingering references resolve cleanly. */
+  --lcars-body-font: var(--lcars-font-prose);
+
+  color: var(--lcars-text);
+  background: var(--lcars-bg);
+  font-family: var(--lcars-font-chrome);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+}
+
+.lcars-root *,
+.lcars-root *::before,
+.lcars-root *::after {
+  box-sizing: border-box;
+}
+
+@media (min-width: 600px) {
+  .lcars-root {
+    padding: 10px;
+  }
+}
+
+@media (min-width: 900px) {
+  .lcars-root {
+    padding: 12px;
+  }
+}
+
+/* --- sub-320px fallback banner (extreme edge only) --- */
+.lcars-root--narrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+.lcars-narrow-banner {
+  border: 4px solid var(--lcars-butterscotch);
+  border-radius: 20px;
+  padding: 20px 24px;
+  max-width: 600px;
+  text-align: center;
+  background: var(--lcars-bg);
+}
+.lcars-narrow-banner__title {
+  color: var(--lcars-sunflower);
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+.lcars-narrow-banner__body {
+  color: var(--lcars-text);
+  font-size: 13px;
+}
+
+/* --- frame & grid (mobile-first stack) --- */
+.lcars-frame {
+  display: grid;
+  grid-template-columns: 1fr;
+  /* Tier C: top bar / pill sidebar / content column — content area flexes. */
+  grid-template-rows: auto auto 1fr;
+  gap: 6px;
+  min-height: calc(100vh - 16px);
+}
+.lcars-body {
+  display: contents;
+}
+.lcars-content-column {
+  display: grid;
+  /* Rows: upper-panel (auto), mid-bar (20px), filter-bar (auto),
+     mode-area (1fr). Filter bar hugs the content so the pills'
+     scope — "filter what's rendered below" — reads at a glance. */
+  grid-template-rows: auto 20px auto 1fr;
+  gap: 6px;
+  min-height: 0;
+}
+
+/* --- filter bar ---
+   Two compact rows of pills (source + zero-turn, then project)
+   rendered directly above the mode-area content. Uses the same bg-1
+   surface as the upper panel so the chrome feels continuous while the
+   role differs — this one *scopes* what's shown below. */
+.lcars-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-radius: 8px;
+}
+.lcars-filter-bar__pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (min-width: 600px) {
+  .lcars-frame {
+    grid-template-columns: 1fr;
+    grid-template-rows: 56px 1fr;
+    gap: 8px;
+    min-height: calc(100vh - 20px);
+  }
+  .lcars-body {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 8px;
+    min-height: 0;
+  }
+  .lcars-content-column {
+    /* Same 4-row stack as mobile: upper-panel / mid-bar / filter-bar /
+       mode-area. Mid-bar tightens from 20px to 24px at tablet. */
+    grid-template-rows: auto 24px auto 1fr;
+    gap: 8px;
+  }
+}
+
+@media (min-width: 900px) {
+  /* Desktop tier uses a flat 2×2 grid on .lcars-frame so the sidebar can
+     span both rows as a single continuous butterscotch L-spine, while the
+     top-bar occupies only the content column (row 1, col 2). The classic
+     LCARS L: vertical arm on the left, horizontal arm to the right of it,
+     meeting at a square inner corner; the outer rounded corners live on
+     the sidebar itself. */
+  .lcars-frame {
+    grid-template-columns: 160px 1fr;
+    grid-template-rows: 40px 1fr;
+    column-gap: 8px;
+    row-gap: 0;
+  }
+  /* Flatten .lcars-body at desktop so sidebar and content-column become
+     direct grid items of .lcars-frame (same pattern as mobile tier). */
+  .lcars-body {
+    display: contents;
+  }
+  .lcars-top-bar {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+  }
+  .lcars-sidebar {
+    grid-column: 1 / 2;
+    grid-row: 1 / 3;
+  }
+  .lcars-content-column {
+    grid-column: 2 / 3;
+    grid-row: 2 / 3;
+  }
+}
+
+/* --- top bar --- */
+.lcars-top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--lcars-bg);
+  border-bottom: 3px solid var(--lcars-butterscotch);
+  border-radius: 0 16px 16px 0;
+}
+.lcars-top-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.lcars-top-bar__dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--lcars-sunflower);
+}
+.lcars-top-bar__title {
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  color: var(--lcars-sunflower);
+  margin: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  /* 28px flex box matches the source buttons beside it. Antonio's
+     line-box has an ~11:1 ascent:descent split, so a centered
+     line-box puts the baseline below container center and caps
+     appear low. `padding-bottom: 3px` (border-box, height stays 28)
+     pulls the line-box up so ink-mid lands on container center —
+     matched empirically against canvas ink measurement. */
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  line-height: 1;
+  padding-bottom: 3px;
+}
+.lcars-top-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.lcars-top-bar__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--lcars-bg);
+  border: 2px solid var(--lcars-butterscotch);
+  border-radius: 20px;
+  padding: 3px 10px;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.lcars-top-bar__search-label {
+  color: var(--lcars-butterscotch);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+.lcars-top-bar__search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--lcars-text);
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  width: 100%;
+  min-width: 0;
+}
+.lcars-top-bar__search-input::placeholder {
+  color: var(--lcars-dim);
+}
+.lcars-top-bar__search--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.lcars-top-bar__search--disabled .lcars-top-bar__search-input {
+  cursor: not-allowed;
+}
+
+/* --- top-bar source buttons ---
+   Two buttons on the left cluster: Upload Cloud / Update Cloud and
+   Scan Local / Update Local. Shared visual language: dark-inset chip
+   on the butterscotch top bar, status colors (violet=running,
+   ice=ok, peach=error), and a two-line layout when a live caption
+   is present (Scan Local's progress stream). */
+.lcars-top-bar__source-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1.5px solid rgba(0, 0, 0, 0.5);
+  color: var(--lcars-bg);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  user-select: none;
+  flex: 0 0 auto;
+  max-width: 360px;
+  line-height: 1.1;
+  transition:
+    background 120ms,
+    color 120ms,
+    max-width 120ms,
+    opacity 120ms;
+}
+.lcars-top-bar__source-btn:hover,
+.lcars-top-bar__source-btn:focus-visible {
+  /* Brighten on hover rather than darken — pulling the chip toward
+     full-black made the sunflower text harder to read than the
+     idle state. Now it lifts to a solid black panel with full
+     contrast for the sunflower label. */
+  background: var(--lcars-bg);
+  color: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-top-bar__source-btn-label {
+  white-space: nowrap;
+  /* `line-height: 1` + `padding-bottom: 2px` is the same correction
+     applied to the title: shifts the Antonio line-box up so caps
+     paint on the container's visual center rather than below it. */
+  line-height: 1;
+  padding-bottom: 2px;
+}
+/* A source-btn + its InfoPopover live inside a `.source-group` so the
+   group is the unit the top-bar flexes over. Info glyph is
+   independently clickable without triggering the button action. */
+.lcars-top-bar__source-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  position: relative;
+}
+
+/* --- info popover ---
+   Standalone clickable ⓘ that opens an anchored help panel. Sits
+   beside its companion control. Readable at a glance — full bright
+   glyph in a small dark circle so users see "there's help here"
+   without hover. */
+.lcars-info-popover {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+.lcars-info-popover__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--lcars-bg);
+  color: var(--lcars-sunflower);
+  font-family: var(--lcars-font-chrome);
+  font-size: 12px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  letter-spacing: 0;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid var(--lcars-sunflower);
+  transition:
+    background 100ms,
+    color 100ms,
+    border-color 100ms;
+  /* Matches the source-pill badge correction: Antonio's baseline
+     sits low in the line-box, so a centered line-box paints the
+     italic `i` below the circle center. `padding-bottom: 1px`
+     shifts the line-box up so the ink-mid lands on circle-mid. */
+  padding-bottom: 1px;
+}
+.lcars-info-popover__trigger:hover,
+.lcars-info-popover__trigger:focus-visible,
+.lcars-info-popover__trigger--open {
+  background: var(--lcars-sunflower);
+  color: var(--lcars-bg);
+  border-color: var(--lcars-sunflower);
+  outline: none;
+}
+/* On the butterscotch top bar, invert to dark-on-butterscotch so
+   the chip reads against the bright strip without competing with
+   the adjacent source-btn. Hover flips to a filled sunflower chip. */
+.lcars-top-bar .lcars-info-popover__trigger {
+  background: transparent;
+  border-color: var(--lcars-bg);
+  color: var(--lcars-bg);
+}
+.lcars-top-bar .lcars-info-popover__trigger:hover,
+.lcars-top-bar .lcars-info-popover__trigger:focus-visible,
+.lcars-top-bar .lcars-info-popover__trigger--open {
+  background: var(--lcars-bg);
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-bg);
+}
+/* Clear-upload `×` chip. Rides in the Upload Cloud source-group
+   after the InfoPopover, only when an uploaded ZIP is active.
+   Sized + colored to match the info trigger so the two circles
+   pair visually. The `×` glyph (U+00D7) has math-symbol font
+   metrics — ink sits above the baseline with a negative descent —
+   so it needs a much larger `padding-bottom` than alphabetic caps
+   to land at optical center. Empirically pb: 5px at font-size 14px
+   drives canvas ink-mid to box-mid exactly. */
+.lcars-top-bar__clear-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lcars-bg);
+  border: 1px solid var(--lcars-bg);
+  font-family: var(--lcars-font-chrome);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 100ms,
+    color 100ms,
+    border-color 100ms;
+  padding-bottom: 5px;
+}
+.lcars-top-bar__clear-upload:hover,
+.lcars-top-bar__clear-upload:focus-visible {
+  background: var(--lcars-bg);
+  color: var(--lcars-peach);
+  border-color: var(--lcars-bg);
+  outline: none;
+}
+.lcars-info-popover__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 260px;
+  max-width: 360px;
+  padding: 12px 14px;
+  background: var(--lcars-bg-1);
+  color: var(--lcars-text);
+  border: 1px solid var(--lcars-divider);
+  border-left: 3px solid var(--lcars-sunflower);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.5;
+  z-index: 9999;
+  animation: lcars-info-popover-in 140ms ease-out;
+}
+.lcars-info-popover__panel strong {
+  display: block;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--lcars-sunflower);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.lcars-info-popover__panel p {
+  margin: 0 0 8px;
+}
+.lcars-info-popover__panel p:last-child {
+  margin-bottom: 0;
+}
+.lcars-info-popover__panel ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.lcars-info-popover__panel li {
+  margin-bottom: 2px;
+}
+.lcars-info-popover__panel code {
+  font-family: var(--lcars-font-mono);
+  font-size: 11.5px;
+  background: rgba(255, 204, 153, 0.08);
+  color: var(--lcars-ice);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 204, 153, 0.1);
+}
+.lcars-info-popover__panel em {
+  font-style: normal;
+  color: var(--lcars-ice);
+}
+@keyframes lcars-info-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.lcars-top-bar__source-btn-caption {
+  font-family: var(--lcars-font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  margin-top: 1px;
+}
+.lcars-top-bar__source-btn--running {
+  background: var(--lcars-violet);
+  color: var(--lcars-bg);
+  cursor: progress;
+  height: auto;
+  min-height: 28px;
+  padding: 4px 12px;
+  animation: lcars-source-btn-pulse 1.2s ease-in-out infinite;
+}
+.lcars-top-bar__source-btn--ok {
+  background: var(--lcars-ice);
+  color: var(--lcars-bg);
+}
+.lcars-top-bar__source-btn--error {
+  background: var(--lcars-peach);
+  color: var(--lcars-bg);
+}
+/* Web-only / no-backend: button renders but is visibly inert.
+   Hover tooltip explains how to enable it (install locally). */
+.lcars-top-bar__source-btn--unavailable {
+  cursor: help;
+  background: rgba(0, 0, 0, 0.12);
+  border-color: rgba(0, 0, 0, 0.25);
+  opacity: 0.55;
+}
+.lcars-top-bar__source-btn--unavailable:hover,
+.lcars-top-bar__source-btn--unavailable:focus-visible {
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--lcars-bg);
+  opacity: 0.75;
+}
+@keyframes lcars-source-btn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* --- rescan banner (visible success / error strip) ---
+   Fixed-position strip pinned near the top of the viewport. Errors
+   stay until dismissed; successes auto-fade (handled in the host).
+   Kept visually distinct from the LCARS chrome so nothing reads as
+   "normal state" when a rescan just failed. */
+.lcars-rescan-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 48px);
+  min-width: 320px;
+  padding: 10px 14px 10px 14px;
+  border-radius: 10px;
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  z-index: 9999;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--lcars-text);
+  animation: lcars-rescan-banner-in 160ms ease-out;
+}
+.lcars-rescan-banner--ok {
+  border-left: 4px solid var(--lcars-ice);
+}
+.lcars-rescan-banner--error {
+  border-left: 4px solid var(--lcars-peach);
+}
+.lcars-rescan-banner--demo {
+  border-left: 4px solid var(--lcars-butterscotch);
+}
+.lcars-rescan-banner__tag {
+  flex: 0 0 auto;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  padding: 3px 9px;
+  border-radius: 9px;
+  background: var(--lcars-bg);
+  color: var(--lcars-sunflower);
+}
+.lcars-rescan-banner--ok .lcars-rescan-banner__tag {
+  color: var(--lcars-ice);
+}
+.lcars-rescan-banner--error .lcars-rescan-banner__tag {
+  color: var(--lcars-peach);
+}
+.lcars-rescan-banner--demo .lcars-rescan-banner__tag {
+  color: var(--lcars-butterscotch);
+}
+.lcars-rescan-banner__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+  max-height: 5.6em;
+  overflow: hidden;
+}
+.lcars-rescan-banner__dismiss {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--lcars-divider);
+  border-radius: 50%;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+.lcars-rescan-banner__dismiss:hover,
+.lcars-rescan-banner__dismiss:focus-visible {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 153, 0.08);
+  outline: none;
+}
+@keyframes lcars-rescan-banner-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (min-width: 600px) {
+  .lcars-top-bar {
+    height: 56px;
+    padding: 0 14px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+  .lcars-top-bar__title {
+    font-size: 18px;
+  }
+  .lcars-top-bar__search {
+    padding: 4px 12px;
+    flex: 0 0 auto;
+  }
+  .lcars-top-bar__search-input {
+    font-size: 14px;
+    width: 180px;
+  }
+  .lcars-top-bar__dot {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (min-width: 900px) {
+  /* Desktop tier: the top-bar is the horizontal arm of the LCARS L.
+     It sits only above the content column (col 2 of the frame grid) —
+     the sidebar owns the L's corner and vertical arm to the left. Square
+     left edge butts against the 8px column-gap; right end keeps the
+     classic LCARS half-pill cap. */
+  .lcars-top-bar {
+    height: 44px;
+    padding: 0 18px;
+    background: var(--lcars-butterscotch);
+    border-bottom: 0;
+    border-radius: 0 22px 22px 0;
+    gap: 16px;
+  }
+  .lcars-top-bar__title {
+    font-size: 18px;
+    letter-spacing: 0.16em;
+    color: var(--lcars-bg);
+  }
+  .lcars-top-bar__dot {
+    width: 12px;
+    height: 12px;
+    background: var(--lcars-bg);
+  }
+  .lcars-top-bar__search {
+    background: rgba(0, 0, 0, 0.85);
+    border: 1.5px solid rgba(0, 0, 0, 0.4);
+    border-radius: 18px;
+    padding: 4px 12px 4px 14px;
+    gap: 8px;
+  }
+  .lcars-top-bar__search-input {
+    width: 240px;
+    font-size: 12.5px;
+  }
+}
+
+/* --- sidebar (desktop: full 160px) --- */
+.lcars-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--lcars-bg);
+  position: relative;
+  min-height: 0;
+}
+.lcars-sidebar__elbow {
+  width: 100%;
+  height: 32px;
+  background: var(--lcars-butterscotch);
+}
+.lcars-sidebar__elbow--top {
+  border-radius: 32px 0 0 0;
+}
+.lcars-sidebar__elbow--bottom {
+  border-radius: 0 0 0 32px;
+  margin-top: auto;
+}
+.lcars-sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 8px 4px;
+  /* Inactive state uses the pre-composited `--lcars-sunflower-muted`
+     (#D9AD82) as a solid background, so black text lands 10.25:1 WCAG
+     irrespective of the surface behind the item. Active override below
+     swaps to the mode-specific color at full saturation. Previous
+     butterscotch × opacity 0.55 treatment failed AA at 3.12:1 (R9 F9.1). */
+  background: var(--lcars-sunflower-muted);
+  color: var(--lcars-bg);
+  border-radius: 0 14px 14px 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  transition: background 80ms linear;
+}
+.lcars-sidebar__item:hover,
+.lcars-sidebar__item:focus-visible {
+  background: var(--mode-color, var(--lcars-sunflower));
+  outline: none;
+}
+.lcars-sidebar__item--active {
+  background: var(--mode-color, var(--lcars-sunflower));
+  color: var(--lcars-bg);
+}
+.lcars-sidebar__item-short {
+  font-family: var(--lcars-font-mono);
+  font-weight: 700;
+  color: var(--lcars-bg);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+}
+.lcars-sidebar__item-label {
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  /* Hidden at Tier B — icon-strip shows only the short badge. */
+  display: none;
+}
+
+@media (min-width: 600px) {
+  .lcars-sidebar__elbow {
+    height: 36px;
+  }
+  .lcars-sidebar__elbow--top {
+    border-radius: 36px 0 0 0;
+  }
+  .lcars-sidebar__elbow--bottom {
+    border-radius: 0 0 0 36px;
+  }
+  .lcars-sidebar__item {
+    justify-content: center;
+    padding: 10px 4px;
+  }
+  .lcars-sidebar__item-short {
+    font-size: 11px;
+    opacity: 0.9;
+  }
+}
+
+@media (min-width: 900px) {
+  /* At desktop the sidebar itself is transparent. The top elbow is
+     restored as a standalone butterscotch block with the rounded top-left
+     corner — it anchors the L's corner and visually pairs with the
+     horizontal top-bar across the 8px column-gap. The bottom elbow stays
+     transparent (pure spacer) per the user's "only background for the
+     buttons" direction — the mode-button tabs remain the only other
+     visible chrome on the left. */
+  .lcars-sidebar {
+    background: transparent;
+    border-radius: 0;
+    overflow: visible;
+  }
+  .lcars-sidebar__elbow {
+    height: 40px;
+  }
+  .lcars-sidebar__elbow--top {
+    background: var(--lcars-butterscotch);
+    border-radius: 40px 0 0 0;
+  }
+  .lcars-sidebar__elbow--bottom {
+    background: transparent;
+    border-radius: 0;
+  }
+  .lcars-sidebar__item {
+    gap: 10px;
+    padding: 12px 14px 12px 12px;
+    border-radius: 0 18px 18px 0;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    justify-content: flex-start;
+  }
+  .lcars-sidebar__item-short {
+    font-size: 10px;
+    opacity: 0.7;
+  }
+  .lcars-sidebar__item-label {
+    display: inline;
+  }
+}
+
+/* --- sidebar horizontal pill bar (mobile only) --- */
+.lcars-sidebar--horizontal {
+  background: var(--lcars-bg);
+}
+.lcars-sidebar__pill-bar {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.lcars-sidebar__pill-bar::-webkit-scrollbar {
+  height: 4px;
+}
+.lcars-sidebar__pill-bar::-webkit-scrollbar-thumb {
+  background: var(--lcars-butterscotch);
+  border-radius: 2px;
+}
+.lcars-sidebar__pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 32px;
+  padding: 0 12px;
+  /* Inactive pills use a muted butterscotch rather than opacity dimming — the
+     horizontal pill bar sits on the bg with no backdrop, and opacity would
+     fade the whole chip rather than muting it. */
+  background: var(--lcars-butterscotch-muted);
+  color: var(--lcars-sunflower);
+  border-radius: 16px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  transition:
+    background 80ms linear,
+    color 80ms linear;
+}
+.lcars-sidebar__pill:hover,
+.lcars-sidebar__pill:focus-visible {
+  outline: none;
+  background: var(--mode-color, var(--lcars-sunflower));
+  color: var(--lcars-bg);
+}
+.lcars-sidebar__pill--active {
+  background: var(--mode-color, var(--lcars-sunflower));
+  color: var(--lcars-bg);
+}
+.lcars-sidebar__pill-short {
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+/* --- upper panel --- */
+.lcars-upper-panel {
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-left: 4px solid var(--lcars-butterscotch);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  min-height: 0;
+}
+.lcars-upper-panel__stats {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.lcars-upper-panel__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.lcars-upper-panel__stat-label {
+  color: var(--lcars-butterscotch);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+.lcars-upper-panel__stat-value {
+  color: var(--lcars-sunflower);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.lcars-upper-panel__stat-total {
+  color: var(--lcars-text);
+  font-size: 13px;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.lcars-upper-panel__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-start;
+}
+.lcars-upper-panel__sparkline-wrap {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (min-width: 600px) {
+  .lcars-upper-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 8px 16px;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 10px;
+  }
+  .lcars-upper-panel__stats {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .lcars-upper-panel__stat-label {
+    min-width: 56px;
+  }
+  .lcars-upper-panel__pills {
+    justify-content: flex-end;
+  }
+  .lcars-upper-panel__sparkline-wrap {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .lcars-upper-panel__stat-value {
+    font-size: 18px;
+  }
+}
+
+@media (min-width: 900px) {
+  /* Desktop: stack rows vertically rather than side-by-side. The old
+     3-column grid (320 / 1fr / 320) forced 6 source pills to wrap to
+     3 rows and 4 KPIs to wrap to 2 rows just to fit their columns —
+     burning ~100px of vertical space in the panel. With a single
+     column, each row takes its natural one-row height and the panel
+     is ~40% shorter at the same density. */
+  .lcars-upper-panel {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    padding: 10px 16px;
+    gap: 8px;
+    /* Top-bar (row 1, col 2) meets the panel flush — keep the panel's
+       top edge unbordered so we don't double-stroke the join. */
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+  }
+  /* Stats become a horizontal row at desktop so VISIBLE / RANGE /
+     tier chip all sit on one line instead of stacking 3 rows deep. */
+  .lcars-upper-panel__stats {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+  }
+  .lcars-upper-panel__stat {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .lcars-upper-panel__stat-label {
+    font-size: 10px;
+    min-width: 0;
+  }
+  .lcars-upper-panel__stat-value {
+    font-size: 20px;
+  }
+  .lcars-upper-panel__stat-total {
+    font-size: 13px;
+  }
+  .lcars-upper-panel__tier-slot {
+    margin-top: 0;
+    margin-left: auto;
+  }
+  .lcars-upper-panel__pills {
+    justify-content: flex-start;
+  }
+  .lcars-upper-panel__sparkline-wrap {
+    grid-column: auto;
+    justify-content: flex-start;
+  }
+}
+
+/* --- source pill ---
+   Inactive state gets a subtle 10% tint of the source-color so the pill
+   shape reads immediately — previously the transparent background made
+   border-only pills blend into the frame at a glance. Active state still
+   gets a solid fill for unambiguous selected-state legibility. */
+.lcars-source-pill {
+  --source-color: var(--lcars-butterscotch);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px 0 4px;
+  border-radius: 14px;
+  border: 1.5px solid var(--source-color);
+  color: var(--source-color);
+  background: color-mix(in srgb, var(--source-color) 12%, transparent);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  user-select: none;
+  transition: background 100ms;
+}
+.lcars-source-pill:hover,
+.lcars-source-pill:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--source-color) 22%, transparent);
+}
+.lcars-source-pill__label {
+  /* Must be nowrap with no overflow/ellipsis — the pill sizes to content.
+     Earlier ellipsis treatment clipped "CLI-DESKTOP" on narrow tier-B. */
+  white-space: nowrap;
+  flex: 0 0 auto;
+  /* line-height:1 tightens the label's line-box to the glyph height
+     so all-caps Antonio caps optically center against the pill's
+     28px chip height (instead of floating slightly below with
+     `normal` leading). */
+  line-height: 1;
+}
+.lcars-source-pill__count {
+  line-height: 1;
+}
+.lcars-source-pill--active {
+  background: var(--source-color);
+  color: var(--lcars-bg);
+}
+.lcars-source-pill--readonly {
+  cursor: default;
+}
+.lcars-source-pill__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--lcars-bg);
+  color: var(--source-color);
+  font-weight: 700;
+  font-size: 10px;
+  /* Antonio's font-metric box is asymmetric the other way: the
+     font's ascent occupies ~92% of the em-box and descent only 8%,
+     so the baseline sits LOW in the line-box. With `align-items:
+     center` on a 20px circle the line-box is centered, but caps
+     paint from `baseline - cap-height` up to `baseline`, placing
+     their visual center well BELOW the circle center. Earlier
+     revisions added `padding-top` (pushing caps further down) based
+     on line-box math; the fix is the opposite direction. Canvas
+     ink-mid measurement (actualBoundingBoxAscent/Descent) with
+     `padding-bottom: 1px` lands Antonio caps exactly on circle
+     center in a 20px circle. */
+  line-height: 1;
+  letter-spacing: 0;
+  padding-bottom: 1px;
+  border: 1px solid var(--source-color);
+  flex: 0 0 auto;
+}
+.lcars-source-pill--active .lcars-source-pill__badge {
+  background: var(--lcars-bg);
+  color: var(--source-color);
+  border-color: var(--lcars-bg);
+}
+.lcars-source-pill__count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+  border-left: 1px solid currentColor;
+  margin-left: 4px;
+  padding-left: 8px;
+}
+.lcars-source-pill--active .lcars-source-pill__count {
+  opacity: 1;
+}
+.lcars-source-pill--all {
+  --source-color: var(--lcars-sunflower);
+}
+
+/* --- sparkline --- */
+.lcars-sparkline {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  /* Span the full upper-panel width at desktop — previously capped to
+     the bar-geometry max-width so long panels left a gap on the right.
+     The SVG scales fluidly, so a full-width stretch reads as the main
+     visual instead of a decorative corner chart. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.lcars-sparkline svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lcars-sparkline__bar {
+  fill: var(--lcars-butterscotch);
+}
+.lcars-sparkline__bar--dim {
+  fill: var(--lcars-butterscotch);
+  opacity: 0.3;
+}
+.lcars-sparkline__axis {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lcars-butterscotch);
+  letter-spacing: 0.12em;
+  opacity: 0.9;
+}
+.lcars-sparkline--empty {
+  font-size: 11px;
+  color: var(--lcars-butterscotch);
+  letter-spacing: 0.1em;
+}
+
+/* --- mid bar --- */
+.lcars-mid-bar {
+  height: 20px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--lcars-bg);
+  gap: 14px;
+}
+.lcars-mid-bar__label {
+  color: var(--lcars-bg);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  line-height: 1;
+}
+@media (min-width: 900px) {
+  .lcars-mid-bar {
+    height: 26px;
+    padding: 0 16px;
+    border-radius: 13px;
+  }
+  .lcars-mid-bar__label {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+  }
+}
+
+/* --- mode area --- */
+.lcars-mode-area {
+  --mode-color: var(--lcars-butterscotch);
+  background: var(--lcars-bg);
+  border: 1px solid var(--lcars-divider);
+  border-radius: 8px;
+  padding: 12px;
+  overflow: auto;
+  min-height: 0;
+}
+@media (min-width: 900px) {
+  .lcars-mode-area {
+    border-radius: 10px;
+    padding: 14px;
+  }
+}
+/* Tier C: the double-elbow chrome is gone, so the active-mode cue becomes
+   a sunflower-accented top edge with the mode color running through it. */
+.lcars-root[data-tier='mobile'] .lcars-mode-area {
+  border: 1px solid var(--lcars-dim);
+  border-top: 3px solid var(--mode-color, var(--lcars-sunflower));
+  box-shadow: 0 -1px 0 var(--lcars-sunflower);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+/* --- command mode --- */
+.lcars-command-mode__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 600px) {
+  .lcars-command-mode__grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 10px;
+  }
+}
+@media (min-width: 900px) {
+  .lcars-command-mode__grid {
+    /* 400px floor: two cards per row at typical laptop widths, three at
+       wide-desktop (>1320px). The 4-col meta grid (TURNS / TOOLS / MODEL
+       / COST) reads cleanly at 400–520px; narrower cards start wrapping
+       the model mono string. */
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 12px;
+  }
+}
+.lcars-command-mode__more {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+.lcars-command-mode__more-btn {
+  background: var(--lcars-bg);
+  color: var(--lcars-sunflower);
+  border: 2px solid var(--lcars-butterscotch);
+  border-radius: 20px;
+  padding: 8px 20px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.lcars-command-mode__more-btn:hover,
+.lcars-command-mode__more-btn:focus-visible {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  outline: none;
+}
+
+/* --- session card ---
+   Layout contract (the load-bearing readability fix):
+     row--top: flex, nowrap. Source-pill (0 0 auto), project label
+               (1 1 auto, right-aligned, ellipsis), time (0 0 auto) with a
+               thin | divider. Chips (DUP / ZOMBIE) live AFTER the time —
+               they're codebase-specific and must not break the flex
+               contract. Never use `position: absolute` on the project
+               label (prior bug: overlap with the time).
+     title:   sunflower 15.5px/700, 2-line clamp.
+     preview: IBM Plex 12.5px/400, 3-line clamp. Markdown stripped.
+     meta:    4-col <dl> grid, label-above-value. Model in JetBrains Mono
+              + ice; other values sunflower tabular-nums. */
+.lcars-session-card {
+  --source-color: var(--lcars-butterscotch);
+  min-height: 104px;
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-left: 3px solid var(--source-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background 120ms,
+    border-color 120ms,
+    transform 120ms;
+  content-visibility: auto;
+  contain-intrinsic-size: 320px 160px;
+}
+.lcars-session-card:hover,
+.lcars-session-card:focus-visible {
+  /* bg-1 → a sunflower-tinted surface, so hover is obvious and the
+     sunflower title + ice model text keep full legibility instead
+     of merging into the nearly-identical bg-2 darker variant. */
+  background: color-mix(in srgb, var(--lcars-sunflower) 5%, var(--lcars-bg-1));
+  border-color: var(--source-color);
+  outline: none;
+  transform: translateY(-1px);
+}
+.lcars-session-card__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lcars-session-card__row--top {
+  flex-wrap: nowrap;
+}
+.lcars-session-card__row--top > .lcars-source-pill {
+  flex: 0 0 auto;
+}
+.lcars-session-card__project {
+  font-family: var(--lcars-font-mono);
+  font-size: 10px;
+  color: var(--lcars-ice);
+  opacity: 0.7;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: right;
+}
+.lcars-session-card__row--top > .lcars-session-card__time {
+  flex: 0 0 auto;
+  font-family: var(--lcars-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  color: var(--lcars-butterscotch);
+  opacity: 0.85;
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--lcars-divider);
+}
+/* When no project label precedes the time, push it fully right and drop
+   the divider (the only thing to its left would be the source pill). */
+.lcars-session-card__row--top > .lcars-source-pill + .lcars-session-card__time {
+  margin-left: auto;
+  border-left: none;
+  padding-left: 0;
+}
+.lcars-session-card__chips {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .lcars-session-card {
+    min-height: 168px;
+    padding: 12px 14px;
+    contain-intrinsic-size: 520px 168px;
+  }
+}
+.lcars-session-card__title {
+  margin: 0;
+  color: var(--lcars-sunflower);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lcars-session-card__title--fallback {
+  /* titleSource: 'fallback' — no real title was recoverable from the source,
+     so the card shows a derived stub. Dim butterscotch signals "this is a
+     synthetic label, not author-authored content". */
+  color: var(--lcars-butterscotch);
+  font-style: italic;
+  font-weight: 500;
+}
+.lcars-session-card__preview {
+  margin: 0;
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+  color: rgba(255, 204, 153, 0.78);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lcars-session-card__preview--empty {
+  color: var(--lcars-dim);
+  font-style: italic;
+}
+.lcars-session-card__meta {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--lcars-divider);
+}
+.lcars-session-card__meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lcars-session-card__meta dt {
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: var(--lcars-butterscotch);
+  opacity: 0.75;
+}
+.lcars-session-card__meta dd {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lcars-session-card__meta--model {
+  font-family: var(--lcars-font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  color: var(--lcars-ice) !important;
+}
+
+/* --- timeline mode --- */
+.lcars-timeline-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-timeline-mode__axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--lcars-ice);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+@media (min-width: 900px) {
+  .lcars-timeline-mode__axis {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+}
+.lcars-timeline-mode__lanes {
+  position: relative;
+  width: 100%;
+}
+.lcars-timeline-mode__lane {
+  --source-color: var(--lcars-butterscotch);
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: 1px solid var(--source-color);
+  border-radius: 6px;
+  /* Tier C: lane labels reduce to a 2-char badge tucked in the top-left so
+     the plot area still has room for dots. */
+  padding-left: 44px;
+}
+.lcars-timeline-mode__lane-label {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--source-color);
+  /* Truncate labels at narrow tiers rather than wrap. */
+  max-width: 36px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (min-width: 600px) {
+  .lcars-timeline-mode__lane {
+    padding-left: 70px;
+  }
+  .lcars-timeline-mode__lane-label {
+    left: 8px;
+    max-width: 62px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+}
+@media (min-width: 900px) {
+  .lcars-timeline-mode__lane {
+    padding-left: 90px;
+  }
+  .lcars-timeline-mode__lane-label {
+    max-width: 80px;
+    letter-spacing: 0.08em;
+  }
+}
+.lcars-timeline-mode__lane-track {
+  position: relative;
+  height: 100%;
+  width: calc(100% - 0px);
+}
+
+/* --- timeline dot --- */
+.lcars-timeline-dot {
+  --source-color: var(--lcars-butterscotch);
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--source-color);
+  cursor: pointer;
+  transform: translate(-50%, 0);
+}
+.lcars-timeline-dot:hover,
+.lcars-timeline-dot:focus-visible {
+  box-shadow: 0 0 0 3px var(--source-color);
+  outline: none;
+}
+
+/* --- detail mode --- */
+.lcars-detail-mode {
+  --source-color: var(--lcars-butterscotch);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.lcars-detail-mode__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--lcars-divider);
+}
+.lcars-detail-mode__back {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  padding: 5px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  user-select: none;
+  flex: 0 0 auto;
+}
+.lcars-detail-mode__back:hover,
+.lcars-detail-mode__back:focus-visible {
+  background: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-detail-mode__title {
+  flex: 1 1 100%;
+  color: var(--lcars-sunflower);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.lcars-detail-mode__time {
+  font-family: var(--lcars-font-mono);
+  color: var(--lcars-butterscotch);
+  font-size: 11px;
+}
+@media (min-width: 600px) {
+  .lcars-detail-mode__title {
+    flex: 1 1 auto;
+    font-size: 17px;
+  }
+  .lcars-detail-mode__time {
+    font-size: 12px;
+  }
+}
+@media (min-width: 900px) {
+  .lcars-detail-mode__title {
+    font-size: 18px;
+  }
+}
+/* Metadata: at Tier C render as a vertical key-value list.
+   At ≥ 600px restore the responsive grid. */
+.lcars-detail-mode__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-left: 3px solid var(--source-color);
+  border-radius: 8px;
+}
+.lcars-detail-mode__meta > div {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  column-gap: 10px;
+  align-items: baseline;
+}
+.lcars-detail-mode__meta dt {
+  color: var(--lcars-butterscotch);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  opacity: 0.8;
+}
+.lcars-detail-mode__meta dd {
+  color: var(--lcars-text);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.lcars-detail-mode__meta--mono {
+  font-family: var(--lcars-font-mono);
+  letter-spacing: 0 !important;
+}
+@media (min-width: 600px) {
+  .lcars-detail-mode__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0;
+    padding: 10px 14px;
+  }
+  .lcars-detail-mode__meta > div {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    gap: 4px;
+    padding: 6px 14px;
+    border-right: 1px solid var(--lcars-divider);
+  }
+  .lcars-detail-mode__meta > div:last-child {
+    border-right: none;
+  }
+}
+.lcars-detail-mode__body {
+  min-height: 0;
+  overflow: auto;
+}
+.lcars-detail-mode__loading {
+  color: var(--lcars-butterscotch);
+  padding: 16px;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+}
+
+/* --- message list (cloud) ---
+   USER messages take sunflower accent on the left; ASSISTANT takes ice.
+   The header rule underlines the sender/timestamp with a dashed divider
+   to separate the chrome row from the prose body. */
+.lcars-message-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lcars-message {
+  border: 1px solid var(--lcars-divider);
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: var(--lcars-bg-1);
+}
+.lcars-message--human {
+  border-left: 3px solid var(--lcars-sunflower);
+}
+.lcars-message--assistant {
+  border-left: 3px solid var(--lcars-ice);
+}
+.lcars-message__header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--lcars-divider);
+}
+.lcars-message--human .lcars-message__sender {
+  color: var(--lcars-sunflower);
+}
+.lcars-message--assistant .lcars-message__sender {
+  color: var(--lcars-ice);
+}
+.lcars-message__sender {
+  font-weight: 700;
+}
+.lcars-message__time {
+  font-family: var(--lcars-font-mono);
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+.lcars-message__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-message__attachments {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--lcars-text);
+}
+
+/* --- content blocks --- */
+.lcars-cb {
+  font-size: 13px;
+  color: var(--lcars-text);
+}
+.lcars-cb--text {
+  /* Prose now flows through per-line elements (<p>, <h4>, <li>). Drop
+     the pre-wrap default so the renderer's spacing wins. */
+  line-height: 1.6;
+}
+.lcars-cb--thinking {
+  border: 1px dashed var(--lcars-violet);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(204, 153, 204, 0.04);
+}
+.lcars-cb--thinking summary {
+  color: var(--lcars-violet);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  font-weight: 700;
+}
+.lcars-cb--thinking p {
+  margin: 8px 0 0;
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  color: var(--lcars-violet);
+  line-height: 1.55;
+  font-style: italic;
+  opacity: 0.9;
+  white-space: pre-wrap;
+}
+.lcars-cb--tool-use {
+  border-left: 2px solid var(--lcars-ice);
+  padding-left: 8px;
+}
+.lcars-cb--tool-result {
+  border-left: 2px solid var(--lcars-peach);
+  padding-left: 8px;
+}
+.lcars-cb--token-budget,
+.lcars-cb--unknown {
+  font-size: 11px;
+  color: var(--lcars-butterscotch);
+  font-style: italic;
+}
+.lcars-cb__label {
+  color: var(--lcars-butterscotch);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
+}
+.lcars-cb__pre {
+  margin: 0;
+  background: #0a0a0a;
+  color: var(--lcars-text);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lcars-cb__dim {
+  color: var(--lcars-dim);
+  font-style: italic;
+}
+
+/* --- prose renderer (LCARS refinement) ---
+   Section headings in sunflower caps, `▸` bullet glyphs, **bold** as
+   sunflower strong, inline backtick code in ice blue, and a short
+   keyword highlight list (SQLite / JSON / LCARS / …). */
+.lcars-prose {
+  font-family: var(--lcars-font-prose);
+  font-size: 13.5px;
+  font-weight: 400;
+  letter-spacing: 0.005em;
+  line-height: 1.6;
+  color: rgba(255, 204, 153, 0.92);
+}
+.lcars-prose__p {
+  margin: 0 0 4px;
+  text-wrap: pretty;
+}
+.lcars-prose__sp {
+  height: 8px;
+}
+.lcars-prose__h {
+  margin: 14px 0 6px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-sunflower);
+}
+.lcars-prose__li {
+  margin: 0 0 4px 12px;
+  list-style: none;
+  padding-left: 14px;
+  position: relative;
+  text-wrap: pretty;
+}
+.lcars-prose__li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--lcars-butterscotch);
+  font-size: 10px;
+}
+.lcars-prose strong {
+  color: var(--lcars-sunflower);
+  font-weight: 600;
+}
+.lcars-prose code {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  background: rgba(255, 204, 153, 0.08);
+  color: var(--lcars-ice);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 204, 153, 0.1);
+}
+.lcars-prose__hl {
+  color: var(--lcars-ice);
+  font-weight: 500;
+}
+
+/* --- transcript list (local) --- */
+.lcars-transcript-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-transcript-entry {
+  border-left: 2px solid var(--lcars-butterscotch);
+  padding: 4px 10px;
+}
+.lcars-transcript-entry--user {
+  border-left-color: var(--lcars-sunflower);
+}
+.lcars-transcript-entry--assistant {
+  border-left-color: var(--lcars-ice);
+}
+.lcars-transcript-entry--attachment {
+  border-left-color: var(--lcars-peach);
+}
+.lcars-transcript-entry--ai-title {
+  border-left-color: var(--lcars-violet);
+}
+.lcars-transcript-entry--malformed {
+  border-left-color: #cc3333;
+}
+.lcars-transcript-entry__header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.lcars-transcript-entry__type {
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-transcript-entry__time {
+  color: var(--lcars-butterscotch);
+  opacity: 0.7;
+}
+.lcars-transcript-entry__err {
+  color: #ff6666;
+}
+.lcars-transcript-entry__body {
+  margin: 4px 0 0;
+  color: var(--lcars-text);
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+/* <details> expander: reveals the unabridged body when the preview
+   is truncated (long text, structured tool_use/tool_result, etc).
+   The summary is a subtle chrome label so it doesn't compete with
+   the transcript content itself; hover/open state brighten it. */
+.lcars-transcript-entry__details {
+  margin: 6px 0 0;
+}
+.lcars-transcript-entry__summary {
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-dim);
+  border: 1px solid var(--lcars-divider);
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition:
+    color 100ms,
+    border-color 100ms,
+    background 100ms;
+}
+.lcars-transcript-entry__summary::-webkit-details-marker {
+  display: none;
+}
+.lcars-transcript-entry__summary:hover,
+.lcars-transcript-entry__summary:focus-visible {
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-transcript-entry__details[open] > .lcars-transcript-entry__summary {
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.08);
+}
+.lcars-transcript-entry__details[open] > .lcars-transcript-entry__summary::before {
+  content: '▾ ';
+}
+.lcars-transcript-entry__details:not([open]) > .lcars-transcript-entry__summary::before {
+  content: '▸ ';
+}
+.lcars-transcript-entry__full {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  color: var(--lcars-text);
+  background: var(--lcars-bg-1);
+  border-left: 2px solid var(--lcars-divider);
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+.lcars-transcript-list__empty,
+.lcars-message-list__empty {
+  color: var(--lcars-dim);
+  font-style: italic;
+  padding: 12px;
+}
+
+/* --- empty / error / missing / coming soon --- */
+.lcars-empty-state,
+.lcars-error-state,
+.lcars-detail-missing,
+.lcars-coming-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 8px;
+  padding: 24px;
+}
+.lcars-empty-state__title,
+.lcars-error-state__title,
+.lcars-detail-missing__title,
+.lcars-coming-soon__title {
+  margin: 0;
+  color: var(--lcars-sunflower);
+  font-size: 24px;
+  letter-spacing: 0.12em;
+}
+.lcars-error-state__title {
+  color: #ff8866;
+}
+.lcars-empty-state__message,
+.lcars-error-state__detail,
+.lcars-detail-missing__reason,
+.lcars-coming-soon__body {
+  color: var(--lcars-text);
+  font-size: 13px;
+  max-width: 520px;
+  text-align: center;
+}
+.lcars-error-state__retry {
+  margin-top: 12px;
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  border: none;
+  border-radius: 16px;
+  padding: 6px 18px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+/* --- upload panel --- */
+.lcars-upload-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+}
+.lcars-upload-panel--prominent {
+  border: 2px solid var(--lcars-sunflower);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--lcars-bg);
+  margin-top: 4px;
+}
+.lcars-upload-panel--compact {
+  max-width: none;
+  align-items: center;
+  flex-direction: row;
+  gap: 6px;
+  width: auto;
+  padding: 0;
+}
+.lcars-upload-panel__title {
+  margin: 0;
+  color: var(--lcars-sunflower);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+.lcars-upload-panel__hint {
+  margin: 0;
+  color: var(--lcars-text);
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+.lcars-upload-panel__button {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  border: none;
+  border-radius: 18px;
+  padding: 8px 18px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  align-self: flex-start;
+  transition:
+    background 80ms linear,
+    color 80ms linear;
+}
+.lcars-upload-panel--compact .lcars-upload-panel__button {
+  padding: 4px 12px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  border-radius: 14px;
+  height: 26px;
+  align-self: center;
+}
+.lcars-upload-panel__button:hover,
+.lcars-upload-panel__button:focus-visible {
+  background: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-upload-panel__button:disabled {
+  background: var(--lcars-butterscotch-muted);
+  color: var(--lcars-sunflower);
+  cursor: progress;
+}
+.lcars-upload-panel__status {
+  color: var(--lcars-text);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  word-break: break-word;
+}
+.lcars-upload-panel__status--error {
+  color: #ff8866;
+}
+.lcars-upload-panel__status--ok {
+  color: var(--lcars-sunflower);
+}
+@media (min-width: 600px) {
+  .lcars-upload-panel--prominent {
+    padding: 16px 20px;
+  }
+}
+
+/* --- upload chip + unload (UpperPanel) --- */
+.lcars-upper-panel__tier-slot {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+.lcars-upper-panel__upload-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--lcars-sunflower);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  min-width: 0;
+}
+.lcars-upper-panel__upload-chip-label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lcars-sunflower);
+  font-weight: 600;
+}
+.lcars-upper-panel__unload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 10px;
+  background: var(--lcars-peach);
+  color: var(--lcars-bg);
+  border-radius: 11px;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  user-select: none;
+  border: none;
+}
+.lcars-upper-panel__unload:hover,
+.lcars-upper-panel__unload:focus-visible {
+  background: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-upper-panel__upload-slot {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* --- empty state OR separator --- */
+.lcars-empty-state__or {
+  color: var(--lcars-butterscotch);
+  letter-spacing: 0.2em;
+  font-size: 11px;
+  margin: 8px 0 4px;
+}
+
+/* --- error state with upload fallback --- */
+.lcars-error-state__upload {
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 24px;
+}
+
+/* --- loading splash --- */
+.lcars-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  color: var(--lcars-butterscotch);
+  font-size: 16px;
+  letter-spacing: 0.15em;
+}
+
+/* --- tier indicator (Decision 17, [R-D17]) ---
+   Pill sits in TopBar left cluster, right of the CHAT ARCHAEOLOGIST title.
+   Two states both at FULL OPACITY (dim is the palette, never the state):
+     .lcars-tier-indicator--browser → #665544 (load-bearing)
+     .lcars-tier-indicator--local   → #CC99CC (load-bearing)
+   The word ANALYSIS in the label copy is load-bearing per [R-D17] + §4.4.1
+   of the review — without it the pill reads as chrome. */
+.lcars-tier-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border: none;
+  /* Full opacity (1.0). Do NOT add opacity: <1.0> here — the plan's
+     [R-D17] + review §4.4.1 explicitly reject dimming the state. */
+  opacity: 1;
+  transition:
+    box-shadow 80ms linear,
+    filter 80ms linear;
+}
+.lcars-tier-indicator--browser {
+  background: #665544;
+  color: var(--lcars-sunflower);
+  /* UX finding 7: one-shot pulse on mount in the BROWSER state only.
+     Teaches first-time viewers there's something clickable here. Drops
+     in `--local` state where the pill has already earned its keep. */
+  animation: lcars-tier-indicator-pulse 1.8s ease-out 1;
+}
+.lcars-tier-indicator--local {
+  background: #cc99cc;
+  color: var(--lcars-bg);
+}
+.lcars-tier-indicator:hover,
+.lcars-tier-indicator:focus-visible {
+  outline: none;
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 2px var(--lcars-sunflower);
+}
+@keyframes lcars-tier-indicator-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 204, 153, 0);
+    transform: scale(1);
+  }
+  30% {
+    box-shadow: 0 0 0 6px rgba(255, 204, 153, 0.55);
+    transform: scale(1.04);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(255, 204, 153, 0);
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-tier-indicator--browser {
+    animation: none;
+  }
+}
+@media (min-width: 600px) {
+  .lcars-tier-indicator {
+    height: 24px;
+    font-size: 13px;
+  }
+}
+@media (min-width: 900px) {
+  .lcars-tier-indicator {
+    height: 24px;
+    font-size: 13px;
+  }
+  /* At desktop the top-bar's bg is butterscotch; the brown BROWSER pill
+     needs a little breathing room against it to remain legible. */
+  .lcars-tier-indicator--browser {
+    box-shadow: 0 0 0 1px var(--lcars-bg);
+  }
+}
+
+/* --- tier sheet (Decision 17 / AC15) ---
+   Modal dialog rendered inside the viewer's natural stacking context.
+   Lists all six Phase-7-reserved files with present/absent icon + date. */
+.lcars-tier-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  z-index: 50;
+}
+.lcars-tier-sheet {
+  background: var(--lcars-bg);
+  border: 2px solid var(--lcars-violet);
+  border-radius: 10px;
+  padding: 16px 20px;
+  max-width: 640px;
+  width: 100%;
+  color: var(--lcars-text);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+.lcars-tier-sheet__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.lcars-tier-sheet__title {
+  margin: 0;
+  color: var(--lcars-violet);
+  font-size: 14px;
+  letter-spacing: 0.15em;
+  font-weight: 700;
+}
+.lcars-tier-sheet__close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 50%;
+  user-select: none;
+}
+.lcars-tier-sheet__close:hover,
+.lcars-tier-sheet__close:focus-visible {
+  outline: none;
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 153, 0.1);
+}
+.lcars-tier-sheet__summary {
+  margin: 0;
+  color: var(--lcars-sunflower);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+.lcars-tier-sheet__hint {
+  margin: 0;
+  color: var(--lcars-text);
+  opacity: 0.85;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.lcars-tier-sheet__hint code {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  background: rgba(204, 153, 204, 0.15);
+  color: var(--lcars-violet);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.lcars-tier-sheet__list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-tier-sheet__item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 2px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--lcars-dim);
+  border-radius: 6px;
+  align-items: baseline;
+}
+.lcars-tier-sheet__item--present {
+  border-color: var(--lcars-violet);
+}
+.lcars-tier-sheet__icon {
+  grid-row: 1 / 3;
+  grid-column: 1 / 2;
+  color: var(--lcars-dim);
+  font-weight: 700;
+  text-align: center;
+  align-self: center;
+}
+.lcars-tier-sheet__item--present .lcars-tier-sheet__icon {
+  color: var(--lcars-violet);
+}
+.lcars-tier-sheet__filename {
+  grid-column: 2 / 3;
+  grid-row: 1 / 2;
+  color: var(--lcars-sunflower);
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+.lcars-tier-sheet__desc {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+  color: var(--lcars-text);
+  opacity: 0.75;
+  font-size: 11px;
+}
+.lcars-tier-sheet__ts {
+  grid-column: 3 / 4;
+  grid-row: 1 / 3;
+  color: var(--lcars-butterscotch);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+}
+
+/* --- local analyzer empty state (Decision 15 / AC17) ---
+   Reusable "what the local tier would unlock" card. Rendered inside the
+   CONSTELLATION accordion per [R-D20] and as the COST mode Phase-7 stub. */
+.lcars-local-analyzer-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--lcars-violet);
+  border-radius: 8px;
+  background: rgba(204, 153, 204, 0.04);
+}
+.lcars-local-analyzer-empty__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lcars-local-analyzer-empty__title {
+  margin: 0;
+  color: var(--lcars-violet);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+.lcars-local-analyzer-empty__preview {
+  margin: 0;
+  color: var(--lcars-text);
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+.lcars-local-analyzer-empty__cta {
+  margin: 0;
+  color: var(--lcars-sunflower);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+
+/* --- source attribution micro-label (Decision 18 / [R-D18]) ---
+   Default: inherits parent chip hue at 85% opacity so the label stays
+   readable on colored / violet-tinted chip backgrounds (UX finding 4 —
+   9 px #665544@0.7 on a violet chip measured ~2.9:1 contrast, below
+   WCAG AA 4.5:1). Using `currentColor` at a slightly lower weight/opacity
+   preserves the "footnote vs primary" hierarchy without introducing
+   a color that reads as muddy against saturated parent chips. */
+.lcars-attribution {
+  color: currentColor;
+  opacity: 0.85;
+  font-size: inherit;
+  letter-spacing: inherit;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* ========================================================================
+ * Team C additions — Phase 6 browser-tier analytics surfaces.
+ *
+ * Layered AFTER Team B's primitives. Covers: KPI strip, project pills,
+ * zero-turn toggle, session-card chips + project pill, 2s highlight ring
+ * keyframe, COST mode layout (stacked bar + 3 tables), CONSTELLATION
+ * layout (cluster cards + zombie cards + accordion), DetailMode prev/next
+ * + copy button.
+ * ==================================================================== */
+
+/* --- KPI strip (Decision 9 / [R-D9]) --- */
+.lcars-kpi-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+}
+.lcars-kpi {
+  flex: 1 1 140px;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-top: 3px solid var(--lcars-butterscotch);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease-out;
+}
+.lcars-kpi:hover,
+.lcars-kpi:focus-visible {
+  background: color-mix(in srgb, var(--lcars-sunflower) 5%, var(--lcars-bg-1));
+  outline: none;
+}
+.lcars-kpi__label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+  opacity: 0.85;
+}
+.lcars-kpi__value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lcars-kpi__coverage {
+  font-family: var(--lcars-font-prose);
+  font-size: 11px;
+  color: var(--lcars-text);
+  font-weight: 400;
+  opacity: 0.55;
+  letter-spacing: 0;
+}
+
+/* --- project pills (Decision 13 / [R-D13]) --- */
+.lcars-project-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0;
+}
+.lcars-project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 3px;
+  border: 1px solid var(--lcars-ice);
+  border-radius: 11px;
+  color: var(--lcars-ice);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  cursor: pointer;
+  /* Subtle 8% tint of the ice color so the pill shape reads at a glance
+     even in the inactive state — transparent-only pills were disappearing
+     into the dark frame. Active state still gets a solid fill. */
+  background: color-mix(in srgb, var(--lcars-ice) 8%, transparent);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lcars-project-pill:hover,
+.lcars-project-pill:focus-visible {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+  outline: none;
+}
+.lcars-project-pill--active {
+  background: var(--lcars-ice);
+  color: #000;
+}
+.lcars-project-pill--unknown {
+  border-color: var(--lcars-butterscotch-muted);
+  color: var(--lcars-butterscotch);
+  background: color-mix(in srgb, var(--lcars-butterscotch) 8%, transparent);
+}
+.lcars-project-pill--unknown:hover,
+.lcars-project-pill--unknown:focus-visible {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 18%, transparent);
+}
+.lcars-project-pill--unknown.lcars-project-pill--active {
+  background: var(--lcars-butterscotch-muted);
+  color: var(--lcars-text);
+}
+.lcars-project-pill--rest {
+  cursor: default;
+  border-style: dashed;
+  opacity: 0.8;
+}
+.lcars-project-pill__count {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+/* --- zero-turn toggle ---
+   Lives in the same flex row as the source pills, so it matches their
+   visual language (28px, 14px radius, 1.5px border, 11px/700/0.14em)
+   AND uses the source-pill badge component for the "Ø" glyph. Setting
+   `--source-color: peach` routes the badge/count through the same
+   CSS variable path as real source pills, so there's one styling
+   contract. Peach is already the accent for anomaly / zero-activity
+   markers, so the "empty sessions" framing lands. */
+.lcars-zero-turn-toggle {
+  --source-color: var(--lcars-peach);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px 0 4px;
+  border: 1.5px solid var(--source-color);
+  border-radius: 14px;
+  color: var(--source-color);
+  background: color-mix(in srgb, var(--source-color) 12%, transparent);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background 100ms;
+}
+.lcars-zero-turn-toggle:hover,
+.lcars-zero-turn-toggle:focus-visible {
+  background: color-mix(in srgb, var(--source-color) 22%, transparent);
+  outline: none;
+}
+.lcars-zero-turn-toggle--active {
+  background: var(--source-color);
+  color: var(--lcars-bg);
+}
+.lcars-zero-turn-toggle--active .lcars-source-pill__badge {
+  background: var(--lcars-bg);
+  color: var(--source-color);
+  border-color: var(--lcars-bg);
+}
+
+/* --- SessionCard chips (Decision 14 / [R-D14]) ---
+   Project label is now a lightweight inline text element sitting in the
+   top-row flex chain (see `.lcars-session-card__project` above). Chips
+   (DUP / ZOMBIE) are codebase-specific markers — they live after the
+   timestamp so the flex contract (pill / project / time) stays intact. */
+.lcars-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid currentColor;
+}
+.lcars-chip--dup {
+  color: var(--lcars-violet);
+  background: rgba(204, 153, 204, 0.12);
+}
+.lcars-chip--dup:hover,
+.lcars-chip--dup:focus-visible {
+  background: rgba(204, 153, 204, 0.28);
+  outline: none;
+}
+.lcars-chip--zombie {
+  color: var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.1);
+}
+.lcars-chip--zombie:hover,
+.lcars-chip--zombie:focus-visible {
+  background: rgba(255, 153, 51, 0.25);
+  outline: none;
+}
+
+/* --- 2s highlight ring keyframe ([R-D19]) --- */
+@keyframes lcars-kpi-highlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 153, 51, 0.9);
+    outline: 2px solid var(--lcars-peach);
+    outline-offset: 3px;
+  }
+  80% {
+    box-shadow: 0 0 0 8px rgba(255, 153, 51, 0);
+    outline: 2px solid var(--lcars-peach);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 153, 51, 0);
+    outline: 2px solid transparent;
+  }
+}
+.lcars-cost-section--highlight {
+  animation: lcars-kpi-highlight 2s ease-out 1;
+  animation-fill-mode: forwards;
+  border-radius: 8px;
+}
+
+/* --- COST mode layout (Decision 19) --- */
+.lcars-cost-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.lcars-cost-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 900px) {
+  .lcars-cost-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.lcars-cost-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-radius: 8px;
+}
+.lcars-cost-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--lcars-divider);
+}
+.lcars-cost-section__title {
+  margin: 0;
+  color: var(--lcars-peach);
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+.lcars-cost-section__filter-hint {
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+  font-size: 11.5px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+.lcars-cost-section__summary {
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+  font-size: 11.5px;
+  font-weight: 400;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+.lcars-cost-section__summary strong {
+  color: var(--lcars-sunflower);
+  font-weight: 600;
+}
+.lcars-cost-section__empty {
+  color: var(--lcars-butterscotch);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+/* Stacked bar chart — peach (exact) + violet 65% (estimate) per
+   the accent contract. Labels and values sit below each bar. */
+.lcars-cost-stacked-bar {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  align-items: flex-end;
+  height: 160px;
+  overflow-x: auto;
+}
+.lcars-cost-stacked-bar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 46px;
+  flex: 1;
+}
+.lcars-cost-stacked-bar__track {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-height: 100px;
+  max-height: 120px;
+}
+.lcars-cost-stacked-bar__stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(102, 85, 68, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.lcars-cost-stacked-bar__slice--exact {
+  background: var(--lcars-peach);
+}
+.lcars-cost-stacked-bar__slice--estimate {
+  background: var(--lcars-violet);
+  opacity: 0.65;
+}
+.lcars-cost-stacked-bar__label {
+  font-family: var(--lcars-font-mono);
+  font-size: 9.5px;
+  color: var(--lcars-butterscotch);
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+  text-align: center;
+}
+.lcars-cost-stacked-bar__value {
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+}
+
+.lcars-cost-legend {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-family: var(--lcars-font-prose);
+  font-size: 11px;
+  color: var(--lcars-text);
+  opacity: 0.7;
+}
+.lcars-cost-legend__sw {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.lcars-cost-legend__sw--exact {
+  background: var(--lcars-peach);
+}
+.lcars-cost-legend__sw--estimate {
+  background: var(--lcars-violet);
+  opacity: 0.65;
+}
+
+/* Cost tables — the signature pattern is the inline SHARE bar inside
+   BY MODEL and BY PROJECT. The bar fill uses peach for model rows and
+   ice for project rows; a right-aligned % label floats over the bar
+   with mix-blend-mode so it stays readable against either ends. */
+.lcars-cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.lcars-cost-table th {
+  text-align: left;
+  font-family: var(--lcars-font-chrome);
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--lcars-divider);
+}
+.lcars-cost-table th.num,
+.lcars-cost-table td.num {
+  text-align: right;
+}
+.lcars-cost-table td {
+  padding: 9px 8px;
+  color: var(--lcars-text);
+  border-bottom: 1px dashed rgba(102, 85, 68, 0.3);
+}
+.lcars-cost-table tr:last-child td {
+  border-bottom: none;
+}
+.lcars-cost-table__model,
+.lcars-cost-table__project {
+  color: var(--lcars-sunflower);
+  font-weight: 600;
+  font-family: var(--lcars-font-mono);
+  font-size: 11.5px;
+}
+.lcars-cost-table__rest td {
+  color: var(--lcars-butterscotch);
+  font-style: italic;
+}
+.lcars-cost-table__rank {
+  font-family: var(--lcars-font-mono);
+  color: var(--lcars-butterscotch);
+  opacity: 0.7;
+  width: 32px;
+  font-size: 11px;
+}
+.lcars-cost-table__title {
+  color: var(--lcars-sunflower);
+  font-weight: 500;
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcars-cost-table--dense td,
+.lcars-cost-table--dense th {
+  padding: 7px 8px;
+}
+.lcars-cost-table__row--clickable {
+  cursor: pointer;
+}
+.lcars-cost-table__row--clickable:hover {
+  background: rgba(255, 153, 51, 0.06);
+}
+
+/* Inline SHARE bar — the centerpiece of BY MODEL / BY PROJECT. */
+.lcars-cost-table__bar {
+  position: relative;
+  height: 18px;
+  background: rgba(102, 85, 68, 0.18);
+  border-radius: 9px;
+  overflow: hidden;
+  width: 140px;
+}
+.lcars-cost-table__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--lcars-peach);
+  border-radius: 9px;
+}
+.lcars-cost-table__bar-fill--ice {
+  background: var(--lcars-ice);
+}
+.lcars-cost-table__bar-label {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--lcars-font-prose);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--lcars-bg);
+  mix-blend-mode: screen;
+  filter: invert(1);
+}
+
+/* --- CONSTELLATION mode layout (Decision 20 / [R-D20]) --- */
+.lcars-constellation-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.lcars-constellation-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--lcars-violet);
+  border-radius: 8px;
+  background: rgba(204, 153, 204, 0.04);
+}
+.lcars-constellation-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lcars-constellation-section__title {
+  margin: 0;
+  color: var(--lcars-violet);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+.lcars-constellation-section__hint {
+  color: var(--lcars-butterscotch);
+  font-size: 12px;
+}
+.lcars-constellation-section__filter {
+  color: var(--lcars-peach);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.lcars-constellation-section__toggle {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--lcars-dim);
+  border-radius: 6px;
+  color: var(--lcars-text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: inherit;
+}
+.lcars-constellation-section__toggle:hover,
+.lcars-constellation-section__toggle:focus-visible {
+  background: rgba(204, 153, 204, 0.08);
+  border-color: var(--lcars-violet);
+  color: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-constellation-section__empty {
+  color: var(--lcars-butterscotch);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.lcars-constellation-section__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.lcars-constellation-section__grid--zombie {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+/* Duplicate cluster card */
+.lcars-dup-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--lcars-butterscotch-muted);
+  border-radius: 6px;
+  background: var(--lcars-bg);
+}
+.lcars-dup-cluster--highlight {
+  border-color: var(--lcars-peach);
+  animation: lcars-kpi-highlight 2s ease-out 1;
+  animation-fill-mode: forwards;
+}
+.lcars-dup-cluster__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.lcars-dup-cluster__badge {
+  color: var(--lcars-violet);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.lcars-dup-cluster__hash {
+  color: var(--lcars-butterscotch);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+.lcars-dup-cluster__sample {
+  margin: 0;
+  color: var(--lcars-text);
+  font-size: 12px;
+  line-height: 1.45;
+  font-style: italic;
+}
+.lcars-dup-cluster__members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.lcars-dup-cluster__member-link {
+  display: block;
+  padding: 3px 6px;
+  border-left: 2px solid var(--source-color, var(--lcars-butterscotch-muted));
+  color: var(--lcars-sunflower);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcars-dup-cluster__member-link:hover,
+.lcars-dup-cluster__member-link:focus-visible {
+  background: rgba(255, 204, 153, 0.08);
+  outline: none;
+}
+.lcars-dup-cluster__member-empty {
+  color: var(--lcars-butterscotch);
+  font-size: 11px;
+  padding: 2px 6px;
+}
+/* AC20: the `<li>` the user clicked from gets a distinct violet left
+   border that auto-clears after ~3s (parent toggles the class). */
+.lcars-dup-cluster__member--origin {
+  position: relative;
+  border-left: 2px solid var(--lcars-violet);
+  background: rgba(204, 153, 204, 0.12);
+  transition:
+    background 400ms ease-out,
+    border-color 400ms ease-out;
+}
+
+/* Zombie project card */
+.lcars-zombie-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--lcars-butterscotch-muted);
+  border-radius: 6px;
+  background: var(--lcars-bg);
+}
+.lcars-zombie-card--zombie {
+  border-color: var(--lcars-peach);
+}
+.lcars-zombie-card--dormant {
+  border-color: var(--lcars-butterscotch);
+}
+.lcars-zombie-card--active {
+  border-color: var(--lcars-ice);
+}
+.lcars-zombie-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+.lcars-zombie-card__name {
+  margin: 0;
+  color: var(--lcars-sunflower);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcars-zombie-card__class {
+  color: var(--lcars-peach);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+.lcars-zombie-card__stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 10px;
+}
+.lcars-zombie-card__stats dt {
+  color: var(--lcars-butterscotch);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+.lcars-zombie-card__stats dd {
+  margin: 0;
+  color: var(--lcars-text);
+  font-variant-numeric: tabular-nums;
+}
+.lcars-zombie-card__sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 24px;
+}
+.lcars-zombie-card__burst {
+  display: inline-block;
+  background: var(--lcars-violet);
+  opacity: 0.7;
+  border-radius: 2px;
+}
+.lcars-zombie-card__footer {
+  color: var(--lcars-butterscotch);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-style: italic;
+}
+
+/* --- Accordion ([R-D20]) ---
+   UX finding 5b: bump the header weight + give the collapsed block a
+   filled violet-tint so it reads as a section boundary, not as a
+   page-bottom tagline. Now rendered directly after EXACT DUPLICATES in
+   ConstellationMode, so cold users encounter it before scrolling the
+   project-lifecycle list. */
+.lcars-accordion {
+  border: 1px solid var(--lcars-violet);
+  border-radius: 8px;
+  background: rgba(204, 153, 204, 0.12);
+}
+.lcars-accordion__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  flex-wrap: wrap;
+  background: rgba(204, 153, 204, 0.12);
+  border-radius: 8px 8px 0 0;
+}
+.lcars-accordion__header:hover,
+.lcars-accordion__header:focus-visible {
+  background: rgba(204, 153, 204, 0.2);
+  outline: none;
+}
+.lcars-accordion__caret {
+  color: var(--lcars-violet);
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  font-weight: 700;
+}
+.lcars-accordion__title {
+  color: var(--lcars-violet);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+.lcars-accordion__cta {
+  color: var(--lcars-text);
+  opacity: 0.85;
+  font-size: 11px;
+}
+.lcars-accordion__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+/* --- DetailMode prev/next + copy (Decision 11 / 12) --- */
+.lcars-detail-mode__nav {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--lcars-sunflower);
+  color: var(--lcars-sunflower);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  background: transparent;
+}
+.lcars-detail-mode__nav:hover,
+.lcars-detail-mode__nav:focus-visible {
+  background: rgba(255, 204, 153, 0.12);
+  outline: none;
+}
+.lcars-detail-mode__nav--disabled {
+  border-color: var(--lcars-dim);
+  color: var(--lcars-dim);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.lcars-detail-mode__copy-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.lcars-detail-mode__copy {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--lcars-violet);
+  color: var(--lcars-violet);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  background: transparent;
+}
+.lcars-detail-mode__copy:hover,
+.lcars-detail-mode__copy:focus-visible {
+  background: rgba(204, 153, 204, 0.15);
+  outline: none;
+}
+.lcars-detail-mode__copy-toast {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+.lcars-detail-mode__copy-toast--ok {
+  color: var(--lcars-ice);
+}
+.lcars-detail-mode__copy-toast--err {
+  color: var(--lcars-peach);
+}
+
+/* --- Prose / data-dense weight bump ---
+   Antonio at its default 500 weight reads thin at 11-14 px on dark
+   backgrounds. Bumping prose and data-cell selectors to 600 weight
+   keeps the LCARS display-face identity while giving the strokes more
+   visual density. Uppercase labels at the same sizes stay at their
+   existing weights (700) because they're already bold enough.
+   Transcript body stays monospace (Courier) — code-shaped content. */
+.lcars-dup-cluster__sample,
+.lcars-dup-cluster__member-link,
+.lcars-local-analyzer-empty__preview,
+.lcars-local-analyzer-empty__cta,
+.lcars-constellation-section__hint,
+.lcars-cost-section__summary,
+.lcars-cost-section__filter-hint,
+.lcars-cost-section__empty,
+.lcars-cost-table td,
+.lcars-zombie-card__footer,
+.lcars-zombie-card__stat-value,
+.lcars-kpi__value,
+.lcars-kpi__coverage {
+  font-weight: 600;
+}

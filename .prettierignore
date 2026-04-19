@@ -1,0 +1,13 @@
+node_modules
+dist
+.astro
+coverage
+apps/standalone/public/chat-arch-data
+packages/viewer/demo/public/chat-arch-data
+pnpm-lock.yaml
+.claude
+LICENSE
+
+# Intentionally-malformed test fixtures — exercising the parser's
+# error-handling path; prettier choking on them is the wrong outcome.
+packages/exporter/test/fixtures/appdata-fixture/

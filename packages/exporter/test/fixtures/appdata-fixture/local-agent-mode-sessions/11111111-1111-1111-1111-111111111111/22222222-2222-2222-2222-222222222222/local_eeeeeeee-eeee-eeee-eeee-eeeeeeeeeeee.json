@@ -1,0 +1,23 @@
+{
+  "sessionId": "local_eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+  "processName": "scheduled-proc",
+  "cliSessionId": "eeeeeeee-ffff-ffff-ffff-eeeeeeeeeeee",
+  "cwd": "/sessions/scheduled-proc",
+  "userSelectedFolders": ["<redacted>"],
+  "createdAt": 1745000000000,
+  "lastActivityAt": 1745000000000,
+  "model": "claude-opus-4-7",
+  "isArchived": false,
+  "title": "<redacted scheduled run>",
+  "vmProcessName": "scheduled-proc-alt",
+  "initialMessage": "<scheduled-task>\n  <id>task-123</id>\n  <name>daily metrics sync</name>\n  <instructions>Fetch yesterday's metrics, compute deltas, post a brief summary. This payload is intentionally long to exceed the 200-char preview truncation ceiling so we can verify the preview helper respects it.</instructions>\n</scheduled-task>",
+  "slashCommands": [],
+  "enabledMcpTools": {},
+  "remoteMcpServersConfig": [],
+  "egressAllowedDomains": ["example.test"],
+  "systemPrompt": "<redacted>",
+  "accountName": "<redacted>",
+  "emailAddress": "<redacted>",
+  "scheduledTaskId": "task-123",
+  "sessionType": "scheduled"
+}

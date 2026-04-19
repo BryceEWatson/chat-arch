@@ -1,0 +1,18 @@
+{
+  "sessionId": "local_c2222222-2222-2222-2222-222222222222",
+  "cliSessionId": "d2222222-3333-3333-3333-222222222222",
+  "cwd": "C:\\Users\\<redacted>\\Projects\\other",
+  "originCwd": "C:\\Users\\<redacted>\\Projects\\other",
+  "createdAt": 1745110000000,
+  "lastActivityAt": 1745110900000,
+  "model": "claude-opus-4-7[1m]",
+  "effort": "high",
+  "isArchived": false,
+  "title": "<redacted cli session two>",
+  "titleSource": "auto",
+  "permissionMode": "bypassPermissions",
+  "chromePermissionMode": "skip_all_permission_checks",
+  "enabledMcpTools": {},
+  "remoteMcpServersConfig": [],
+  "newForwardCompatKey": "<redacted>"
+}

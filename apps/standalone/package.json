@@ -1,0 +1,30 @@
+{
+  "name": "@chat-arch/standalone",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/seed-demo-data.mjs && astro dev",
+    "build": "node scripts/seed-demo-data.mjs && astro check && astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "lint": "eslint src",
+    "test": "echo \"(no standalone tests)\" && exit 0",
+    "seed-demo": "node scripts/seed-demo-data.mjs"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.0",
+    "@astrojs/node": "^9.5.5",
+    "@astrojs/react": "^4.2.0",
+    "@chat-arch/schema": "workspace:*",
+    "@chat-arch/viewer": "workspace:*",
+    "astro": "^5.18.1",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
+  }
+}

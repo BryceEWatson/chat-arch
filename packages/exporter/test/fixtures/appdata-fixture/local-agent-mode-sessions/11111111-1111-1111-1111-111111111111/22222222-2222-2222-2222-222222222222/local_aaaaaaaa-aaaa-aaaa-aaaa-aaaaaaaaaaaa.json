@@ -1,0 +1,20 @@
+{
+  "sessionId": "local_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "processName": "old-proc-name",
+  "cwd": "/sessions/old-proc-name",
+  "userSelectedFolders": ["<redacted>"],
+  "createdAt": 1739289600000,
+  "lastActivityAt": 1739289660000,
+  "model": "claude-opus-4-5",
+  "isArchived": false,
+  "title": "<redacted old session>",
+  "vmProcessName": "old-proc-name",
+  "initialMessage": "<redacted first message>",
+  "enabledMcpTools": {},
+  "remoteMcpServersConfig": [],
+  "egressAllowedDomains": ["example.test"],
+  "systemPrompt": "<redacted>",
+  "accountName": "<redacted>",
+  "emailAddress": "<redacted>",
+  "error": "session failed to start (fixture)"
+}

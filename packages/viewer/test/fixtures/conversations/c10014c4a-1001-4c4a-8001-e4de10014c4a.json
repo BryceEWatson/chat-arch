@@ -1,0 +1,49 @@
+{
+  "uuid": "c10014c4a-1001-4c4a-8001-e4de10014c4a",
+  "name": "Review attached schema document",
+  "summary": "User attached a schema draft and asked for review; identified three invariants worth codifying at the type level.",
+  "created_at": "2025-11-12T14:02:00.000Z",
+  "updated_at": "2025-11-12T14:41:00.000Z",
+  "account": { "uuid": "00000000-0000-0000-0000-000000000001" },
+  "chat_messages": [
+    {
+      "uuid": "m-2001",
+      "parent_message_uuid": "",
+      "sender": "human",
+      "text": "Please review the attached schema. Focus on round-trip stability.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Please review the attached schema. Focus on round-trip stability."
+        }
+      ],
+      "created_at": "2025-11-12T14:02:00.000Z",
+      "updated_at": "2025-11-12T14:02:00.000Z",
+      "attachments": [
+        {
+          "file_name": "schema-draft.md",
+          "file_size": 2048,
+          "file_type": "text/markdown",
+          "extracted_content": "# Schema draft\n\nThis is placeholder content describing a draft schema for review purposes only."
+        }
+      ],
+      "files": []
+    },
+    {
+      "uuid": "m-2002",
+      "parent_message_uuid": "m-2001",
+      "sender": "assistant",
+      "text": "Three observations on the draft: keep optional-vs-nullable distinct; version the schema; make counts readonly.",
+      "content": [
+        {
+          "type": "text",
+          "text": "Three observations on the draft: keep optional-vs-nullable distinct; version the schema; make counts readonly."
+        }
+      ],
+      "created_at": "2025-11-12T14:05:00.000Z",
+      "updated_at": "2025-11-12T14:05:00.000Z",
+      "attachments": [],
+      "files": []
+    }
+  ]
+}

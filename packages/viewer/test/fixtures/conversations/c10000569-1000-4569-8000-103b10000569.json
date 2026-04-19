@@ -1,0 +1,66 @@
+{
+  "uuid": "c10000569-1000-4569-8000-103b10000569",
+  "name": "Refactor archive-scan worker-pool limiter",
+  "summary": "Walked through a worker-pool design that bounds parallelism while keeping the pipeline responsive.",
+  "created_at": "2026-02-03T09:14:00.000Z",
+  "updated_at": "2026-02-03T09:47:00.000Z",
+  "account": { "uuid": "00000000-0000-0000-0000-000000000001" },
+  "chat_messages": [
+    {
+      "uuid": "m-1001",
+      "parent_message_uuid": "",
+      "sender": "human",
+      "text": "I want to refactor the archive-scan worker pool so it never exceeds N concurrent extractions. Where should the limiter live?",
+      "content": [
+        {
+          "type": "text",
+          "text": "I want to refactor the archive-scan worker pool so it never exceeds N concurrent extractions. Where should the limiter live?"
+        }
+      ],
+      "created_at": "2026-02-03T09:14:00.000Z",
+      "updated_at": "2026-02-03T09:14:00.000Z",
+      "attachments": [],
+      "files": []
+    },
+    {
+      "uuid": "m-1002",
+      "parent_message_uuid": "m-1001",
+      "sender": "assistant",
+      "text": "Let me think about this and look at the current code.",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The user wants a concurrency limiter. The cleanest place is at the queue-consumer boundary so the rest of the pipeline stays unaware."
+        },
+        {
+          "type": "text",
+          "text": "Best to push the limiter to the queue-consumer boundary. Let me grep for the existing queue class."
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_01",
+          "name": "Grep",
+          "input": { "pattern": "class\\s+ArchiveQueue", "output_mode": "files_with_matches" }
+        },
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01",
+          "content": [
+            {
+              "type": "text",
+              "text": "src/queue/archive-queue.ts\nsrc/queue/__tests__/archive-queue.test.ts"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Found it. I recommend wrapping the consumer loop in a semaphore keyed on extraction slots."
+        }
+      ],
+      "created_at": "2026-02-03T09:15:00.000Z",
+      "updated_at": "2026-02-03T09:15:00.000Z",
+      "attachments": [],
+      "files": []
+    }
+  ]
+}

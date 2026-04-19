@@ -1,0 +1,21 @@
+{
+  "sessionId": "local_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "processName": "mid-proc-name",
+  "cliSessionId": "bbbbbbbb-cccc-cccc-cccc-bbbbbbbbbbbb",
+  "cwd": "/sessions/mid-proc-name",
+  "userSelectedFolders": ["<redacted>"],
+  "createdAt": 1741020000000,
+  "lastActivityAt": 1741020216000,
+  "model": "claude-opus-4-6",
+  "isArchived": false,
+  "title": "<redacted mid session>",
+  "vmProcessName": "mid-proc-name",
+  "initialMessage": "<redacted initial message>",
+  "slashCommands": ["init", "status"],
+  "enabledMcpTools": {},
+  "remoteMcpServersConfig": [],
+  "egressAllowedDomains": ["example.test"],
+  "systemPrompt": "<redacted>",
+  "accountName": "<redacted>",
+  "emailAddress": "<redacted>"
+}

@@ -1,0 +1,17 @@
+{
+  "sessionId": "local_c1111111-1111-1111-1111-111111111111",
+  "cliSessionId": "d1111111-2222-2222-2222-111111111111",
+  "cwd": "C:\\Users\\<redacted>\\Projects\\chat-arch",
+  "originCwd": "C:\\Users\\<redacted>\\Projects\\chat-arch",
+  "createdAt": 1745100000000,
+  "lastActivityAt": 1745100600000,
+  "model": "claude-opus-4-7[1m]",
+  "effort": "xhigh",
+  "isArchived": false,
+  "title": "<redacted cli session one>",
+  "titleSource": "auto",
+  "permissionMode": "bypassPermissions",
+  "chromePermissionMode": "skip_all_permission_checks",
+  "enabledMcpTools": {},
+  "remoteMcpServersConfig": []
+}

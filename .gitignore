@@ -1,0 +1,33 @@
+node_modules/
+dist/
+.astro/
+.turbo/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+out/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Claude Code per-developer state — entire .claude/ tree
+.claude/
+
+# Exporter output for local dev — data is on user's machine, not in repo
+apps/standalone/public/chat-arch-data/*
+# Keep empty chat-arch-data dir on fresh clones.
+!apps/standalone/public/chat-arch-data/.gitkeep
+
+# Internal scratch spaces — never ship
+_audit/
+_planning/
+_research/
+design_handoff_chat_archaeologist/
+*.zip
+_claude-cloud-export*

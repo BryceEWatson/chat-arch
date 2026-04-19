@@ -1,0 +1,4 @@
+{"type":"ai-title","aiTitle":"Wire up sparkline in viewer top panel","sessionId":"k105076c1-1050-46c1-8050-6443105076c1"}
+{"type":"user","sessionId":"k105076c1-1050-46c1-8050-6443105076c1","timestamp":"2026-04-01T09:00:00.000Z","cwd":"C:/Users/example/Projects/snake_case_proj","message":{"role":"user","content":"The sparkline should bucket by week. Start from earliest updatedAt."}}
+{"type":"assistant","sessionId":"k105076c1-1050-46c1-8050-6443105076c1","timestamp":"2026-04-01T09:00:10.000Z","message":{"role":"assistant","model":"claude-opus-4-7[1m]","content":[{"type":"text","text":"Agreed. I will use a stable Sunday-aligned bucket origin so the axis does not jitter on filter changes."}]}}
+{"type":"attachment","sessionId":"k105076c1-1050-46c1-8050-6443105076c1","timestamp":"2026-04-01T09:00:22.000Z","attachment":{"file_name":"wireframe.png","file_size":45678,"file_type":"image/png"}}

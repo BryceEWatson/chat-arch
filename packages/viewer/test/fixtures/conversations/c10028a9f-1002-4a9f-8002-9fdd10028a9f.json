@@ -1,0 +1,37 @@
+{
+  "uuid": "c10028a9f-1002-4a9f-8002-9fdd10028a9f",
+  "name": "Plain conversation sample",
+  "summary": "",
+  "created_at": "2025-08-20T11:30:00.000Z",
+  "updated_at": "2025-08-20T11:35:00.000Z",
+  "account": { "uuid": "00000000-0000-0000-0000-000000000001" },
+  "chat_messages": [
+    {
+      "uuid": "m-3001",
+      "parent_message_uuid": "",
+      "sender": "human",
+      "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. What is the capital of France?",
+      "content": [
+        {
+          "type": "text",
+          "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. What is the capital of France?"
+        }
+      ],
+      "created_at": "2025-08-20T11:30:00.000Z",
+      "updated_at": "2025-08-20T11:30:00.000Z",
+      "attachments": [],
+      "files": []
+    },
+    {
+      "uuid": "m-3002",
+      "parent_message_uuid": "m-3001",
+      "sender": "assistant",
+      "text": "Paris.",
+      "content": [{ "type": "text", "text": "Paris." }],
+      "created_at": "2025-08-20T11:30:30.000Z",
+      "updated_at": "2025-08-20T11:30:30.000Z",
+      "attachments": [],
+      "files": []
+    }
+  ]
+}

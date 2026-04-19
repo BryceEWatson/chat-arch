@@ -1,0 +1,23 @@
+# Normalize line endings to LF in the index. Working-tree checkouts
+# preserve native EOLs on each platform — but the canonical stored
+# form is LF, which keeps prettier happy and prevents CRLF noise in
+# diffs when contributors are on different operating systems.
+* text=auto eol=lf
+
+# Binary files: never normalize.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+
+# Lockfile: leave alone — the package manager owns its format.
+pnpm-lock.yaml -text
