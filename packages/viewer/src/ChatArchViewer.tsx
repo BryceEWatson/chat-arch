@@ -16,6 +16,7 @@ import { MidBar } from './components/MidBar.js';
 import { EmptyState } from './components/EmptyState.js';
 import { ErrorState } from './components/ErrorState.js';
 import { UploadPanel } from './components/UploadPanel.js';
+import { NuclearReset } from './components/NuclearReset.js';
 import { FilterBar } from './components/FilterBar.js';
 import { TierIndicator } from './components/TierIndicator.js';
 import {
@@ -711,6 +712,7 @@ export function ChatArchViewer({
         <div className="lcars-frame">
           <div className="lcars-loading">LOADING MANIFEST…</div>
         </div>
+        <NuclearReset available={rescanCtl.available} onUnload={onUnload} />
       </div>
     );
   }
@@ -746,6 +748,7 @@ export function ChatArchViewer({
             <UploadPanel onLoaded={onUpload} variant="prominent" />
           </main>
         </div>
+        <NuclearReset available={rescanCtl.available} onUnload={onUnload} />
       </div>
     );
   }
@@ -996,6 +999,7 @@ export function ChatArchViewer({
           </div>
         </div>
       </div>
+      <NuclearReset available={rescanCtl.available} onUnload={onUnload} />
     </div>
   );
 }
