@@ -129,15 +129,15 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
         className="lcars-nuclear-chip"
         role="button"
         tabIndex={0}
-        aria-label="open nuclear reset dialog"
+        aria-label="Nuclear reset — wipe all chat-arch local data (manifest, transcripts, saved preferences, uploaded ZIP). Does not touch your Claude transcripts on disk."
         aria-haspopup="dialog"
+        title="Nuclear reset — wipe all chat-arch local data"
         onClick={() => setOpen(true)}
         onKeyDown={(e) => onActivate(e, () => setOpen(true))}
       >
         <span className="lcars-nuclear-chip__icon" aria-hidden="true">
           ⚠
         </span>
-        <span className="lcars-nuclear-chip__label">RESET</span>
       </div>
       {open && (
         <div

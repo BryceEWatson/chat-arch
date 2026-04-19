@@ -3556,46 +3556,48 @@
 }
 
 /* --- nuclear reset affordance ---
-   Bottom-left corner chip that opens the destructive "wipe everything"
-   dialog. Deliberately muted in the idle state — discoverable but not
-   distracting. The peach hazard palette only shows on hover / focus so
-   the "this is dangerous" cue arrives at the moment of interaction. */
+   Icon-only hazard dot tucked into the bottom-right corner, as far
+   from the SCAN LOCAL / UPLOAD CLOUD primary actions (top-left) as
+   the viewport allows. Deliberately tiny and muted — this is the
+   emergency exit, not a primary action. Hover / focus brightens to
+   the full peach hazard palette, and the tooltip + aria-label spell
+   out exactly what "reset" means so a user inspecting the dot never
+   has to guess before clicking. */
 .lcars-nuclear-chip {
   position: fixed;
-  left: 12px;
-  bottom: 12px;
+  right: 10px;
+  bottom: 10px;
   z-index: 40;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 14px;
-  background: rgba(0, 0, 0, 0.6);
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
   border: 1px dashed rgba(255, 180, 120, 0.35);
-  color: rgba(255, 180, 120, 0.6);
-  font-family: var(--lcars-font-chrome);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  font-weight: 700;
+  color: rgba(255, 180, 120, 0.55);
   cursor: pointer;
   user-select: none;
+  opacity: 0.7;
   transition:
     color 120ms,
     border-color 120ms,
-    background 120ms;
+    background 120ms,
+    opacity 120ms,
+    transform 120ms;
 }
 .lcars-nuclear-chip:hover,
 .lcars-nuclear-chip:focus-visible {
   outline: none;
   color: var(--lcars-peach);
   border-color: var(--lcars-peach);
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.9);
+  opacity: 1;
+  transform: scale(1.1);
 }
 .lcars-nuclear-chip__icon {
-  font-size: 11px;
-  line-height: 1;
-}
-.lcars-nuclear-chip__label {
+  font-size: 12px;
   line-height: 1;
 }
 .lcars-nuclear-backdrop {
