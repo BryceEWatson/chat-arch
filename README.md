@@ -37,14 +37,17 @@ pnpm dev
 ```
 
 Open http://localhost:4321. You'll see a populated viewer immediately —
-the first run auto-seeds a synthetic demo corpus so you can poke around.
-A `DEMO DATA` banner at the top reminds you it's fictional. Click the
-RESCAN button (top bar, left) to walk your real Claude data directories
-and replace the demo with your own transcripts.
+the first run auto-seeds a **synthetic demo corpus** so nothing ever renders
+empty. A `DEMO DATA` chip marks it as fictional. The demo is only useful for
+getting a feel for the interface; jump to **[Getting your own data](#getting-your-own-data)**
+below to wire up a real corpus.
 
-For cloud (claude.ai web) data, click the **Upload Cloud** button and
-pick a Privacy-Export ZIP. Uploading the same ZIP twice is harmless —
-duplicates merge by conversation id.
+> **No Claude Code or Anthropic account required to _run_ chat-arch.** The
+> tool is a plain Node app — it just reads Claude transcripts that already
+> exist on your disk or in a Privacy-Export ZIP you download from claude.ai.
+> No API calls, no login, no telemetry. If you've never used any Claude
+> product, chat-arch has nothing to show you beyond the demo; see
+> [Not a Claude user (yet)](#not-a-claude-user-yet) at the bottom.
 
 ### Requirements
 
@@ -57,18 +60,70 @@ The repo uses pnpm workspaces with `strict-peer-dependencies=true`. If
 `pnpm install` complains about peer-dep mismatches, that's a real issue
 worth understanding rather than overriding.
 
-## What it ingests
+## Getting your own data
 
-| Source            | Where it lives on disk                                   |
-| ----------------- | -------------------------------------------------------- |
-| Claude Code (CLI) | `~/.claude/projects/<project>/<session>.jsonl`           |
-| Claude Cowork     | `%APPDATA%\Claude\local-agent-mode-sessions\…\*.jsonl`   |
-| Claude Desktop    | `%APPDATA%\Claude\local-agent-mode-sessions\…\*.jsonl`   |
-| Privacy Export    | The ZIP from **Settings → Privacy → Export data** on web |
+chat-arch reads four kinds of Claude transcript, each written to disk by a
+different product. Which path applies depends on how you use Claude.
 
-Real local-data paths are scanned by `packages/exporter` (CLI; also exposed
-via the in-app **RESCAN** button). The Privacy-Export ZIP is parsed entirely
+### Claude Code (CLI) — on disk, one click
+
+If you've run `claude` in a terminal at any point, your transcripts are
+already in `~/.claude/projects/<project>/<session>.jsonl`.
+
+1. In the top bar of the viewer, click **SCAN LOCAL**.
+2. Wait a few seconds (a thousand sessions takes ~5s on a modern SSD).
+3. The demo banner and demo data vanish. You're looking at your own corpus.
+
+Same for **Claude Desktop** and **Claude Cowork** — they write to
+`%APPDATA%\Claude\local-agent-mode-sessions\` on Windows (and equivalent
+paths on macOS / Linux). **SCAN LOCAL** walks all of them in one pass.
+
+### claude.ai (web) — Privacy-Export ZIP
+
+The web app doesn't sync anything to your local disk, so you have to ask
+Anthropic to dump your data. It's a one-click operation that returns an
+email with a download link, usually within a few minutes.
+
+1. Go to https://claude.ai and sign in.
+2. Click your avatar (bottom-left) → **Settings**.
+3. Open the **Privacy** tab → click **Export data**.
+4. Wait for the confirmation email. The ZIP is typically under 50 MB even
+   for heavy users.
+5. Back in chat-arch, click **UPLOAD CLOUD** in the top bar and pick the
+   ZIP you just downloaded.
+
+The same ZIP can be re-uploaded any time — chat-arch deduplicates by
+conversation id, so re-exporting monthly to pull in new conversations is
+the expected workflow.
+
+### What it ingests (reference)
+
+| Source            | Where it lives on disk                                                 |
+| ----------------- | ---------------------------------------------------------------------- |
+| Claude Code (CLI) | `~/.claude/projects/<project>/<session>.jsonl`                         |
+| Claude Cowork     | `%APPDATA%\Claude\local-agent-mode-sessions\…\*.jsonl`                 |
+| Claude Desktop    | `%APPDATA%\Claude\local-agent-mode-sessions\…\*.jsonl`                 |
+| Privacy Export    | The ZIP from **claude.ai → avatar → Settings → Privacy → Export data** |
+
+Local paths are scanned by `packages/exporter` (CLI; also exposed via the
+in-app **SCAN LOCAL** button). The Privacy-Export ZIP is parsed entirely
 in the browser by the viewer.
+
+### Not a Claude user (yet)?
+
+chat-arch is Claude-specific by design — it knows the exact JSONL and JSON
+shapes that Anthropic's products write, and converts them to one unified
+schema.
+
+If you primarily use another assistant, the comparison table below lists
+adjacent tooling; `1ch1n/mychatarchive` is the closest multi-provider
+analogue. If you want to try Claude:
+
+- **Claude Code (CLI)** — https://www.anthropic.com/claude-code
+- **claude.ai (web)** — https://claude.ai
+
+Once you've used either, come back and follow
+[Getting your own data](#getting-your-own-data) above.
 
 ## How chat-arch compares
 

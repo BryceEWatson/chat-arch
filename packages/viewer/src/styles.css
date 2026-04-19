@@ -631,8 +631,18 @@
   bottom: 12px;
   right: 12px;
   transform: none;
-  max-width: 420px;
+  max-width: 460px;
   animation: lcars-rescan-banner-demo-in 200ms ease-out;
+}
+.lcars-rescan-banner__link {
+  color: var(--lcars-butterscotch);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.lcars-rescan-banner__link:hover,
+.lcars-rescan-banner__link:focus-visible {
+  color: var(--lcars-sunflower);
+  outline: none;
 }
 @keyframes lcars-rescan-banner-demo-in {
   from {

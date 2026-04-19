@@ -742,9 +742,17 @@ export function ChatArchViewer({
         >
           <span className="lcars-rescan-banner__tag">DEMO DATA</span>
           <span className="lcars-rescan-banner__message">
-            Showing fictional fixture data. Run the exporter (
-            <code>pnpm --filter @chat-arch/exporter start</code>) or upload a cloud ZIP to see your
-            own conversations.
+            This is a fictional corpus so the viewer doesn&apos;t render empty. To see your own
+            Claude transcripts: click <strong>SCAN LOCAL</strong> (top bar) for Claude Code /
+            Desktop / Cowork, or <strong>UPLOAD CLOUD</strong> for a claude.ai Privacy-Export ZIP.{' '}
+            <a
+              href="https://github.com/BryceEWatson/chat-arch#getting-your-own-data"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="lcars-rescan-banner__link"
+            >
+              Step-by-step →
+            </a>
           </span>
           <button
             type="button"
