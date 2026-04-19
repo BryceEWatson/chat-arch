@@ -683,12 +683,33 @@ export function ChatArchViewer({
   if (!uploadedData && manifestState.status === 'error') {
     return (
       <div className="lcars-root" data-tier={tier}>
-        <div className="lcars-empty-frame">
-          <ErrorState
-            title="NO DATA YET"
-            detail={`Restart the dev server with pnpm dev to seed a sample corpus, drop a claude.ai Privacy-Export ZIP below, or see the README for the full walkthrough. (fetch: ${manifestState.message})`}
+        <div className="lcars-frame lcars-frame--empty">
+          <TopBar
+            query=""
+            onQueryChange={() => {}}
+            tier={tier}
+            disabled
+            // SCAN LOCAL + UPLOAD CLOUD remain the primary actions out of
+            // this state, so the top bar stays visible with both buttons
+            // wired to the same handlers as the populated flow.
+            onRescan={onRescan}
+            rescanStatus={rescanCtl.status}
+            rescanProgress={rescanCtl.progress}
+            scanAvailable={rescanCtl.available}
+            hasLocalData={false}
+            {...(rescanToast ? { rescanHint: rescanToast } : {})}
+            onCloudUpload={onCloudUpload}
+            uploadStatus={uploadStatus}
+            hasCloudData={false}
+            {...(uploadHint ? { uploadHint } : {})}
           />
-          <UploadPanel onLoaded={onUpload} variant="prominent" />
+          <main className="lcars-empty-main">
+            <ErrorState
+              title="NO DATA YET"
+              detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Restart the dev server with pnpm dev to seed a sample corpus instead. See the README for the full walkthrough. (fetch: ${manifestState.message})`}
+            />
+            <UploadPanel onLoaded={onUpload} variant="prominent" />
+          </main>
         </div>
       </div>
     );

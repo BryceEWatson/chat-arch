@@ -134,23 +134,38 @@
   gap: 6px;
   min-height: calc(100vh - 16px);
 }
-/* Empty / error state deliberately opts out of the sidebar+content grid so
-   the "NO DATA YET" block and the upload card stack and center naturally
-   at every breakpoint. Without this, the first child lands in the 160px
-   sidebar column at desktop width and gets squeezed into an unreadable
-   strip. */
-.lcars-empty-frame {
+/* Empty-state frame: keep the TopBar visible (SCAN LOCAL + UPLOAD CLOUD are
+   the primary actions out of this state) but collapse the sidebar column so
+   the "NO DATA YET" message and upload card get the full viewport width.
+   At desktop the populated `.lcars-frame` is `160px 1fr`; --empty overrides
+   to a single column so TopBar spans full width and nothing lands in the
+   would-be sidebar slot. */
+/* Double-class selector for specificity: the base `.lcars-frame` rule
+   under @media (min-width: 900px) sets `160px 1fr` and, being defined
+   later in the stylesheet, would win at same single-class specificity. */
+.lcars-frame.lcars-frame--empty {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+}
+@media (min-width: 900px) {
+  .lcars-frame.lcars-frame--empty {
+    grid-template-columns: 1fr;
+    grid-template-rows: 40px 1fr;
+  }
+  .lcars-frame.lcars-frame--empty .lcars-top-bar {
+    grid-column: 1 / -1;
+    grid-row: 1 / 2;
+  }
+}
+.lcars-empty-main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
   gap: 24px;
   padding: 48px 16px;
-  min-height: calc(100vh - 16px);
-  max-width: 720px;
-  margin: 0 auto;
+  min-height: 0;
 }
-.lcars-empty-frame > * {
+.lcars-empty-main > * {
   width: 100%;
   max-width: 640px;
 }
@@ -255,8 +270,11 @@
 .lcars-top-bar__left {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  flex: 0 0 auto;
+  row-gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .lcars-top-bar__dot {
   display: inline-block;
@@ -345,6 +363,10 @@
   height: 28px;
   padding: 0 12px;
   border-radius: 14px;
+  /* At desktop the top-bar is butterscotch; the dark chip + dark text
+     reads as a classic LCARS pill. Below 900px the top-bar bg flips to
+     black (mobile tier), so the mobile override below inverts the chip
+     chrome to stay legible. */
   background: rgba(0, 0, 0, 0.25);
   border: 1.5px solid rgba(0, 0, 0, 0.5);
   color: var(--lcars-bg);
@@ -372,6 +394,21 @@
   background: var(--lcars-bg);
   color: var(--lcars-sunflower);
   outline: none;
+}
+/* Mobile / tablet override: the top-bar bg is black below 900px, so the
+   desktop chip (dark text on dark chip) reads as invisible. Flip to
+   butterscotch-on-dark so SCAN LOCAL and UPLOAD CLOUD stay legible. */
+@media (max-width: 899px) {
+  .lcars-top-bar__source-btn {
+    background: rgba(255, 204, 153, 0.12);
+    border-color: var(--lcars-butterscotch);
+    color: var(--lcars-butterscotch);
+  }
+  .lcars-top-bar__source-btn:hover,
+  .lcars-top-bar__source-btn:focus-visible {
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+  }
 }
 .lcars-top-bar__source-btn-label {
   white-space: nowrap;
