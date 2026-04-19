@@ -2302,6 +2302,27 @@
   background: #cc99cc;
   color: var(--lcars-bg);
 }
+/* Coming-soon chip for the not-yet-shipped local-analyzer tier. Rendered
+   alongside the browser pill so users see the shape of what's planned
+   without the UI promising an unlockable today. Dashed border + muted
+   palette signal "not a real action surface" while remaining legible. */
+.lcars-tier-indicator--pending {
+  background: transparent;
+  color: #9c8877;
+  border: 1px dashed #665544;
+  cursor: help;
+  opacity: 0.85;
+  animation: none;
+  letter-spacing: 0.1em;
+}
+.lcars-tier-indicator--pending:hover,
+.lcars-tier-indicator--pending:focus-visible {
+  /* Override the default indicator hover — keep it quiet, it's disabled. */
+  filter: none;
+  box-shadow: 0 0 0 1px #665544;
+  opacity: 1;
+  color: var(--lcars-sunflower);
+}
 .lcars-tier-indicator:hover,
 .lcars-tier-indicator:focus-visible {
   outline: none;

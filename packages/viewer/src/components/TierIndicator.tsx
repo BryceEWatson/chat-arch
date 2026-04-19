@@ -57,6 +57,24 @@ export function TierIndicator({ tierStatus, tierPresentCount, tierFiles }: TierI
       >
         {label}
       </div>
+      {tierStatus === 'browser' && (
+        // Sibling chip advertising the not-yet-shipped local-analyzer tier.
+        // Rendered as a button for discoverability (click opens the same
+        // TierSheet that explains what the 6 reserved files will do), but
+        // aria-disabled so assistive tech announces it as inactive.
+        <div
+          className="lcars-tier-indicator lcars-tier-indicator--pending"
+          role="button"
+          tabIndex={0}
+          aria-haspopup="dialog"
+          aria-disabled="true"
+          aria-label="Extended analysis — coming soon. Click to see what's planned."
+          onClick={() => setOpen(true)}
+          onKeyDown={(e) => onActivate(e, () => setOpen(true))}
+        >
+          EXTENDED · COMING SOON
+        </div>
+      )}
       {open ? (
         <TierSheet
           tierStatus={tierStatus}
