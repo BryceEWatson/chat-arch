@@ -53,7 +53,7 @@ describe('ChatArchViewer manifest ingestion (R12 F12.1)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  it('routes a bare-array manifest (`[]`) to the TRANSMISSION ERROR state, not a blank page', async () => {
+  it('routes a bare-array manifest (`[]`) to the NO DATA YET state, not a blank page', async () => {
     globalThis.fetch = vi.fn(
       async () =>
         ({
@@ -63,8 +63,9 @@ describe('ChatArchViewer manifest ingestion (R12 F12.1)', () => {
         }) as unknown as Response,
     );
     render(<ChatArchViewer manifestUrl="/bad.json" />);
-    await waitFor(() => expect(screen.getByText(/TRANSMISSION ERROR/i)).toBeDefined());
-    expect(screen.getByText(/sessions/i)).toBeDefined();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /NO DATA YET/i })).toBeDefined(),
+    );
   });
 
   it('renders UC-8 NO SESSIONS for a well-formed empty manifest', () => {

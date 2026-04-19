@@ -129,12 +129,20 @@ describe('ChatArchViewer', () => {
     await waitFor(() => expect(screen.getByText('Apple pie recipe')).toBeDefined());
   });
 
-  it('shows ErrorState on fetch failure', async () => {
+  it('shows empty state on manifest fetch failure', async () => {
     globalThis.fetch = vi.fn(async () => ({ ok: false, status: 404 }) as unknown as Response);
     render(<ChatArchViewer manifestUrl="/missing.json" />);
-    await waitFor(() => expect(screen.getByText(/TRANSMISSION ERROR/i)).toBeDefined());
-    expect(screen.getByText(/No data yet/i)).toBeDefined();
+    // Title: "NO DATA YET" (was "TRANSMISSION ERROR" — renamed to be less
+    // alarmist for what is really just a "no data yet" onboarding state).
+    // Use heading role to disambiguate from the "No data yet." detail
+    // sentence below it.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /NO DATA YET/i })).toBeDefined(),
+    );
+    // Detail still surfaces the fetch error so a developer can diagnose.
     expect(screen.getByText(/HTTP 404/)).toBeDefined();
+    // Inline upload CTA is the actionable path out.
+    expect(screen.getByLabelText(/choose cloud export zip/i)).toBeDefined();
   });
 
   it('shows EmptyState when manifest has zero sessions', () => {

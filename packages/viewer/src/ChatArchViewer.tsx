@@ -15,6 +15,7 @@ import { UpperPanel } from './components/UpperPanel.js';
 import { MidBar } from './components/MidBar.js';
 import { EmptyState } from './components/EmptyState.js';
 import { ErrorState } from './components/ErrorState.js';
+import { UploadPanel } from './components/UploadPanel.js';
 import { FilterBar } from './components/FilterBar.js';
 import { TierIndicator } from './components/TierIndicator.js';
 import {
@@ -682,17 +683,12 @@ export function ChatArchViewer({
   if (!uploadedData && manifestState.status === 'error') {
     return (
       <div className="lcars-root" data-tier={tier}>
-        <div className="lcars-frame">
+        <div className="lcars-empty-frame">
           <ErrorState
-            detail={`Run pnpm --filter @chat-arch/exporter start to produce a manifest, or upload a cloud-export ZIP below. (fetch error: ${manifestState.message})`}
+            title="NO DATA YET"
+            detail={`Restart the dev server with pnpm dev to seed a sample corpus, drop a claude.ai Privacy-Export ZIP below, or see the README for the full walkthrough. (fetch: ${manifestState.message})`}
           />
-          <div className="lcars-error-state__upload">
-            <EmptyState
-              title="UPLOAD CLOUD EXPORT"
-              message="Drop a Settings → Privacy ZIP to browse conversations without the CLI."
-              onUpload={onUpload}
-            />
-          </div>
+          <UploadPanel onLoaded={onUpload} variant="prominent" />
         </div>
       </div>
     );

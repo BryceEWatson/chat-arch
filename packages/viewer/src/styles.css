@@ -134,6 +134,26 @@
   gap: 6px;
   min-height: calc(100vh - 16px);
 }
+/* Empty / error state deliberately opts out of the sidebar+content grid so
+   the "NO DATA YET" block and the upload card stack and center naturally
+   at every breakpoint. Without this, the first child lands in the 160px
+   sidebar column at desktop width and gets squeezed into an unreadable
+   strip. */
+.lcars-empty-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 24px;
+  padding: 48px 16px;
+  min-height: calc(100vh - 16px);
+  max-width: 720px;
+  margin: 0 auto;
+}
+.lcars-empty-frame > * {
+  width: 100%;
+  max-width: 640px;
+}
 .lcars-body {
   display: contents;
 }
