@@ -24,7 +24,7 @@ describe('TierSheet (AC14 / AC15)', () => {
     }
   });
 
-  it('shows absent marker + "not installed" for each absent file', () => {
+  it('shows absent marker + "coming soon" for each absent file', () => {
     render(
       <TierSheet
         tierStatus="browser"
@@ -33,8 +33,8 @@ describe('TierSheet (AC14 / AC15)', () => {
         onClose={() => {}}
       />,
     );
-    const notInstalled = screen.getAllByText('not installed');
-    expect(notInstalled.length).toBe(6);
+    const comingSoon = screen.getAllByText('coming soon');
+    expect(comingSoon.length).toBe(6);
   });
 
   it('shows ✓ + ISO date for present files with generatedAt', () => {
@@ -67,7 +67,7 @@ describe('TierSheet (AC14 / AC15)', () => {
     expect(screen.getAllByText('present').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('header copy reflects BROWSER state', () => {
+  it('header copy in BROWSER state names it as the active tier and flags extended as planned', () => {
     render(
       <TierSheet
         tierStatus="browser"
@@ -76,10 +76,11 @@ describe('TierSheet (AC14 / AC15)', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/BROWSER ANALYSIS — install the local analyzer/)).toBeDefined();
+    expect(screen.getByText(/BROWSER ANALYSIS/)).toBeDefined();
+    expect(screen.getByText(/not yet shipped/)).toBeDefined();
   });
 
-  it('header copy reflects BROWSER+LOCAL state with N/6 count', () => {
+  it('header copy in BROWSER+LOCAL state carries the N/6 count', () => {
     render(
       <TierSheet
         tierStatus="browser+local"
@@ -89,7 +90,7 @@ describe('TierSheet (AC14 / AC15)', () => {
       />,
     );
     expect(
-      screen.getByText(/BROWSER \+ LOCAL ANALYSIS — 3 of 6 local views available\./),
+      screen.getByText(/BROWSER \+ LOCAL ANALYSIS — 3 of 6 extended views generated\./),
     ).toBeDefined();
   });
 
