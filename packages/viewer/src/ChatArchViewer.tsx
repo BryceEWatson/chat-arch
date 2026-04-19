@@ -739,6 +739,7 @@ export function ChatArchViewer({
             {...(uploadHint ? { uploadHint } : {})}
             deleteAvailable={rescanCtl.available}
             onDeleteUnload={onUnload}
+            deleteCounts={{ cloud: 0, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 }}
           />
           <main className="lcars-empty-main">
             <ErrorState
@@ -873,6 +874,12 @@ export function ChatArchViewer({
           {...(uploadedData ? { onClearUpload: onUnload } : {})}
           deleteAvailable={rescanCtl.available}
           onDeleteUnload={onUnload}
+          deleteCounts={{
+            cloud: manifestCounts?.cloud ?? 0,
+            cowork: manifestCounts?.cowork ?? 0,
+            'cli-direct': manifestCounts?.['cli-direct'] ?? 0,
+            'cli-desktop': manifestCounts?.['cli-desktop'] ?? 0,
+          }}
         />
         <div className="lcars-body">
           <Sidebar

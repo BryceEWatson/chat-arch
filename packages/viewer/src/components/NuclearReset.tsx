@@ -1,117 +1,200 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * Destructive "wipe all local data" affordance. Renders inline in the
- * TopBar's left cluster as a native `<button>`, visually distinct
- * from the butterscotch SCAN LOCAL / UPLOAD CLOUD chips via the
- * peach destructive palette. Sits *adjacent* to the two data-source
- * buttons (intentionally — this is what undoes what they did) but is
- * strongly color-coded so a user reaching for UPDATE CLOUD cannot
- * confuse the two at a glance.
+ * Selective-delete affordance. The button sits in the TopBar's left
+ * cluster (visually distinct peach-destructive pill). Clicking opens
+ * an inline dropdown panel listing the four ingestion sources with
+ * live session counts — the user picks which to wipe and clicks
+ * DELETE SELECTED, which flips the footer into an "Are you sure?"
+ * armed state. A second deliberate click confirms.
  *
- * What confirmation does when the user commits:
- *   - POST `/api/clear` → wipe everything under
- *     `apps/standalone/public/chat-arch-data/` on disk (preserves
- *     `.gitkeep`).
- *   - Remove every `chat-arch:*` key in this browser's localStorage.
- *   - Call `onUnload` (host's existing handler) to drop any in-memory
- *     uploaded ZIP before reload.
- *   - Reload the page with a cache-buster.
+ * Why a dropdown instead of a modal: the dropdown doubles as the
+ * viewer's documentation of its own data sources. A user clicking the
+ * button out of curiosity learns *what* chat-arch ingests without
+ * having to read the README. Modals feel ceremonial for a "pick what
+ * to wipe" decision; dropdowns read as "adjusting settings in place".
  *
- * The gates: typed-`DELETE` confirmation (matches the button verb, not
- * a theatrical "NUKE"); the CONFIRM button stays disabled until the
- * word matches. Esc and backdrop-click dismiss (disabled while the
- * request is in flight so a mid-wipe click doesn't misread as cancel).
+ * Confirmation is two clicks (no typed word) because the source
+ * checkboxes already force a deliberate decision — adding typed
+ * confirmation on top felt bureaucratic for "delete my CLI data only".
  *
  * Auto-hides when `available === false` — static-build deploys
- * without the `/api/clear` endpoint get no surface for an endpoint
- * that isn't there.
+ * without `/api/clear` get no surface.
  */
 
 export interface NuclearResetProps {
   /** True when `/api/clear` is reachable. Controls button visibility. */
   available: boolean;
-  /** Host's unload handler — drops the in-memory uploaded ZIP before reload. */
+  /** Host's in-memory-ZIP unload handler. Called before the post-wipe
+   *  reload so a stale upload doesn't survive into the fresh state. */
   onUnload?: () => void;
+  /** Per-source session counts — the dropdown shows these next to
+   *  each checkbox so the user knows what they'd wipe. */
+  counts?: {
+    cloud: number;
+    cowork: number;
+    'cli-direct': number;
+    'cli-desktop': number;
+  };
 }
 
-const CONFIRM_WORD = 'DELETE';
+type SourceId = 'cli-direct' | 'cli-desktop' | 'cowork' | 'cloud';
+
+interface SourceRow {
+  id: SourceId;
+  label: string;
+  subtitle: string;
+  explain: string;
+}
+
+const SOURCES: readonly SourceRow[] = [
+  {
+    id: 'cli-direct',
+    label: 'Claude Code (CLI)',
+    subtitle: 'cli-direct',
+    explain: '~/.claude/projects/<project>/<session>.jsonl',
+  },
+  {
+    id: 'cli-desktop',
+    label: 'Claude Desktop',
+    subtitle: 'cli-desktop',
+    explain: '%APPDATA%\\Claude\\local-agent-mode-sessions\\…',
+  },
+  {
+    id: 'cowork',
+    label: 'Claude Cowork',
+    subtitle: 'cowork',
+    explain: '%APPDATA%\\Claude\\local-agent-mode-sessions\\…',
+  },
+  {
+    id: 'cloud',
+    label: 'claude.ai (cloud)',
+    subtitle: 'cloud + uploaded ZIP',
+    explain: 'From claude.ai Privacy Export, or drag-and-dropped ZIP',
+  },
+] as const;
+
 const LOCAL_STORAGE_PREFIX = 'chat-arch:';
 
-export function NuclearReset({ available, onUnload }: NuclearResetProps) {
-  const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState('');
-  const [status, setStatus] = useState<'idle' | 'running' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+type Phase = 'idle' | 'armed' | 'running' | 'error';
 
-  // Autofocus the typed-confirmation input when the dialog opens so the
-  // user can start typing immediately — prevents a "where do I type
-  // this?" moment.
+export function NuclearReset({ available, onUnload, counts }: NuclearResetProps) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<SourceId>>(new Set());
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const firstCheckboxRef = useRef<HTMLInputElement | null>(null);
+
+  // Reset dropdown state every time it opens — stale "armed" or error
+  // leftovers shouldn't persist across disclosures.
   useEffect(() => {
     if (open) {
-      setTyped('');
+      setSelected(new Set());
+      setPhase('idle');
       setErrorMsg(null);
-      setStatus('idle');
-      const t = window.setTimeout(() => inputRef.current?.focus(), 50);
+      const t = window.setTimeout(() => firstCheckboxRef.current?.focus(), 50);
       return () => window.clearTimeout(t);
     }
     return undefined;
   }, [open]);
 
-  // Esc-to-close matches the other dialog surfaces in the viewer.
+  // Click-outside to close (while idle). Don't dismiss while a
+  // request is in flight — that would look like a cancel.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocClick = (e: MouseEvent) => {
+      if (phase === 'running') return;
+      const root = containerRef.current;
+      if (!root) return;
+      if (e.target instanceof Node && !root.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open, phase]);
+
+  // Esc-to-close mirrors the other dialog-ish surfaces in the viewer.
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (status !== 'running') setOpen(false);
+        if (phase !== 'running') setOpen(false);
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, status]);
+  }, [open, phase]);
 
   if (!available) return null;
 
-  const canConfirm = typed === CONFIRM_WORD && status !== 'running';
+  const countOf = (id: SourceId): number => counts?.[id] ?? 0;
+  const totalSelectedSessions = Array.from(selected).reduce((a, id) => a + countOf(id), 0);
+  const allSelected = selected.size === SOURCES.length;
 
-  const confirm = async () => {
-    if (!canConfirm) return;
-    setStatus('running');
+  const toggleSource = (id: SourceId) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    if (phase === 'armed') setPhase('idle'); // re-arming required after edits
+  };
+
+  const toggleAll = () => {
+    setSelected(allSelected ? new Set() : new Set(SOURCES.map((s) => s.id)));
+    if (phase === 'armed') setPhase('idle');
+  };
+
+  const primaryClick = async () => {
+    if (selected.size === 0 || phase === 'running') return;
+    if (phase !== 'armed') {
+      setPhase('armed');
+      return;
+    }
+    // armed → commit
+    setPhase('running');
     setErrorMsg(null);
     try {
+      const sources = Array.from(selected);
       const res = await fetch('/api/clear', {
         method: 'POST',
-        headers: { 'x-requested-with': 'chat-arch-clear' },
+        headers: {
+          'x-requested-with': 'chat-arch-clear',
+          'content-type': 'application/json',
+        },
         credentials: 'same-origin',
+        body: JSON.stringify({ sources }),
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new Error(`HTTP ${res.status}${body ? ': ' + body.slice(0, 200) : ''}`);
       }
-      // Drop every `chat-arch:*` key before the reload. LocalStorage
-      // keys unrelated to this app stay untouched.
-      try {
-        const keys: string[] = [];
-        for (let i = 0; i < window.localStorage.length; i++) {
-          const k = window.localStorage.key(i);
-          if (k && k.startsWith(LOCAL_STORAGE_PREFIX)) keys.push(k);
+      // Wipe the uploaded ZIP when cloud is among the victims — that
+      // ZIP is the in-memory counterpart to the on-disk cloud data
+      // we just removed.
+      if (selected.has('cloud')) {
+        try {
+          onUnload?.();
+        } catch {
+          /* ignore */
         }
-        for (const k of keys) window.localStorage.removeItem(k);
-      } catch {
-        // LocalStorage may be unavailable (private mode, disabled). The
-        // disk wipe already happened, so a reload still lands the user
-        // on a fresh state — localStorage cleanup is best-effort.
       }
-      // Unload the in-memory uploaded ZIP, if any, before reload so
-      // nothing that snapshots React state during teardown persists a
-      // now-orphaned upload.
-      try {
-        onUnload?.();
-      } catch {
-        // Host's unload handler shouldn't throw, but if it does we
-        // still want the reload to happen.
+      // Wipe chat-arch:* localStorage only when every source is
+      // selected (kitchen-sink mode). A user wiping just CLI
+      // shouldn't lose their onboarding state.
+      if (allSelected) {
+        try {
+          const keys: string[] = [];
+          for (let i = 0; i < window.localStorage.length; i++) {
+            const k = window.localStorage.key(i);
+            if (k && k.startsWith(LOCAL_STORAGE_PREFIX)) keys.push(k);
+          }
+          for (const k of keys) window.localStorage.removeItem(k);
+        } catch {
+          /* ignore */
+        }
       }
       // Cache-bust the reload so the browser doesn't hand back a
       // cached manifest that references files we just deleted.
@@ -120,112 +203,121 @@ export function NuclearReset({ available, onUnload }: NuclearResetProps) {
       window.location.href = url.toString();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setStatus('error');
+      setPhase('error');
       setErrorMsg(msg);
     }
   };
 
+  const buttonLabel = (() => {
+    if (phase === 'running') return 'DELETING…';
+    if (phase === 'armed')
+      return allSelected ? 'YES — DELETE EVERYTHING' : `YES — DELETE ${totalSelectedSessions}`;
+    if (selected.size === 0) return 'DELETE SELECTED';
+    return allSelected ? 'DELETE EVERYTHING' : `DELETE SELECTED (${totalSelectedSessions})`;
+  })();
+
   return (
-    <>
-      <div className="lcars-top-bar__source-group lcars-top-bar__source-group--destructive">
+    <div className="lcars-top-bar__source-group lcars-top-bar__source-group--destructive">
+      <div className="lcars-delete-dropdown" ref={containerRef}>
         <button
           type="button"
           className="lcars-top-bar__source-btn lcars-top-bar__source-btn--destructive"
-          aria-haspopup="dialog"
-          aria-label="Delete all local data — opens a confirmation dialog"
-          title="Delete all chat-arch local data (indexed manifest, transcripts, uploaded ZIP, saved preferences). Does not touch ~/.claude/ or %APPDATA%\Claude\."
-          onClick={() => setOpen(true)}
+          aria-haspopup="true"
+          aria-expanded={open}
+          aria-label="Delete data — opens a panel to pick which sources to wipe"
+          title="Delete indexed data — pick which source(s) to wipe"
+          onClick={() => setOpen((v) => !v)}
         >
-          <span className="lcars-top-bar__source-btn-label">DELETE ALL</span>
+          <span className="lcars-top-bar__source-btn-label">DELETE…</span>
         </button>
-      </div>
-      {open && (
-        <div
-          className="lcars-nuclear-backdrop"
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && status !== 'running') setOpen(false);
-          }}
-        >
+        {open && (
           <div
-            className="lcars-nuclear-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="lcars-nuclear-title"
-            aria-describedby="lcars-nuclear-body"
+            className="lcars-delete-dropdown__panel"
+            role="dialog"
+            aria-label="Delete data — select sources"
           >
-            <header className="lcars-nuclear-dialog__header">
-              <h2 id="lcars-nuclear-title" className="lcars-nuclear-dialog__title">
-                Delete all local data
-              </h2>
+            <header className="lcars-delete-dropdown__header">
+              <h3 className="lcars-delete-dropdown__title">Delete indexed data</h3>
+              <p className="lcars-delete-dropdown__hint">
+                Pick which source(s) to wipe. Nothing in <code>~/.claude/</code> or{' '}
+                <code>%APPDATA%\Claude\</code> is touched.
+              </p>
             </header>
-            <div id="lcars-nuclear-body" className="lcars-nuclear-dialog__body">
-              <p className="lcars-nuclear-dialog__warning">
-                <strong>This cannot be undone.</strong> Confirming will:
-              </p>
-              <ul className="lcars-nuclear-dialog__list">
-                <li>
-                  Delete everything under <code>apps/standalone/public/chat-arch-data/</code> on
-                  disk — the indexed manifest, local transcripts, cloud conversations, and analysis
-                  files. The dev server will re-seed the demo corpus on the next{' '}
-                  <code>pnpm dev</code>.
-                </li>
-                <li>
-                  Clear every <code>chat-arch:*</code> key in this browser&apos;s localStorage — the
-                  demo banner dismissed flag, the first-run boot-seen flag, any future preferences.
-                </li>
-                <li>Unload the currently-uploaded ZIP from memory, if any.</li>
-                <li>Reload the page.</li>
-              </ul>
-              <p className="lcars-nuclear-dialog__warning">
-                Your actual Claude transcripts on disk (<code>~/.claude/</code>,{' '}
-                <code>%APPDATA%\Claude\</code>) are <strong>not</strong> touched. You can always
-                re-scan them with <strong>SCAN LOCAL</strong>.
-              </p>
-              <label className="lcars-nuclear-dialog__confirm-label">
-                Type <code>{CONFIRM_WORD}</code> to enable the confirm button:
-                <input
-                  ref={inputRef}
-                  type="text"
-                  className="lcars-nuclear-dialog__confirm-input"
-                  value={typed}
-                  onChange={(e) => setTyped(e.target.value.toUpperCase())}
-                  disabled={status === 'running'}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  aria-describedby="lcars-nuclear-title"
-                />
-              </label>
-              {errorMsg && (
-                <p className="lcars-nuclear-dialog__error" role="alert">
-                  Reset failed: {errorMsg}
-                </p>
-              )}
-            </div>
-            <footer className="lcars-nuclear-dialog__actions">
+            <ul className="lcars-delete-dropdown__list" role="none">
+              {SOURCES.map((src, ix) => {
+                const n = countOf(src.id);
+                const checked = selected.has(src.id);
+                return (
+                  <li key={src.id} className="lcars-delete-dropdown__row">
+                    <label className="lcars-delete-dropdown__label">
+                      <input
+                        ref={ix === 0 ? firstCheckboxRef : undefined}
+                        type="checkbox"
+                        className="lcars-delete-dropdown__checkbox"
+                        checked={checked}
+                        onChange={() => toggleSource(src.id)}
+                        disabled={phase === 'running'}
+                      />
+                      <span className="lcars-delete-dropdown__row-main">
+                        <span className="lcars-delete-dropdown__row-title">{src.label}</span>
+                        <span className="lcars-delete-dropdown__row-sub">{src.subtitle}</span>
+                      </span>
+                      <span className="lcars-delete-dropdown__row-count">
+                        {n.toLocaleString()} {n === 1 ? 'session' : 'sessions'}
+                      </span>
+                    </label>
+                    <p className="lcars-delete-dropdown__row-explain">{src.explain}</p>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="lcars-delete-dropdown__selectall">
               <button
                 type="button"
-                className="lcars-nuclear-dialog__cancel"
+                className="lcars-delete-dropdown__selectall-btn"
+                onClick={toggleAll}
+                disabled={phase === 'running'}
+              >
+                {allSelected ? 'CLEAR SELECTION' : 'SELECT ALL'}
+              </button>
+            </div>
+            {phase === 'armed' && (
+              <p className="lcars-delete-dropdown__armed" role="status">
+                <strong>Are you sure?</strong>{' '}
+                {allSelected
+                  ? 'This wipes every indexed session, uploaded ZIP, derived analysis, and browser preference. It cannot be undone.'
+                  : `This wipes ${totalSelectedSessions} session${totalSelectedSessions === 1 ? '' : 's'} and regenerates analysis files on the next scan. It cannot be undone.`}
+              </p>
+            )}
+            {errorMsg && (
+              <p className="lcars-delete-dropdown__error" role="alert">
+                Delete failed: {errorMsg}
+              </p>
+            )}
+            <footer className="lcars-delete-dropdown__actions">
+              <button
+                type="button"
+                className="lcars-delete-dropdown__cancel"
                 onClick={() => setOpen(false)}
-                disabled={status === 'running'}
+                disabled={phase === 'running'}
               >
                 CANCEL
               </button>
               <button
                 type="button"
-                className="lcars-nuclear-dialog__confirm"
-                onClick={confirm}
-                disabled={!canConfirm}
-                aria-disabled={!canConfirm}
+                className={
+                  'lcars-delete-dropdown__primary' +
+                  (phase === 'armed' ? ' lcars-delete-dropdown__primary--armed' : '')
+                }
+                onClick={primaryClick}
+                disabled={selected.size === 0 || phase === 'running'}
               >
-                {status === 'running' ? 'DELETING…' : 'DELETE EVERYTHING'}
+                {buttonLabel}
               </button>
             </footer>
           </div>
-        </div>
-      )}
-    </>
+        )}
+      </div>
+    </div>
   );
 }

@@ -3604,139 +3604,217 @@
     color: var(--lcars-bg);
   }
 }
-.lcars-nuclear-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(0, 0, 0, 0.75);
-  display: flex;
+/* --- DELETE… dropdown panel ---
+   Anchored below the destructive chip in the TopBar's left cluster.
+   Reveals a list of the four ingestion sources with live session
+   counts so the user can target the wipe. Two-click confirmation:
+   first DELETE SELECTED click arms the primary button, second
+   click commits. No typed word — the checkbox selection IS the
+   deliberate decision. */
+.lcars-delete-dropdown {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 16px;
-  animation: lcars-nuclear-backdrop-in 160ms ease-out;
 }
-@keyframes lcars-nuclear-backdrop-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.lcars-nuclear-dialog {
+.lcars-delete-dropdown__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 45;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
   background: var(--lcars-bg);
   color: var(--lcars-text);
-  border: 2px solid var(--lcars-peach);
-  border-radius: 12px;
-  max-width: 560px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 20px 22px;
+  border: 1.5px solid var(--lcars-peach);
+  border-radius: 10px;
+  padding: 12px 14px 10px;
   font-family: var(--lcars-font-body);
-  font-size: 13.5px;
-  line-height: 1.5;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.75);
-  animation: lcars-nuclear-dialog-in 200ms ease-out;
+  font-size: 12.5px;
+  line-height: 1.4;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+  animation: lcars-delete-dropdown-in 140ms ease-out;
 }
-@keyframes lcars-nuclear-dialog-in {
+@media (max-width: 440px) {
+  .lcars-delete-dropdown__panel {
+    /* On very narrow viewports, slide the panel to the viewport
+       edge instead of anchoring at button's x — otherwise the 340px
+       panel would overflow off-screen right. */
+    left: auto;
+    right: 0;
+  }
+}
+@keyframes lcars-delete-dropdown-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
-.lcars-nuclear-dialog__header {
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 140, 100, 0.3);
+.lcars-delete-dropdown__header {
+  margin: 0 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 140, 100, 0.25);
 }
-.lcars-nuclear-dialog__title {
-  margin: 0;
+.lcars-delete-dropdown__title {
+  margin: 0 0 3px 0;
   font-family: var(--lcars-font-chrome);
-  font-size: 18px;
-  letter-spacing: 0.14em;
-  color: var(--lcars-peach);
-}
-.lcars-nuclear-dialog__body p {
-  margin: 0 0 10px 0;
-}
-.lcars-nuclear-dialog__warning {
-  color: var(--lcars-text);
-}
-.lcars-nuclear-dialog__warning strong {
-  color: var(--lcars-peach);
-}
-.lcars-nuclear-dialog__list {
-  margin: 0 0 14px 20px;
-  padding: 0;
   font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--lcars-peach);
 }
-.lcars-nuclear-dialog__list li {
-  margin: 0 0 6px 0;
+.lcars-delete-dropdown__hint {
+  margin: 0;
+  color: var(--lcars-text);
+  font-size: 11.5px;
+  opacity: 0.85;
 }
-.lcars-nuclear-dialog__list code,
-.lcars-nuclear-dialog__warning code,
-.lcars-nuclear-dialog__confirm-label code {
-  background: rgba(255, 204, 153, 0.1);
-  border: 1px solid rgba(255, 204, 153, 0.3);
-  border-radius: 4px;
-  padding: 0 5px;
+.lcars-delete-dropdown__hint code {
+  background: rgba(255, 204, 153, 0.08);
+  border: 1px solid rgba(255, 204, 153, 0.22);
+  border-radius: 3px;
+  padding: 0 4px;
   font-family: var(--lcars-font-mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--lcars-sunflower);
 }
-.lcars-nuclear-dialog__confirm-label {
-  display: block;
-  margin-top: 14px;
-  font-size: 13px;
-  color: var(--lcars-text);
+.lcars-delete-dropdown__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.lcars-nuclear-dialog__confirm-input {
-  display: block;
-  margin-top: 6px;
-  width: 100%;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 1.5px solid rgba(255, 140, 100, 0.45);
-  border-radius: 8px;
-  color: var(--lcars-peach);
+.lcars-delete-dropdown__row {
+  margin: 0;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: background 100ms;
+}
+.lcars-delete-dropdown__row:hover {
+  background: rgba(255, 204, 153, 0.04);
+}
+.lcars-delete-dropdown__label {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.lcars-delete-dropdown__checkbox {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--lcars-peach);
+  cursor: pointer;
+}
+.lcars-delete-dropdown__row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.lcars-delete-dropdown__row-title {
+  font-size: 12.5px;
+  color: var(--lcars-sunflower);
+  font-weight: 600;
+}
+.lcars-delete-dropdown__row-sub {
   font-family: var(--lcars-font-mono);
-  font-size: 15px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  color: var(--lcars-text);
+  opacity: 0.6;
+}
+.lcars-delete-dropdown__row-count {
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: var(--lcars-text);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.lcars-delete-dropdown__row-explain {
+  margin: 3px 0 0 22px;
+  font-family: var(--lcars-font-mono);
+  font-size: 10.5px;
+  color: var(--lcars-text);
+  opacity: 0.45;
+  word-break: break-all;
+}
+.lcars-delete-dropdown__selectall {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 204, 153, 0.15);
+  display: flex;
+  justify-content: flex-end;
+}
+.lcars-delete-dropdown__selectall-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 204, 153, 0.35);
+  color: var(--lcars-sunflower);
+  border-radius: 10px;
+  padding: 3px 10px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 100ms,
+    border-color 100ms,
+    color 100ms;
+}
+.lcars-delete-dropdown__selectall-btn:hover:not(:disabled),
+.lcars-delete-dropdown__selectall-btn:focus-visible:not(:disabled) {
   outline: none;
+  background: rgba(255, 204, 153, 0.08);
+  border-color: var(--lcars-sunflower);
 }
-.lcars-nuclear-dialog__confirm-input:focus-visible {
-  border-color: var(--lcars-peach);
-  box-shadow: 0 0 0 2px rgba(255, 140, 100, 0.4);
+.lcars-delete-dropdown__selectall-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
-.lcars-nuclear-dialog__error {
-  margin-top: 10px !important;
+.lcars-delete-dropdown__armed {
+  margin: 10px 0 0 0;
   padding: 8px 10px;
+  background: rgba(255, 140, 100, 0.12);
+  border: 1px solid var(--lcars-peach);
+  border-radius: 6px;
+  color: var(--lcars-peach);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.lcars-delete-dropdown__armed strong {
+  font-weight: 700;
+  color: var(--lcars-peach);
+}
+.lcars-delete-dropdown__error {
+  margin: 8px 0 0 0;
+  padding: 6px 10px;
   background: rgba(255, 80, 60, 0.12);
   border: 1px solid var(--lcars-peach);
   border-radius: 6px;
   color: var(--lcars-peach);
-  font-size: 12.5px;
+  font-size: 11.5px;
 }
-.lcars-nuclear-dialog__actions {
+.lcars-delete-dropdown__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 140, 100, 0.2);
 }
-.lcars-nuclear-dialog__cancel,
-.lcars-nuclear-dialog__confirm {
+.lcars-delete-dropdown__cancel,
+.lcars-delete-dropdown__primary {
   font-family: var(--lcars-font-chrome);
-  font-size: 12px;
-  letter-spacing: 0.14em;
+  font-size: 11px;
+  letter-spacing: 0.12em;
   font-weight: 700;
-  padding: 8px 16px;
-  border-radius: 14px;
+  padding: 6px 12px;
+  border-radius: 12px;
   border: 1.5px solid transparent;
   cursor: pointer;
   transition:
@@ -3745,28 +3823,51 @@
     border-color 120ms,
     opacity 120ms;
 }
-.lcars-nuclear-dialog__cancel {
+.lcars-delete-dropdown__cancel {
   background: transparent;
   border-color: rgba(255, 204, 153, 0.4);
   color: var(--lcars-sunflower);
 }
-.lcars-nuclear-dialog__cancel:hover,
-.lcars-nuclear-dialog__cancel:focus-visible {
+.lcars-delete-dropdown__cancel:hover:not(:disabled),
+.lcars-delete-dropdown__cancel:focus-visible:not(:disabled) {
   outline: none;
   background: rgba(255, 204, 153, 0.1);
   border-color: var(--lcars-sunflower);
 }
-.lcars-nuclear-dialog__confirm {
+.lcars-delete-dropdown__primary {
   background: var(--lcars-peach);
   color: var(--lcars-bg);
 }
-.lcars-nuclear-dialog__confirm:hover:not(:disabled),
-.lcars-nuclear-dialog__confirm:focus-visible:not(:disabled) {
+.lcars-delete-dropdown__primary:hover:not(:disabled),
+.lcars-delete-dropdown__primary:focus-visible:not(:disabled) {
   outline: none;
   background: #ff9a6a;
 }
-.lcars-nuclear-dialog__confirm:disabled,
-.lcars-nuclear-dialog__cancel:disabled {
+.lcars-delete-dropdown__primary--armed {
+  /* Pulse when armed so the user notices the button-label change and
+     the "are you sure?" prompt above it. */
+  animation: lcars-delete-armed-pulse 1400ms ease-in-out infinite;
+}
+@keyframes lcars-delete-armed-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 140, 100, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 140, 100, 0);
+  }
+}
+.lcars-delete-dropdown__primary:disabled,
+.lcars-delete-dropdown__cancel:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-delete-dropdown__primary--armed {
+    animation: none;
+  }
+  .lcars-delete-dropdown__panel {
+    animation: none;
+  }
 }

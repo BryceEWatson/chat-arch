@@ -100,6 +100,14 @@ export interface TopBarProps {
    *  post-wipe reload so state snapshots don't persist an orphaned
    *  ZIP. Passed through from the outer viewer. */
   onDeleteUnload?: () => void;
+  /** Per-source session counts — feeds the selective-delete dropdown
+   *  so each source row can show how many sessions it would wipe. */
+  deleteCounts?: {
+    cloud: number;
+    cowork: number;
+    'cli-direct': number;
+    'cli-desktop': number;
+  };
 }
 
 // How-to copy shown in the Upload Cloud hover tooltip. Lives up here
@@ -139,6 +147,7 @@ export function TopBar({
   onClearUpload,
   deleteAvailable = false,
   onDeleteUnload,
+  deleteCounts,
 }: TopBarProps) {
   const placeholder = disabled
     ? 'exit detail view to search'
@@ -369,6 +378,7 @@ export function TopBar({
         <NuclearReset
           available={deleteAvailable}
           {...(onDeleteUnload ? { onUnload: onDeleteUnload } : {})}
+          {...(deleteCounts ? { counts: deleteCounts } : {})}
         />
       </div>
       <div className="lcars-top-bar__right">
