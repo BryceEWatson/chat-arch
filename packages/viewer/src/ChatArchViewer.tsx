@@ -56,6 +56,8 @@ const FALLBACK_BANNER_PX = 320;
 
 const HASH_SESSION_PREFIX = '#session/';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
+const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
+const BOOT_DURATION_MS = 1500;
 function readSessionHash(): string | null {
   if (typeof window === 'undefined') return null;
   const h = window.location.hash;
@@ -184,6 +186,37 @@ export function ChatArchViewer({
       return false;
     }
   });
+  // "TNG-computer coming online" boot animation. Fires once per browser
+  // on the first user-initiated data arrival (rescan success with local
+  // sessions, or cloud upload success). Skipped for returning users,
+  // skipped on demo data, skipped if prefers-reduced-motion.
+  const [booting, setBooting] = useState<boolean>(false);
+  const bootTimerRef = useRef<number | null>(null);
+  const triggerBoot = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (window.localStorage.getItem(BOOT_SEEN_KEY) === '1') return;
+    } catch {
+      return;
+    }
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    if (reducedMotion) {
+      try {
+        window.localStorage.setItem(BOOT_SEEN_KEY, '1');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      window.localStorage.setItem(BOOT_SEEN_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+    setBooting(true);
+    if (bootTimerRef.current !== null) window.clearTimeout(bootTimerRef.current);
+    bootTimerRef.current = window.setTimeout(() => setBooting(false), BOOT_DURATION_MS);
+  };
   const [belowFallback, setBelowFallback] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth < FALLBACK_BANNER_PX;
@@ -465,6 +498,7 @@ export function ChatArchViewer({
     try {
       const data = await parseCloudZip(file);
       onUpload(data);
+      if (data.manifest.sessions.length > 0) triggerBoot();
       let added = 0;
       for (const id of data.conversationsById.keys()) {
         if (!priorIds.has(id)) added += 1;
@@ -579,6 +613,7 @@ export function ChatArchViewer({
         const url = manifestUrl + (manifestUrl.includes('?') ? '&' : '?') + `t=${cacheBust}`;
         const fresh = await fetchManifest(url);
         setManifestState({ status: 'ready', data: fresh });
+        if (fresh.sessions.length > 0) triggerBoot();
         const newLocal =
           fresh.counts.cowork + fresh.counts['cli-direct'] + fresh.counts['cli-desktop'];
         const deltaLocal = newLocal - priorLocal;
@@ -750,6 +785,7 @@ export function ChatArchViewer({
       data-mode={activeMode}
       data-tier={tier}
       data-demo={demoMode ? 'true' : undefined}
+      data-booting={booting ? 'true' : undefined}
     >
       {demoMode && !demoBannerDismissed && (
         <div

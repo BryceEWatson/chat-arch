@@ -182,6 +182,93 @@
   min-height: 0;
 }
 
+/* --- first-data "coming online" boot sequence ---
+   Fires once per browser when real data first arrives via rescan or
+   upload (see ChatArchViewer's `triggerBoot`). Staggers the major
+   panels so the viewer reads as powering up in sequence rather than
+   snap-rendering, matching the LCARS "systems online" aesthetic.
+   Respects prefers-reduced-motion — the trigger in JS skips setting
+   the flag at all when motion is reduced. */
+@keyframes lcars-boot-online {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: brightness(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: brightness(1.25);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+}
+.lcars-root[data-booting='true'] .lcars-top-bar {
+  animation: lcars-boot-online 400ms ease-out 0ms both;
+}
+.lcars-root[data-booting='true'] .lcars-sidebar {
+  animation: lcars-boot-online 500ms ease-out 80ms both;
+}
+.lcars-root[data-booting='true'] .lcars-upper-panel {
+  animation: lcars-boot-online 550ms ease-out 240ms both;
+}
+.lcars-root[data-booting='true'] .lcars-filter-bar {
+  animation: lcars-boot-online 500ms ease-out 500ms both;
+}
+.lcars-root[data-booting='true'] .lcars-mode-area {
+  animation: lcars-boot-online 600ms ease-out 700ms both;
+}
+/* Individual command-mode cards cascade in right after the mode area
+   — the staggered `.mode-area__cards > * :nth-child` fan-out is the
+   part that most feels "computer booting up". Cap at 20 children
+   so a 1000-session corpus doesn't hold the last cards offscreen. */
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li {
+  animation: lcars-boot-online 420ms ease-out both;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(1) {
+  animation-delay: 900ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(2) {
+  animation-delay: 950ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(3) {
+  animation-delay: 1000ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(4) {
+  animation-delay: 1050ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(5) {
+  animation-delay: 1100ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(6) {
+  animation-delay: 1150ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(7) {
+  animation-delay: 1200ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(8) {
+  animation-delay: 1250ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(9) {
+  animation-delay: 1300ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(10) {
+  animation-delay: 1350ms;
+}
+.lcars-root[data-booting='true'] main[aria-label='command mode'] li:nth-child(n + 11) {
+  animation-delay: 1400ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-root[data-booting='true'] *,
+  .lcars-root[data-booting='true'] *::before,
+  .lcars-root[data-booting='true'] *::after {
+    animation: none !important;
+  }
+}
+
 /* --- filter bar ---
    Two compact rows of pills (source + zero-turn, then project)
    rendered directly above the mode-area content. Uses the same bg-1
