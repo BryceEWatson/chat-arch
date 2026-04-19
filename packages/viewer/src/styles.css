@@ -623,6 +623,26 @@
 }
 .lcars-rescan-banner--demo {
   border-left: 4px solid var(--lcars-butterscotch);
+  /* Demo banner is persistent (not a transient toast), so anchor it at the
+     bottom-right instead of overlaying center-top. This keeps the KPI strip
+     visible on first load and matches the "non-blocking info" pattern. */
+  top: auto;
+  left: auto;
+  bottom: 12px;
+  right: 12px;
+  transform: none;
+  max-width: 420px;
+  animation: lcars-rescan-banner-demo-in 200ms ease-out;
+}
+@keyframes lcars-rescan-banner-demo-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .lcars-rescan-banner__tag {
   flex: 0 0 auto;

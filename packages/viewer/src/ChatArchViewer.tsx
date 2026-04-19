@@ -54,6 +54,7 @@ const SEARCH_DEBOUNCE_MS = 100;
 const FALLBACK_BANNER_PX = 320;
 
 const HASH_SESSION_PREFIX = '#session/';
+const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 function readSessionHash(): string | null {
   if (typeof window === 'undefined') return null;
   const h = window.location.hash;
@@ -171,10 +172,17 @@ export function ChatArchViewer({
   // Demo-mode detection: the standalone's `pnpm dev` seed-script writes a
   // sibling `.demo` file alongside the demo manifest. Real exporter output
   // never writes this file, so its presence reliably means "what's loaded
-  // is fictional fixture data". The banner is visible immediately and
-  // dismissible for the rest of the session.
+  // is fictional fixture data". The banner is visible the first time per
+  // browser and stays dismissed across reloads (localStorage).
   const [demoMode, setDemoMode] = useState<boolean>(false);
-  const [demoBannerDismissed, setDemoBannerDismissed] = useState<boolean>(false);
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(DEMO_BANNER_DISMISSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [belowFallback, setBelowFallback] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth < FALLBACK_BANNER_PX;
@@ -742,7 +750,14 @@ export function ChatArchViewer({
             type="button"
             className="lcars-rescan-banner__dismiss"
             aria-label="dismiss demo banner"
-            onClick={() => setDemoBannerDismissed(true)}
+            onClick={() => {
+              setDemoBannerDismissed(true);
+              try {
+                window.localStorage.setItem(DEMO_BANNER_DISMISSED_KEY, '1');
+              } catch {
+                // no-op: localStorage unavailable, in-memory dismissal is fine
+              }
+            }}
           >
             ✕
           </button>
