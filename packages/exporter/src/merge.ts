@@ -1,6 +1,6 @@
 import type { SessionManifest, SessionSource, UnifiedSessionEntry } from '@chat-arch/schema';
 import { CURRENT_SCHEMA_VERSION } from '@chat-arch/schema';
-import { estimateCost } from './cost/estimate.js';
+import { estimateCost } from '@chat-arch/analysis';
 import { logger } from './lib/logger.js';
 
 /**

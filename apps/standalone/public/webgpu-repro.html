@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>WebGPU + transformers.js minimal repro</title>
+<style>
+  body { font: 14px/1.4 ui-monospace, Menlo, monospace; padding: 12px; max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  .row { margin-bottom: 6px; }
+  .ok { color: #0a7; }
+  .bad { color: #c00; font-weight: bold; }
+  .info { color: #555; }
+  .step { padding: 4px 0; border-bottom: 1px solid #eee; }
+  pre { background: #f5f5f5; padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+  button { font: inherit; padding: 6px 12px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h1>WebGPU + @huggingface/transformers minimal repro</h1>
+<p class="info">Loads transformers.js v3.8.1 (matching the project pin) from the same self-hosted <code>/ort-wasm/</code> directory the viewer worker uses. Calls <code>pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { device: 'webgpu', dtype: 'q4f16' })</code>. Logs every step. If this fails, the bug is upstream of our worker wiring (driver / browser / transformers / ORT). If it succeeds, the bug is in our wiring.</p>
+
+<p class="info"><strong>What this tests:</strong> CDN-loaded transformers.js with its own bundled ORT-web reaching CDN .wasm files. This isolates whether WebGPU + transformers + this hardware works AT ALL, free of any local-build ABI concerns. To test our self-hosted <code>/ort-wasm/</code> wiring specifically, use the viewer at <a href="/">/</a> → click ANALYZE TOPICS — that path uses local-node_modules transformers + the local ORT it was built against, which is the only ABI-matched pairing for our self-hosted .wasm files.</p>
+<div class="row">
+  <label><input type="checkbox" id="override-wasmpaths" /> Override wasmPaths to <code>/ort-wasm/</code> (intentionally mismatched, expected to abort 69491688 — confirms the ABI-mismatch theory)</label>
+</div>
+<div class="row">
+  <button id="run">Run repro (webgpu / q4f16)</button>
+  <button id="run-fp32">Run repro (webgpu / fp32)</button>
+  <button id="run-wasm">Run repro (wasm / q8) — baseline</button>
+  <button id="probe-only">Adapter probe only</button>
+</div>
+
+<div id="env" class="step"></div>
+<div id="log"></div>
+
+<script type="module">
+const logEl = document.getElementById('log');
+const envEl = document.getElementById('env');
+
+function line(text, cls = 'info') {
+  const div = document.createElement('div');
+  div.className = `step ${cls}`;
+  div.textContent = text;
+  logEl.appendChild(div);
+  console.log('[repro]', text);
+  return div;
+}
+function pre(label, obj) {
+  const div = document.createElement('div');
+  div.className = 'step info';
+  const head = document.createElement('div');
+  head.textContent = label;
+  div.appendChild(head);
+  const p = document.createElement('pre');
+  p.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+  div.appendChild(p);
+  logEl.appendChild(div);
+  console.log('[repro]', label, obj);
+}
+
+// 1. Environment snapshot
+const envSnapshot = {
+  crossOriginIsolated: self.crossOriginIsolated,
+  hasSAB: typeof SharedArrayBuffer !== 'undefined',
+  hasNavigatorGPU: typeof navigator !== 'undefined' && !!navigator.gpu,
+  userAgent: navigator.userAgent,
+  hardwareConcurrency: navigator.hardwareConcurrency,
+  origin: location.origin,
+};
+pre('environment', envSnapshot);
+
+async function probe() {
+  if (!navigator.gpu) {
+    line('no navigator.gpu on main thread', 'bad');
+    return null;
+  }
+  const strategies = [
+    { name: 'high-performance', opts: { powerPreference: 'high-performance' } },
+    { name: 'low-power', opts: { powerPreference: 'low-power' } },
+    { name: 'default', opts: undefined },
+    { name: 'fallback-software', opts: { forceFallbackAdapter: true } },
+  ];
+  const results = [];
+  let firstGood = null;
+  for (const s of strategies) {
+    const res = { strategy: s.name };
+    try {
+      const adapter = await navigator.gpu.requestAdapter(s.opts);
+      if (!adapter) {
+        res.adapter = 'null';
+        results.push(res);
+        continue;
+      }
+      res.adapter = 'OK';
+      res.features = [...adapter.features];
+      res.limits = Object.fromEntries(
+        Object.entries(adapter.limits).slice(0, 8).map(([k, v]) => [k, String(v)]),
+      );
+      res.shaderF16 = adapter.features.has('shader-f16');
+      try {
+        const dev = await adapter.requestDevice(
+          res.shaderF16 ? { requiredFeatures: ['shader-f16'] } : {},
+        );
+        res.device = 'OK';
+        if (firstGood === null) firstGood = { adapter, strategy: s.name, shaderF16: res.shaderF16 };
+        try { dev.destroy?.(); } catch {}
+      } catch (devErr) {
+        res.device = 'THREW';
+        res.deviceError = String(devErr?.message ?? devErr);
+      }
+    } catch (adapErr) {
+      res.adapter = 'THREW';
+      res.adapterError = String(adapErr?.message ?? adapErr);
+    }
+    results.push(res);
+  }
+  pre('adapter probe (main thread)', results);
+  return firstGood;
+}
+
+// In-worker probe — proves whether the worker context has different GPU access
+async function probeInWorker() {
+  const src = `
+    self.onmessage = async () => {
+      const out = { ctx: 'worker', hasNavigatorGPU: typeof navigator !== 'undefined' && !!navigator.gpu, crossOriginIsolated: self.crossOriginIsolated, hasSAB: typeof SharedArrayBuffer !== 'undefined' };
+      if (!navigator.gpu) { self.postMessage(out); return; }
+      const strategies = [
+        { name: 'high-performance', opts: { powerPreference: 'high-performance' } },
+        { name: 'low-power', opts: { powerPreference: 'low-power' } },
+        { name: 'default', opts: undefined },
+        { name: 'fallback-software', opts: { forceFallbackAdapter: true } },
+      ];
+      const results = [];
+      for (const s of strategies) {
+        const res = { strategy: s.name };
+        try {
+          const adapter = await navigator.gpu.requestAdapter(s.opts);
+          if (!adapter) { res.adapter = 'null'; results.push(res); continue; }
+          res.adapter = 'OK';
+          res.features = [...adapter.features];
+          res.shaderF16 = adapter.features.has('shader-f16');
+          try {
+            const dev = await adapter.requestDevice(res.shaderF16 ? { requiredFeatures: ['shader-f16'] } : {});
+            res.device = 'OK';
+            try { dev.destroy?.(); } catch {}
+          } catch (devErr) {
+            res.device = 'THREW';
+            res.deviceError = String(devErr?.message ?? devErr);
+          }
+        } catch (adapErr) {
+          res.adapter = 'THREW';
+          res.adapterError = String(adapErr?.message ?? adapErr);
+        }
+        results.push(res);
+      }
+      out.results = results;
+      self.postMessage(out);
+    };
+  `;
+  const blob = new Blob([src], { type: 'application/javascript' });
+  const url = URL.createObjectURL(blob);
+  const w = new Worker(url, { type: 'module' });
+  return new Promise((resolve) => {
+    w.onmessage = (ev) => {
+      pre('adapter probe (in worker)', ev.data);
+      w.terminate();
+      URL.revokeObjectURL(url);
+      resolve(ev.data);
+    };
+    w.postMessage('go');
+  });
+}
+
+async function runPipeline(device, dtype) {
+  const overrideWasm = document.getElementById('override-wasmpaths').checked;
+  line(`importing transformers.js from CDN ESM…`);
+  const mod = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm');
+  const { pipeline, env } = mod;
+  line(`transformers.js loaded — version ${env.version}`);
+
+  if (overrideWasm) {
+    const base = `${location.origin}/ort-wasm/`;
+    env.backends.onnx.wasm.wasmPaths = {
+      mjs: `${base}ort-wasm-simd-threaded.jsep.mjs`,
+      wasm: `${base}ort-wasm-simd-threaded.jsep.wasm`,
+    };
+  }
+  env.backends.onnx.wasm.numThreads = 1;
+  env.backends.onnx.wasm.proxy = false;
+  env.allowLocalModels = false;
+  env.allowRemoteModels = true;
+  pre('env wired', {
+    wasmPaths: overrideWasm ? env.backends.onnx.wasm.wasmPaths : '(default — CDN-bundled, matches CDN-bundled ORT JS)',
+    numThreads: env.backends.onnx.wasm.numThreads,
+    proxy: env.backends.onnx.wasm.proxy,
+    transformersVersion: env.version,
+  });
+
+  line(`calling pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { device: '${device}', dtype: '${dtype}' })…`);
+  const t0 = performance.now();
+  try {
+    const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      device,
+      dtype,
+      progress_callback: (p) => {
+        if (p?.status === 'progress' && typeof p.loaded === 'number' && typeof p.total === 'number' && p.total > 1_000_000) {
+          line(`  download: ${(p.loaded / 1024 / 1024).toFixed(1)} / ${(p.total / 1024 / 1024).toFixed(1)} MB`);
+        }
+      },
+    });
+    line(`pipeline READY in ${(performance.now() - t0).toFixed(0)} ms`, 'ok');
+    line(`embedding test sentence…`);
+    const out = await extractor('hello world this is a test', { pooling: 'mean', normalize: true });
+    line(`embedded — vector dims: ${out.dims}`, 'ok');
+    return { ok: true, dims: out.dims };
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    pre('PIPELINE FAILED — raw error object', {
+      name: err?.name,
+      message: raw,
+      stack: err?.stack,
+      stringified: String(err),
+    });
+    line(`pipeline FAILED: ${raw}`, 'bad');
+    return { ok: false, error: raw };
+  }
+}
+
+function banner(text) {
+  const div = document.createElement('div');
+  div.className = 'step';
+  div.style.cssText = 'margin-top:16px;padding:8px;background:#222;color:#fff;font-weight:bold;border-radius:4px;';
+  div.textContent = `━━━ ${text} ━━━`;
+  logEl.appendChild(div);
+}
+document.getElementById('run').addEventListener('click', async () => {
+  banner('Run repro (device=webgpu, dtype=q4f16)');
+  await probe();
+  await probeInWorker();
+  await runPipeline('webgpu', 'q4f16');
+});
+document.getElementById('run-fp32').addEventListener('click', async () => {
+  banner('Run repro (device=webgpu, dtype=fp32)');
+  await probe();
+  await probeInWorker();
+  await runPipeline('webgpu', 'fp32');
+});
+document.getElementById('run-wasm').addEventListener('click', async () => {
+  banner('Run repro (device=wasm, dtype=q8) — control');
+  await runPipeline('wasm', 'q8');
+});
+document.getElementById('probe-only').addEventListener('click', async () => {
+  banner('Adapter probe only');
+  await probe();
+  await probeInWorker();
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = 'Clear log';
+  clearBtn.addEventListener('click', () => { logEl.innerHTML = ''; });
+  document.querySelector('.row').appendChild(clearBtn);
+});
+</script>
+</body>
+</html>

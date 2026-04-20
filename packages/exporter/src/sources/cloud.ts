@@ -2,20 +2,23 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { CloudConversation, UnifiedSessionEntry } from '@chat-arch/schema';
+import type { CloudConversation, CloudProject, UnifiedSessionEntry } from '@chat-arch/schema';
 import { runWithConcurrency } from '../lib/concurrency.js';
 import { findLatestExportZip } from '../lib/downloads.js';
 import { unzipTo } from '../lib/zip.js';
 import { logger } from '../lib/logger.js';
-import { buildEntry } from '../cloud-mapping.js';
+import { buildEntry, compileProjectPatterns } from '@chat-arch/analysis';
 
 const CHUNK_CONCURRENCY = 8;
 
 /**
- * Name of the top-level file we expect inside the export ZIP. Anything else
- * in there (users.json, projects.json, memories.json) is ignored by Phase 4.
+ * Top-level files we read from the export ZIP. `conversations.json` is the
+ * canonical source; `projects.json`, when present, is used to populate
+ * `session.project` on cloud entries whose titles name one of the user's
+ * claude.ai projects. `users.json` / `memories.json` are still ignored.
  */
 const CONVERSATIONS_JSON = 'conversations.json';
+const PROJECTS_JSON = 'projects.json';
 
 export interface RunCloudExportOptions {
   outDir: string;
@@ -85,7 +88,21 @@ export async function runCloudExport(opts: RunCloudExportOptions): Promise<Cloud
       );
     }
 
-    const result = await buildCloudOutputs(conversations, outDir);
+    // Optional projects.json — when present, supplies project names used to
+    // label conversations whose titles mention them. Any failure to read or
+    // parse is non-fatal: cloud entries simply stay unlabeled, matching the
+    // pre-existing behavior for users whose export doesn't include this file.
+    let projects: readonly CloudProject[] | undefined;
+    const projectsFile = path.join(tempDir, PROJECTS_JSON);
+    try {
+      const rawProjects = await readFile(projectsFile, 'utf8');
+      const parsed = JSON.parse(rawProjects);
+      if (Array.isArray(parsed)) projects = parsed as readonly CloudProject[];
+    } catch {
+      // File absent or malformed — no-op. projects stays undefined.
+    }
+
+    const result = await buildCloudOutputs(conversations, outDir, projects);
 
     return {
       entries: result.entries,
@@ -111,6 +128,7 @@ export async function runCloudExport(opts: RunCloudExportOptions): Promise<Cloud
 export async function buildCloudOutputs(
   conversations: readonly CloudConversation[],
   outDir: string,
+  projects?: readonly CloudProject[],
 ): Promise<{
   entries: UnifiedSessionEntry[];
   conversationsSkipped: number;
@@ -119,10 +137,11 @@ export async function buildCloudOutputs(
 
   const entries: UnifiedSessionEntry[] = [];
   const unknownSenders = new Set<string>();
+  const projectPatterns = compileProjectPatterns(projects);
   let skipped = 0;
 
   await runWithConcurrency(conversations, CHUNK_CONCURRENCY, async (conv) => {
-    const built = buildEntry(conv);
+    const built = buildEntry(conv, projectPatterns);
     if (built === null) {
       logger.warn(
         `cloud conversation ${conv.uuid} has unparseable created_at/updated_at; skipping`,

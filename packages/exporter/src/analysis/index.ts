@@ -21,8 +21,11 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
 import { logger } from '../lib/logger.js';
-import { buildDuplicatesFile, type DuplicateInput } from './duplicatesExact.js';
-import { buildZombiesFile } from './zombiesHeuristic.js';
+import {
+  buildDuplicatesFile,
+  buildZombiesFile,
+  type DuplicateInput,
+} from '@chat-arch/analysis';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */

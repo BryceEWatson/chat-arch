@@ -1,10 +1,14 @@
 import type { SessionManifest, SessionSource, UnifiedSessionEntry } from '@chat-arch/schema';
-import type { CloudConversation } from '@chat-arch/schema';
+import type { CloudConversation, CloudProject } from '@chat-arch/schema';
 import type { TierFileState } from './data/analysisFetch.js';
 
 /**
  * In-memory manifest produced by parsing a user-uploaded cloud-export ZIP.
- * Lives entirely in React state — no IndexedDB, no localStorage (v1.1).
+ *
+ * Held in React state during the session and mirrored into IndexedDB
+ * (`chat-arch` → `uploaded-cloud-data` → `archive`) by `ChatArchViewer` so
+ * a page refresh restores the upload — see `data/uploadedDataStore.ts`.
+ * IDB stores the structure verbatim (the `Map` survives `structuredClone`).
  *
  * When present it replaces the fetched manifest for all viewer surfaces;
  * drill-in reads conversations from `conversationsById` without a fetch.
@@ -12,6 +16,14 @@ import type { TierFileState } from './data/analysisFetch.js';
 export interface UploadedCloudData {
   manifest: SessionManifest;
   conversationsById: Map<string, CloudConversation>;
+  /**
+   * User's claude.ai projects as shipped inside the export ZIP's own
+   * `projects.json`. Retained on the upload so the semantic classifier
+   * (Phase 3) can build centroid embeddings from each project's name,
+   * description, and prompt_template. Optional because older exports /
+   * partial ZIPs may omit it.
+   */
+  projects?: readonly CloudProject[];
   /** Human-readable label (original filename + size) for the unload UI. */
   sourceLabel: string;
 }

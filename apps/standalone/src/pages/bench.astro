@@ -1,0 +1,41 @@
+---
+// Dev-only benchmark harness page.
+//
+// Gating posture:
+//
+//   1. In production (`astro build`) the page emits, but the runtime
+//      redirect below sends visitors back to `/`. The page's JS
+//      bundle is never loaded because the redirect fires at the
+//      Astro frontmatter stage, before any client:load island is
+//      hydrated. The static output is a thin redirect HTML shell
+//      (~500 bytes) — acceptable.
+//
+//   2. In development (`astro dev`) `import.meta.env.DEV` is `true`
+//      and the page renders the BenchmarkRunner.
+//
+// We originally considered the `_bench.astro` underscore-prefix
+// exclusion (which Astro documents for "don't route this file"). It
+// works for prod, but it ALSO hides the page from the dev server,
+// making the harness un-testable without build-tooling surgery.
+// The DEV-guard-plus-redirect pattern here gives us dev access while
+// keeping production blank. The memo in `research/benchmark-harness-
+// plan.md` §1 records this trade-off.
+//
+// The harness iterates the (embedder × pooling × clusterer × postproc)
+// matrix described in the memo against the user's persisted upload
+// in IndexedDB. Results go to a dedicated `chat-arch-bench-results`
+// DB, separate from the production `chat-arch-semantic-labels` DB —
+// see `benchResultsStore.ts`.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { BenchmarkRunner } from '@chat-arch/viewer';
+import '@chat-arch/viewer/style.css';
+
+if (!import.meta.env.DEV) {
+  return Astro.redirect('/');
+}
+---
+<BaseLayout title="Chat Archaeologist — benchmark">
+  <main>
+    <BenchmarkRunner client:load />
+  </main>
+</BaseLayout>

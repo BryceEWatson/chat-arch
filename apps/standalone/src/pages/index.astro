@@ -6,8 +6,12 @@ import '@chat-arch/viewer/style.css';
 <BaseLayout title="Chat Archaeologist">
   <main>
     <ChatArchViewer client:load />
-    <p style="margin-top: 2rem; font-size: 0.875rem; opacity: 0.7;">
-      To load real data, run <code>pnpm --filter @chat-arch/exporter start</code>.
-    </p>
+    {/*
+      Hint paragraph removed — it lived below the viewer and pushed the
+      document 50+px past the viewport, creating a vestigial scrollbar
+      on the empty state. The viewer's own ErrorState copy already
+      covers the same "run the exporter / upload / load demo" guidance,
+      so the trailing hint was duplicative anyway.
+    */}
   </main>
 </BaseLayout>
