@@ -68,7 +68,12 @@ describe('ChatArchViewer manifest ingestion (R12 F12.1)', () => {
     );
   });
 
-  it('renders UC-8 NO SESSIONS for a well-formed empty manifest', () => {
+  it('routes a well-formed empty manifest to NO DATA YET, not a blank page', () => {
+    // UC-8 predecessor asserted the full-chrome EmptyState ("NO SESSIONS"
+    // heading). That branch is unreachable on first load now — a shipped-
+    // empty manifest routes through the same minimal "NO DATA YET" layout
+    // as a 404'd fetch. What this test still pins: an empty manifest must
+    // never crash or render a blank page.
     const empty = {
       schemaVersion: 1 as const,
       generatedAt: 0,
@@ -76,6 +81,6 @@ describe('ChatArchViewer manifest ingestion (R12 F12.1)', () => {
       sessions: [] as const,
     };
     render(<ChatArchViewer manifest={empty} />);
-    expect(screen.getByText('NO SESSIONS')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /NO DATA YET/i })).toBeDefined();
   });
 });

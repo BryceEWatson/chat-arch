@@ -1697,7 +1697,28 @@ export function ChatArchViewer({
     );
   }
 
-  if (!uploadedData && manifestState.status === 'error') {
+  // Minimal "NO DATA YET" layout. Two triggers now, both producing
+  // the same UX (top bar + ErrorState + upload/load-demo panel):
+  //
+  //   1. Manifest fetch errored (404, network, parse).
+  //   2. Manifest fetch succeeded but the file is the empty shipped
+  //      default (`sessions.length === 0`). This is what new visitors
+  //      to the hosted deploy hit on first load — `public/chat-arch-
+  //      data/manifest.json` ships as `{...counts all 0, sessions: []}`
+  //      so CF Pages' edge cache overwrites any prior populated
+  //      manifest; see the empty-manifest PR for the full story.
+  //
+  // Before this branch existed, case 2 fell through to the populated
+  // render path, which dressed the empty-state component in the full
+  // KPI tiles + filter pills + projects list chrome — a distracting
+  // "nothing here, but here's all the chrome anyway" state for a
+  // first-time visitor. Routing both cases here keeps the landing
+  // stripped down to the two actions a first-time visitor cares
+  // about: upload their export, or load the demo fixture.
+  const manifestIsEmpty = manifest !== null && manifest.sessions.length === 0;
+  if (!uploadedData && (manifestState.status === 'error' || manifestIsEmpty)) {
+    const fetchErrorSuffix =
+      manifestState.status === 'error' ? ` (fetch: ${manifestState.message})` : '';
     return (
       <div className="lcars-root" data-tier={tier}>
         <div className="lcars-frame lcars-frame--empty">
@@ -1726,7 +1747,7 @@ export function ChatArchViewer({
           <main className="lcars-empty-main">
             <ErrorState
               title="NO DATA YET"
-              detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Restart the dev server with pnpm dev to seed a sample corpus instead. See the README for the full walkthrough. (fetch: ${manifestState.message})`}
+              detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`}
             />
             <UploadPanel onLoaded={onUpload} variant="prominent" onLoadDemo={onLoadDemo} />
           </main>

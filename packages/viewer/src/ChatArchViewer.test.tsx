@@ -156,9 +156,16 @@ describe('ChatArchViewer', () => {
     expect(screen.getByLabelText(/choose cloud export zip/i)).toBeDefined();
   });
 
-  it('shows EmptyState when manifest has zero sessions', () => {
+  it('routes a well-formed empty manifest to the NO DATA YET landing', () => {
+    // A shipped-empty manifest.json (schemaVersion + counts + `sessions: []`)
+    // now takes the same minimal "no data yet" code path as a 404'd manifest.
+    // Previously it rendered EmptyState inside the full viewer chrome (KPIs,
+    // filter pills, projects list) — a distracting "nothing here but here's
+    // all the chrome" state. See the empty-manifest-minimal-layout PR.
     render(<ChatArchViewer manifest={emptyManifest} />);
-    expect(screen.getByText('NO SESSIONS')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /NO DATA YET/i })).toBeDefined();
+    // Upload + load-demo CTAs are the actionable path out.
+    expect(screen.getByLabelText(/choose cloud export zip/i)).toBeDefined();
   });
 
   it('filters by search query (case-insensitive substring, debounced)', async () => {
