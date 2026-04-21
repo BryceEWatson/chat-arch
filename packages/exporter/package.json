@@ -10,10 +10,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./cloud-mapping": {
-      "types": "./dist/cloud-mapping.d.ts",
-      "import": "./dist/cloud-mapping.js"
     }
   },
   "bin": {
@@ -30,6 +26,7 @@
     "start": "node ./dist/cli.js"
   },
   "dependencies": {
+    "@chat-arch/analysis": "workspace:*",
     "@chat-arch/schema": "workspace:*",
     "yauzl": "^3.1.3"
   },

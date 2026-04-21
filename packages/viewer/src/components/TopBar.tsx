@@ -75,15 +75,6 @@ export interface TopBarProps {
   /** True when the effective manifest has any cloud entries. Flips
    *  the label to "Update Cloud". */
   hasCloudData?: boolean;
-  /** True when the active manifest is an uploaded ZIP (as opposed to
-   *  the fetched default). Gates the `×` clear chip. */
-  uploadActive?: boolean;
-  /** Click handler that reverts the uploaded ZIP and restores the
-   *  fetched manifest. Renders a compact `×` button beside the
-   *  Upload Cloud group when both `uploadActive` and this prop are
-   *  set. Low-prominence affordance; the UpperPanel has the verbose
-   *  `UNLOAD ZIP` chip for regular users. */
-  onClearUpload?: () => void;
 
   // ---- Delete All button (left cluster, trailing) ----
 
@@ -91,9 +82,9 @@ export interface TopBarProps {
    * When true, render the `DELETE ALL` chip after the source buttons.
    * Mirrors `scanAvailable` — a static-build deploy without an Astro
    * backend has no `/api/clear` endpoint to call, so the button
-   * auto-hides. Reuses `onClearUpload` semantics (memory-only ZIP
-   * unload) as a pre-reload hook; the destructive confirm itself
-   * lives inside the NuclearReset component.
+   * auto-hides. Calls `onDeleteUnload` (memory-only ZIP unload) as a
+   * pre-reload hook; the destructive confirm itself lives inside the
+   * NuclearReset component.
    */
   deleteAvailable?: boolean;
   /** Host's upload-unload handler. Called by NuclearReset before the
@@ -143,8 +134,6 @@ export function TopBar({
   uploadStatus = 'idle',
   uploadHint,
   hasCloudData = false,
-  uploadActive = false,
-  onClearUpload,
   deleteAvailable = false,
   onDeleteUnload,
   deleteCounts,
@@ -270,19 +259,6 @@ export function TopBar({
                   what&rsquo;s already loaded.
                 </p>
               </InfoPopover>
-              {uploadActive && onClearUpload && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="lcars-top-bar__clear-upload"
-                  aria-label="clear uploaded ZIP"
-                  title="Clear uploaded ZIP — revert to the fetched manifest"
-                  onClick={onClearUpload}
-                  onKeyDown={(e) => onActivate(e, onClearUpload)}
-                >
-                  ×
-                </span>
-              )}
             </div>
             <input
               ref={fileInputRef}

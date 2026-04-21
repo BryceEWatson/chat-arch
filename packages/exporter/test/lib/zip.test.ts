@@ -39,7 +39,18 @@ async function buildZipWithPowerShell(sourceDir: string, outZip: string): Promis
 }
 
 describe('unzipTo (yauzl wrapper)', () => {
-  it('extracts a small ZIP produced by PowerShell Compress-Archive to disk', async () => {
+  // The PowerShell fixture-construction path is Windows-only — on
+  // Linux/macOS CI runners `powershell` isn't on PATH and the test
+  // fails with ENOENT before it ever exercises the yauzl wrapper.
+  // The wrapper's behavior doesn't depend on the producer of the
+  // ZIP (that's why we use a fixture), so skipping here doesn't
+  // reduce the cross-platform coverage of `unzipTo` itself — the
+  // missing-ZIP test below still runs everywhere, and the cloud-
+  // ingestion integration tests cover the full parse path on any
+  // platform.
+  it.skipIf(process.platform !== 'win32')(
+    'extracts a small ZIP produced by PowerShell Compress-Archive to disk',
+    async () => {
     // Prepare a small tree.
     await writeFile(
       path.join(stagingDir, 'conversations.json'),

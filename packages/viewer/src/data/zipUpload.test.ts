@@ -84,8 +84,13 @@ describe('parseCloudZip', () => {
     const stored = data.conversationsById.get('aaaa1111-1111-1111-1111-111111111111')!;
     expect(stored.chat_messages).toHaveLength(1);
 
-    // Label includes filename + formatted size.
-    expect(data.sourceLabel).toMatch(/^export\.zip \(/);
+    // sourceLabel masks the raw filename to "upload.<ext> (<size>)"
+    // — claude.ai Privacy Exports embed the user's email in the
+    // filename and the label is IDB-persisted, so the raw name must
+    // not be retained. The fixed "upload" basename preserves
+    // screenshot-safety regardless of what the user dropped.
+    expect(data.sourceLabel).toMatch(/^upload\.zip \(\d/);
+    expect(data.sourceLabel).not.toContain('export');
   });
 
   it('ignores optional projects/users/memories but keeps conversations', async () => {

@@ -4,9 +4,13 @@ import type { UnifiedSessionEntry } from '@chat-arch/schema';
 import { SessionCard } from './SessionCard.js';
 
 function base(overrides: Partial<UnifiedSessionEntry> = {}): UnifiedSessionEntry {
+  // Default source is cli-direct (not cloud) so the default fixture exercises
+  // the 4-cell meta grid. Cloud cards hide MODEL+COST entirely, so tests
+  // that need to pin those cells' behavior would silently pass on a cloud
+  // fixture if we defaulted there. Cloud-specific cases explicitly override.
   return {
     id: 'id-1',
-    source: 'cloud',
+    source: 'cli-direct',
     rawSessionId: 'id-1',
     startedAt: 1700000000000,
     updatedAt: 1700000000000,
@@ -54,15 +58,76 @@ describe('SessionCard', () => {
     expect(metaValue('TURNS')).toBe('4→—');
   });
 
-  it('renders em-dash for null model and null cost', () => {
+  it('renders bare em-dash for null model and null cost on non-cloud sources', () => {
+    // Non-cloud sources: missing data is actually missing (not "structurally
+    // unavailable"), so no attribution suffix — the em-dash stands alone.
     render(
       <SessionCard
-        session={base({ model: null, totalCostUsd: null, topTools: undefined })}
+        session={base({
+          source: 'cli-direct',
+          model: null,
+          totalCostUsd: null,
+          topTools: undefined,
+        })}
         onSelect={() => {}}
       />,
     );
     expect(metaValue('MODEL')).toBe('—');
     expect(metaValue('COST')).toBe('—');
+  });
+
+  it('hides MODEL and COST cells entirely for cloud sessions', () => {
+    // Cloud conversations genuinely can't have model or cost data (claude.ai
+    // exports don't carry them, and running the CLI won't recover it). A
+    // permanently-empty cell reads as a bug, so the cells are omitted and
+    // the meta grid shrinks to TURNS + TOOLS.
+    render(
+      <SessionCard
+        session={base({
+          source: 'cloud',
+          model: null,
+          totalCostUsd: null,
+          costEstimatedUsd: null,
+          topTools: undefined,
+        })}
+        onSelect={() => {}}
+      />,
+    );
+    expect(findMetaCell('MODEL')).toBeNull();
+    expect(findMetaCell('COST')).toBeNull();
+    // TURNS and TOOLS still render.
+    expect(findMetaCell('TURNS')).not.toBeNull();
+    expect(findMetaCell('TOOLS')).not.toBeNull();
+  });
+
+  it('exposes data-source attribute on the card root for CSS targeting', () => {
+    // The meta-grid uses `[data-source="cloud"]` to flip to a 2-col grid
+    // (TURNS + TOOLS only). Pin the selector hook so CSS refactors that
+    // break it surface here rather than as an ugly regression in the UI.
+    const { container } = render(
+      <SessionCard session={base({ source: 'cloud' })} onSelect={() => {}} />,
+    );
+    const card = container.querySelector('.lcars-session-card') as HTMLElement;
+    expect(card.getAttribute('data-source')).toBe('cloud');
+  });
+
+  it('keeps the generic em-dash tooltip for non-cloud sessions', () => {
+    render(
+      <SessionCard
+        session={base({
+          source: 'cli-direct',
+          model: null,
+          totalCostUsd: null,
+          costEstimatedUsd: null,
+          topTools: undefined,
+        })}
+        onSelect={() => {}}
+      />,
+    );
+    const modelCell = findMetaCell('MODEL')!.querySelector('dd')!;
+    const costCell = findMetaCell('COST')!.querySelector('dd')!;
+    expect(modelCell.getAttribute('title')).toBe('No model recorded');
+    expect(costCell.getAttribute('title')).toMatch(/No cost signal/);
   });
 
   it('renders (no preview) when preview is null', () => {

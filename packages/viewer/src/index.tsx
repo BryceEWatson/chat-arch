@@ -3,6 +3,7 @@ import { ChatArchViewer as ChatArchViewerImpl } from './ChatArchViewer.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 
 export type { ChatArchViewerProps };
+export { BenchmarkRunner } from './components/BenchmarkRunner.js';
 
 /**
  * Public entry — wraps the viewer in an ErrorBoundary so a render-time throw

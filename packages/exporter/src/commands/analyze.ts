@@ -10,7 +10,7 @@ import { CURRENT_SCHEMA_VERSION } from '@chat-arch/schema';
 import { findRepoRoot } from '../lib/repo-root.js';
 import { logger } from '../lib/logger.js';
 import { runAnalysis } from '../analysis/index.js';
-import { estimateCost } from '../cost/estimate.js';
+import { estimateCost } from '@chat-arch/analysis';
 
 /**
  * `chat-arch analyze` — re-runs Phase 6 analysis writers against an already

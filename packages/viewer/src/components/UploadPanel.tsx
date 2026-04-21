@@ -1,25 +1,43 @@
 import { useRef, useState } from 'react';
 import { parseCloudZip } from '../data/zipUpload.js';
+import { maskedUploadLabel } from '../data/uploadLabel.js';
 import type { UploadedCloudData } from '../types.js';
 
 export interface UploadPanelProps {
   onLoaded: (data: UploadedCloudData) => void;
   /** Optional compact variant — omits the headline copy. */
   variant?: 'prominent' | 'compact';
+  /**
+   * Optional "Load Demo Data" affordance. When provided, renders a
+   * secondary button that populates the viewer with a generated
+   * fixture so users can explore the UI without needing their own
+   * export. The host wires this up to `generateDemoUpload()` +
+   * `onUpload`.
+   */
+  onLoadDemo?: () => void;
 }
 
+/**
+ * `label` is the MASKED filename (see `maskedUploadLabel`) — never the
+ * raw `file.name`. claude.ai Privacy Exports embed the user's email in
+ * the default filename, and this panel renders the `parsing` and
+ * `success` states into the DOM where they're visible + screenshot-able.
+ * Storing the mask — rather than re-deriving it on every render — also
+ * guarantees a regression from the mask helper is reflected at the
+ * single point of persistence.
+ */
 type UploadState =
   | { status: 'idle' }
-  | { status: 'parsing'; filename: string }
+  | { status: 'parsing'; label: string }
   | { status: 'error'; message: string }
-  | { status: 'success'; count: number; filename: string };
+  | { status: 'success'; count: number; label: string };
 
 /**
  * CTA panel shown inside EmptyState. Accepts a .zip file via native file input,
  * parses it in the browser via `parseCloudZip`, and calls `onLoaded` with the
  * resulting in-memory manifest. LCARS-styled, mobile-responsive.
  */
-export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProps) {
+export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<UploadState>({ status: 'idle' });
 
@@ -34,13 +52,16 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
     e.target.value = '';
     if (!file) return;
 
-    setState({ status: 'parsing', filename: file.name });
+    // Capture the masked label ONCE at the entry point — after this,
+    // the raw `file.name` does not enter React state or the DOM.
+    const label = maskedUploadLabel(file);
+    setState({ status: 'parsing', label });
     try {
       const data = await parseCloudZip(file);
       setState({
         status: 'success',
         count: data.manifest.sessions.length,
-        filename: file.name,
+        label,
       });
       onLoaded(data);
     } catch (err) {
@@ -66,15 +87,35 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
         </>
       )}
 
-      <button
-        type="button"
-        className="lcars-upload-panel__button"
-        onClick={openPicker}
-        disabled={state.status === 'parsing'}
-        aria-label="choose cloud export zip"
-      >
-        {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
-      </button>
+      <div className="lcars-upload-panel__buttons">
+        <button
+          type="button"
+          className="lcars-upload-panel__button"
+          onClick={openPicker}
+          disabled={state.status === 'parsing'}
+          aria-label="choose cloud export zip"
+        >
+          {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
+        </button>
+        {onLoadDemo && (
+          <button
+            type="button"
+            className="lcars-upload-panel__button lcars-upload-panel__button--secondary"
+            onClick={onLoadDemo}
+            disabled={state.status === 'parsing'}
+            aria-label="load demo data — populate the viewer with generated fake conversations"
+            title="Populate the viewer with generated fake conversations so you can explore the UI."
+          >
+            LOAD DEMO DATA
+          </button>
+        )}
+      </div>
+      {onLoadDemo && variant === 'prominent' && (
+        <p className="lcars-upload-panel__hint lcars-upload-panel__hint--demo">
+          No export handy? Load the bundled fixture — about 100 hand-written fake conversations
+          — so you can try the filters, sparkline, and analysis tab. Nothing is stored server-side.
+        </p>
+      )}
 
       <input
         ref={inputRef}
@@ -88,7 +129,7 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
 
       {state.status === 'parsing' && (
         <div className="lcars-upload-panel__status" role="status" aria-live="polite">
-          PARSING {state.filename}…
+          PARSING {state.label}…
         </div>
       )}
       {state.status === 'error' && (
@@ -102,7 +143,7 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
           role="status"
           aria-live="polite"
         >
-          LOADED {state.count} CONVERSATIONS FROM {state.filename}
+          LOADED {state.count} CONVERSATIONS FROM {state.label}
         </div>
       )}
     </section>

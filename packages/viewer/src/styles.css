@@ -75,7 +75,10 @@
   font-family: var(--lcars-font-chrome);
   font-weight: 500;
   letter-spacing: 0.02em;
-  min-height: 100vh;
+  /* No forced min-height: 100vh — body + html are already black, so a
+     short empty state fits the viewport without needing a tall root.
+     Forcing 100vh was combining with tier padding (10/12px) to emit
+     4–8px of vestigial scrollbar on the empty state. */
   width: 100%;
   box-sizing: border-box;
   padding: 8px;
@@ -126,13 +129,23 @@
 }
 
 /* --- frame & grid (mobile-first stack) --- */
+/* Root is content-sized. We don't force 100vh because html + body
+   already paint black, so a short empty state fits the viewport
+   without needing a tall root — and forcing 100vh was combining with
+   tier padding to produce 4–8px of vestigial scrollbar on the empty
+   state (frame's old `calc(100vh - 16px)` assumed 8px padding but
+   desktop uses 12px). `box-sizing: border-box` keeps padding accounted
+   for if a future consumer DOES set a height. */
+.lcars-root {
+  box-sizing: border-box;
+}
+
 .lcars-frame {
   display: grid;
   grid-template-columns: 1fr;
   /* Tier C: top bar / pill sidebar / content column — content area flexes. */
   grid-template-rows: auto auto 1fr;
   gap: 6px;
-  min-height: calc(100vh - 16px);
 }
 /* Empty-state frame: keep the TopBar visible (SCAN LOCAL + UPLOAD CLOUD are
    the primary actions out of this state) but collapse the sidebar column so
@@ -289,13 +302,118 @@
   align-items: center;
   gap: 6px;
 }
+/*
+ * Small uppercase row prefix ("PROJECTS", "TOPICS") that anchors each
+ * pill row so the user can tell at a glance which kind of filter
+ * they're looking at. Color-coded to match the pills in that row:
+ * butterscotch/ice for projects (matching the dominant pill colors),
+ * violet for topics (matching --emergent pills). Width is fixed-ish
+ * so pill rows align vertically; if you change one row's font you
+ * may want to revisit the min-width to keep alignment crisp.
+ */
+.lcars-filter-bar__row-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  min-width: 70px;
+  padding-right: 4px;
+  user-select: none;
+}
+.lcars-filter-bar__pills--topic .lcars-filter-bar__row-label {
+  color: var(--lcars-violet);
+}
+
+/*
+ * Live-streaming treatment on the project pill row. While semantic
+ * analysis is mid-run, counts/ranks change several times a second.
+ * Without a signal that the row is "not final", users would
+ * misread pill positions as stable. A subtle pulsing left-edge
+ * accent reads as "activity happening here" without being noisy
+ * or stealing attention from the chip's own progress percentage.
+ * Reduced-motion users get only the static border color bump so
+ * the affordance is still visible.
+ */
+.lcars-filter-bar__pills--streaming {
+  position: relative;
+  padding-left: 10px;
+  border-left: 2px solid var(--lcars-violet);
+  animation: lcars-filter-streaming-pulse 1.6s ease-in-out infinite;
+}
+@keyframes lcars-filter-streaming-pulse {
+  0%, 100% { border-left-color: var(--lcars-violet); }
+  50%      { border-left-color: color-mix(in srgb, var(--lcars-violet) 40%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-filter-bar__pills--streaming {
+    animation: none;
+  }
+}
+
+/* Focus pulse — fired when the ANALYSIS-tab LABELS / TOPICS cards
+   navigate the user here. A 2.2s double-flash on the pill row so the
+   eye clearly catches it; re-triggers on repeat clicks via the
+   `key`-bump pattern in ChatArchViewer.
+   Color-matched per row:
+     .lcars-filter-bar__pills--project → ice-blue (LABELS accent)
+     .lcars-filter-bar__pills--topic   → violet   (TOPICS accent)
+*/
+.lcars-filter-bar__pills--focused {
+  position: relative;
+  border-radius: 6px;
+  padding: 4px 8px;
+  animation: lcars-filter-focus-pulse-ice 2.2s ease-out 1;
+}
+.lcars-filter-bar__pills--topic.lcars-filter-bar__pills--focused {
+  animation: lcars-filter-focus-pulse-violet 2.2s ease-out 1;
+}
+@keyframes lcars-filter-focus-pulse-ice {
+  0%, 50% {
+    background: color-mix(in srgb, var(--lcars-ice) 28%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcars-ice) 60%, transparent);
+  }
+  25%, 75% {
+    background: color-mix(in srgb, var(--lcars-ice) 6%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--lcars-ice) 20%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@keyframes lcars-filter-focus-pulse-violet {
+  0%, 50% {
+    background: color-mix(in srgb, var(--lcars-violet) 28%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcars-violet) 60%, transparent);
+  }
+  25%, 75% {
+    background: color-mix(in srgb, var(--lcars-violet) 6%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--lcars-violet) 20%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-filter-bar__pills--focused {
+    animation: none;
+    background: color-mix(in srgb, var(--lcars-ice) 12%, transparent);
+  }
+  .lcars-filter-bar__pills--topic.lcars-filter-bar__pills--focused {
+    background: color-mix(in srgb, var(--lcars-violet) 12%, transparent);
+  }
+}
 
 @media (min-width: 600px) {
   .lcars-frame {
     grid-template-columns: 1fr;
     grid-template-rows: 56px 1fr;
     gap: 8px;
-    min-height: calc(100vh - 20px);
+    /* No forced min-height — frame sizes to content. Populated layouts
+       grow naturally from their session grid; empty state stays short
+       so no vestigial scrollbar appears on short pages. */
   }
   .lcars-body {
     display: grid;
@@ -576,43 +694,6 @@
   background: var(--lcars-bg);
   color: var(--lcars-sunflower);
   border-color: var(--lcars-bg);
-}
-/* Clear-upload `×` chip. Rides in the Upload Cloud source-group
-   after the InfoPopover, only when an uploaded ZIP is active.
-   Sized + colored to match the info trigger so the two circles
-   pair visually. The `×` glyph (U+00D7) has math-symbol font
-   metrics — ink sits above the baseline with a negative descent —
-   so it needs a much larger `padding-bottom` than alphabetic caps
-   to land at optical center. Empirically pb: 5px at font-size 14px
-   drives canvas ink-mid to box-mid exactly. */
-.lcars-top-bar__clear-upload {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--lcars-bg);
-  border: 1px solid var(--lcars-bg);
-  font-family: var(--lcars-font-chrome);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  user-select: none;
-  transition:
-    background 100ms,
-    color 100ms,
-    border-color 100ms;
-  padding-bottom: 5px;
-}
-.lcars-top-bar__clear-upload:hover,
-.lcars-top-bar__clear-upload:focus-visible {
-  background: var(--lcars-bg);
-  color: var(--lcars-peach);
-  border-color: var(--lcars-bg);
-  outline: none;
 }
 .lcars-info-popover__panel {
   position: absolute;
@@ -942,10 +1023,31 @@
 .lcars-sidebar__list {
   list-style: none;
   margin: 0;
-  padding: 8px 0;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+/* Two-tier IA: BROWSE / INSIGHTS group labels sit above each list of
+   mode buttons. Tier C (mobile, horizontal variant) hides them — the
+   pill bar has no room for section headings. */
+.lcars-sidebar__group {
+  display: flex;
+  flex-direction: column;
+}
+.lcars-sidebar__group-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--lcars-butterscotch);
+  padding: 10px 8px 4px 10px;
+  user-select: none;
+}
+/* Only the first group needs top padding trimmed; the elbow already
+   provides separation above. */
+.lcars-sidebar__group:first-of-type > .lcars-sidebar__group-label {
+  padding-top: 6px;
 }
 .lcars-sidebar__item {
   display: flex;
@@ -1209,18 +1311,30 @@
     grid-template-rows: none;
     padding: 10px 16px;
     gap: 8px;
+    /* Reset the tablet-tier `align-items: center` so the stats / tabs /
+       body rows each stretch to full panel width. Without this override
+       the panel collapses its children to content width and the body
+       sits in a narrow center column. */
+    align-items: stretch;
     /* Top-bar (row 1, col 2) meets the panel flush — keep the panel's
        top edge unbordered so we don't double-stroke the join. */
     border-top: 0;
     border-radius: 0 0 12px 12px;
   }
-  /* Stats become a horizontal row at desktop so VISIBLE / RANGE /
-     tier chip all sit on one line instead of stacking 3 rows deep. */
+  /* Stats row at desktop: stats-start (VISIBLE + RANGE) on the left,
+     stats-end (ZIP / UNLOAD) pinned right. The OVERVIEW/ANALYSIS tabs
+     live on their own centered row below. `flex-direction: row` is
+     explicit because the tablet media query sets column — without
+     this override the children stack vertically and `align-items:
+     center` centers them horizontally. */
   .lcars-upper-panel__stats {
+    display: flex;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px 16px;
+    justify-content: space-between;
+    column-gap: 24px;
+    row-gap: 8px;
   }
   .lcars-upper-panel__stat {
     flex-direction: row;
@@ -1363,18 +1477,242 @@
   max-width: 100%;
   min-width: 0;
 }
+/* Summary readout: TOTAL / VISIBLE (when filtered) / PEAK / AVG/WK —
+   at-a-glance stats above the bar strip. Mirrors the chip-family
+   typography (butterscotch labels, sunflower values) so it reads as
+   part of the LCARS chrome, not a bolted-on legend. */
+.lcars-sparkline__readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 18px;
+  row-gap: 4px;
+  padding: 0 2px;
+}
+.lcars-sparkline__readout-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.lcars-sparkline__readout-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-sparkline__readout-value {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.lcars-sparkline__readout-peak-date {
+  font-family: var(--lcars-font-mono);
+  color: var(--lcars-dim);
+  font-weight: 500;
+}
+
+/* Source legend — sits at the right end of the readout row when more
+   than one source is present in the data. Small swatch + label pairs
+   so the user can immediately connect bar colors to sources. */
+.lcars-sparkline__legend {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-sparkline__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.lcars-sparkline__legend-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Per-source breakdown inside the hover tooltip — appears only for
+   multi-source weeks. Small grid of swatch · label · count triples. */
+.lcars-sparkline__tooltip-breakdown {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--lcars-divider);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--lcars-font-mono);
+  font-size: 10.5px;
+}
+.lcars-sparkline__tooltip-source {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.lcars-sparkline__tooltip-source-label {
+  font-family: var(--lcars-font-chrome);
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--lcars-butterscotch);
+  font-size: 9px;
+}
+.lcars-sparkline__tooltip-source-count {
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Chart wrapper anchors the tooltip overlay absolutely to the SVG. */
+.lcars-sparkline__chart {
+  position: relative;
+  width: 100%;
+}
 .lcars-sparkline svg {
   display: block;
   width: 100%;
   height: auto;
 }
+/* Per-bar stack. Each `<g>` groups the per-source segments for one
+   week. Inline `fill` comes from the component (source palette);
+   transitions here handle the hover / dim states. */
 .lcars-sparkline__bar {
-  fill: var(--lcars-butterscotch);
+  transition: opacity 100ms ease-out;
 }
-.lcars-sparkline__bar--dim {
-  fill: var(--lcars-butterscotch);
+.lcars-sparkline__bar-group {
+  transition: opacity 100ms ease-out;
+}
+/* Dim weeks (all segments outside the current filter) drop to 30%
+   opacity as a group so the source-color relationship is preserved. */
+.lcars-sparkline__bar-group--dim {
   opacity: 0.3;
 }
+/* Hovered group lifts to full opacity regardless of dim state. */
+.lcars-sparkline__bar-group--hover {
+  opacity: 1;
+}
+/* Peak ring — thin sunflower outline surrounding the tallest week's
+   full stack, drawn once per bar group so it sits above all segments.
+   Pre-hover peak highlight without changing segment colors. */
+.lcars-sparkline__peak-ring {
+  stroke: var(--lcars-sunflower);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.lcars-sparkline__bar-group--hover .lcars-sparkline__peak-ring {
+  stroke: var(--lcars-peach);
+  stroke-width: 1.5;
+}
+.lcars-sparkline__baseline {
+  stroke: rgba(221, 153, 68, 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  fill: none;
+}
+/* Invisible column-tall hit targets so short bars still have a full
+   column's worth of mouse-friendly hover area. Pointer-events on,
+   visually invisible. */
+.lcars-sparkline__hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+/* Floating tooltip — positioned over the hovered bar, pops up from the
+   top of the chart so it doesn't overlap the bars themselves. */
+.lcars-sparkline__tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  min-width: 160px;
+  padding: 8px 12px;
+  background: var(--lcars-bg);
+  border: 1px solid var(--lcars-butterscotch);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  pointer-events: none;
+  animation: lcars-sparkline-tooltip-in 120ms ease-out;
+}
+@keyframes lcars-sparkline-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.lcars-sparkline__tooltip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: var(--lcars-sunflower);
+  letter-spacing: 0.04em;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--lcars-divider);
+  white-space: nowrap;
+}
+.lcars-sparkline__tooltip-peak {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--lcars-bg);
+  background: var(--lcars-sunflower);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+.lcars-sparkline__tooltip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.lcars-sparkline__tooltip-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-sparkline__tooltip-value {
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.lcars-sparkline__tooltip-dim {
+  color: var(--lcars-dim);
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-sparkline__tooltip {
+    animation: none;
+  }
+}
+
+/* Axis: at 2+ month boundaries render a positional tick row (month
+   labels sit over the first bucket of their month). At <2 fall back
+   to the legacy left/right anchor labels so very short corpora still
+   get orientation without looking lopsided. */
 .lcars-sparkline__axis {
   display: flex;
   justify-content: space-between;
@@ -1385,6 +1723,22 @@
   color: var(--lcars-butterscotch);
   letter-spacing: 0.12em;
   opacity: 0.9;
+}
+.lcars-sparkline__axis-months {
+  position: relative;
+  width: 100%;
+  height: 14px;
+}
+.lcars-sparkline__axis-month {
+  position: absolute;
+  top: 0;
+  transform: translateX(0);
+  white-space: nowrap;
+  font-family: var(--lcars-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--lcars-butterscotch);
+  opacity: 0.78;
 }
 .lcars-sparkline--empty {
   font-size: 11px;
@@ -1546,6 +1900,16 @@
 .lcars-session-card__row--top > .lcars-source-pill {
   flex: 0 0 auto;
 }
+/*
+ * `--semantic` variant: italicized + marginally lower opacity so users
+ * can distinguish semantic-classifier labels (preceded by ~) from
+ * string-match labels at a glance. Intentionally subtle — the `~`
+ * prefix + title tooltip carry the main signal.
+ */
+.lcars-session-card__project--semantic {
+  font-style: italic;
+  opacity: 0.6;
+}
 .lcars-session-card__project {
   font-family: var(--lcars-font-mono);
   font-size: 10px;
@@ -1636,6 +2000,16 @@
   margin: 0;
   padding-top: 9px;
   border-top: 1px solid var(--lcars-divider);
+}
+/*
+ * Cloud sessions only render TURNS + TOOLS — MODEL and COST are omitted
+ * because the claude.ai export doesn't carry that data, and a permanently-
+ * empty cell reads as a bug to users. Shrink the grid so the two remaining
+ * cells expand naturally rather than sitting in the left half with dead
+ * space on the right.
+ */
+.lcars-session-card[data-source='cloud'] .lcars-session-card__meta {
+  grid-template-columns: repeat(2, 1fr);
 }
 .lcars-session-card__meta-cell {
   display: flex;
@@ -2321,6 +2695,34 @@
   color: var(--lcars-sunflower);
   cursor: progress;
 }
+/* Row holding the primary CHOOSE ZIP + optional LOAD DEMO DATA
+   button side-by-side. Wraps to a column on narrow viewports so
+   buttons stay full-width and tappable. */
+.lcars-upload-panel__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+/* Secondary variant — LOAD DEMO DATA. Outlined style so the primary
+   CHOOSE ZIP action still reads as the default path. */
+.lcars-upload-panel__button--secondary {
+  background: transparent;
+  color: var(--lcars-violet);
+  border: 1.5px solid var(--lcars-violet);
+}
+.lcars-upload-panel__button--secondary:hover:not(:disabled),
+.lcars-upload-panel__button--secondary:focus-visible:not(:disabled) {
+  background: var(--lcars-violet);
+  color: var(--lcars-bg);
+}
+.lcars-upload-panel__hint--demo {
+  font-size: 11px;
+  color: var(--lcars-text);
+  opacity: 0.65;
+  line-height: 1.45;
+  margin-top: 2px;
+}
 .lcars-upload-panel__status {
   color: var(--lcars-text);
   font-size: 11px;
@@ -2345,9 +2747,22 @@
   align-items: center;
   margin-top: 4px;
 }
-.lcars-upper-panel__upload-chip {
+/*
+ * Right-floating cluster: holds the small upload chip and the tier
+ * indicator together at the end of the stats row. Without this wrapper
+ * the long claude.ai filename on the upload chip would push the tier
+ * indicator off to a second line on mid-width viewports, and the opaque
+ * GUID filename eats horizontal space that VISIBLE/RANGE need.
+ */
+.lcars-upper-panel__stats-end {
+  margin-left: auto;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 10px;
+}
+.lcars-upper-panel__upload-chip {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--lcars-sunflower);
@@ -2356,12 +2771,97 @@
   min-width: 0;
 }
 .lcars-upper-panel__upload-chip-label {
-  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--lcars-sunflower);
   font-weight: 600;
+}
+/*
+ * Semantic-analyzer chip — state-driven styling. Shares the
+ * font-size/letter-spacing of the other stats-row chips so it sits
+ * visually flush. The four variants differ only in color + border:
+ *
+ *   cta         sunflower border, violet text (primary action affordance)
+ *   running     violet border, pulsing — "work in progress"
+ *   ready       ice border, dim — "done, click to re-run"
+ *   error       peach border — "failed, retry"
+ *   unavailable fully dimmed, no interaction — "not applicable here"
+ */
+.lcars-semantic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+  background: transparent;
+}
+.lcars-semantic-chip__label {
+  white-space: nowrap;
+}
+.lcars-semantic-chip--cta {
+  color: var(--lcars-violet);
+  border-color: var(--lcars-violet);
+  background: rgba(204, 153, 204, 0.08);
+}
+.lcars-semantic-chip--cta:hover {
+  background: rgba(204, 153, 204, 0.18);
+}
+.lcars-semantic-chip--running {
+  color: var(--lcars-violet);
+  border-color: var(--lcars-violet);
+  cursor: progress;
+  animation: lcars-semantic-chip-pulse 1.4s ease-in-out infinite;
+}
+@keyframes lcars-semantic-chip-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+.lcars-semantic-chip__spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lcars-violet);
+  animation: lcars-semantic-chip-spin 1s linear infinite;
+}
+@keyframes lcars-semantic-chip-spin {
+  from { transform: scale(0.6); opacity: 0.4; }
+  50%  { transform: scale(1);   opacity: 1;   }
+  to   { transform: scale(0.6); opacity: 0.4; }
+}
+.lcars-semantic-chip--ready {
+  color: var(--lcars-ice);
+  border-color: var(--lcars-ice);
+  opacity: 0.8;
+}
+.lcars-semantic-chip--ready:hover {
+  opacity: 1;
+}
+.lcars-semantic-chip--error {
+  color: var(--lcars-peach);
+  border-color: var(--lcars-peach);
+  background: rgba(255, 204, 153, 0.1);
+}
+/* Stale: analysis ran but the active manifest has more eligible
+   sessions than the bundle covers (typical after a second ZIP
+   upload). Butterscotch warning palette so it reads as "attention
+   needed" without alarming like the error state's peach. */
+.lcars-semantic-chip--stale {
+  color: var(--lcars-butterscotch);
+  border-color: var(--lcars-butterscotch);
+  background: rgba(221, 153, 68, 0.12);
+}
+.lcars-semantic-chip--stale:hover {
+  background: rgba(221, 153, 68, 0.22);
+  color: var(--lcars-sunflower);
 }
 .lcars-upper-panel__unload {
   display: inline-flex;
@@ -2760,7 +3260,10 @@
   color: var(--lcars-sunflower);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  line-height: 1;
+  /* line-height 1 clipped descenders on project names with lowercase
+     g / p / y (e.g., "dropKnowledge"). 1.15 keeps the compact KPI
+     look while leaving a few pixels for the glyph tail. */
+  line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2792,7 +3295,16 @@
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  line-height: 1;
+  /* line-height 1 was clipping descenders on lowercase labels (g/p/y).
+     1.25 gives the tail a few px of room without bulking the pill. */
+  line-height: 1.25;
+  /* Cap wide emergent labels so a verbose centroid label
+     ("Bluefin Mobile multi-log profile UX…") doesn\u2019t blow the pill
+     row layout. The label span below handles the ellipsis via
+     flex-shrink + min-width:0; the count stays flex-shrink:0 so the
+     number is always visible. */
+  max-width: 260px;
+  min-width: 0;
   cursor: pointer;
   /* Subtle 8% tint of the ice color so the pill shape reads at a glance
      even in the inactive state — transparent-only pills were disappearing
@@ -2811,6 +3323,19 @@
 .lcars-project-pill--active {
   background: var(--lcars-ice);
   color: #000;
+  /* Active (clicked) pill expands to show the full label — emergent
+     topic labels like `~pattern + library + approach` carry real
+     information the user is opting into, so ellipsizing them in the
+     one pill they're currently filtered on is a UX regression. The
+     inactive pills in the same row keep the 180px cap so the row
+     doesn't explode. */
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+.lcars-project-pill--active .lcars-project-pill__label {
+  overflow: visible;
+  text-overflow: clip;
 }
 .lcars-project-pill--unknown {
   border-color: var(--lcars-butterscotch-muted);
@@ -2826,14 +3351,50 @@
   color: var(--lcars-text);
 }
 .lcars-project-pill--rest {
-  cursor: default;
+  cursor: pointer;
   border-style: dashed;
-  opacity: 0.8;
+  opacity: 0.7;
+}
+.lcars-project-pill--rest:hover,
+.lcars-project-pill--rest:focus-visible {
+  opacity: 1;
+  border-style: solid;
+}
+
+/*
+ * Emergent-topic pills — unsupervised cluster labels (`~term + term`)
+ * produced by the discovery pass. Visually distinct from user-defined
+ * projects so a glance at the pill bar conveys "these are derived,
+ * those are declared": violet border (tying to the streaming-pulse
+ * accent), italic text, lighter background. Still clickable as a
+ * filter; keeps all `.lcars-project-pill` behavior.
+ */
+.lcars-project-pill--emergent {
+  border-color: var(--lcars-violet);
+  color: var(--lcars-violet);
+  background: color-mix(in srgb, var(--lcars-violet) 8%, transparent);
+  font-style: italic;
+}
+.lcars-project-pill--emergent:hover,
+.lcars-project-pill--emergent:focus-visible {
+  background: color-mix(in srgb, var(--lcars-violet) 18%, transparent);
+}
+.lcars-project-pill--emergent.lcars-project-pill--active {
+  background: var(--lcars-violet);
+  color: #000;
+}
+.lcars-project-pill__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 .lcars-project-pill__count {
   font-size: 11px;
   font-weight: 500;
   opacity: 0.9;
+  flex-shrink: 0; /* count is always visible — ellipsis the label, not the number */
 }
 
 /* --- zero-turn toggle ---
@@ -2963,6 +3524,20 @@
   background: var(--lcars-bg-1);
   border: 1px solid var(--lcars-divider);
   border-radius: 8px;
+}
+.lcars-cost-cloud-notice {
+  padding: 12px 16px;
+  background: var(--lcars-bg-1);
+  border: 1px dashed var(--lcars-violet);
+  border-radius: 6px;
+  color: var(--lcars-text);
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+.lcars-cost-cloud-notice strong {
+  color: var(--lcars-violet);
+  letter-spacing: 0.04em;
 }
 .lcars-cost-section__header {
   display: flex;
@@ -3870,4 +4445,887 @@
   .lcars-delete-dropdown__panel {
     animation: none;
   }
+}
+
+/* --- Activity log panel --- */
+/*
+ * Fixed-position drawer on the right edge. Overlays the session grid
+ * rather than resizing it — toggling visibility must not reflow the
+ * content underneath. The transform-based slide is so a reduced-motion
+ * user can keep the instant appearance while everyone else gets a
+ * cheap gpu-accelerated animation.
+ */
+.lcars-activity-log {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(420px, 100vw);
+  height: 100vh;
+  background: var(--lcars-bg-0, #000);
+  border-left: 1px solid var(--lcars-divider, #333);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  font-family: var(--lcars-font-mono, 'JetBrains Mono', monospace);
+  color: var(--lcars-text);
+}
+.lcars-activity-log__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--lcars-divider);
+  background: color-mix(in srgb, var(--lcars-butterscotch) 8%, transparent);
+  flex-shrink: 0;
+}
+.lcars-activity-log__title {
+  font-family: var(--lcars-font-chrome, 'Antonio', sans-serif);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  margin: 0;
+}
+.lcars-activity-log__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lcars-activity-log__action,
+.lcars-activity-log__close {
+  background: transparent;
+  color: var(--lcars-ice);
+  border: 1px solid var(--lcars-ice);
+  border-radius: 4px;
+  font-family: var(--lcars-font-chrome, 'Antonio', sans-serif);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+.lcars-activity-log__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lcars-activity-log__action:hover:not(:disabled),
+.lcars-activity-log__close:hover {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+}
+.lcars-activity-log__close {
+  font-size: 12px;
+  padding: 2px 7px;
+}
+.lcars-activity-log__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 10px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.lcars-activity-log__empty {
+  color: var(--lcars-text);
+  opacity: 0.45;
+  text-align: center;
+  margin-top: 40px;
+  font-family: var(--lcars-font-prose, 'IBM Plex Sans', sans-serif);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.lcars-activity-log__entry {
+  display: grid;
+  grid-template-columns: 58px 14px 72px 1fr;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--lcars-divider) 50%, transparent);
+  word-break: break-word;
+  align-items: baseline;
+}
+.lcars-activity-log__time {
+  color: var(--lcars-text);
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.lcars-activity-log__glyph {
+  color: var(--lcars-text);
+  text-align: center;
+  font-weight: 700;
+}
+.lcars-activity-log__source {
+  font-family: var(--lcars-font-chrome, 'Antonio', sans-serif);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--lcars-butterscotch);
+  opacity: 0.85;
+}
+.lcars-activity-log__message {
+  color: var(--lcars-text);
+}
+.lcars-activity-log__entry--debug .lcars-activity-log__glyph,
+.lcars-activity-log__entry--debug .lcars-activity-log__message {
+  opacity: 0.6;
+}
+.lcars-activity-log__entry--info .lcars-activity-log__glyph {
+  color: var(--lcars-ice);
+}
+.lcars-activity-log__entry--warn .lcars-activity-log__glyph,
+.lcars-activity-log__entry--warn .lcars-activity-log__message {
+  color: var(--lcars-butterscotch);
+}
+.lcars-activity-log__entry--error .lcars-activity-log__glyph,
+.lcars-activity-log__entry--error .lcars-activity-log__message {
+  color: var(--lcars-peach);
+}
+
+/* Toggle chip in the TopBar. Mirrors the other small chips' sizing
+ * so it doesn't disrupt the header's rhythm. `--open` state gets the
+ * ice-fill treatment to communicate "showing now". */
+.lcars-activity-log-toggle {
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  border: 1px solid var(--lcars-butterscotch);
+  border-radius: 4px;
+  font-family: var(--lcars-font-chrome, 'Antonio', sans-serif);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  line-height: 1;
+  margin-right: 8px;
+}
+.lcars-activity-log-toggle:hover {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 18%, transparent);
+}
+.lcars-activity-log-toggle--open {
+  background: var(--lcars-butterscotch);
+  color: #000;
+}
+
+/*
+ * Edge tab — appears on the right side of the viewport whenever the
+ * activity log panel is closed. Slim, vertical-text "ACTIVITY LOG"
+ * label, butterscotch like the panel itself for visual cohesion. The
+ * point is discoverability: the existing TopBar LOG toggle is small
+ * and easy to overlook, so this provides a second always-visible
+ * affordance that follows the standard slide-out drawer pattern. When
+ * there are entries the user hasn't seen (panel was closed during a
+ * run), a small count badge anchors above the label so a busy
+ * background run still telegraphs "look here".
+ *
+ * Position: fixed to the viewport so the tab stays visible regardless
+ * of scroll. z-index above the main content but below the panel
+ * itself (panel uses higher z-index to overlay this tab when open).
+ *
+ * Mobile / narrow viewport handling: at < 480px the tab shrinks but
+ * stays in place — it's already small enough that it doesn't cost
+ * much usable width. Reduced-motion users see no transitions on
+ * hover; the color shift alone communicates interactivity.
+ */
+.lcars-activity-log-tab {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 28px;
+  min-height: 140px;
+  padding: 12px 4px;
+  background: var(--lcars-bg-1);
+  color: var(--lcars-butterscotch);
+  border: 1px solid var(--lcars-butterscotch);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.lcars-activity-log-tab:hover,
+.lcars-activity-log-tab:focus-visible {
+  background: var(--lcars-butterscotch);
+  color: #000;
+  outline: none;
+}
+.lcars-activity-log-tab__label {
+  /* Vertical reading direction so the tab can stay narrow without
+   * truncating the label. `writing-mode: vertical-rl` rotates the
+   * glyphs themselves; `transform: rotate(180deg)` flips so the text
+   * reads bottom-to-top, which is the convention for right-edge
+   * vertical labels (left edge would read top-to-bottom). */
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  user-select: none;
+}
+.lcars-activity-log-tab__count {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--lcars-butterscotch);
+  color: #000;
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
+  line-height: 1.4;
+}
+.lcars-activity-log-tab:hover .lcars-activity-log-tab__count,
+.lcars-activity-log-tab:focus-visible .lcars-activity-log-tab__count {
+  background: #000;
+  color: var(--lcars-butterscotch);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-activity-log-tab {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Redesign Phase 2: OVERVIEW / ANALYSIS tabs (upper panel)
+   ==========================================================================
+   The segmented-control tab bar sits on its own dedicated row directly
+   above the body it governs — the spatial metaphor is that the tabs
+   *are a header for the body below*, not a peer of the VISIBLE/RANGE
+   stats row. Centered horizontally so the active tab reads as an anchor
+   over the content.
+*/
+.lcars-upper-panel__stats-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+.lcars-upper-panel__tabs {
+  display: inline-flex;
+  align-items: stretch;
+  justify-self: center;
+  /* Centered on its own row. Margins auto give us a self-contained
+     segmented control that centers under the panel width regardless
+     of where the body content falls. */
+  margin: 2px auto 0;
+  border: 1px solid var(--lcars-divider);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--lcars-bg-2);
+  height: 26px;
+}
+.lcars-upper-panel__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  border: 0;
+  border-right: 1px solid var(--lcars-divider);
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: background 100ms ease-out, color 100ms ease-out;
+}
+.lcars-upper-panel__tab:last-child {
+  border-right: 0;
+}
+.lcars-upper-panel__tab:hover {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 14%, transparent);
+  color: var(--lcars-sunflower);
+}
+.lcars-upper-panel__tab--active {
+  background: var(--lcars-butterscotch);
+  color: #000;
+}
+.lcars-upper-panel__tab--active:hover {
+  background: var(--lcars-butterscotch);
+  color: #000;
+}
+.lcars-upper-panel__tab-badge {
+  font-family: var(--lcars-font-mono);
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.22);
+  font-weight: 700;
+}
+.lcars-upper-panel__tab--active .lcars-upper-panel__tab-badge {
+  background: #000;
+  color: var(--lcars-sunflower);
+}
+/* Urgency flag: red badge when dupe + zombie counts exceed zero. Survives
+   both active and inactive tab states so the signal is never hidden. */
+.lcars-upper-panel__tab--flag .lcars-upper-panel__tab-badge {
+  background: #ff6b4a;
+  color: #fff;
+}
+.lcars-upper-panel__tab--active.lcars-upper-panel__tab--flag .lcars-upper-panel__tab-badge {
+  background: #ff6b4a;
+  color: #fff;
+}
+
+.lcars-upper-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+/* ANALYSIS tab body: summary cards up top, then a small footer of
+   state chips (semantic analyzer, tier indicator). Cards + chips both
+   live inside the tab they describe — the tab becomes the full
+   workspace for "what does analysis know right now?". */
+.lcars-upper-panel__body--analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 4 equal cards on wide screens (RE-ASKED / ZOMBIES / CLASSIFIED / TOPICS).
+   On narrower viewports auto-fit keeps cards a readable minimum width
+   (~180px) and wraps to 2 or 1 rows as needed. */
+.lcars-upper-panel__analysis-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 1200px) {
+  .lcars-upper-panel__analysis-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .lcars-upper-panel__analysis-cards {
+    grid-template-columns: 1fr;
+  }
+}
+.lcars-upper-panel__analysis-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--lcars-divider);
+}
+
+/* --- Analysis summary cards (RE-ASKED / ZOMBIES / TOPICS) --- */
+.lcars-analysis-card {
+  --card-accent: var(--lcars-violet);
+  background: var(--lcars-bg-2);
+  border: 1px solid var(--lcars-divider);
+  border-left: 3px solid var(--card-accent);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 88px;
+  cursor: pointer;
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+.lcars-analysis-card:hover {
+  background: color-mix(in srgb, var(--card-accent) 8%, var(--lcars-bg-2));
+}
+.lcars-analysis-card:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
+}
+.lcars-analysis-card--inert {
+  cursor: default;
+  opacity: 0.62;
+}
+.lcars-analysis-card--inert:hover {
+  background: var(--lcars-bg-2);
+}
+.lcars-analysis-card--dup {
+  --card-accent: var(--lcars-peach);
+}
+.lcars-analysis-card--zombie {
+  --card-accent: #ff6b4a;
+}
+.lcars-analysis-card--classified {
+  /* Ice-blue accent reads as "matched / known good" and keeps the
+     four-card palette distinct: peach · red · ice · violet. */
+  --card-accent: var(--lcars-ice);
+}
+.lcars-analysis-card--topic {
+  --card-accent: var(--lcars-violet);
+}
+.lcars-analysis-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lcars-analysis-card__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--lcars-sunflower);
+}
+.lcars-analysis-card__count {
+  margin-left: auto;
+  font-family: var(--lcars-font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--card-accent);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.lcars-analysis-card__desc {
+  font-family: var(--lcars-font-prose);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--lcars-text);
+  opacity: 0.72;
+  flex: 1;
+}
+.lcars-analysis-card__cta {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--lcars-butterscotch);
+  align-self: flex-start;
+}
+.lcars-analysis-card:hover .lcars-analysis-card__cta {
+  color: var(--lcars-sunflower);
+}
+.lcars-analysis-card__cta--muted {
+  color: var(--lcars-dim);
+}
+
+/* --- Analysis launcher hero (ANALYSIS tab primary action) --- */
+.lcars-analysis-launcher {
+  background: linear-gradient(
+    135deg,
+    var(--lcars-bg-1),
+    color-mix(in srgb, var(--lcars-violet) 10%, var(--lcars-bg-1)) 140%
+  );
+  border: 1px solid color-mix(in srgb, var(--lcars-violet) 40%, var(--lcars-divider));
+  border-left: 4px solid var(--lcars-violet);
+  border-radius: 6px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lcars-analysis-launcher__heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lcars-analysis-launcher__badge {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  padding: 3px 10px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.lcars-analysis-launcher__badge--ok {
+  background: var(--lcars-ice);
+  color: var(--lcars-bg);
+}
+.lcars-analysis-launcher__badge--warn {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+}
+.lcars-analysis-launcher__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.lcars-analysis-launcher__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--lcars-violet);
+}
+.lcars-analysis-launcher--stale .lcars-analysis-launcher__title {
+  color: var(--lcars-butterscotch);
+}
+.lcars-analysis-launcher--done .lcars-analysis-launcher__title {
+  color: var(--lcars-ice);
+}
+.lcars-analysis-launcher--error .lcars-analysis-launcher__title {
+  color: var(--lcars-peach);
+}
+.lcars-analysis-launcher__subtitle {
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--lcars-text);
+  opacity: 0.82;
+}
+.lcars-analysis-launcher__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+.lcars-analysis-launcher__btn {
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 10px 22px;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out,
+    transform 80ms ease-out;
+}
+.lcars-analysis-launcher__btn:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
+}
+.lcars-analysis-launcher__btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.lcars-analysis-launcher__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lcars-analysis-launcher__btn--primary {
+  background: var(--lcars-violet);
+  color: var(--lcars-bg);
+  border-color: var(--lcars-violet);
+}
+.lcars-analysis-launcher__btn--primary:hover:not(:disabled) {
+  background: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+}
+.lcars-analysis-launcher--stale .lcars-analysis-launcher__btn--primary {
+  background: var(--lcars-butterscotch);
+  border-color: var(--lcars-butterscotch);
+}
+.lcars-analysis-launcher--stale .lcars-analysis-launcher__btn--primary:hover:not(:disabled) {
+  background: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+}
+.lcars-analysis-launcher--error .lcars-analysis-launcher__btn--primary {
+  background: var(--lcars-peach);
+  border-color: var(--lcars-peach);
+}
+.lcars-analysis-launcher__btn--secondary {
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  border-color: var(--lcars-butterscotch);
+}
+.lcars-analysis-launcher__btn--secondary:hover:not(:disabled) {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+}
+.lcars-analysis-launcher__btn--ghost {
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  border-color: var(--lcars-butterscotch-muted);
+}
+.lcars-analysis-launcher__btn--ghost:hover:not(:disabled) {
+  border-color: var(--lcars-butterscotch);
+  color: var(--lcars-sunflower);
+}
+/* Hero variant — larger primary CTA for the first-time-no-bundle state,
+   where the button is the headline action of the tab. */
+.lcars-analysis-launcher__btn--hero {
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  padding: 14px 32px;
+}
+
+/* Running state: progress bar + spinner */
+.lcars-analysis-launcher__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--lcars-violet) 30%, transparent);
+  border-top-color: var(--lcars-violet);
+  border-radius: 50%;
+  animation: lcars-analysis-launcher-spin 800ms linear infinite;
+}
+@keyframes lcars-analysis-launcher-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.lcars-analysis-launcher__progress {
+  height: 6px;
+  background: rgba(204, 153, 204, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.lcars-analysis-launcher__progress-fill {
+  height: 100%;
+  background: var(--lcars-violet);
+  transition: width 200ms ease-out;
+}
+
+/* Armed preview <dl>: label column + detail column. Each row renders
+   via a grid-contained wrapper div (subgrid would be cleaner but
+   isn't everywhere yet). */
+.lcars-analysis-launcher__preview {
+  margin: 0;
+  padding: 8px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 16px;
+  font-family: var(--lcars-font-prose);
+  border-top: 1px dashed var(--lcars-divider);
+}
+.lcars-analysis-launcher__preview-row {
+  display: contents;
+}
+.lcars-analysis-launcher__preview-k {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+  padding-top: 4px;
+  white-space: nowrap;
+}
+.lcars-analysis-launcher__preview-v {
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--lcars-sunflower);
+  margin: 0;
+  min-width: 0;
+}
+.lcars-analysis-launcher__preview-v strong {
+  font-weight: 600;
+  color: var(--lcars-sunflower);
+}
+.lcars-analysis-launcher__preview-note {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--lcars-text);
+  opacity: 0.72;
+  line-height: 1.45;
+}
+.lcars-analysis-launcher__preview-mono {
+  font-family: var(--lcars-font-mono);
+  font-size: 11.5px;
+  color: var(--lcars-text);
+  opacity: 0.85;
+}
+
+/* Numbered step list — the "exact analysis steps" requested by the
+   user. Native <ol> counter with a LCARS pill style for the number.
+   Each step has a title + a detail line beneath so users can scan
+   titles for shape and read detail when curious. */
+.lcars-analysis-launcher__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: lcars-step;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-analysis-launcher__step {
+  counter-increment: lcars-step;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  column-gap: 10px;
+  align-items: baseline;
+}
+.lcars-analysis-launcher__step::before {
+  content: counter(lcars-step);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: color-mix(in srgb, var(--lcars-violet) 25%, transparent);
+  color: var(--lcars-violet);
+  border-radius: 50%;
+  font-family: var(--lcars-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  grid-column: 1;
+  align-self: start;
+}
+.lcars-analysis-launcher__step-title {
+  font-weight: 600;
+  color: var(--lcars-sunflower);
+  font-size: 12.5px;
+  display: block;
+  line-height: 1.35;
+  grid-column: 2;
+}
+.lcars-analysis-launcher__step-detail {
+  font-size: 11.5px;
+  color: var(--lcars-text);
+  opacity: 0.72;
+  line-height: 1.45;
+  display: block;
+  grid-column: 2;
+  margin-top: 1px;
+}
+
+/* The old `.lcars-analysis-launcher__note` slot is no longer rendered
+   in the armed preview (the mode description moved inline under the
+   MODE row). Kept as a no-op fallback for any future consumer that
+   revives the pattern. */
+.lcars-analysis-launcher__note {
+  margin: 0;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--lcars-violet) 8%, transparent);
+  border-left: 2px solid var(--lcars-violet);
+  font-family: var(--lcars-font-prose);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--lcars-text);
+  opacity: 0.85;
+  border-radius: 0 4px 4px 0;
+}
+
+/* Variants — stale (warning) and done (completed compact) */
+.lcars-analysis-launcher--stale {
+  border-color: color-mix(in srgb, var(--lcars-butterscotch) 55%, var(--lcars-divider));
+  border-left-color: var(--lcars-butterscotch);
+  background: linear-gradient(
+    135deg,
+    var(--lcars-bg-1),
+    color-mix(in srgb, var(--lcars-butterscotch) 10%, var(--lcars-bg-1)) 140%
+  );
+}
+.lcars-analysis-launcher--done {
+  border-color: color-mix(in srgb, var(--lcars-ice) 30%, var(--lcars-divider));
+  border-left-color: var(--lcars-ice);
+  background: var(--lcars-bg-1);
+  padding: 10px 14px;
+}
+.lcars-analysis-launcher--done .lcars-analysis-launcher__title-group {
+  gap: 2px;
+}
+.lcars-analysis-launcher--done .lcars-analysis-launcher__title {
+  font-size: 11px;
+}
+.lcars-analysis-launcher--done .lcars-analysis-launcher__heading {
+  flex: 1;
+}
+.lcars-analysis-launcher--done .lcars-analysis-launcher__actions {
+  justify-content: flex-end;
+}
+.lcars-analysis-launcher--error {
+  border-color: color-mix(in srgb, var(--lcars-peach) 45%, var(--lcars-divider));
+  border-left-color: var(--lcars-peach);
+  background: linear-gradient(
+    135deg,
+    var(--lcars-bg-1),
+    color-mix(in srgb, var(--lcars-peach) 10%, var(--lcars-bg-1)) 140%
+  );
+}
+
+/* DONE state lays out heading + button on one horizontal line at desktop
+   so the compact summary doesn't eat vertical real estate. */
+@media (min-width: 900px) {
+  .lcars-analysis-launcher--done {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lcars-analysis-launcher__spinner {
+    animation: none;
+  }
+  .lcars-analysis-launcher__progress-fill {
+    transition: none;
+  }
+  .lcars-analysis-launcher__btn {
+    transition: none;
+  }
+}
+
+/* --- KPI flash on filter-settle (redesign Phase 6b) --- */
+@keyframes lcars-kpi-filter-flash {
+  0% {
+    color: var(--lcars-ice);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--lcars-ice) 60%, transparent);
+  }
+  60% {
+    color: var(--lcars-ice);
+    text-shadow: 0 0 4px color-mix(in srgb, var(--lcars-ice) 30%, transparent);
+  }
+  100% {
+    color: var(--lcars-sunflower);
+    text-shadow: none;
+  }
+}
+/* The flash is keyed on `data-flash` + the key prop (which React uses to
+   remount the strip, guaranteeing the animation replays on every settle).
+   Targeting `.lcars-kpi__value` so only the number flashes, not the
+   surrounding chrome. */
+.lcars-kpi-strip[data-flash] .lcars-kpi__value {
+  animation: lcars-kpi-filter-flash 600ms ease-out 1;
+}
+/* Don't animate on the very first render (data-flash=0) — the key
+   remount handles replays for every subsequent settle. */
+.lcars-kpi-strip[data-flash='0'] .lcars-kpi__value {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-kpi-strip[data-flash] .lcars-kpi__value {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Redesign Phase 6a: SORT dropdown in the mid-bar
+   ==========================================================================
+   Small LCARS-styled native <select> tucked into the right side of the
+   mid-bar. Matches the bar's black-on-color aesthetic so it feels part
+   of the chrome rather than a bolted-on form element.
+*/
+.lcars-mid-bar__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: #000;
+  margin-left: auto;
+  padding: 0 12px;
+}
+.lcars-mid-bar__sort-label {
+  opacity: 0.8;
+}
+.lcars-mid-bar__sort-select {
+  background: #000;
+  color: var(--lcars-sunflower);
+  border: 1px solid #000;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+.lcars-mid-bar__sort-select:hover,
+.lcars-mid-bar__sort-select:focus-visible {
+  border-color: var(--lcars-sunflower);
+  outline: none;
 }

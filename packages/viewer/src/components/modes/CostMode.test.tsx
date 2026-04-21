@@ -102,4 +102,27 @@ describe('CostMode (AC18)', () => {
     row.click();
     expect(onSelect).toHaveBeenCalledWith('hit');
   });
+
+  it('shows cloud-only notice when every visible session is source=cloud', () => {
+    const cloudOnly = [
+      entry({ id: 'c1', source: 'cloud' }),
+      entry({ id: 'c2', source: 'cloud' }),
+    ];
+    render(<CostMode sessions={cloudOnly} kpiEntry={null} onSelect={() => {}} />);
+    expect(screen.getByText(/CLOUD-ONLY DATA/)).toBeDefined();
+  });
+
+  it('hides cloud-only notice when any visible session is non-cloud', () => {
+    const mixed = [
+      entry({ id: 'a', source: 'cloud' }),
+      entry({ id: 'b', source: 'cli-direct', totalCostUsd: 1 }),
+    ];
+    render(<CostMode sessions={mixed} kpiEntry={null} onSelect={() => {}} />);
+    expect(screen.queryByText(/CLOUD-ONLY DATA/)).toBeNull();
+  });
+
+  it('hides cloud-only notice when there are no sessions', () => {
+    render(<CostMode sessions={[]} kpiEntry={null} onSelect={() => {}} />);
+    expect(screen.queryByText(/CLOUD-ONLY DATA/)).toBeNull();
+  });
 });

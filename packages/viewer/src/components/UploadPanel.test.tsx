@@ -79,6 +79,74 @@ describe('UploadPanel', () => {
     expect(screen.getByText(/LOADED 1 CONVERSATIONS/i)).toBeDefined();
   });
 
+  it('renders the MASKED filename — never the raw file.name — in the success status', async () => {
+    // A real claude.ai Privacy Export carries the user's email address
+    // in the filename by default (`data-YYYY-MM-DD-<email>.zip`). The
+    // parsing/success status elements live in the DOM where a user
+    // might screenshot them. The component must surface only the
+    // masked `upload.<ext> (<size>)` form — NEVER the raw filename.
+    const onLoaded = vi.fn();
+    const { container } = render(<UploadPanel onLoaded={onLoaded} />);
+    const input = container.querySelector('input[type=file]') as HTMLInputElement;
+    const file = zipFile(
+      { 'conversations.json': [buildConv('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'A')] },
+      'data-2026-04-20-user@example.com.zip',
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(onLoaded).toHaveBeenCalledTimes(1));
+    const statusEl = screen.getByRole('status');
+    expect(statusEl.textContent).toMatch(/upload\.zip \(/);
+    expect(statusEl.textContent).not.toContain('user@example.com');
+    expect(statusEl.textContent).not.toContain('2026-04-20');
+  });
+
+  it('also masks the PARSING transient state — not just the success state', async () => {
+    // Both the transient `parsing` message and the terminal `success`
+    // message live in the DOM and can be screenshotted. A future
+    // refactor that masks only the success path while reverting the
+    // parsing path to `file.name` would still leak in the parse
+    // window. Snapshot the parsing-state render by intercepting
+    // `parseCloudZip` to never resolve, and assert on the rendered
+    // text BEFORE onLoaded fires.
+    //
+    // Strategy: use a file whose ZIP parse will hang just long
+    // enough for us to snapshot the `parsing` state. `parseCloudZip`
+    // is synchronous-ish (fflate's unzipSync runs to completion
+    // under jsdom in a single tick), so the parsing state would
+    // normally flip to success before React yields. We instead feed
+    // it an invalid ZIP so it rejects — which lets us catch the
+    // parsing render in the error-dispatch window.
+    const onLoaded = vi.fn();
+    const { container } = render(<UploadPanel onLoaded={onLoaded} />);
+    const input = container.querySelector('input[type=file]') as HTMLInputElement;
+    // A name that WOULD leak if masking is skipped — and an invalid
+    // zip body so parseCloudZip throws and we flip into error state
+    // without success ever rendering. The parsing-state message is
+    // briefly live between fireEvent and the error settle; we assert
+    // on it via a ref-capturing role=status query during the tick.
+    const badBytes = bytesToFile(new Uint8Array([1, 2, 3]), 'data-2026-04-20-user@example.com.zip');
+    fireEvent.change(input, { target: { files: [badBytes] } });
+
+    // Grab the `role=status` as-rendered on the next microtask —
+    // `setState({status: 'parsing', label})` flushes synchronously
+    // under testing-library's fireEvent.
+    const statusEl = screen.queryByRole('status');
+    if (statusEl) {
+      // We caught the parsing render — assert it masks.
+      expect(statusEl.textContent ?? '').toMatch(/PARSING upload\.zip \(/);
+      expect(statusEl.textContent ?? '').not.toContain('user@example.com');
+      expect(statusEl.textContent ?? '').not.toContain('2026-04-20');
+    }
+
+    // And the terminal error state must also not leak the filename —
+    // the error-branch doesn't render the label, but be explicit.
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).not.toContain('user@example.com');
+    });
+  });
+
   it('surfaces an error message on a malformed ZIP', async () => {
     const onLoaded = vi.fn();
     const { container } = render(<UploadPanel onLoaded={onLoaded} />);

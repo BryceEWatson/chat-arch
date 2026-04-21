@@ -23,6 +23,13 @@ export interface SessionCardProps {
    */
   isZombieProject?: boolean;
   /**
+   * When `true`, this session's `project` label came from the Phase 3
+   * semantic classifier rather than a string match / CLI ground truth.
+   * Renders the project chip with a `~` prefix so users know it's an
+   * inference. Defaults to `false`.
+   */
+  isSemanticProject?: boolean;
+  /**
    * Navigation handler for chip clicks. Receives the targeted cluster id
    * (for DUP) or `null` (for ZOMBIE — no cluster, just the zombie filter).
    */
@@ -79,7 +86,9 @@ function toolsTooltip(topTools: Readonly<Record<string, number>> | undefined): s
 /**
  * Build a breakdown tooltip for COST. Distinguishes exact (CLI logs) from
  * estimate (rate-table inference) and calls out when no cost signal is
- * present so the em-dash isn't silent.
+ * present so the em-dash isn't silent. Cloud cards don't render the COST
+ * cell at all (the claude.ai export carries no cost data — see the render
+ * gate below), so this helper only needs to cover CLI sources.
  */
 function costTooltip(totalCostUsd: number | null, estimatedUsd: number | null | undefined): string {
   if (totalCostUsd !== null) {
@@ -89,6 +98,12 @@ function costTooltip(totalCostUsd: number | null, estimatedUsd: number | null | 
     return `Estimated from rate table: $${estimatedUsd.toFixed(2)}\n(no CLI cost data for this session)`;
   }
   return 'No cost signal for this session — neither CLI logs nor an estimate are available.';
+}
+
+/** Tooltip for MODEL cells that are em-dash on CLI sources. */
+function modelTooltip(model: string | null): string {
+  if (model !== null) return model;
+  return 'No model recorded';
 }
 
 /** Strip the most common markdown syntax from a preview blurb. */
@@ -102,6 +117,7 @@ export function SessionCard({
   now,
   duplicateInfo,
   isZombieProject = false,
+  isSemanticProject = false,
   onDuplicateChipClick,
   onZombieChipClick,
 }: SessionCardProps) {
@@ -133,9 +149,18 @@ export function SessionCard({
   // `<dl>` grid so each label sits atop its value — the load-bearing
   // structure from the readability pass. Values use tabular-nums for
   // column-aligned digits; model takes the JetBrains Mono + ice override.
+  // Cloud sessions come from the claude.ai Privacy Export, which is
+  // content-only — no model identity, no token counts, no cost data. Rather
+  // than render two permanently-empty cells on every cloud card, we omit
+  // them and let the meta grid shrink to TURNS + TOOLS. The CLOUD source
+  // pill + the TierSheet blurb + the CostMode banner collectively document
+  // the limitation; duplicating "not exported" on every row is noise.
+  const isCloud = session.source === 'cloud';
+
   return (
     <div
       className="lcars-session-card"
+      data-source={session.source}
       style={{ ['--source-color' as string]: borderColor } as React.CSSProperties}
       role="button"
       tabIndex={0}
@@ -145,11 +170,22 @@ export function SessionCard({
     >
       <div className="lcars-session-card__row lcars-session-card__row--top">
         <SourcePill source={session.source} active readonly />
-        {session.project && (
-          <span className="lcars-session-card__project" title={`project: ${session.project}`}>
-            ↳ {session.project}
-          </span>
-        )}
+        {session.project &&
+          (isSemanticProject ? (
+            // Semantic-inferred label: `~` prefix + italic styling so
+            // users can distinguish a model-inferred match from the
+            // string-match ground truth without a tooltip hover.
+            <span
+              className="lcars-session-card__project lcars-session-card__project--semantic"
+              title={`project (inferred by topic similarity): ${session.project}`}
+            >
+              ↳ ~{session.project}
+            </span>
+          ) : (
+            <span className="lcars-session-card__project" title={`project: ${session.project}`}>
+              ↳ {session.project}
+            </span>
+          ))}
         <time className="lcars-session-card__time">{relTime}</time>
         {(duplicateInfo || isZombieProject) && (
           <div className="lcars-session-card__chips">
@@ -216,26 +252,30 @@ export function SessionCard({
           <dt>TOOLS</dt>
           <dd title={toolsTooltip(session.topTools)}>{tools}</dd>
         </div>
-        <div className="lcars-session-card__meta-cell lcars-session-card__meta-cell--model">
-          <dt>MODEL</dt>
-          <dd
-            className="lcars-session-card__meta--model"
-            title={session.model ?? 'No model recorded'}
-          >
-            {model}
-          </dd>
-        </div>
-        <div className="lcars-session-card__meta-cell">
-          <dt>COST</dt>
-          <dd title={costTooltip(session.totalCostUsd, session.costEstimatedUsd)}>
-            {hasExact ? formatCost(session.totalCostUsd) : displayCost}
-            {hasExact ? (
-              <SourceAttribution kind="exact" />
-            ) : hasEstimate ? (
-              <SourceAttribution kind="estimate" />
-            ) : null}
-          </dd>
-        </div>
+        {!isCloud && (
+          <>
+            <div className="lcars-session-card__meta-cell lcars-session-card__meta-cell--model">
+              <dt>MODEL</dt>
+              <dd
+                className="lcars-session-card__meta--model"
+                title={modelTooltip(session.model)}
+              >
+                {model}
+              </dd>
+            </div>
+            <div className="lcars-session-card__meta-cell">
+              <dt>COST</dt>
+              <dd title={costTooltip(session.totalCostUsd, session.costEstimatedUsd)}>
+                {hasExact ? formatCost(session.totalCostUsd) : displayCost}
+                {hasExact ? (
+                  <SourceAttribution kind="exact" />
+                ) : hasEstimate ? (
+                  <SourceAttribution kind="estimate" />
+                ) : null}
+              </dd>
+            </div>
+          </>
+        )}
       </dl>
     </div>
   );

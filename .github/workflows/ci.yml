@@ -1,0 +1,84 @@
+name: CI
+
+# PR-only gate. The project rule (see CLAUDE.md) is "always branch +
+# PR, never direct-push to main" — so running CI on `push: main`
+# would be a redundant second run of the same tree the PR already
+# verified green. Dropping it halves the minutes spend.
+#
+# Trade-off: if someone bypasses the PR rule and direct-pushes to
+# main, CI will silently not re-verify. Acceptable because (a) branch
+# protection in the repo settings is the real enforcement, and (b) a
+# bypass is rare enough that paying 2x minutes to catch it isn't
+# worth it on a small open-source project.
+on:
+  pull_request:
+
+# Cancel in-flight runs when a newer commit lands on the same ref —
+# no reason to burn minutes on an obsolete commit. The branch-tip run
+# is the one reviewers are waiting on.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Pin permissions to read-only by default. No step in this workflow
+# publishes anything, creates issues, or writes to the repo — giving
+# GITHUB_TOKEN any more would be a supply-chain liability.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # corepack lets us honor the `packageManager: pnpm@10.32.1`
+      # field in root package.json rather than pinning pnpm's version
+      # twice (here and in package.json). If the two ever disagree,
+      # this workflow fails loudly at the install step rather than
+      # quietly running a different pnpm than contributors have.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # README pins Node ≥ 22; lock the CI matrix to the floor so
+          # any accidental reliance on a newer Node feature fails in
+          # CI before a contributor on Node 22 hits it.
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        # --frozen-lockfile: fail if pnpm-lock.yaml is out of date.
+        # This is the "don't silently drift" guard — if a PR changes
+        # package.json without updating the lockfile, CI rejects it
+        # instead of quietly re-resolving to a different graph.
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        # `pnpm -r lint` would run every workspace's lint script; using
+        # root `pnpm lint` routes through the same command the README
+        # documents, which is the version contributors run locally.
+        run: pnpm lint
+
+      - name: Build
+        # Build MUST come before Test. Cross-package imports in the
+        # monorepo resolve via each package's `main: "./dist/index.js"`
+        # (e.g. the exporter's tests import `@chat-arch/analysis`
+        # which doesn't exist on disk until that package has been
+        # built). Locally contributors have stale dist/ dirs from
+        # prior runs and don't hit this — CI starts from a clean
+        # checkout so test-before-build fails immediately.
+        # Builds every workspace's dist/ via `pnpm -r build` under the
+        # hood. Catches TS type errors that `tsc --noEmit` would also
+        # catch, plus any post-compile step (e.g. the viewer's
+        # `copy-css.mjs`) that would fail only on a clean build.
+        run: pnpm build
+
+      - name: Test
+        # Root `pnpm test` is a single vitest invocation across the
+        # whole monorepo so package discovery matches local runs.
+        run: pnpm test

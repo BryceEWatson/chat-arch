@@ -131,8 +131,35 @@ export interface UnifiedSessionEntry {
   /** Discriminator for `cwd` interpretation. Required so the viewer never guesses. */
   cwdKind: CwdKind;
 
-  /** Project name, derived from cwd via case-insensitive match. Cloud/VM have none. */
+  /**
+   * Named project the session belongs to. Populated from the most
+   * authoritative signal available, in this priority order:
+   *   1. CLI-derived cwd → project (for CLI sources)
+   *   2. Title/summary regex match against claude.ai projects.json
+   *      (`cloud-mapping.ts`, cloud source)
+   *   3. Semantic classifier's known-project match (viewer-side enrich,
+   *      only when neither (1) nor (2) hit)
+   *
+   * Absent = no named project identified. Use `topic` (below) to check
+   * whether the semantic classifier assigned this session to an
+   * emergent cluster — the two dimensions are independent: a session
+   * can have `project` set AND `topic` set simultaneously.
+   */
   project?: string;
+
+  /**
+   * Emergent-cluster label assigned by the semantic classifier. Always
+   * `~`-prefixed to distinguish from named projects (e.g. `~git +
+   * commit + review`). Lives on a separate axis from `project` so
+   * filter UI can cross-facet: clicking a topic narrows to sessions
+   * with that topic, and the projects row still shows which named
+   * projects those sessions also belong to.
+   *
+   * Only populated for cloud-source sessions (emergent clustering is
+   * cloud-only today — the classifier runs on the uploaded ZIP). CLI
+   * sources never get a topic assignment.
+   */
+  topic?: string;
 
   // ---- Economics ----
 

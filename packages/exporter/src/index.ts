@@ -41,8 +41,8 @@ export {
   buildCloudOutputs,
 } from './sources/cloud.js';
 export type { RunCloudExportOptions, CloudExportResult } from './sources/cloud.js';
-export { buildCloudEntries } from './cloud-mapping.js';
-export type { CloudSourceData, CloudMappingResult } from './cloud-mapping.js';
+export { buildCloudEntries } from '@chat-arch/analysis';
+export type { CloudSourceData, CloudMappingResult } from '@chat-arch/analysis';
 export { mergeSources } from './merge.js';
 export { validateEntries } from './lib/validate-entry.js';
 export type { ValidationError } from './lib/validate-entry.js';
