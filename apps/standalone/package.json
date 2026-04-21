@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro check && astro build",
+    "build": "node ../../design-system/scripts/copy-to-public.mjs && astro check && astro build",
     "preview": "astro preview",
     "typecheck": "astro check",
     "lint": "eslint src",

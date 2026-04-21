@@ -1,0 +1,20 @@
+# chat-arch
+
+> A local-first forensic viewer for your AI coding session history. Scans
+> exported transcripts from Claude Code, Cowork, ChatGPT, and Cursor into
+> a unified archive, then renders them through the Supergraphic Panel
+> design system.
+
+## Design system
+
+chat-arch's visual identity is published as a standalone, replicable
+design system — Supergraphic Panel.
+
+- [Design system walkthrough](https://chat-arch.dev/design-system/): human-facing overview with live specimens, palette swatches, component examples, and port recipes.
+- [Design system spec](https://chat-arch.dev/design-system/spec.md): the canonical prose specification (≈2400 words). Written to be read by LLM agents applying the system to a new project.
+- [Design tokens](https://chat-arch.dev/design-system/tokens.json): DTCG 2025.10 format. Source palette and font families are extracted from the viewer stylesheet; scale tokens are prescriptive.
+
+## About
+
+- [Chat Archaeologist viewer](https://chat-arch.dev/): the live application the design system was built for.
+- [GitHub repository](https://github.com/BryceEWatson/chat-arch): source code, including `design-system/` at the repo root.

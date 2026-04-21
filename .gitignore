@@ -28,6 +28,12 @@ out/
 !packages/exporter/test/fixtures/**/.claude/
 !packages/exporter/test/fixtures/**/.claude/**
 
+# Design-system mirrors. The canonical files live in design-system/
+# at the repo root; the standalone app's build step copies them into
+# public/ for edge serving. Ignoring the mirrored copies keeps a
+# single source of truth in git.
+apps/standalone/public/design-system/
+
 # Exporter output for local dev — data is on user's machine, not in repo
 apps/standalone/public/chat-arch-data/*
 # Keep empty chat-arch-data dir on fresh clones.
