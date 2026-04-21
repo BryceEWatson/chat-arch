@@ -67,9 +67,21 @@ jobs:
       # (not a preview). CF resolves the project by name; the project
       # must already exist — create it once in the dashboard or via
       # `wrangler pages project create chat-arch`.
+      #
+      # We invoke wrangler directly rather than via `cloudflare/
+      # wrangler-action@v3`. The action detects a package manager from
+      # pnpm-lock.yaml and runs `pnpm add wrangler@<pinned>`, which
+      # pnpm's workspace-root guard rejects (`ERR_PNPM_ADDING_TO_ROOT`)
+      # unless you pass `-w`. The action has no input to override the
+      # install command, so the cleanest path is to bypass it entirely
+      # and install wrangler globally via npm — which ignores pnpm's
+      # workspace machinery because it's a different tool installing
+      # to a different prefix.
+      - name: Install Wrangler
+        run: npm install -g wrangler@3
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/standalone/dist/client --project-name=chat-arch --branch=main --commit-dirty=true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler pages deploy apps/standalone/dist/client --project-name=chat-arch --branch=main --commit-dirty=true
