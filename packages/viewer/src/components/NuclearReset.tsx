@@ -21,12 +21,19 @@ import { clearBenchResults } from '../data/benchResultsStore.js';
  * checkboxes already force a deliberate decision — adding typed
  * confirmation on top felt bureaucratic for "delete my CLI data only".
  *
- * Auto-hides when `available === false` — static-build deploys
- * without `/api/clear` get no surface.
+ * Always renders. `available` gates the server-side POST, not the
+ * surface itself — on a static-build deploy (no Astro backend, so no
+ * `/api/clear`) the dropdown still appears and the commit path runs
+ * client-only: skip the POST, wipe the three IndexedDB stores that
+ * belong to an uploaded ZIP. The other three sources (cli-direct /
+ * cli-desktop / cowork) have count=0 on static deploys since there's
+ * no exporter to have produced them, so selecting them is a no-op
+ * rather than an error.
  */
 
 export interface NuclearResetProps {
-  /** True when `/api/clear` is reachable. Controls button visibility. */
+  /** True when `/api/clear` is reachable. Gates the server POST only;
+   *  the client-IDB wipe path always runs. */
   available: boolean;
   /** Host's in-memory-ZIP unload handler. Called before the post-wipe
    *  reload so a stale upload doesn't survive into the fresh state. */
@@ -129,8 +136,6 @@ export function NuclearReset({ available, onUnload, counts }: NuclearResetProps)
     return () => document.removeEventListener('keydown', onKey);
   }, [open, phase]);
 
-  if (!available) return null;
-
   const countOf = (id: SourceId): number => counts?.[id] ?? 0;
   const totalSelectedSessions = Array.from(selected).reduce((a, id) => a + countOf(id), 0);
   const allSelected = selected.size === SOURCES.length;
@@ -161,18 +166,26 @@ export function NuclearReset({ available, onUnload, counts }: NuclearResetProps)
     setErrorMsg(null);
     try {
       const sources = Array.from(selected);
-      const res = await fetch('/api/clear', {
-        method: 'POST',
-        headers: {
-          'x-requested-with': 'chat-arch-clear',
-          'content-type': 'application/json',
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ sources }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}${body ? ': ' + body.slice(0, 200) : ''}`);
+      // Skip the POST on static-build deploys — the endpoint doesn't
+      // exist. The client-IDB wipe below still runs, which is the only
+      // state a static deploy can meaningfully wipe anyway (uploaded
+      // ZIP + derived labels/bench). The non-cloud checkboxes have
+      // count=0 on static, so selecting them does nothing on either
+      // side of this branch.
+      if (available) {
+        const res = await fetch('/api/clear', {
+          method: 'POST',
+          headers: {
+            'x-requested-with': 'chat-arch-clear',
+            'content-type': 'application/json',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ sources }),
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          throw new Error(`HTTP ${res.status}${body ? ': ' + body.slice(0, 200) : ''}`);
+        }
       }
       // Wipe ALL cloud-derived IDBs when cloud is among the victims:
       //
