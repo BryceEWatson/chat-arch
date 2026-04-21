@@ -32,6 +32,15 @@ out/
 apps/standalone/public/chat-arch-data/*
 # Keep empty chat-arch-data dir on fresh clones.
 !apps/standalone/public/chat-arch-data/.gitkeep
+# Track the empty default manifest. Shipping it (instead of relying on a
+# 404 for the initial empty state) forces CF Pages' edge cache to
+# overwrite any previously-cached populated manifest on every deploy —
+# CF auto-invalidates files it serves in the new build, but files that
+# were *removed* from a build get orphaned at the edge indefinitely.
+# The viewer's EmptyState path handles `sessions.length === 0` cleanly,
+# so an empty manifest and a missing manifest produce the same UX
+# modulo the edge-cache behavior.
+!apps/standalone/public/chat-arch-data/manifest.json
 
 # Internal scratch spaces — never ship
 _audit/

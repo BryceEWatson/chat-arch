@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": 0,
+  "counts": {
+    "cloud": 0,
+    "cowork": 0,
+    "cli-direct": 0,
+    "cli-desktop": 0
+  },
+  "sessions": []
+}
