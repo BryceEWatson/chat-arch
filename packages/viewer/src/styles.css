@@ -5351,19 +5351,44 @@
 /* --- design-system colophon popover ---
    The leftmost info-popover in the top bar (attached to the
    CHAT ARCHAEOLOGIST title for the Supergraphic Panel link) has
-   its anchor flush with the page gutter. The default right-anchor
-   positioning pushes the panel off the left viewport edge on
-   narrow devices. Below 480px we detach the panel to viewport-
-   fixed coordinates and pin it between 8px margins so it always
-   lands fully on screen. Desktop behavior is unchanged. */
-@media (max-width: 480px) {
+   its anchor flush with the page gutter, so the base popover's
+   `right: 0; min-width: 260px` positioning would push the panel off
+   the left viewport edge.
+
+   Two-tier fix, keyed to the top-bar's own layout breakpoint at
+   900px (where it becomes the LCARS horizontal arm):
+
+   - Narrow layout (default, no media query): detach to viewport-
+     fixed coordinates between 8px margins. This is the fallback
+     that covers every width from mobile through just-below-desktop.
+     Authored *without* a `max-width` gate on purpose — fractional
+     DPR (e.g. 1.0000000298 on some Chrome builds) leaves a no-
+     match gap between `(max-width: 899px)` and `(min-width: 900px)`
+     at integer widths near the boundary, so we avoid that gap by
+     making the narrow treatment unconditional and letting the
+     desktop rule override it.
+
+   - Desktop (>= 900px): restore absolute, anchored positioning but
+     flip the anchor side (`left: 0; right: auto`) so the panel
+     opens rightward into the content column rather than leftward
+     toward the page edge. */
+.lcars-top-bar__title-info .lcars-info-popover__panel {
+  position: fixed;
+  top: 56px;
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+}
+@media (min-width: 900px) {
   .lcars-top-bar__title-info .lcars-info-popover__panel {
-    position: fixed;
-    top: 56px;
-    left: 8px;
-    right: 8px;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: auto;
     width: auto;
-    max-width: none;
-    min-width: 0;
+    max-width: 360px;
+    min-width: 260px;
   }
 }
