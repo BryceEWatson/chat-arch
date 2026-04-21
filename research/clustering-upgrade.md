@@ -1,5 +1,13 @@
 # Clustering pipeline upgrade — research memo
 
+> **Corpus disclaimer.** The "real corpus" and "1,010-conversation" numbers
+> throughout this memo come from the maintainer's personal claude.ai Privacy
+> Export. They're anchored to one person's usage pattern (predominantly
+> programming + writing work over ~18 months) and a single hardware/browser
+> configuration. Treat them as directionally useful, not as a benchmark
+> generalizable across users or corpora. Reproducing on your own export is
+> the only way to get numbers you can act on.
+
 **Scope.** Benchmark the current Chat Archaeologist semantic-analysis pipeline
 (MiniLM-L6-v2 + τ-threshold + complete-linkage agglomerative) against modern
 alternatives that remain fully in-browser. Recommend a migration.

@@ -186,6 +186,13 @@ The most relevant points for the typical local-dev use case:
   `dangerouslySetInnerHTML`, with regression tests pinning the escape order.
 - The production build emits a strict Content-Security-Policy header
   (`script-src 'self'`, no inline, no eval) as defense-in-depth.
+- **Session IDs appear in the URL hash** (`#session/<uuid>`) so a specific
+  conversation can be deep-linked. The hash lands in browser history and
+  in any outbound `Referer` header to a clicked external link. The IDs
+  themselves don't carry content — they're opaque v4 UUIDs generated
+  locally — but if you share your browser history or screen with someone,
+  the URL bar can reveal which conversations you've been looking at.
+  Clear history to reset.
 
 ### Model-weight trust boundary
 

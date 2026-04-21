@@ -249,10 +249,12 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     // Kitchen-sink mode: no body, empty list, or all four sources → wipe everything.
-    const shouldWipeAll =
-      selected === null || selected.size === 0 || selected.size === ALL_SOURCES.length;
-
-    if (shouldWipeAll) {
+    // Inlined (rather than bound to a `shouldWipeAll` local) so TypeScript can
+    // narrow `selected` to non-null through the OR chain on the `wipeSources`
+    // call below. Extracting the boolean loses that narrowing and the
+    // follow-up `wipeSources(dir, selected)` then fails with
+    // "Set<…> | null not assignable to Set<…>".
+    if (selected === null || selected.size === 0 || selected.size === ALL_SOURCES.length) {
       const { removed } = await wipeAll(dir);
       return new Response(JSON.stringify({ ok: true, mode: 'all', removed, bySources: null }), {
         status: 200,
