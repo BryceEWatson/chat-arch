@@ -1,12 +1,16 @@
 name: CI
 
-# Run on every push to main AND every PR. Keeping the job list small
-# so the signal stays "did my change break anything obvious" rather
-# than "did some flaky cross-cutting thing fail" — easier to keep
-# green and easier to trust.
+# PR-only gate. The project rule (see CLAUDE.md) is "always branch +
+# PR, never direct-push to main" — so running CI on `push: main`
+# would be a redundant second run of the same tree the PR already
+# verified green. Dropping it halves the minutes spend.
+#
+# Trade-off: if someone bypasses the PR rule and direct-pushes to
+# main, CI will silently not re-verify. Acceptable because (a) branch
+# protection in the repo settings is the real enforcement, and (b) a
+# bypass is rare enough that paying 2x minutes to catch it isn't
+# worth it on a small open-source project.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 # Cancel in-flight runs when a newer commit lands on the same ref —
