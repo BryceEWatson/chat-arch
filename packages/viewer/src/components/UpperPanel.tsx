@@ -307,6 +307,21 @@ export function UpperPanel({
   const range = dateRange(filtered);
   const kpis = useMemo(() => computeKpis(filtered), [filtered]);
 
+  /**
+   * Cloud session-id set used by the AnalysisLauncher's staleness
+   * check — a bundle is stale iff the current set has ids not seen
+   * in `bundle.analyzedSessionIds`. Memoized on the manifest's
+   * session list so we rebuild only when the corpus actually changes,
+   * not on every filter/sort click.
+   */
+  const currentCloudSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of manifest.sessions) {
+      if (s.source === 'cloud') ids.add(s.id);
+    }
+    return ids;
+  }, [manifest.sessions]);
+
   // Coverage disclosure: <30% of visible sessions have a resolved project.
   const projectCoverageLow =
     kpis.totalSessions > 0 && kpis.projectTaggedCount / kpis.totalSessions < 0.3;
@@ -557,6 +572,7 @@ export function UpperPanel({
               progress={semanticProgress}
               errorMessage={semanticError}
               totalEligibleSessions={manifest.counts.cloud}
+              currentSessionIds={currentCloudSessionIds}
               {...(uploadLabel ? { sourceLabel: uploadLabel } : {})}
               {...(typeof semanticProjectCount === 'number'
                 ? { projectCount: semanticProjectCount }

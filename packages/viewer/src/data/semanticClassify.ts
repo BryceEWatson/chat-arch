@@ -81,8 +81,16 @@ export interface SemanticLabelsBundle {
    *        different manifold; v2's numbers aren't comparable. Also
    *        adds the c-TF-IDF outlier-reassignment pass — so v2 bundles
    *        have gaps v3 would have filled even at the same embedder.
+   *   v4 — adds `analyzedSessionIds` (the set of session ids the run
+   *        considered, regardless of outcome) so the UI can tell
+   *        "bundle is stale because NEW sessions arrived" apart from
+   *        "bundle is complete; some sessions legitimately got no
+   *        label because they had no embed-able content." v3 bundles
+   *        lack this field — treated as stale on first load so the
+   *        user re-runs once and gets an honest staleness signal
+   *        afterward.
    */
-  version: 3;
+  version: 4;
   /** Which model produced these embeddings — e.g. `Xenova/bge-small-en-v1.5`. */
   modelId: string;
   /**
@@ -100,6 +108,24 @@ export interface SemanticLabelsBundle {
   generatedAt: number;
   /** Per-session classification outcome. Keyed by session.id. */
   labels: Map<string, SemanticLabel>;
+  /**
+   * The set of session ids this classification run *considered* —
+   * regardless of whether the session ended up with a non-null label.
+   * Superset of `labels.keys()`: a session that entered the pipeline
+   * but had no embed-able content (empty chunks, assistant-only, etc.)
+   * is recorded here but absent from `labels`.
+   *
+   * The AnalysisLauncher uses this to distinguish two states that
+   * used to collapse into "STALE":
+   *   1. The corpus grew since this bundle was built — genuinely
+   *      stale; re-run will label the new sessions.
+   *   2. The classifier already looked at every current session but
+   *      some had no embed-able content — NOT stale; re-run won't
+   *      help.
+   *
+   * Comparing `currentSessionIds \ analyzedSessionIds` isolates case (1).
+   */
+  analyzedSessionIds: ReadonlySet<string>;
   /** Which runtime the worker actually used; surfaced in the UI for honesty. */
   device: 'webgpu' | 'wasm';
 }
@@ -419,8 +445,19 @@ export async function classifyUploadedSessions(
   /** `chunkRanges[i]` = half-open `[start, end)` into `sessionChunkVectors`. */
   const chunkRanges: Array<[number, number]> = [];
   const embedTexts: string[] = [];
+  /**
+   * The set of session ids this run considered — every cloud session
+   * we iterated, regardless of whether it made it into `embedIds`.
+   * A session skipped below (no conversation, no chunks) is still
+   * "analyzed" by this run in the sense that re-running won't help
+   * it. The bundle stores this so staleness detection can compare
+   * corpus-then vs. corpus-now instead of comparing label count
+   * (which under-counts by exactly the "skipped silently" set).
+   */
+  const analyzedSessionIds = new Set<string>();
   for (const s of sessions) {
     if (s.source !== 'cloud') continue;
+    analyzedSessionIds.add(s.id);
     const conv = uploaded.conversationsById.get(s.id);
     if (conv === undefined) continue;
     const chunks = conversationToChunks(conv);
@@ -758,12 +795,13 @@ export async function classifyUploadedSessions(
     }
 
     return {
-      version: 3,
+      version: 4,
       modelId: bundleModelId,
       mode: 'classify',
       options: { threshold, margin },
       generatedAt: Date.now(),
       labels,
+      analyzedSessionIds,
       device,
     };
   }
@@ -823,12 +861,13 @@ export async function classifyUploadedSessions(
   onProgress?.({ phase: 'clustering', fraction: 1 });
 
   return {
-    version: 3,
+    version: 4,
     modelId: bundleModelId,
     mode: 'discover',
     options: { threshold: DISCOVER_THRESHOLD, margin: 0 },
     generatedAt: Date.now(),
     labels,
+    analyzedSessionIds,
     device,
   };
 }

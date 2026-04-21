@@ -672,7 +672,20 @@ export function ChatArchViewer({
     setActivityLogOpen(true);
     setSemanticStatus('running');
     setSemanticError(null);
-    const cloudCount = upload.manifest.sessions.filter((s) => s.source === 'cloud').length;
+    // The set of cloud session ids this run *intends* to process.
+    // Streaming bundles below (emitted every ~250ms while the
+    // classifier runs) need to carry an `analyzedSessionIds` that
+    // reflects this intent — if the user reloads mid-run, the
+    // persisted snapshot should declare "these ids were considered"
+    // so the STALE banner doesn't false-positive the moment they
+    // come back. The final bundle from classifyUploadedSessions
+    // carries its own authoritative set and replaces the streaming
+    // approximation.
+    const cloudSessionIds = new Set<string>();
+    for (const s of upload.manifest.sessions) {
+      if (s.source === 'cloud') cloudSessionIds.add(s.id);
+    }
+    const cloudCount = cloudSessionIds.size;
     log('info', 'classify', `Semantic analysis started over ${cloudCount} cloud conversations.`);
 
     // Milestone trackers. `lastDownloadQuartile` is quartered (25%
@@ -800,12 +813,18 @@ export function ChatArchViewer({
         dirty = false;
         const snapshot = new Map(liveLabels);
         setSemanticLabels({
-          version: 3,
+          version: 4,
           modelId: 'Xenova/bge-small-en-v1.5',
           mode: 'classify',
           options: { threshold: 0.38, margin: 0.02 },
           generatedAt: Date.now(),
           labels: snapshot,
+          // Streaming bundles declare the intended scope — see the
+          // `cloudSessionIds` comment above runSemanticAnalysis for
+          // the rationale. The final bundle rebuilds this from the
+          // actual iteration set; the two should be equal absent a
+          // mid-run corpus change (which isn't possible in this flow).
+          analyzedSessionIds: cloudSessionIds,
           device: resolvedDevice,
         });
       };
@@ -954,10 +973,28 @@ export function ChatArchViewer({
   // `data/mergeUpload.ts` for the rules.
   //
   // Semantic-label enrichment: when Phase 3 has produced labels for the
-  // current upload, splice them into the entries that don't already carry
-  // a `project` (string-match or CLI-derived labels always win). This
-  // keeps the filter-pill / zombie / card-display code unchanged —
-  // semantic labels flow through the same `session.project` slot.
+  // current upload, merge them onto the base manifest entries.
+  //
+  // Two independent dimensions are written — named project and
+  // emergent topic — so a single session can carry BOTH a project
+  // assignment AND a topic assignment, enabling cross-facet filter UI
+  // (e.g. "sessions in py-coder that cluster under ~performance").
+  //
+  // Merge priority:
+  //   - `session.project`: CLI cwd + `cloud-mapping.ts` title regex
+  //     pre-populate it at parse time; if still unset AND the
+  //     classifier returned a non-`~` projectId (a known-project
+  //     match), backfill from the bundle. Title-regex-vs-classifier
+  //     conflicts resolve in favor of the regex — it matched on the
+  //     user's own wording.
+  //   - `session.topic`: ALWAYS written from the bundle when the
+  //     classifier's projectId is `~`-prefixed, regardless of what
+  //     session.project holds. The two fields don't overwrite each
+  //     other; clustering output lives on its own axis.
+  //
+  // Both writes are no-ops when the bundle has no entry for a
+  // session, or has one with `projectId === null` (classifier
+  // declined to label).
   const fetchedManifest = manifestState.status === 'ready' ? manifestState.data : null;
   const manifest: SessionManifest | null = useMemo(() => {
     const base = effectiveManifest(fetchedManifest, uploadedData);
@@ -965,10 +1002,20 @@ export function ChatArchViewer({
     const enriched = {
       ...base,
       sessions: base.sessions.map((s) => {
-        if (s.project !== undefined && s.project !== null && s.project !== '') return s;
         const label = semanticLabels.labels.get(s.id);
         if (!label || label.projectId === null) return s;
-        return { ...s, project: label.projectId };
+        const isEmergent = label.projectId.startsWith('~');
+        const hasProject = s.project !== undefined && s.project !== null && s.project !== '';
+        // Fast path: nothing to add. Avoids allocating a new object
+        // for the common "regex already won" case on large corpora.
+        if (isEmergent ? s.topic === label.projectId : hasProject) return s;
+        const next: typeof s = { ...s };
+        if (isEmergent) {
+          next.topic = label.projectId;
+        } else if (!hasProject) {
+          next.project = label.projectId;
+        }
+        return next;
       }),
     };
     return enriched;
@@ -1122,13 +1169,43 @@ export function ChatArchViewer({
     let filtered = filterSessions(manifest.sessions, debouncedQuery, sourceFilter);
     // Zero-turn filter — hidden by default (Decision 8).
     if (!showEmpty) filtered = filtered.filter((s) => s.userTurns > 0);
-    // Project filter — multi-select. Either union of selected projects
-    // or a standalone UNKNOWN-only mode (no resolved project).
-    if (projectFilter.size > 0 || unknownProjectActive) {
+    // Project/topic filter — `projectFilter` is a single Set carrying
+    // both project ids (non-`~`) and topic ids (`~`-prefixed), which
+    // we partition at filter time by prefix so the two dimensions
+    // filter independently:
+    //
+    //   - Projects: OR within the dimension. Session passes iff it
+    //     has no project filter applied, OR its `project` is in the
+    //     filter set, OR UNKNOWN is active and the session has no
+    //     `project`.
+    //   - Topics:   OR within the dimension. Session passes iff no
+    //     topic filter is active, OR its `topic` is in the filter.
+    //   - Cross-dimension: AND. Session must satisfy BOTH passes.
+    //
+    // This makes "click py-coder + click ~performance" narrow to
+    // sessions that live in py-coder AND cluster under ~performance —
+    // the cross-facet case that was impossible under the single-field
+    // model. When only topics are selected, the projects row still
+    // renders meaningful counts because topic filtering no longer
+    // implies `session.project === topicId`.
+    const topicIds = new Set<string>();
+    const projectIds = new Set<string>();
+    for (const id of projectFilter) {
+      if (id.startsWith('~')) topicIds.add(id);
+      else projectIds.add(id);
+    }
+    const projectFilterActive = projectIds.size > 0 || unknownProjectActive;
+    const topicFilterActive = topicIds.size > 0;
+    if (projectFilterActive || topicFilterActive) {
       filtered = filtered.filter((s) => {
-        if (s.project && projectFilter.has(s.project)) return true;
-        if (!s.project && unknownProjectActive) return true;
-        return false;
+        const projectPass = !projectFilterActive
+          ? true
+          : (s.project !== undefined && s.project !== null && s.project !== '' && projectIds.has(s.project)) ||
+            ((s.project === undefined || s.project === null || s.project === '') && unknownProjectActive);
+        const topicPass = !topicFilterActive
+          ? true
+          : s.topic !== undefined && s.topic !== null && s.topic !== '' && topicIds.has(s.topic);
+        return projectPass && topicPass;
       });
     }
     return applySort(filtered, sortBy);

@@ -45,6 +45,15 @@ export interface AnalysisLauncherProps {
    */
   totalEligibleSessions: number;
   /**
+   * Ids of the cloud sessions currently in the viewer's manifest.
+   * Used to distinguish real staleness ("new sessions have arrived
+   * since the bundle was built") from the old false-positive
+   * ("bundle has fewer labels than total" — which fires forever when
+   * the classifier legitimately skips sessions with no embed-able
+   * content). Compared against `bundle.analyzedSessionIds`.
+   */
+  currentSessionIds: ReadonlySet<string>;
+  /**
    * Short source label for the armed-preview scope row. Typically the
    * uploaded ZIP's filename + size (e.g., "final.zip (27.6 MB)") so
    * the user can confirm which upload they're about to analyze. Omit
@@ -103,6 +112,7 @@ export function AnalysisLauncher({
   progress,
   errorMessage,
   totalEligibleSessions,
+  currentSessionIds,
   sourceLabel,
   projectCount,
   onAnalyze,
@@ -118,19 +128,36 @@ export function AnalysisLauncher({
   }, [status]);
 
   // Coverage math drives the heading for the non-armed idle states.
+  //
+  // Staleness rule (corrected from the pre-v4 "labels.size < total"
+  // heuristic, which false-positived forever whenever the classifier
+  // skipped no-content sessions): a bundle is stale iff the current
+  // corpus contains session ids the bundle never considered. That's
+  // the honest "you added new sessions, re-run to label them" signal.
+  // When the user re-analyzes, `analyzedSessionIds` captures every
+  // id the run iterated — including the ones that had nothing to
+  // embed — so repeat clicks on an unchanged corpus won't re-flag
+  // as stale.
+  //
+  // `newSessionCount` is the number of cloud sessions that arrived
+  // since this bundle was generated. The banner copy uses it ("N new
+  // sessions since the last run") so "stale" never surprises the user.
   let analyzedCount = 0;
   let inferredCount = 0;
   let abstainedCount = 0;
+  let newSessionCount = 0;
   if (bundle) {
     for (const label of bundle.labels.values()) {
       if (label.projectId !== null) inferredCount += 1;
       else abstainedCount += 1;
     }
     analyzedCount = bundle.labels.size;
+    for (const id of currentSessionIds) {
+      if (!bundle.analyzedSessionIds.has(id)) newSessionCount += 1;
+    }
   }
-  const coverageGap = bundle ? Math.max(0, totalEligibleSessions - analyzedCount) : 0;
-  const isStale = !!bundle && coverageGap > 0;
-  const isComplete = !!bundle && coverageGap === 0;
+  const isStale = !!bundle && newSessionCount > 0;
+  const isComplete = !!bundle && newSessionCount === 0;
 
   // --- running ---
   if (status === 'running') {
@@ -195,7 +222,7 @@ export function AnalysisLauncher({
       ? `Classify mode — projects.json was found in the upload, so each conversation is matched to its nearest claude.ai project centroid by cosine similarity. Conversations that don\u2019t clear τ=${DEFAULT_THRESHOLD} are pooled into emergent clusters afterward.`
       : `Discover mode — no projects.json in the upload, so topics are clustered unsupervised from conversation similarity alone (no pre-existing labels are used).`;
     const rerunContext = isStale
-      ? `${coverageGap.toLocaleString()} new ${pluralize(coverageGap, 'session')} since the last run. The full ${ctaCount}-conversation set will be re-embedded and re-labeled; prior labels are replaced.`
+      ? `${newSessionCount.toLocaleString()} new ${pluralize(newSessionCount, 'session')} since the last run. The full ${ctaCount}-conversation set will be re-embedded and re-labeled; prior labels are replaced.`
       : isComplete
         ? `All ${ctaCount} conversations will be re-embedded and re-labeled; prior labels are replaced.`
         : null;
@@ -355,8 +382,8 @@ export function AnalysisLauncher({
           <div className="lcars-analysis-launcher__title-group">
             <span className="lcars-analysis-launcher__title">LOCAL ANALYSIS</span>
             <span className="lcars-analysis-launcher__subtitle">
-              {coverageGap.toLocaleString()} new {pluralize(coverageGap, 'session')} since the last run{' '}
-              {coverageGap === 1 ? 'is' : 'are'} unanalyzed · {analyzedCount.toLocaleString()} /{' '}
+              {newSessionCount.toLocaleString()} new {pluralize(newSessionCount, 'session')} since the last run{' '}
+              {newSessionCount === 1 ? 'is' : 'are'} unanalyzed · {analyzedCount.toLocaleString()} /{' '}
               {totalEligibleSessions.toLocaleString()} labeled on {bundle.device.toUpperCase()}
             </span>
           </div>

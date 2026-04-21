@@ -51,7 +51,7 @@ function indexedDbAvailable(): boolean {
 function isSemanticLabelsBundle(v: unknown): v is SemanticLabelsBundle {
   if (!v || typeof v !== 'object') return false;
   const o = v as Record<string, unknown>;
-  // Only v3 bundles are valid now. Earlier versions are invalidated on
+  // Only v4 bundles are valid now. Earlier versions are invalidated on
   // purpose:
   //   v1 — first-human-message-only, single vector per session. Scores
   //        aren't comparable to v2's max-sim-across-chunks model.
@@ -61,12 +61,22 @@ function isSemanticLabelsBundle(v: unknown): v is SemanticLabelsBundle {
   //        re-run. v2's model weights are a different HF repo from
   //        v3's, so returning users WILL pay a fresh download (~36 MB
   //        q4f16) on the upgrade, not just re-embedding.
-  if (o['version'] !== 3) return false;
+  //   v3 — lacks `analyzedSessionIds`. The STALE banner derived its
+  //        signal from `labels.size < totalSessions`, which false-
+  //        positived whenever the classifier legitimately skipped
+  //        no-content sessions. v4 adds the set so "corpus grew" can
+  //        be distinguished from "run complete, some inputs had
+  //        nothing to embed." Re-running on v4 produces the same
+  //        labels as v3 at the same embedder config, so the
+  //        one-time re-run cost is just recomputation, not a
+  //        fresh model download.
+  if (o['version'] !== 4) return false;
   if (typeof o['modelId'] !== 'string') return false;
   if (typeof o['generatedAt'] !== 'number') return false;
   if (o['device'] !== 'webgpu' && o['device'] !== 'wasm') return false;
   if (o['mode'] !== 'classify' && o['mode'] !== 'discover') return false;
   if (!(o['labels'] instanceof Map)) return false;
+  if (!(o['analyzedSessionIds'] instanceof Set)) return false;
   const options = o['options'];
   if (!options || typeof options !== 'object') return false;
   const opt = options as Record<string, unknown>;

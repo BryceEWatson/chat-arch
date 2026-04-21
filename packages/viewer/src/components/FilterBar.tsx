@@ -88,19 +88,26 @@ function splitWithCap(
 }
 
 /**
- * Partition pills into Projects (user-defined, real claude.ai entries)
- * and Topics (emergent clusters from the discovery pass, marked by the
- * `~` prefix in their id). The two buckets render in separate rows
- * because they're conceptually different filter targets — projects are
- * authoritative names the user chose, topics are inferred groupings
- * the system surfaced. Mixing them in one rank-sorted row buried the
- * largest projects under high-count emergent topics on real data,
- * making the room of "what's actually in this archive?" hard to read.
+ * Partition pills into Projects and Topics — two **independent**
+ * dimensions on each session. A session with `project = "py-coder"`
+ * and `topic = "~performance-tuning"` contributes 1 to py-coder's
+ * project pill AND 1 to the ~performance-tuning topic pill. The
+ * intuition: projects are authoritative names (CLI cwd, title regex,
+ * or high-confidence classifier match); topics are the classifier's
+ * emergent-cluster view of the same corpus; both views are useful
+ * and should cross-filter.
+ *
+ * Counting rules:
+ *   - Projects row + UNKNOWN partition the session set on `s.project`:
+ *     every session contributes exactly one unit to either a named-
+ *     project pill or UNKNOWN. Row sum (including UNKNOWN) === input
+ *     length.
+ *   - Topics row counts `s.topic`. Sessions without `s.topic` don't
+ *     appear in the topics row at all. Topic row sum ≤ input length
+ *     (with equality iff every session is in an emergent cluster).
  *
  * Topics get a slightly larger top-row cap (12 vs 8) because there are
  * usually more of them and they're often what the user is exploring.
- * UNKNOWN is rendered separately by the caller and counted here only
- * so the chip can show the right number.
  */
 function computeFilterPills(
   sessions: readonly UnifiedSessionEntry[],
@@ -110,18 +117,35 @@ function computeFilterPills(
   topics: PillBucket;
   unknownCount: number;
 } {
-  const counts = new Map<string, number>();
+  const projectCounts = new Map<string, number>();
+  const topicCounts = new Map<string, number>();
   let unknown = 0;
   for (const s of sessions) {
-    if (s.project) counts.set(s.project, (counts.get(s.project) ?? 0) + 1);
+    if (s.project) projectCounts.set(s.project, (projectCounts.get(s.project) ?? 0) + 1);
     else unknown += 1;
+    if (s.topic) topicCounts.set(s.topic, (topicCounts.get(s.topic) ?? 0) + 1);
   }
-  const sorted = [...counts.entries()]
+  const projectsSorted = [...projectCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, count]) => ({ id, count }));
+  const topicsSorted = [...topicCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([id, count]) => ({ id, count }));
 
-  const projectsSorted = sorted.filter((p) => !p.id.startsWith('~'));
-  const topicsSorted = sorted.filter((p) => p.id.startsWith('~'));
+  if (process.env.NODE_ENV !== 'production') {
+    // Sanity: projects row + UNKNOWN must partition the input (each
+    // session contributes once on the project axis). If this fires,
+    // there's a drift between the enrichment merge and the chip
+    // counter — catch it loudly instead of silently rendering numbers
+    // that don't add up to VISIBLE.
+    const projectSum = unknown + projectsSorted.reduce((a, p) => a + p.count, 0);
+    if (projectSum !== sessions.length) {
+      console.warn(
+        `FilterBar: project-row sum ${projectSum} ≠ ${sessions.length} sessions ` +
+          `(named=${projectsSorted.reduce((a, p) => a + p.count, 0)}, unknown=${unknown})`,
+      );
+    }
+  }
 
   return {
     projects: splitWithCap(projectsSorted, pinnedIds, 8),
@@ -294,17 +318,27 @@ export function FilterBar({
             </span>
           );
         })}
-        <span
-          role="button"
-          tabIndex={0}
-          className={`lcars-project-pill lcars-project-pill--unknown${unknownProjectActive ? ' lcars-project-pill--active' : ''}`}
-          aria-pressed={unknownProjectActive}
-          aria-label={`toggle UNKNOWN project filter (${filterPills.unknownCount} sessions)`}
-          onClick={onToggleUnknownProject}
-          onKeyDown={(e) => onActivate(e, onToggleUnknownProject)}
-        >
-          UNKNOWN <span className="lcars-project-pill__count">{filterPills.unknownCount}</span>
-        </span>
+        {/* Hide the UNKNOWN pill when it would show `0` AND the user
+           * isn't already filtered into the UNKNOWN view. With cross-
+           * filtering active, topic filters routinely zero out the
+           * visible UNKNOWN count, and rendering "UNKNOWN 0" in that
+           * state reads as a misleading dead affordance. We keep the
+           * pill visible while active so the user can always un-click
+           * it even if their current filter combination happens to
+           * match zero UNKNOWN sessions. */}
+        {(filterPills.unknownCount > 0 || unknownProjectActive) && (
+          <span
+            role="button"
+            tabIndex={0}
+            className={`lcars-project-pill lcars-project-pill--unknown${unknownProjectActive ? ' lcars-project-pill--active' : ''}`}
+            aria-pressed={unknownProjectActive}
+            aria-label={`toggle UNKNOWN project filter (${filterPills.unknownCount} sessions)`}
+            onClick={onToggleUnknownProject}
+            onKeyDown={(e) => onActivate(e, onToggleUnknownProject)}
+          >
+            UNKNOWN <span className="lcars-project-pill__count">{filterPills.unknownCount}</span>
+          </span>
+        )}
         {filterPills.projects.rest.length > 0 && (
           <span
             role="button"
