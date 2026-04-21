@@ -13,11 +13,13 @@ replicators and flagged as such.
 
 Credit where it's due: the direct visual inspiration is Michael
 Okuda's LCARS design language for *Star Trek: The Next Generation*
-(1987). The broader supergraphic tradition — Barbara Stauffacher
-Solomon, Deborah Sussman, Lance Wyman — supplied additional ideas
-about flat color planes and heavy display typography applied at
-architectural scale. Both are acknowledgments, not lineage claims;
-see the Attribution section at the end for the legal posture.
+(1987). Unofficial — Supergraphic Panel is not affiliated with or
+endorsed by Paramount Pictures or CBS Studios. The broader
+supergraphic tradition — Barbara Stauffacher Solomon, Deborah Sussman,
+Lance Wyman — supplied additional ideas about flat color planes and
+heavy display typography applied at architectural scale. Both are
+acknowledgments, not lineage claims; see the Attribution section at
+the end for the full posture.
 
 ## 1. Vibe
 
@@ -49,9 +51,12 @@ components, not globally:
   and downstream children. Defaults to butterscotch
   ([styles.css:1373](../packages/viewer/src/styles.css#L1373)); set per-
   instance via inline style to recolor a card's left accent and pill.
-- `--mode-color` — carried by `.lcars-mode-area` and read by sidebar
-  items to paint their active-tab fill
-  ([styles.css:1780](../packages/viewer/src/styles.css#L1780)).
+- `--mode-color` — set inline per-instance on each sidebar item from
+  React ([Sidebar.tsx:64](../packages/viewer/src/components/Sidebar.tsx#L64)),
+  read by the item's own active/hover rules to paint its fill. The
+  `.lcars-mode-area` also declares a fallback default of butterscotch
+  ([styles.css:1780](../packages/viewer/src/styles.css#L1780)) so the
+  variable always resolves even when no mode-area ancestor sets it.
 
 The layout is mobile-first and progressively enhances through three
 tiers via `min-width` breakpoints at 600px (tablet) and 900px
@@ -268,14 +273,15 @@ tinting the whole surface
 ```
 
 Rule: chip state is carried by border + foreground color, not by
-surface fill. Four states: `--cta` (action), `--running` (violet,
+surface fill. Five states: `--cta` (action), `--running` (violet,
 animated), `--ready` (ice), `--error` (peach), `--stale`
 (butterscotch)
 ([styles.css:2791](../packages/viewer/src/styles.css#L2791)).
 
 ## 7. Motion language
 
-The system defines six named keyframes; their intents:
+The system defines many `@keyframes` in `styles.css` (17 total);
+the named keyframes replicators most need to know about are:
 
 - `lcars-boot-online` — one-time "coming online" cascade across the
   top-bar, sidebar, upper panel, filter bar, and mode area. Total
@@ -410,7 +416,7 @@ const Card = styled.article`
 `;
 ```
 
-## 10. Attribution & trademark posture
+## 10. Attribution, copyright, and trademark posture
 
 **Direct visual inspiration:** Michael Okuda's LCARS
 (Library Computer Access/Retrieval System) design language, created

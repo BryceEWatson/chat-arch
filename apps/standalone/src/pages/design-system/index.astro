@@ -60,9 +60,11 @@ const durations = Object.entries(tokens.duration);
           </p>
           <p class="ds-prose ds-prose--attr">
             Direct visual inspiration: Michael Okuda's LCARS
-            (<em>Star Trek: The Next Generation</em>, 1987). See
-            <a href="/design-system/spec.md#10-attribution--trademark-posture">§10 of the spec</a>
-            for the full attribution &amp; trademark posture.
+            (<em>Star Trek: The Next Generation</em>, 1987). Unofficial —
+            not affiliated with or endorsed by Paramount Pictures or CBS
+            Studios. See
+            <a href="/design-system/spec.md#10-attribution-copyright-and-trademark-posture">§10 of the spec</a>
+            for the full posture.
           </p>
         </section>
 
@@ -300,8 +302,9 @@ const durations = Object.entries(tokens.duration);
             </div>
             <p class="ds-component__rule">
               State carried by border + foreground color, not by surface fill.
-              Four states in source: <code>--cta</code>, <code>--running</code>
-              (violet, animated), <code>--ready</code> (ice), <code>--stale</code>
+              Five states in source: <code>--cta</code>, <code>--running</code>
+              (violet, animated), <code>--ready</code> (ice),
+              <code>--error</code> (peach), <code>--stale</code>
               (butterscotch).
             </p>
           </div>
@@ -346,27 +349,34 @@ const durations = Object.entries(tokens.duration);
         <section id="motion" class="ds-section">
           <h2 class="ds-section__title">6. Motion</h2>
           <p class="ds-prose">
-            Six named keyframes, each with a specific intent. All decorative
-            motion disables under <code>prefers-reduced-motion: reduce</code>;
+            <code>styles.css</code> defines 17 <code>@keyframes</code> in total;
+            two archetypes carry the system's voice. All decorative motion
+            disables under <code>prefers-reduced-motion: reduce</code>;
             essential state transitions stay at full speed.
           </p>
           <div class="ds-motion">
             <div class="ds-motion__row">
               <div class="ds-motion__name"><code>lcars-boot-online</code></div>
               <div class="ds-motion__desc">
-                One-time cascade across top-bar → sidebar → panels → mode area.
-                Duration {tokens.duration.boot.$value}.
+                One-time cascade (top-bar → sidebar → panels → mode area)
+                over {tokens.duration.boot.$value} — the system's first-paint
+                "coming online" animation.
               </div>
-              <button class="ds-motion__replay" type="button" data-replay="boot">REPLAY</button>
+              <button
+                class="ds-motion__replay"
+                type="button"
+                data-replay="boot"
+                aria-label="Replay the boot-cascade animation"
+              >REPLAY</button>
             </div>
             <div class="ds-motion__row">
               <div class="ds-motion__name"><code>focus-ring</code></div>
               <div class="ds-motion__desc">
-                Focus communicated via an inset ring <code>box-shadow</code> (not glow,
-                not outline). A treatment, not a keyframe. Hover card: 1px lift,
-                {tokens.duration.base.$value} transition.
+                Focus is a 3px inset ring <code>box-shadow</code> — a CSS
+                treatment, not a keyframe animation. Hover on cards lifts
+                1px with a {tokens.duration.base.$value} transition.
               </div>
-              <button type="button" class="ds-motion__focus-demo">Tab to see ring</button>
+              <button type="button" class="ds-motion__focus-demo">Press Tab to preview</button>
             </div>
           </div>
 
@@ -461,10 +471,14 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
             Then run this prompt verbatim:
           </p>
           <blockquote class="ds-blockquote">
-            Read https://chat-arch.dev/llms.txt, then apply the Supergraphic Panel
-            design system to this project. Start with a single landing page
-            containing a hero, a three-card feature grid, and a footer. Use the
-            palette, typography, and component patterns from the design system.
+            Read https://chat-arch.dev/llms.txt and the linked spec.md in full
+            before writing any code. Apply the Supergraphic Panel design system
+            to this project — pay special attention to the <code>.lcars-root</code>
+            wrapping rule, the instance-local <code>--source-color</code> /
+            <code>--mode-color</code> pattern, and the asymmetric elbow radii,
+            which agents often miss. Start with a single landing page containing
+            a hero, a three-card feature grid, and a footer. Use the palette,
+            typography, and component patterns from the spec verbatim.
           </blockquote>
           <p class="ds-prose">
             Direct links to canonical sources:
@@ -692,6 +706,16 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       border-radius: 4px;
       border: 1px solid rgba(255, 204, 153, 0.2);
     }
+    /* High-contrast users: the 20%-alpha sunflower border on a swatch
+       can read as invisible against either the bg or the swatch color.
+       Lift to a solid 2px sunflower border and adopt a square corner
+       so the swatch reads as a distinct object, not a tinted region. */
+    @media (prefers-contrast: more) {
+      .ds-swatch {
+        border: 2px solid var(--lcars-sunflower);
+        border-radius: 0;
+      }
+    }
 
     /* Type specimens */
     .ds-type-specimens {
@@ -811,6 +835,14 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       line-height: 1.45;
       color: var(--lcars-sunflower);
       overflow-x: auto;
+    }
+    /* Keyboard users land here via Tab (tabindex=0 applied by the
+       page script); the visible focus ring confirms arrow-key
+       horizontal scrolling will work. Uses the system's ring-pulse
+       shape, not the default browser outline. */
+    .ds-component__code:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcars-ice) 60%, transparent);
     }
     .ds-component__code code {
       background: transparent;
@@ -937,6 +969,17 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       color: var(--lcars-bg);
       outline: none;
     }
+    /* Under reduced-motion the replay button is disabled by the page
+       script; swap to a muted state so the user sees the affordance
+       matches the (non-)behavior. */
+    .ds-motion__replay:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+    .ds-motion__replay:disabled:hover {
+      background: transparent;
+      color: var(--lcars-butterscotch);
+    }
     .ds-motion__focus-demo {
       font-family: var(--lcars-font-chrome);
       font-size: 11px;
@@ -1042,19 +1085,43 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
   <script is:inline>
     (() => {
       const demo = document.getElementById('ds-boot-demo');
-      if (!demo) return;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+      // Code blocks can overflow horizontally; without tabindex a
+      // keyboard user can't pan through them. Add focusability and a
+      // generic aria-label so screen readers announce them as regions.
+      document.querySelectorAll('.ds-component__code').forEach((pre, i) => {
+        pre.setAttribute('tabindex', '0');
+        pre.setAttribute('role', 'region');
+        pre.setAttribute('aria-label', 'code sample ' + (i + 1));
+      });
+
+      if (!demo) return;
       demo.classList.add('lcars-root');
       demo.setAttribute('data-booting', 'true');
+
       const buttons = document.querySelectorAll('[data-replay="boot"]');
-      buttons.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          if (reduced.matches) return;
-          demo.removeAttribute('data-booting');
-          void demo.offsetWidth;
-          demo.setAttribute('data-booting', 'true');
+      // Under reduced-motion the replay would be a no-op; disable the
+      // button and change its label so the affordance matches reality
+      // instead of silently swallowing clicks.
+      if (reduced.matches) {
+        buttons.forEach((btn) => {
+          btn.disabled = true;
+          btn.textContent = 'REDUCED MOTION';
+          btn.setAttribute(
+            'aria-label',
+            'Replay disabled under prefers-reduced-motion',
+          );
         });
-      });
+      } else {
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            demo.removeAttribute('data-booting');
+            void demo.offsetWidth;
+            demo.setAttribute('data-booting', 'true');
+          });
+        });
+      }
     })();
   </script>
 </BaseLayout>
