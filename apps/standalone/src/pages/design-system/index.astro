@@ -183,13 +183,29 @@ const durations = Object.entries(tokens.duration);
           </div>
 
           <div class="ds-component">
+            <div class="ds-component__title">Top bar</div>
+            <div class="ds-component__demo">
+              <header class="lcars-top-bar ds-inline-top-bar">
+                <div class="lcars-top-bar__left">
+                  <span class="lcars-top-bar__dot"></span>
+                  <h1 class="lcars-top-bar__title">CHAT ARCHAEOLOGIST</h1>
+                </div>
+              </header>
+            </div>
+            <p class="ds-component__rule">
+              <code>border-radius: 0 16px 16px 0</code> — rounded only on the
+              right end, squared off to meet the sidebar's top elbow.
+            </p>
+          </div>
+
+          <div class="ds-component">
             <div class="ds-component__title">Session card</div>
             <div class="ds-component__demo">
               <article class="lcars-session-card ds-demo-card" style="--source-color: var(--lcars-ice)">
                 <div class="lcars-session-card__row lcars-session-card__row--top">
                   <button class="lcars-source-pill" style="--source-color: var(--lcars-ice)">
                     <span class="lcars-source-pill__badge">CC</span>
-                    <span class="lcars-source-pill__label">CC</span>
+                    <span class="lcars-source-pill__label">CLAUDE CODE</span>
                   </button>
                   <span class="lcars-session-card__project">chat-arch</span>
                   <span class="lcars-session-card__time">14:05</span>
@@ -208,6 +224,32 @@ const durations = Object.entries(tokens.duration);
           </div>
 
           <div class="ds-component">
+            <div class="ds-component__title">Sidebar tab</div>
+            <div class="ds-component__demo">
+              <ul class="ds-inline-sidebar">
+                <li class="lcars-sidebar__item lcars-sidebar__item--active" style="--mode-color: var(--lcars-ice)">
+                  <span class="lcars-sidebar__item-short">01</span>
+                  <span class="lcars-sidebar__item-label">COMMAND</span>
+                </li>
+                <li class="lcars-sidebar__item" style="--mode-color: var(--lcars-violet)">
+                  <span class="lcars-sidebar__item-short">02</span>
+                  <span class="lcars-sidebar__item-label">TOPICS</span>
+                </li>
+                <li class="lcars-sidebar__item" style="--mode-color: var(--lcars-peach)">
+                  <span class="lcars-sidebar__item-short">03</span>
+                  <span class="lcars-sidebar__item-label">COSTS</span>
+                </li>
+              </ul>
+            </div>
+            <p class="ds-component__rule">
+              <code>border-radius: 0 18px 18px 0</code> — half-pill, rounded away
+              from the sidebar. Active tab paints in its <code>--mode-color</code>;
+              inactive uses <code>sunflower-muted</code> so black text stays
+              10.25:1 regardless of backdrop.
+            </p>
+          </div>
+
+          <div class="ds-component">
             <div class="ds-component__title">Mid bar</div>
             <div class="ds-component__demo">
               <div class="lcars-mid-bar" style="background: var(--lcars-butterscotch)">
@@ -221,22 +263,83 @@ const durations = Object.entries(tokens.duration);
           </div>
 
           <div class="ds-component">
-            <div class="ds-component__title">Info popover trigger</div>
+            <div class="ds-component__title">Source pill — grouped</div>
+            <div class="ds-component__demo">
+              <button class="lcars-source-pill lcars-source-pill--active" style="--source-color: var(--lcars-sunflower)">
+                <span class="lcars-source-pill__badge">A</span>
+                <span class="lcars-source-pill__label">ALL</span>
+                <span class="lcars-source-pill__count">335</span>
+              </button>
+              <button class="lcars-source-pill" style="--source-color: var(--lcars-ice)">
+                <span class="lcars-source-pill__badge">CC</span>
+                <span class="lcars-source-pill__label">CLAUDE CODE</span>
+                <span class="lcars-source-pill__count">247</span>
+              </button>
+              <button class="lcars-source-pill" style="--source-color: var(--lcars-violet)">
+                <span class="lcars-source-pill__badge">GT</span>
+                <span class="lcars-source-pill__label">CHATGPT</span>
+                <span class="lcars-source-pill__count">82</span>
+              </button>
+            </div>
+            <p class="ds-component__rule">
+              When a group of pills carries counts, the sum lives on an
+              <code>ALL</code> pill that uses <code>--source-color: sunflower</code>.
+              A tabular-num count with a 1px-currentColor divider tail.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Semantic chip</div>
+            <div class="ds-component__demo">
+              <button class="lcars-semantic-chip lcars-semantic-chip--ready" type="button">
+                <span class="lcars-semantic-chip__label">TOPICS READY</span>
+              </button>
+              <button class="lcars-semantic-chip lcars-semantic-chip--stale" type="button">
+                <span class="lcars-semantic-chip__label">STALE</span>
+              </button>
+            </div>
+            <p class="ds-component__rule">
+              State carried by border + foreground color, not by surface fill.
+              Four states in source: <code>--cta</code>, <code>--running</code>
+              (violet, animated), <code>--ready</code> (ice), <code>--stale</code>
+              (butterscotch).
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Info popover</div>
             <div class="ds-component__demo">
               <span class="lcars-info-popover">
                 <button class="lcars-info-popover__trigger" type="button" aria-label="Info">i</button>
               </span>
-              <span class="ds-component__inline-note">Click does nothing here — this is a specimen.</span>
+              <span class="ds-component__inline-note">Click does nothing — this is a specimen.</span>
             </div>
             <p class="ds-component__rule">
               Sunflower outline on a dark circle. The only in-system use of a drop
-              shadow is the panel it opens — because the panel floats.
+              shadow is the panel it opens — because the panel floats above the frame.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Rescan banner — ok</div>
+            <div class="ds-component__demo">
+              <div class="lcars-rescan-banner lcars-rescan-banner--ok ds-inline-banner">
+                <span class="lcars-rescan-banner__tag">OK</span>
+                <span class="lcars-rescan-banner__message">Rescan complete. 247 sessions loaded.</span>
+                <button class="lcars-rescan-banner__dismiss" type="button" aria-label="Dismiss">×</button>
+              </div>
+            </div>
+            <p class="ds-component__rule">
+              Status is a 4px left-border accent (<code>--ok</code> → ice,
+              <code>--error</code> → peach, <code>--demo</code> → butterscotch) —
+              never by tinting the whole surface.
             </p>
           </div>
 
           <p class="ds-prose">
-            Full list of patterns with markup and usage rules lives in the
-            <a href="/design-system/spec.md#6-component-patterns">spec §6</a>.
+            Every pattern above is quoted from real markup in
+            <code>styles.css</code>. The spec (<a href="/design-system/spec.md#6-component-patterns">§6</a>)
+            lists a few more variants with exact source-file line references.
           </p>
         </section>
 
@@ -257,12 +360,13 @@ const durations = Object.entries(tokens.duration);
               <button class="ds-motion__replay" type="button" data-replay="boot">REPLAY</button>
             </div>
             <div class="ds-motion__row">
-              <div class="ds-motion__name"><code>ring-pulse</code></div>
+              <div class="ds-motion__name"><code>focus-ring</code></div>
               <div class="ds-motion__desc">
-                Focus communicated as an inset ring, not a glow. Hover card: 1px lift,
+                Focus communicated via an inset ring <code>box-shadow</code> (not glow,
+                not outline). A treatment, not a keyframe. Hover card: 1px lift,
                 {tokens.duration.base.$value} transition.
               </div>
-              <a href="#motion" class="ds-motion__focus-demo">Tab or click to see ring</a>
+              <button type="button" class="ds-motion__focus-demo">Tab to see ring</button>
             </div>
           </div>
 
@@ -339,7 +443,7 @@ const durations = Object.entries(tokens.duration);
   fonts: {
     chrome: "'Antonio', 'Oswald', 'Impact', sans-serif",
     prose: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-    mono: "'JetBrains Mono', 'Consolas', 'Menlo', monospace',",
+    mono: "'JetBrains Mono', 'Consolas', 'Menlo', monospace",
   },
   radii: { elbow: '${tokens.radius.elbow.$value}', pill: '${tokens.radius.pill.$value}' },
 };`}</code></pre>
@@ -728,7 +832,50 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       color: var(--lcars-dim);
     }
     .ds-demo-card {
-      max-width: 380px;
+      max-width: 440px;
+    }
+    /* Inline top-bar specimen — strip the `position: fixed` character
+       of the in-app top bar (which would escape its demo box) and let
+       the LCARS chrome breathe a little shorter for preview. */
+    .ds-inline-top-bar {
+      width: 100%;
+      min-height: 44px;
+    }
+    /* Isolated sidebar stack — render the three tabs as a vertical
+       strip inside the component-demo well so each border-radius
+       shape reads clearly. No horizontal pill-bar variant here. */
+    .ds-inline-sidebar {
+      list-style: none;
+      margin: 0;
+      padding: 4px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      width: 160px;
+      background: var(--lcars-bg);
+    }
+    .ds-inline-sidebar .lcars-sidebar__item {
+      padding: 10px 14px 10px 12px;
+      border-radius: 0 18px 18px 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      justify-content: flex-start;
+      gap: 10px;
+    }
+    .ds-inline-sidebar .lcars-sidebar__item-label {
+      display: inline;
+    }
+    /* Inline rescan banner — the in-app banner uses position: fixed
+       plus a transform to center itself on the viewport. For the
+       demo we override both so the banner sits statically inside
+       the component-demo well. */
+    .ds-inline-banner {
+      position: static;
+      transform: none;
+      max-width: 100%;
+      min-width: 0;
+      width: 100%;
     }
     .ds-demo-card__preview {
       margin: 0;
@@ -868,21 +1015,16 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
     }
 
     /* --- prefers-reduced-motion policy ---
-       The boot-demo cascade is covered by the viewer's own stylesheet:
-       styles.css has `@media (prefers-reduced-motion: reduce) {
-         .lcars-root[data-booting='true'] * { animation: none !important }
-       }`, and our demo carries both `lcars-root` and `data-booting='true'`,
-       so all descendant animations (top-bar, sidebar, panels) are
-       disabled under user preference without any extra rule here.
-       Astro-scoped descendant selectors on the demo can't target those
-       imported classes anyway (the scope attribute isn't on them), so
-       a local `.ds-boot-demo[data-booting='true'] *` rule would be a
-       silent no-op.
+       The boot-demo cascade inherits `.lcars-root[data-booting='true']`,
+       and the viewer's own stylesheet already disables animation on all
+       descendants of that selector under reduced motion. No extra rule
+       needed for the cascade itself.
 
-       Scoped rule below covers the only remaining decorative motion
-       on this page: the replay button's color/background transition. */
+       The rule below covers the one bit of decorative motion specific to
+       this page: the replay button's hover transition. */
     @media (prefers-reduced-motion: reduce) {
-      .ds-motion__replay {
+      .ds-motion__replay,
+      .ds-motion__focus-demo {
         transition: none;
       }
     }
