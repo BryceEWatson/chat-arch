@@ -5329,3 +5329,41 @@
   border-color: var(--lcars-sunflower);
   outline: none;
 }
+
+/* --- info popover: link styling ---
+   Minimal anchor treatment for links inside info-popover panels.
+   Ice blue follows the palette's quantitative/data role; on hover
+   the color lifts to sunflower (primary) so the state change reads
+   without needing a new underline treatment. Added late on purpose:
+   appending here avoids shifting the line numbers cited by the
+   design-system spec at design-system/spec.md. */
+.lcars-info-popover__panel a {
+  color: var(--lcars-ice);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lcars-info-popover__panel a:hover,
+.lcars-info-popover__panel a:focus-visible {
+  color: var(--lcars-sunflower);
+  outline: none;
+}
+
+/* --- design-system colophon popover ---
+   The leftmost info-popover in the top bar (attached to the
+   CHAT ARCHAEOLOGIST title for the Supergraphic Panel link) has
+   its anchor flush with the page gutter. The default right-anchor
+   positioning pushes the panel off the left viewport edge on
+   narrow devices. Below 480px we detach the panel to viewport-
+   fixed coordinates and pin it between 8px margins so it always
+   lands fully on screen. Desktop behavior is unchanged. */
+@media (max-width: 480px) {
+  .lcars-top-bar__title-info .lcars-info-popover__panel {
+    position: fixed;
+    top: 56px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+  }
+}
