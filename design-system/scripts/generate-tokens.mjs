@@ -184,25 +184,80 @@ const tokens = {
 writeFileSync(tokensPath, JSON.stringify(tokens, null, 2) + '\n');
 
 // --- Drift guard -----------------------------------------------------
-// Scan spec.md for hex literals. Every hex in the spec must appear
-// somewhere in the emitted tokens.json (on a base color token or
-// in a prescriptive shadow definition). A mismatch means the prose
-// drifted away from source — fail hard so CI catches it.
+// Two checks run against spec.md:
+//
+//  (1) Strict hex-literal presence. Every CSS-valid hex literal
+//      (3/4/6/8-digit) in the spec must appear somewhere in the
+//      serialized tokens. Catches prose that invents a new value or
+//      mutates an existing one. The length restriction matters: a
+//      loose {3,8} regex would also match fragments like GitHub issue
+//      references (`#12345`) and turn ordinary prose edits into false-
+//      positive build breaks.
+//
+//  (2) Token-aware palette claims. Palette-table rows of the form
+//      "| `token.path` | `value` | ..." are parsed as explicit claims
+//      that the named token has the given value. Each claim is
+//      resolved against the in-memory `tokens` object and an exact-
+//      value mismatch fails the build. This catches semantic drift
+//      that check (1) misses — e.g. swapping sunflower and
+//      butterscotch values, where both hexes still exist globally
+//      in tokens.json so the substring check passes.
+//
+// spec.md is optional on the first run (before it's authored); both
+// checks no-op via the ENOENT branch.
 
 let driftErrors = [];
 try {
   const spec = readFileSync(specPath, 'utf8');
-  const tokensJson = JSON.stringify(tokens);
-  const hexPattern = /#[0-9a-fA-F]{3,8}\b/g;
-  const specHexes = [...spec.matchAll(hexPattern)].map((m) => m[0].toLowerCase());
-  const tokensLower = tokensJson.toLowerCase();
-  const missing = [...new Set(specHexes)].filter((h) => !tokensLower.includes(h));
-  if (missing.length > 0) {
+
+  // (1) strict hex-literal presence.
+  // Exactly 3, 4, 6, or 8 hex digits — the CSS-valid lengths for
+  // `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. Length alternation is
+  // written longest-first so the regex doesn't greedily match a
+  // shorter-length prefix of a longer valid hex.
+  const validHex = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g;
+  const tokensLower = JSON.stringify(tokens).toLowerCase();
+  const specHexes = [...spec.matchAll(validHex)].map((m) => m[0].toLowerCase());
+  const missingHexes = [...new Set(specHexes)].filter((h) => !tokensLower.includes(h));
+  if (missingHexes.length > 0) {
     driftErrors.push(
-      `spec.md cites hex value(s) not present in tokens.json: ${missing.join(', ')}. ` +
+      `spec.md cites hex value(s) not present in tokens.json: ${missingHexes.join(', ')}. ` +
         `Either the prose drifted from source, or a new token is missing from the generator. ` +
         `Fix spec.md — styles.css is the source of truth for token values.`,
     );
+  }
+
+  // (2) token-aware palette claims.
+  // Parse markdown table rows that claim a token path → value pair:
+  //   | `color.sunflower` | `#ffcc99` | ... |
+  // Non-backtick-wrapped table rows (WCAG matrix, typography table)
+  // are ignored by design — they describe relationships, not claims.
+  const resolve = (tokenPath) => {
+    const parts = tokenPath.split('.');
+    let cursor = tokens;
+    for (const p of parts) {
+      if (cursor == null || typeof cursor !== 'object') return undefined;
+      cursor = cursor[p];
+    }
+    return cursor == null ? undefined : cursor.$value;
+  };
+  const normalize = (v) => String(v).toLowerCase().replace(/\s+/g, ' ').trim();
+  const claimPattern = /^\|\s*`([\w.-]+)`\s*\|\s*`([^`]+)`\s*\|/gm;
+  for (const m of spec.matchAll(claimPattern)) {
+    const [, tokenPath, claimedValue] = m;
+    const actual = resolve(tokenPath);
+    if (actual === undefined) {
+      driftErrors.push(
+        `spec.md claims token '${tokenPath}' has value '${claimedValue}', but that token is not defined in tokens.json.`,
+      );
+      continue;
+    }
+    if (normalize(actual) !== normalize(claimedValue)) {
+      driftErrors.push(
+        `spec.md claims ${tokenPath} = '${claimedValue}', but tokens.json has '${actual}'. ` +
+          `This is a semantic swap — fix the spec or regenerate the tokens.`,
+      );
+    }
   }
 } catch (err) {
   if (err.code !== 'ENOENT') throw err;
