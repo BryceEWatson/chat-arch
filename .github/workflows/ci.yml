@@ -64,15 +64,21 @@ jobs:
         # documents, which is the version contributors run locally.
         run: pnpm lint
 
-      - name: Test
-        # Same rationale as lint — root `pnpm test` is what the README
-        # documents, and it's a single vitest invocation across the
-        # whole monorepo so package discovery matches local runs.
-        run: pnpm test
-
       - name: Build
+        # Build MUST come before Test. Cross-package imports in the
+        # monorepo resolve via each package's `main: "./dist/index.js"`
+        # (e.g. the exporter's tests import `@chat-arch/analysis`
+        # which doesn't exist on disk until that package has been
+        # built). Locally contributors have stale dist/ dirs from
+        # prior runs and don't hit this — CI starts from a clean
+        # checkout so test-before-build fails immediately.
         # Builds every workspace's dist/ via `pnpm -r build` under the
         # hood. Catches TS type errors that `tsc --noEmit` would also
         # catch, plus any post-compile step (e.g. the viewer's
         # `copy-css.mjs`) that would fail only on a clean build.
         run: pnpm build
+
+      - name: Test
+        # Root `pnpm test` is a single vitest invocation across the
+        # whole monorepo so package discovery matches local runs.
+        run: pnpm test
