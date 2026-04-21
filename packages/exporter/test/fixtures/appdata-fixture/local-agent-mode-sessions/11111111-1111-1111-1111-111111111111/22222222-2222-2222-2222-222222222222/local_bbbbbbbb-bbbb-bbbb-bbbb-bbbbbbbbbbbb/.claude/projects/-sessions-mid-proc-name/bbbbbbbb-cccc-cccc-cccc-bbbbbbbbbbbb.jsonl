@@ -1,0 +1,5 @@
+{"type":"summary","summary":"<redacted>","leafUuid":"x1"}
+{"type":"user","message":{"role":"user","content":"<redacted>"},"uuid":"t1","timestamp":"2026-03-03T14:00:01.000Z","sessionId":"bbbbbbbb-cccc-cccc-cccc-bbbbbbbbbbbb","cwd":"/sessions/mid-proc-name"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"<redacted>"}]},"uuid":"t2","timestamp":"2026-03-03T14:00:02.000Z","sessionId":"bbbbbbbb-cccc-cccc-cccc-bbbbbbbbbbbb","cwd":"/sessions/mid-proc-name"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_m1","name":"Bash","input":{"command":"ls"}},{"type":"tool_use","id":"toolu_m2","name":"Bash","input":{"command":"pwd"}}]},"uuid":"t3","timestamp":"2026-03-03T14:00:03.000Z","sessionId":"bbbbbbbb-cccc-cccc-cccc-bbbbbbbbbbbb","cwd":"/sessions/mid-proc-name"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_m3","name":"Read","input":{"path":"/x"}}]},"uuid":"t4","timestamp":"2026-03-03T14:00:04.000Z","sessionId":"bbbbbbbb-cccc-cccc-cccc-bbbbbbbbbbbb","cwd":"/sessions/mid-proc-name"}

@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"<redacted>"},"uuid":"t1","timestamp":"2026-04-09T08:00:01.000Z","sessionId":"cccccccc-dddd-dddd-dddd-cccccccccccc","cwd":"/sessions/new-proc-name"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"<redacted>"}]},"uuid":"t2","timestamp":"2026-04-09T08:00:02.000Z","sessionId":"cccccccc-dddd-dddd-dddd-cccccccccccc","cwd":"/sessions/new-proc-name"}

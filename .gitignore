@@ -18,6 +18,15 @@ out/
 
 # Claude Code per-developer state — entire .claude/ tree
 .claude/
+# …except test fixtures, which legitimately contain a `.claude/`
+# subtree that mimics what a real Cowork session directory looks
+# like on disk. These are synthetic (redacted), vital for the
+# exporter's cowork-source unit + integration tests, and must be
+# committed so CI can see them. Both the directories AND their
+# contents need the negation — a gitignored parent would otherwise
+# swallow the children regardless of a `!pattern/**` rule.
+!packages/exporter/test/fixtures/**/.claude/
+!packages/exporter/test/fixtures/**/.claude/**
 
 # Exporter output for local dev — data is on user's machine, not in repo
 apps/standalone/public/chat-arch-data/*
