@@ -1,0 +1,1127 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import '@chat-arch/viewer/style.css';
+import tokens from '../../../../../design-system/tokens.json';
+
+// The design system's canonical prose and machine-readable tokens are
+// copied into `public/design-system/` at build time (see
+// design-system/scripts/copy-to-public.mjs), so the links below resolve
+// to static files under the standalone app root.
+
+const palette = Object.entries(tokens.color);
+const fontFamilies = Object.entries(tokens.font.family);
+const radii = Object.entries(tokens.radius);
+const durations = Object.entries(tokens.duration);
+---
+<BaseLayout title="Supergraphic Panel — design system">
+  <div class="lcars-root walkthrough" id="ds-root">
+    <header class="lcars-top-bar ds-top">
+      <div class="lcars-top-bar__left">
+        <span class="lcars-top-bar__dot"></span>
+        <h1 class="lcars-top-bar__title">SUPERGRAPHIC PANEL</h1>
+      </div>
+      <nav class="ds-top__links" aria-label="Canonical sources">
+        <a class="ds-top__link" href="/design-system/spec.md">SPEC.MD</a>
+        <a class="ds-top__link" href="/design-system/tokens.json">TOKENS.JSON</a>
+        <a class="ds-top__link" href="/llms.txt">LLMS.TXT</a>
+        <a class="ds-top__link" href="https://github.com/BryceEWatson/chat-arch">GITHUB</a>
+      </nav>
+    </header>
+
+    <div class="walkthrough__layout">
+      <aside class="walkthrough__toc" aria-label="Sections">
+        <div class="walkthrough__toc-label">SECTIONS</div>
+        <ol class="walkthrough__toc-list">
+          <li><a href="#vibe">1. Vibe</a></li>
+          <li><a href="#palette">2. Palette</a></li>
+          <li><a href="#typography">3. Typography</a></li>
+          <li><a href="#shapes">4. Shapes</a></li>
+          <li><a href="#components">5. Components</a></li>
+          <li><a href="#motion">6. Motion</a></li>
+          <li><a href="#donts">7. What not to do</a></li>
+          <li><a href="#recipes">8. Port recipes</a></li>
+          <li><a href="#replicate">9. Replicate this</a></li>
+        </ol>
+      </aside>
+
+      <main class="walkthrough__content">
+
+        <section id="vibe" class="ds-section">
+          <h2 class="ds-section__title">1. Vibe</h2>
+          <p class="ds-prose">
+            Dark, legible, structurally asymmetric, unapologetically chromed.
+            Body text sits in warm sunflower amber on pure black;
+            chrome — labels, bars, pills — wears butterscotch with heavy
+            tracking. Shapes are rectangular with one-corner bends:
+            asymmetric 32–40px elbows where a panel meets a bar, half-pill
+            rounding on sidebar tabs, 3px left-accent rules on cards.
+            Hierarchy comes from color role and surface stepping, not drop
+            shadows. Motion is deliberate and sparse.
+          </p>
+          <p class="ds-prose ds-prose--attr">
+            Direct visual inspiration: Michael Okuda's LCARS
+            (<em>Star Trek: The Next Generation</em>, 1987). Unofficial —
+            not affiliated with or endorsed by Paramount Pictures or CBS
+            Studios. See
+            <a href="/design-system/spec.md#10-attribution-copyright-and-trademark-posture">§10 of the spec</a>
+            for the full posture.
+          </p>
+        </section>
+
+        <section id="palette" class="ds-section">
+          <h2 class="ds-section__title">2. Palette</h2>
+          <p class="ds-prose">
+            Four accent colors, each with exactly one job. Values here are
+            loaded directly from <code>tokens.json</code> at build time — if
+            a swatch looks wrong, the source drifted.
+          </p>
+          <table class="ds-palette">
+            <thead>
+              <tr><th>Swatch</th><th>Token</th><th>Value</th><th>Role</th></tr>
+            </thead>
+            <tbody>
+              {palette.map(([name, token]) => (
+                <tr>
+                  <td><span class="ds-swatch" style={`background:${token.$value}`} aria-hidden="true"></span></td>
+                  <td><code>color.{name}</code></td>
+                  <td><code>{token.$value}</code></td>
+                  <td>{token.$description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section id="typography" class="ds-section">
+          <h2 class="ds-section__title">3. Typography</h2>
+          <p class="ds-prose">
+            Three families, each with one role. Never cross roles. All three
+            are SIL OFL-licensed.
+          </p>
+          <div class="ds-type-specimens">
+            {fontFamilies.map(([role, token]) => (
+              <div class={`ds-type-specimen ds-type-specimen--${role}`}>
+                <div class="ds-type-specimen__role">font.family.{role}</div>
+                <div class="ds-type-specimen__glyph">
+                  {role === 'chrome' && 'CHAT ARCHAEOLOGIST'}
+                  {role === 'prose' && 'The session surfaced a bug in the parser.'}
+                  {role === 'mono' && 'claude-opus-4-7 · 2026-04-21 14:05'}
+                </div>
+                <div class="ds-type-specimen__stack"><code>{token.$value.join(', ')}</code></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="shapes" class="ds-section">
+          <h2 class="ds-section__title">4. Shapes</h2>
+          <p class="ds-prose">
+            The signature LCARS elbow: asymmetric, rounded on exactly one
+            corner. Never four-corner-equal. Elbow radii:
+            <code>{tokens.radius.elbow.$value}</code> at mobile,
+            <code>{tokens.radius['elbow-lg'].$value}</code> at desktop. The
+            half-pill (<code>0 {tokens.radius.pill.$value} {tokens.radius.pill.$value} 0</code>)
+            is the sidebar-item shape.
+          </p>
+          <div class="ds-shapes">
+            <div class="ds-shape">
+              <div class="ds-shape__demo ds-shape__demo--elbow-tl"></div>
+              <div class="ds-shape__label">elbow top-left · <code>40px 0 0 0</code></div>
+            </div>
+            <div class="ds-shape">
+              <div class="ds-shape__demo ds-shape__demo--elbow-bl"></div>
+              <div class="ds-shape__label">elbow bottom-left · <code>0 0 0 40px</code></div>
+            </div>
+            <div class="ds-shape">
+              <div class="ds-shape__demo ds-shape__demo--pill-right"></div>
+              <div class="ds-shape__label">half-pill · <code>0 18px 18px 0</code></div>
+            </div>
+            <div class="ds-shape">
+              <div class="ds-shape__demo ds-shape__demo--card"></div>
+              <div class="ds-shape__label">card with left accent · <code>8px</code> + 3px ice rule</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="components" class="ds-section">
+          <h2 class="ds-section__title">5. Components</h2>
+          <p class="ds-prose">
+            Each example below is real markup using real classes from
+            <code>styles.css</code>. Copy the HTML, set the instance-local
+            <code>--source-color</code> or <code>--mode-color</code> if noted,
+            and it renders identically in any project that imports the
+            stylesheet.
+          </p>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Source pill</div>
+            <div class="ds-component__demo">
+              <button class="lcars-source-pill lcars-source-pill--active" style="--source-color: var(--lcars-ice)">
+                <span class="lcars-source-pill__badge">CC</span>
+                <span class="lcars-source-pill__label">CLAUDE CODE</span>
+                <span class="lcars-source-pill__count">247</span>
+              </button>
+              <button class="lcars-source-pill" style="--source-color: var(--lcars-violet)">
+                <span class="lcars-source-pill__badge">GT</span>
+                <span class="lcars-source-pill__label">CHATGPT</span>
+                <span class="lcars-source-pill__count">82</span>
+              </button>
+              <button class="lcars-source-pill" style="--source-color: var(--lcars-peach)">
+                <span class="lcars-source-pill__badge">CD</span>
+                <span class="lcars-source-pill__label">CLI-DIRECT</span>
+                <span class="lcars-source-pill__count">6</span>
+              </button>
+            </div>
+            <pre class="ds-component__code"><code>{`<button class="lcars-source-pill lcars-source-pill--active"
+        style="--source-color: var(--lcars-ice)">
+  <span class="lcars-source-pill__badge">CC</span>
+  <span class="lcars-source-pill__label">CLAUDE CODE</span>
+  <span class="lcars-source-pill__count">247</span>
+</button>`}</code></pre>
+            <p class="ds-component__rule">
+              Set <code>--source-color</code> inline per instance. Active state swaps
+              fill + fg to the source color; inactive keeps 12% alpha on the surface.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Top bar</div>
+            <div class="ds-component__demo">
+              <header class="lcars-top-bar ds-inline-top-bar">
+                <div class="lcars-top-bar__left">
+                  <span class="lcars-top-bar__dot"></span>
+                  <h1 class="lcars-top-bar__title">CHAT ARCHAEOLOGIST</h1>
+                </div>
+              </header>
+            </div>
+            <p class="ds-component__rule">
+              <code>border-radius: 0 16px 16px 0</code> — rounded only on the
+              right end, squared off to meet the sidebar's top elbow.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Session card</div>
+            <div class="ds-component__demo">
+              <article class="lcars-session-card ds-demo-card" style="--source-color: var(--lcars-ice)">
+                <div class="lcars-session-card__row lcars-session-card__row--top">
+                  <button class="lcars-source-pill" style="--source-color: var(--lcars-ice)">
+                    <span class="lcars-source-pill__badge">CC</span>
+                    <span class="lcars-source-pill__label">CLAUDE CODE</span>
+                  </button>
+                  <span class="lcars-session-card__project">chat-arch</span>
+                  <span class="lcars-session-card__time">14:05</span>
+                </div>
+                <h2 class="lcars-session-card__title">Refactor the exporter cloud-mapping</h2>
+                <p class="ds-demo-card__preview">
+                  Pulled the cloud-mapping logic into a shared package so the
+                  viewer can reuse it without crossing exporter boundaries.
+                </p>
+              </article>
+            </div>
+            <p class="ds-component__rule">
+              3px left accent rule in <code>--source-color</code>; hover adds a 5%
+              sunflower tint and <code>translateY(-1px)</code>. Never a drop shadow.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Sidebar tab</div>
+            <div class="ds-component__demo">
+              <ul class="ds-inline-sidebar">
+                <li class="lcars-sidebar__item lcars-sidebar__item--active" style="--mode-color: var(--lcars-ice)">
+                  <span class="lcars-sidebar__item-short">01</span>
+                  <span class="lcars-sidebar__item-label">COMMAND</span>
+                </li>
+                <li class="lcars-sidebar__item" style="--mode-color: var(--lcars-violet)">
+                  <span class="lcars-sidebar__item-short">02</span>
+                  <span class="lcars-sidebar__item-label">TOPICS</span>
+                </li>
+                <li class="lcars-sidebar__item" style="--mode-color: var(--lcars-peach)">
+                  <span class="lcars-sidebar__item-short">03</span>
+                  <span class="lcars-sidebar__item-label">COSTS</span>
+                </li>
+              </ul>
+            </div>
+            <p class="ds-component__rule">
+              <code>border-radius: 0 18px 18px 0</code> — half-pill, rounded away
+              from the sidebar. Active tab paints in its <code>--mode-color</code>;
+              inactive uses <code>sunflower-muted</code> so black text stays
+              10.25:1 regardless of backdrop.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Mid bar</div>
+            <div class="ds-component__demo">
+              <div class="lcars-mid-bar" style="background: var(--lcars-butterscotch)">
+                <span class="lcars-mid-bar__label">BROWSE / COMMAND</span>
+              </div>
+            </div>
+            <p class="ds-component__rule">
+              Solid butterscotch strip with black label type. 10–13px radius.
+              Acts as a horizontal separator that still reads as chrome.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Source pill — grouped</div>
+            <div class="ds-component__demo">
+              <button class="lcars-source-pill lcars-source-pill--active" style="--source-color: var(--lcars-sunflower)">
+                <span class="lcars-source-pill__badge">A</span>
+                <span class="lcars-source-pill__label">ALL</span>
+                <span class="lcars-source-pill__count">335</span>
+              </button>
+              <button class="lcars-source-pill" style="--source-color: var(--lcars-ice)">
+                <span class="lcars-source-pill__badge">CC</span>
+                <span class="lcars-source-pill__label">CLAUDE CODE</span>
+                <span class="lcars-source-pill__count">247</span>
+              </button>
+              <button class="lcars-source-pill" style="--source-color: var(--lcars-violet)">
+                <span class="lcars-source-pill__badge">GT</span>
+                <span class="lcars-source-pill__label">CHATGPT</span>
+                <span class="lcars-source-pill__count">82</span>
+              </button>
+            </div>
+            <p class="ds-component__rule">
+              When a group of pills carries counts, the sum lives on an
+              <code>ALL</code> pill that uses <code>--source-color: sunflower</code>.
+              A tabular-num count with a 1px-currentColor divider tail.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Semantic chip</div>
+            <div class="ds-component__demo">
+              <button class="lcars-semantic-chip lcars-semantic-chip--ready" type="button">
+                <span class="lcars-semantic-chip__label">TOPICS READY</span>
+              </button>
+              <button class="lcars-semantic-chip lcars-semantic-chip--stale" type="button">
+                <span class="lcars-semantic-chip__label">STALE</span>
+              </button>
+            </div>
+            <p class="ds-component__rule">
+              State carried by border + foreground color, not by surface fill.
+              Five states in source: <code>--cta</code>, <code>--running</code>
+              (violet, animated), <code>--ready</code> (ice),
+              <code>--error</code> (peach), <code>--stale</code>
+              (butterscotch).
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Info popover</div>
+            <div class="ds-component__demo">
+              <span class="lcars-info-popover">
+                <button class="lcars-info-popover__trigger" type="button" aria-label="Info">i</button>
+              </span>
+              <span class="ds-component__inline-note">Click does nothing — this is a specimen.</span>
+            </div>
+            <p class="ds-component__rule">
+              Sunflower outline on a dark circle. The only in-system use of a drop
+              shadow is the panel it opens — because the panel floats above the frame.
+            </p>
+          </div>
+
+          <div class="ds-component">
+            <div class="ds-component__title">Rescan banner — ok</div>
+            <div class="ds-component__demo">
+              <div class="lcars-rescan-banner lcars-rescan-banner--ok ds-inline-banner">
+                <span class="lcars-rescan-banner__tag">OK</span>
+                <span class="lcars-rescan-banner__message">Rescan complete. 247 sessions loaded.</span>
+                <button class="lcars-rescan-banner__dismiss" type="button" aria-label="Dismiss">×</button>
+              </div>
+            </div>
+            <p class="ds-component__rule">
+              Status is a 4px left-border accent (<code>--ok</code> → ice,
+              <code>--error</code> → peach, <code>--demo</code> → butterscotch) —
+              never by tinting the whole surface.
+            </p>
+          </div>
+
+          <p class="ds-prose">
+            Every pattern above is quoted from real markup in
+            <code>styles.css</code>. The spec (<a href="/design-system/spec.md#6-component-patterns">§6</a>)
+            lists a few more variants with exact source-file line references.
+          </p>
+        </section>
+
+        <section id="motion" class="ds-section">
+          <h2 class="ds-section__title">6. Motion</h2>
+          <p class="ds-prose">
+            <code>styles.css</code> defines 17 <code>@keyframes</code> in total;
+            two archetypes carry the system's voice. All decorative motion
+            disables under <code>prefers-reduced-motion: reduce</code>;
+            essential state transitions stay at full speed.
+          </p>
+          <div class="ds-motion">
+            <div class="ds-motion__row">
+              <div class="ds-motion__name"><code>lcars-boot-online</code></div>
+              <div class="ds-motion__desc">
+                One-time cascade (top-bar → sidebar → panels → mode area)
+                over {tokens.duration.boot.$value} — the system's first-paint
+                "coming online" animation.
+              </div>
+              <button
+                class="ds-motion__replay"
+                type="button"
+                data-replay="boot"
+                aria-label="Replay the boot-cascade animation"
+              >REPLAY</button>
+            </div>
+            <div class="ds-motion__row">
+              <div class="ds-motion__name"><code>focus-ring</code></div>
+              <div class="ds-motion__desc">
+                Focus is a 3px inset ring <code>box-shadow</code> — a CSS
+                treatment, not a keyframe animation. Hover on cards lifts
+                1px with a {tokens.duration.base.$value} transition.
+              </div>
+              <button type="button" class="ds-motion__focus-demo">Press Tab to preview</button>
+            </div>
+          </div>
+
+          <div class="ds-boot-demo" id="ds-boot-demo">
+            <header class="lcars-top-bar">
+              <div class="lcars-top-bar__left">
+                <span class="lcars-top-bar__dot"></span>
+                <h1 class="lcars-top-bar__title">BOOT CASCADE</h1>
+              </div>
+            </header>
+            <div class="lcars-sidebar ds-boot-demo__sidebar">
+              <div class="lcars-sidebar__elbow lcars-sidebar__elbow--top"></div>
+              <div class="lcars-sidebar__elbow lcars-sidebar__elbow--bottom"></div>
+            </div>
+            <div class="lcars-upper-panel ds-boot-demo__panel">UPPER PANEL</div>
+            <div class="lcars-filter-bar ds-boot-demo__panel">FILTER BAR</div>
+            <div class="lcars-mode-area ds-boot-demo__panel">MODE AREA</div>
+          </div>
+        </section>
+
+        <section id="donts" class="ds-section">
+          <h2 class="ds-section__title">7. What not to do</h2>
+          <ul class="ds-donts">
+            <li>Don't define tokens on <code>:root</code>. Use <code>.lcars-root</code> so the theme is opt-in.</li>
+            <li>Don't add drop shadows. Floating popovers are the one exception.</li>
+            <li>Don't introduce a fourth font. Antonio / IBM Plex Sans / JetBrains Mono.</li>
+            <li>Don't soften the asymmetric radii into four-corner-equal corners.</li>
+            <li>Don't use <code>{tokens.color.dim.$value}</code> for body text. It fails AA.</li>
+            <li>Don't cross type roles. Chrome, prose, mono each own a family.</li>
+            <li>Don't tint <code>color.divider</code>. It's already a low-alpha butterscotch.</li>
+          </ul>
+        </section>
+
+        <section id="recipes" class="ds-section">
+          <h2 class="ds-section__title">8. Port recipes</h2>
+
+          <h3 class="ds-section__subtitle">Plain CSS</h3>
+          <pre class="ds-component__code"><code>{`<link rel="stylesheet" href="/path/to/chat-arch-viewer/style.css" />
+<div class="lcars-root">
+  <header class="lcars-top-bar">...</header>
+</div>`}</code></pre>
+
+          <h3 class="ds-section__subtitle">Tailwind v4 <code>@theme</code></h3>
+          <pre class="ds-component__code"><code>{`@import "tailwindcss";
+
+@theme {
+  --color-sunflower: ${tokens.color.sunflower.$value};
+  --color-butterscotch: ${tokens.color.butterscotch.$value};
+  --color-ice: ${tokens.color.ice.$value};
+  --color-violet: ${tokens.color.violet.$value};
+  --color-peach: ${tokens.color.peach.$value};
+  --color-bg: ${tokens.color.bg.$value};
+  --color-bg-1: ${tokens.color['bg-1'].$value};
+
+  --font-chrome: 'Antonio', 'Oswald', 'Impact', sans-serif;
+  --font-prose: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+
+  --radius-elbow: ${tokens.radius.elbow.$value};
+  --radius-pill: ${tokens.radius.pill.$value};
+}`}</code></pre>
+
+          <h3 class="ds-section__subtitle">CSS-in-JS</h3>
+          <pre class="ds-component__code"><code>{`export const theme = {
+  colors: {
+    sunflower: '${tokens.color.sunflower.$value}',
+    butterscotch: '${tokens.color.butterscotch.$value}',
+    ice: '${tokens.color.ice.$value}',
+    violet: '${tokens.color.violet.$value}',
+    peach: '${tokens.color.peach.$value}',
+    bg: '${tokens.color.bg.$value}',
+    bg1: '${tokens.color['bg-1'].$value}',
+  },
+  fonts: {
+    chrome: "'Antonio', 'Oswald', 'Impact', sans-serif",
+    prose: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+    mono: "'JetBrains Mono', 'Consolas', 'Menlo', monospace",
+  },
+  radii: { elbow: '${tokens.radius.elbow.$value}', pill: '${tokens.radius.pill.$value}' },
+};`}</code></pre>
+        </section>
+
+        <section id="replicate" class="ds-section">
+          <h2 class="ds-section__title">9. Replicate this</h2>
+          <p class="ds-prose">
+            Drop this into your project's <code>CLAUDE.md</code>:
+          </p>
+          <pre class="ds-component__code"><code>{`Visual style reference: https://chat-arch.dev/design-system/
+Machine-readable tokens: https://chat-arch.dev/design-system/tokens.json
+LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
+          <p class="ds-prose">
+            Then run this prompt verbatim:
+          </p>
+          <blockquote class="ds-blockquote">
+            Read https://chat-arch.dev/llms.txt and the linked spec.md in full
+            before writing any code. Apply the Supergraphic Panel design system
+            to this project — pay special attention to the <code>.lcars-root</code>
+            wrapping rule, the instance-local <code>--source-color</code> /
+            <code>--mode-color</code> pattern, and the asymmetric elbow radii,
+            which agents often miss. Start with a single landing page containing
+            a hero, a three-card feature grid, and a footer. Use the palette,
+            typography, and component patterns from the spec verbatim.
+          </blockquote>
+          <p class="ds-prose">
+            Direct links to canonical sources:
+            <a href="/design-system/spec.md">spec.md</a>
+            ·
+            <a href="/design-system/tokens.json">tokens.json</a>
+            ·
+            <a href="/llms.txt">llms.txt</a>
+            ·
+            <a href="https://github.com/BryceEWatson/chat-arch/tree/main/design-system">GitHub source</a>
+          </p>
+        </section>
+
+      </main>
+    </div>
+
+  </div>
+
+  <style>
+    /* Walkthrough-local styles.
+       Scoped under #ds-root to avoid competing with classes from
+       @chat-arch/viewer/style.css. Tokens read from the ancestor
+       .lcars-root so this layer stays consistent with the system it
+       documents. */
+
+    .walkthrough {
+      min-height: 100vh;
+    }
+    .ds-top {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 14px;
+    }
+    .ds-top__links {
+      display: inline-flex;
+      gap: 8px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+    .ds-top__link {
+      font-family: var(--lcars-font-chrome);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--lcars-bg);
+      background: rgba(0, 0, 0, 0.25);
+      border: 1.5px solid rgba(0, 0, 0, 0.5);
+      border-radius: 14px;
+      padding: 6px 12px;
+      text-decoration: none;
+      transition: background 120ms, color 120ms;
+    }
+    .ds-top__link:hover,
+    .ds-top__link:focus-visible {
+      background: var(--lcars-bg);
+      color: var(--lcars-sunflower);
+      outline: none;
+    }
+    @media (max-width: 899px) {
+      .ds-top__link {
+        background: rgba(255, 204, 153, 0.12);
+        color: var(--lcars-butterscotch);
+        border-color: var(--lcars-butterscotch);
+      }
+      .ds-top__link:hover,
+      .ds-top__link:focus-visible {
+        background: var(--lcars-butterscotch);
+        color: var(--lcars-bg);
+      }
+    }
+
+    .walkthrough__layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    @media (min-width: 900px) {
+      .walkthrough__layout {
+        grid-template-columns: 200px 1fr;
+        gap: 24px;
+        align-items: start;
+      }
+    }
+
+    .walkthrough__toc {
+      background: var(--lcars-bg-1);
+      border: 1px solid var(--lcars-divider);
+      border-left: 4px solid var(--lcars-butterscotch);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    @media (min-width: 900px) {
+      .walkthrough__toc {
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+      }
+    }
+    .walkthrough__toc-label {
+      font-family: var(--lcars-font-chrome);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      color: var(--lcars-butterscotch);
+      margin-bottom: 10px;
+    }
+    .walkthrough__toc-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .walkthrough__toc-list a {
+      font-family: var(--lcars-font-chrome);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--lcars-sunflower);
+      text-decoration: none;
+      display: block;
+      padding: 4px 0;
+    }
+    .walkthrough__toc-list a:hover,
+    .walkthrough__toc-list a:focus-visible {
+      color: var(--lcars-ice);
+      outline: none;
+    }
+
+    .walkthrough__content {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+    .ds-section {
+      background: var(--lcars-bg-1);
+      border: 1px solid var(--lcars-divider);
+      border-left: 4px solid var(--lcars-butterscotch);
+      border-radius: 8px;
+      padding: 18px 22px;
+      scroll-margin-top: 16px;
+    }
+    .ds-section__title {
+      margin: 0 0 12px;
+      font-family: var(--lcars-font-chrome);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      color: var(--lcars-sunflower);
+    }
+    .ds-section__subtitle {
+      margin: 16px 0 8px;
+      font-family: var(--lcars-font-chrome);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      color: var(--lcars-butterscotch);
+    }
+
+    .ds-prose {
+      margin: 0 0 12px;
+      font-family: var(--lcars-font-prose);
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: var(--lcars-text);
+      max-width: 72ch;
+    }
+    .ds-prose--attr {
+      color: var(--lcars-butterscotch);
+      font-size: 12.5px;
+    }
+    .ds-prose a,
+    .ds-blockquote a {
+      color: var(--lcars-ice);
+    }
+    .ds-prose code,
+    .ds-donts code,
+    .ds-component__rule code,
+    .ds-motion__name code,
+    .ds-shape__label code {
+      font-family: var(--lcars-font-mono);
+      font-size: 0.92em;
+      background: rgba(255, 204, 153, 0.08);
+      color: var(--lcars-ice);
+      padding: 1px 5px;
+      border-radius: 3px;
+      border: 1px solid rgba(255, 204, 153, 0.1);
+    }
+
+    /* Palette table */
+    .ds-palette {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--lcars-font-prose);
+      font-size: 12.5px;
+    }
+    .ds-palette th,
+    .ds-palette td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--lcars-divider);
+      vertical-align: middle;
+    }
+    .ds-palette th {
+      font-family: var(--lcars-font-chrome);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--lcars-butterscotch);
+    }
+    .ds-palette code {
+      font-family: var(--lcars-font-mono);
+      font-size: 11.5px;
+      color: var(--lcars-ice);
+    }
+    .ds-swatch {
+      display: inline-block;
+      width: 36px;
+      height: 22px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 204, 153, 0.2);
+    }
+    /* High-contrast users: the 20%-alpha sunflower border on a swatch
+       can read as invisible against either the bg or the swatch color.
+       Lift to a solid 2px sunflower border and adopt a square corner
+       so the swatch reads as a distinct object, not a tinted region. */
+    @media (prefers-contrast: more) {
+      .ds-swatch {
+        border: 2px solid var(--lcars-sunflower);
+        border-radius: 0;
+      }
+    }
+
+    /* Type specimens */
+    .ds-type-specimens {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .ds-type-specimen {
+      padding: 14px 16px;
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 8px;
+    }
+    .ds-type-specimen__role {
+      font-family: var(--lcars-font-chrome);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--lcars-butterscotch);
+      margin-bottom: 6px;
+    }
+    .ds-type-specimen__glyph {
+      color: var(--lcars-sunflower);
+      font-size: 22px;
+      line-height: 1.25;
+      margin-bottom: 6px;
+    }
+    .ds-type-specimen--chrome .ds-type-specimen__glyph {
+      font-family: var(--lcars-font-chrome);
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    .ds-type-specimen--prose .ds-type-specimen__glyph {
+      font-family: var(--lcars-font-prose);
+      font-size: 16px;
+    }
+    .ds-type-specimen--mono .ds-type-specimen__glyph {
+      font-family: var(--lcars-font-mono);
+      color: var(--lcars-ice);
+      font-size: 15px;
+    }
+    .ds-type-specimen__stack {
+      font-family: var(--lcars-font-mono);
+      font-size: 11px;
+      color: var(--lcars-butterscotch);
+      opacity: 0.85;
+    }
+
+    /* Shapes */
+    .ds-shapes {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .ds-shape {
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .ds-shape__demo {
+      width: 100%;
+      height: 72px;
+      background: var(--lcars-butterscotch);
+      margin-bottom: 8px;
+    }
+    .ds-shape__demo--elbow-tl { border-radius: 40px 0 0 0; }
+    .ds-shape__demo--elbow-bl { border-radius: 0 0 0 40px; }
+    .ds-shape__demo--pill-right { border-radius: 0 18px 18px 0; background: var(--lcars-sunflower); height: 40px; }
+    .ds-shape__demo--card {
+      background: var(--lcars-bg-1);
+      border: 1px solid var(--lcars-divider);
+      border-left: 3px solid var(--lcars-ice);
+      border-radius: 8px;
+    }
+    .ds-shape__label {
+      font-family: var(--lcars-font-mono);
+      font-size: 11px;
+      color: var(--lcars-butterscotch);
+    }
+
+    /* Components */
+    .ds-component {
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .ds-component__title {
+      font-family: var(--lcars-font-chrome);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      color: var(--lcars-butterscotch);
+      margin-bottom: 10px;
+    }
+    .ds-component__demo {
+      padding: 14px 12px;
+      background: var(--lcars-bg-1);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .ds-component__code {
+      margin: 0 0 10px;
+      padding: 10px 12px;
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 6px;
+      font-family: var(--lcars-font-mono);
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: var(--lcars-sunflower);
+      overflow-x: auto;
+    }
+    /* Keyboard users land here via Tab (tabindex=0 applied by the
+       page script); the visible focus ring confirms arrow-key
+       horizontal scrolling will work. Uses the system's ring-pulse
+       shape, not the default browser outline. */
+    .ds-component__code:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcars-ice) 60%, transparent);
+    }
+    .ds-component__code code {
+      background: transparent;
+      border: none;
+      color: inherit;
+      padding: 0;
+      font: inherit;
+    }
+    .ds-component__rule {
+      margin: 0;
+      font-family: var(--lcars-font-prose);
+      font-size: 12px;
+      color: var(--lcars-text);
+      opacity: 0.85;
+    }
+    .ds-component__inline-note {
+      font-family: var(--lcars-font-prose);
+      font-size: 11.5px;
+      color: var(--lcars-dim);
+    }
+    .ds-demo-card {
+      max-width: 440px;
+    }
+    /* Inline top-bar specimen — strip the `position: fixed` character
+       of the in-app top bar (which would escape its demo box) and let
+       the LCARS chrome breathe a little shorter for preview. */
+    .ds-inline-top-bar {
+      width: 100%;
+      min-height: 44px;
+    }
+    /* Isolated sidebar stack — render the three tabs as a vertical
+       strip inside the component-demo well so each border-radius
+       shape reads clearly. No horizontal pill-bar variant here. */
+    .ds-inline-sidebar {
+      list-style: none;
+      margin: 0;
+      padding: 4px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      width: 160px;
+      background: var(--lcars-bg);
+    }
+    .ds-inline-sidebar .lcars-sidebar__item {
+      padding: 10px 14px 10px 12px;
+      border-radius: 0 18px 18px 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      justify-content: flex-start;
+      gap: 10px;
+    }
+    .ds-inline-sidebar .lcars-sidebar__item-label {
+      display: inline;
+    }
+    /* Inline rescan banner — the in-app banner uses position: fixed
+       plus a transform to center itself on the viewport. For the
+       demo we override both so the banner sits statically inside
+       the component-demo well. */
+    .ds-inline-banner {
+      position: static;
+      transform: none;
+      max-width: 100%;
+      min-width: 0;
+      width: 100%;
+    }
+    .ds-demo-card__preview {
+      margin: 0;
+      font-family: var(--lcars-font-prose);
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--lcars-text);
+      opacity: 0.85;
+    }
+
+    /* Motion section */
+    .ds-motion {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .ds-motion__row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 8px;
+    }
+    .ds-motion__name {
+      font-family: var(--lcars-font-chrome);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--lcars-butterscotch);
+      font-weight: 700;
+      min-width: 170px;
+    }
+    .ds-motion__desc {
+      font-family: var(--lcars-font-prose);
+      font-size: 12.5px;
+      color: var(--lcars-text);
+      flex: 1 1 auto;
+      min-width: 200px;
+    }
+    .ds-motion__replay {
+      font-family: var(--lcars-font-chrome);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--lcars-butterscotch);
+      background: transparent;
+      border: 1.5px solid var(--lcars-butterscotch);
+      border-radius: 14px;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: background 120ms, color 120ms;
+    }
+    .ds-motion__replay:hover,
+    .ds-motion__replay:focus-visible {
+      background: var(--lcars-butterscotch);
+      color: var(--lcars-bg);
+      outline: none;
+    }
+    /* Under reduced-motion the replay button is disabled by the page
+       script; swap to a muted state so the user sees the affordance
+       matches the (non-)behavior. */
+    .ds-motion__replay:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+    .ds-motion__replay:disabled:hover {
+      background: transparent;
+      color: var(--lcars-butterscotch);
+    }
+    .ds-motion__focus-demo {
+      font-family: var(--lcars-font-chrome);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 14px;
+      text-decoration: none;
+      color: var(--lcars-ice);
+      border: 1.5px solid var(--lcars-ice);
+    }
+    .ds-motion__focus-demo:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcars-ice) 60%, transparent);
+    }
+
+    .ds-boot-demo {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      grid-template-rows: auto auto auto auto;
+      gap: 6px;
+      padding: 12px;
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-radius: 8px;
+    }
+    .ds-boot-demo .lcars-top-bar {
+      grid-column: 1 / -1;
+      grid-row: 1 / 2;
+    }
+    .ds-boot-demo__sidebar {
+      grid-column: 1 / 2;
+      grid-row: 2 / 5;
+      min-height: 140px;
+    }
+    .ds-boot-demo__panel {
+      padding: 10px 14px;
+      font-family: var(--lcars-font-chrome);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--lcars-sunflower);
+      grid-column: 2 / 3;
+    }
+    .ds-boot-demo .lcars-upper-panel { grid-row: 2 / 3; }
+    .ds-boot-demo .lcars-filter-bar { grid-row: 3 / 4; }
+    .ds-boot-demo .lcars-mode-area { grid-row: 4 / 5; }
+
+    /* Donts */
+    .ds-donts {
+      margin: 0;
+      padding-left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ds-donts li {
+      font-family: var(--lcars-font-prose);
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--lcars-text);
+    }
+
+    /* Blockquote */
+    .ds-blockquote {
+      margin: 0 0 12px;
+      padding: 10px 16px;
+      background: var(--lcars-bg);
+      border: 1px solid var(--lcars-divider);
+      border-left: 3px solid var(--lcars-ice);
+      border-radius: 6px;
+      font-family: var(--lcars-font-prose);
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: var(--lcars-text);
+    }
+
+    /* --- prefers-reduced-motion policy ---
+       The boot-demo cascade inherits `.lcars-root[data-booting='true']`,
+       and the viewer's own stylesheet already disables animation on all
+       descendants of that selector under reduced motion. No extra rule
+       needed for the cascade itself.
+
+       The rule below covers the one bit of decorative motion specific to
+       this page: the replay button's hover transition. */
+    @media (prefers-reduced-motion: reduce) {
+      .ds-motion__replay,
+      .ds-motion__focus-demo {
+        transition: none;
+      }
+    }
+  </style>
+
+  {/*
+    Replay button: bump a data-attribute off, reflow, bump it back on
+    so the animation restarts. Inline-script so the boot demo works
+    without a React island; Astro's auto-hashing CSP hashes this block
+    automatically via the experimental.csp config in astro.config.mjs.
+
+    Guards on prefers-reduced-motion so users who opted out don't get
+    a surprise animation when they click replay.
+  */}
+  <script is:inline>
+    (() => {
+      const demo = document.getElementById('ds-boot-demo');
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+      // Code blocks can overflow horizontally; without tabindex a
+      // keyboard user can't pan through them. Add focusability and a
+      // generic aria-label so screen readers announce them as regions.
+      document.querySelectorAll('.ds-component__code').forEach((pre, i) => {
+        pre.setAttribute('tabindex', '0');
+        pre.setAttribute('role', 'region');
+        pre.setAttribute('aria-label', 'code sample ' + (i + 1));
+      });
+
+      if (!demo) return;
+      demo.classList.add('lcars-root');
+      demo.setAttribute('data-booting', 'true');
+
+      const buttons = document.querySelectorAll('[data-replay="boot"]');
+      // Under reduced-motion the replay would be a no-op; disable the
+      // button and change its label so the affordance matches reality
+      // instead of silently swallowing clicks.
+      if (reduced.matches) {
+        buttons.forEach((btn) => {
+          btn.disabled = true;
+          btn.textContent = 'REDUCED MOTION';
+          btn.setAttribute(
+            'aria-label',
+            'Replay disabled under prefers-reduced-motion',
+          );
+        });
+      } else {
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            demo.removeAttribute('data-booting');
+            void demo.offsetWidth;
+            demo.setAttribute('data-booting', 'true');
+          });
+        });
+      }
+    })();
+  </script>
+</BaseLayout>
