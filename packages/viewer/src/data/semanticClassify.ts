@@ -30,7 +30,6 @@ import type { CloudConversation, CloudProject } from '@chat-arch/schema';
 import {
   allHumanText,
   classifyChunksOfOne,
-  discoverClusters,
   discoverClustersAsync,
   firstHumanText,
   reduceOutliers,
@@ -840,7 +839,16 @@ export async function classifyUploadedSessions(
     });
   }
 
-  const clusters: DiscoveredCluster[] = discoverClusters(clusterInputs, {
+  // Use the async variant — the sync `discoverClusters` freezes the
+  // main thread for seconds-to-minutes on large corpora, which is the
+  // same "browser is frozen" bug the classify path switched away from
+  // at line 705. The two discover invocations (classify-mode tail
+  // pass + discover-only mode) must share the yielding behavior, or
+  // projects-less uploads silently regress to the pre-fix frozen UI.
+  // The `yield` callback (setTimeout(0)) lets React flush streaming
+  // pills and the activity log tick its 250ms interval while
+  // clustering runs.
+  const clusters: DiscoveredCluster[] = await discoverClustersAsync(clusterInputs, {
     threshold: DISCOVER_THRESHOLD,
     // Match the classify-mode minSize bump (see comment at the
     // discoverClustersAsync call above) so both paths produce the
@@ -850,6 +858,10 @@ export async function classifyUploadedSessions(
     // Mirror the classify-mode label strategy so chips read
     // identically regardless of whether projects.json was provided.
     labelStrategy: 'centroid-title',
+    yield: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    onProgress: (f) => {
+      onProgress?.({ phase: 'clustering', fraction: f });
+    },
   });
 
   for (const c of clusters) {

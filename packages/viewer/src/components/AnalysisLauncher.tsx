@@ -151,7 +151,16 @@ export function AnalysisLauncher({
       if (label.projectId !== null) inferredCount += 1;
       else abstainedCount += 1;
     }
-    analyzedCount = bundle.labels.size;
+    // Use the authoritative "what did this run consider" set, not
+    // `labels.size`. `analyzedSessionIds` is the whole point of v4:
+    // sessions with no embed-able content get recorded here but
+    // never appear in `labels` (the classifier declined — correctly —
+    // to produce a label), so reporting `labels.size / total`
+    // systematically under-counts and makes the STALE-vs-COMPLETE
+    // copy disagree with `isStale` below. `analyzedSessionIds.size`
+    // is equal to `labels.size` when every session had content;
+    // strictly larger when some didn't.
+    analyzedCount = bundle.analyzedSessionIds.size;
     for (const id of currentSessionIds) {
       if (!bundle.analyzedSessionIds.has(id)) newSessionCount += 1;
     }
