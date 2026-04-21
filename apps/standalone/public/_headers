@@ -1,0 +1,25 @@
+# Cloudflare Pages response headers. Astro copies `public/_headers`
+# verbatim into `dist/client/_headers`, which CF Pages reads at the
+# edge and applies to every matching response.
+#
+# Why each header is here:
+#
+#   Cross-Origin-Opener-Policy + Cross-Origin-Embedder-Policy
+#     Enable cross-origin isolation so SharedArrayBuffer is available.
+#     Transformers.js's WASM backend (the Phase-3 "Analyze Topics"
+#     feature) refuses to boot without SAB. Without these headers the
+#     feature fails at ORT init with an opaque heap-pointer error.
+#     `credentialless` (not `require-corp`) lets the HuggingFace CDN
+#     weight download work: HF doesn't send CORP headers on its static
+#     assets, so `require-corp` would block the fetch. See
+#     `astro.config.mjs` for the matching dev-server headers.
+#
+#   X-Frame-Options: DENY
+#     No page in this app is meant to be iframed. The BaseLayout CSP
+#     notes that `frame-ancestors` via <meta> is ignored by browsers
+#     and wants an HTTP header; this is that header. XFO is the
+#     widely-supported predecessor and does the same job here.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  X-Frame-Options: DENY

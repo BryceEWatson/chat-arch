@@ -1,0 +1,75 @@
+name: Deploy to Cloudflare Pages
+
+# Triggers on merges to main (post-PR). CI already gates the PR, so
+# this workflow trusts the build passed and just re-builds + ships.
+# `workflow_dispatch` lets us redeploy the current main manually from
+# the Actions tab without pushing an empty commit.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never cancel an in-flight deploy — cutting a deploy off mid-upload
+# leaves CF Pages thinking the build failed, which is noisier to
+# recover from than just letting the prior run finish. A newer push
+# queues behind; CF keeps every successful deploy addressable by its
+# commit SHA anyway, so no production state is lost.
+concurrency:
+  group: deploy-cloudflare-pages
+  cancel-in-progress: false
+
+# Read-only by default; the deploy step uses its own CF API token, not
+# GITHUB_TOKEN, so no extra permissions are needed here.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build + deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://chat-arch.dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Same corepack + Node 22 toolchain ci.yml uses, so the build
+      # that lands on main is byte-for-byte the one that passed CI.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm build` walks every workspace. The standalone app imports
+      # @chat-arch/viewer and @chat-arch/schema at build time; those
+      # packages resolve via each package's `main: dist/…`, so they
+      # must build before the Astro build tries to bundle them.
+      - name: Build
+        run: pnpm build
+
+      # Ship the static output. Astro with `output: 'static'` + the
+      # Node adapter emits static files to `apps/standalone/dist/client/`
+      # and the server bundle (for /api/rescan, /api/clear) to
+      # `dist/server/`. On CF Pages the server bundle is dead weight —
+      # we intentionally upload only the client directory, and the
+      # API routes' GET probes will 404 in production, which the UI
+      # already handles by hiding the RESCAN/DELETE buttons.
+      #
+      # `--branch=main` tells Wrangler this is a production deploy
+      # (not a preview). CF resolves the project by name; the project
+      # must already exist — create it once in the dashboard or via
+      # `wrangler pages project create chat-arch`.
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy apps/standalone/dist/client --project-name=chat-arch --branch=main --commit-dirty=true
