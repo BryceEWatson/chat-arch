@@ -302,7 +302,7 @@ async function runOneConfig(
       dtype: cascade.dtype,
       cascade_steps: cascade.cascadeSteps,
     },
-    sample: pickSample(bundle, upload, 3, 10),
+    sample: pickSample(bundle, upload, 3),
   };
 }
 
@@ -341,23 +341,23 @@ function pickSample(
   bundle: SemanticLabelsBundle,
   upload: UploadedCloudData,
   nClusters: number,
-  titlesPerCluster: number,
 ): BenchResultRow['sample'] {
-  const byCluster = new Map<string, string[]>();
+  // Sample is persisted to IndexedDB indefinitely, so it MUST NOT
+  // carry session titles (the most PII-dense field on a conversation).
+  // We keep only `{clusterLabel, size}` — enough to rank clusters by
+  // size in the saved-rows table without pinning user content at rest.
+  // If the UI ever wants example titles for a row, it can join
+  // `clusterLabel` against the currently-loaded SemanticLabelsBundle
+  // at render time.
+  const sizeByCluster = new Map<string, number>();
   for (const session of upload.manifest.sessions) {
     if (session.source !== 'cloud') continue;
     const label = bundle.labels.get(session.id);
     if (!label || label.projectId === null || !label.projectId.startsWith('~')) continue;
-    const arr = byCluster.get(label.projectId) ?? [];
-    arr.push(session.title);
-    byCluster.set(label.projectId, arr);
+    sizeByCluster.set(label.projectId, (sizeByCluster.get(label.projectId) ?? 0) + 1);
   }
-  const sorted = [...byCluster.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, nClusters);
-  return sorted.map(([clusterLabel, titles]) => ({
-    clusterLabel,
-    size: titles.length,
-    memberTitles: titles.slice(0, titlesPerCluster),
-  }));
+  const sorted = [...sizeByCluster.entries()].sort((a, b) => b[1] - a[1]).slice(0, nClusters);
+  return sorted.map(([clusterLabel, size]) => ({ clusterLabel, size }));
 }
 
 function toCsv(rows: readonly BenchResultRow[]): string {

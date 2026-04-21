@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { clearUploadedData } from '../data/uploadedDataStore.js';
+import { clearSemanticLabels } from '../data/semanticLabelsStore.js';
+import { clearBenchResults } from '../data/benchResultsStore.js';
 
 /**
  * Selective-delete affordance. The button sits in the TopBar's left
@@ -171,19 +174,54 @@ export function NuclearReset({ available, onUnload, counts }: NuclearResetProps)
         const body = await res.text().catch(() => '');
         throw new Error(`HTTP ${res.status}${body ? ': ' + body.slice(0, 200) : ''}`);
       }
-      // Wipe the uploaded ZIP when cloud is among the victims — that
-      // ZIP is the in-memory counterpart to the on-disk cloud data
-      // we just removed.
+      // Wipe ALL cloud-derived IDBs when cloud is among the victims:
+      //
+      //   - `chat-arch` (uploaded ZIP bytes)              ← clearUploadedData
+      //   - `chat-arch-semantic-labels` (per-session      ← clearSemanticLabels
+      //      topic assignments, embeddings)
+      //   - `chat-arch-bench-results` (classified_pct,    ← clearBenchResults
+      //      emergent_pct, n_topics and sibling metrics
+      //      computed FROM the cloud corpus)
+      //
+      // Bench-results are a developer-only surface, but every number
+      // they persist is a one-way summary of the user's content. If
+      // the cloud upload they were computed from is gone, the stats
+      // must go too — orphan metrics pinned alongside a corpus that
+      // no longer exists are the exact kind of "at-rest derivative"
+      // the security review set out to stop.
+      //
+      // Two-step cleanup:
+      //   1. `onUnload?.()` resets in-memory state (selection, cache,
+      //      filters). The host's handler also fires-and-forgets its
+      //      own persist effect's clear, which cannot be relied on to
+      //      commit before the `window.location.href` navigation below.
+      //   2. `await` the explicit `clearUploadedData()` /
+      //      `clearSemanticLabels()` / `clearBenchResults()` calls —
+      //      these are the authoritative IDB wipes whose commit we
+      //      can guarantee pre-reload.
       if (selected.has('cloud')) {
         try {
           onUnload?.();
         } catch {
           /* ignore */
         }
+        // Run the three clears in parallel — they target distinct
+        // IndexedDB databases (`chat-arch`, `chat-arch-semantic-labels`,
+        // `chat-arch-bench-results`) so there's no ordering dependency.
+        // `Promise.allSettled` — rather than `Promise.all` — so one
+        // failing wipe doesn't short-circuit the other two; the
+        // `window.location.href` navigation below must happen even if
+        // a single clear throws (best-effort on the destructive path).
+        await Promise.allSettled([
+          clearUploadedData(),
+          clearSemanticLabels(),
+          clearBenchResults(),
+        ]);
       }
-      // Wipe chat-arch:* localStorage only when every source is
-      // selected (kitchen-sink mode). A user wiping just CLI
-      // shouldn't lose their onboarding state.
+      // Kitchen-sink mode (every source selected) additionally wipes
+      // the `chat-arch:*` localStorage keys — onboarding state, UI
+      // preferences, etc. A user wiping just CLI shouldn't lose their
+      // onboarding state, so this path is gated on all-selected.
       if (allSelected) {
         try {
           const keys: string[] = [];

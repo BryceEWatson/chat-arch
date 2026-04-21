@@ -29,5 +29,12 @@
     "typescript": "^5.7.3",
     "vitest": "^3.0.0",
     "@vitest/ui": "^3.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [],
+    "ignoredBuiltDependencies": [
+      "onnxruntime-node",
+      "protobufjs"
+    ]
   }
 }

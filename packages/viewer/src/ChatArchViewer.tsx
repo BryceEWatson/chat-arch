@@ -39,7 +39,7 @@ import type { ZombieProject } from './components/constellation/ZombieProjectCard
 import { filterSessions, applySort, VALID_SORTS, type SortBy } from './data/search.js';
 import { effectiveManifest, mergeUploads } from './data/mergeUpload.js';
 import { useRescan } from './data/rescan.js';
-import { parseCloudZip } from './data/zipUpload.js';
+import { parseCloudZip, maskedUploadLabel } from './data/zipUpload.js';
 import { generateDemoUpload } from './data/demoUpload.js';
 import {
   buildDuplicateClusters as buildDuplicateClustersAnalysis,
@@ -1213,7 +1213,11 @@ export function ChatArchViewer({
   const onCloudUpload = async (file: File): Promise<void> => {
     setUploadStatus('running');
     setUploadHint(undefined);
-    log('info', 'upload', `Uploading ${file.name} (${Math.round(file.size / 1024)} KB)…`);
+    // Log the masked label only — claude.ai Privacy Exports are named
+    // `data-YYYY-MM-DD-<email>.zip` and the activity log is a surface
+    // users screenshot when asking for help. See `maskedUploadLabel`.
+    const label = maskedUploadLabel(file);
+    log('info', 'upload', `Uploading ${label}…`);
     // Snapshot existing cloud-conversation ids so we can report
     // "N new conversations" instead of "N total" — on a second
     // upload the user wants to know what the merge added.
@@ -1241,7 +1245,7 @@ export function ChatArchViewer({
           : added > 0
             ? `Added ${added} new conversation${added === 1 ? '' : 's'} (${total} in ZIP, merged with ${priorIds.size} existing)`
             : `No new conversations — ${total} already in the merged set`;
-      const msg = `${deltaPhrase} from ${file.name}`;
+      const msg = `${deltaPhrase} from ${label}`;
       setUploadStatus('ok');
       setUploadHint(msg);
       setRescanBanner({ kind: 'ok', message: msg });

@@ -44,11 +44,27 @@ export interface BenchResultRow {
   completedAt: number;
   /** Metric columns. Serializable JSON — no TypedArrays here. */
   metrics: Readonly<Record<string, number | string | null>>;
-  /** Sample block: up to 3 clusters × up to 10 member titles each. */
+  /**
+   * Cluster summary: the top-N discovered clusters by size, label +
+   * count only. Intentionally DOES NOT carry session titles:
+   *
+   *   - The row is persisted to IndexedDB indefinitely (until the
+   *     user invokes NuclearReset), so anything stored here joins
+   *     the user's at-rest corpus.
+   *   - Session titles are the most PII-dense field we have — they
+   *     are user-authored conversation names straight off the
+   *     claude.ai export. Persisting them pinned next to a
+   *     developer benchmark config is out of proportion to the
+   *     eyeball-the-cluster UX they enabled.
+   *
+   * If the UI wants to surface example titles for a row, it can join
+   * `clusterLabel` against the currently-loaded `SemanticLabelsBundle`
+   * at render time — live titles come from the in-memory upload, not
+   * the persisted row. See `pickSample` in `BenchmarkRunner.tsx`.
+   */
   sample: ReadonlyArray<{
     clusterLabel: string;
     size: number;
-    memberTitles: readonly string[];
   }>;
 }
 
@@ -72,6 +88,14 @@ function isBenchResultRow(v: unknown): v is BenchResultRow {
   if (typeof o['completedAt'] !== 'number') return false;
   if (typeof o['metrics'] !== 'object' || o['metrics'] === null) return false;
   if (!Array.isArray(o['sample'])) return false;
+  // Reject rows with the old `memberTitles` PII field on any sample
+  // entry. These predate the schema tightening in the security-review
+  // followup — treating them as invalid lets `listBenchResults`
+  // self-heal by deleting them from IndexedDB on the next scan,
+  // rather than leaving raw titles pinned at rest.
+  for (const entry of o['sample']) {
+    if (entry && typeof entry === 'object' && 'memberTitles' in entry) return false;
+  }
   return true;
 }
 
@@ -105,8 +129,26 @@ export async function listBenchResults(): Promise<BenchResultRow[]> {
   try {
     const all = await entries<string, unknown>(storeHandle());
     const out: BenchResultRow[] = [];
-    for (const [, value] of all) {
-      if (isBenchResultRow(value)) out.push(value);
+    // Self-heal: any row that fails the shape check — including rows
+    // carrying the legacy `memberTitles` PII — is deleted on this
+    // scan. The user pays nothing worse than a re-run on the next
+    // benchmark session and the orphan row stops sitting on disk.
+    const stale: string[] = [];
+    for (const [key, value] of all) {
+      if (isBenchResultRow(value)) {
+        out.push(value);
+      } else if (typeof key === 'string') {
+        stale.push(key);
+      }
+    }
+    if (stale.length > 0) {
+      await Promise.all(
+        stale.map((k) =>
+          del(k, storeHandle()).catch(() => {
+            /* best-effort wipe */
+          }),
+        ),
+      );
     }
     return out.sort((a, b) => a.completedAt - b.completedAt);
   } catch {

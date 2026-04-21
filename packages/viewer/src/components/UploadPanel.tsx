@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { parseCloudZip } from '../data/zipUpload.js';
+import { maskedUploadLabel } from '../data/uploadLabel.js';
 import type { UploadedCloudData } from '../types.js';
 
 export interface UploadPanelProps {
@@ -8,11 +9,20 @@ export interface UploadPanelProps {
   variant?: 'prominent' | 'compact';
 }
 
+/**
+ * `label` is the MASKED filename (see `maskedUploadLabel`) — never the
+ * raw `file.name`. claude.ai Privacy Exports embed the user's email in
+ * the default filename, and this panel renders the `parsing` and
+ * `success` states into the DOM where they're visible + screenshot-able.
+ * Storing the mask — rather than re-deriving it on every render — also
+ * guarantees a regression from the mask helper is reflected at the
+ * single point of persistence.
+ */
 type UploadState =
   | { status: 'idle' }
-  | { status: 'parsing'; filename: string }
+  | { status: 'parsing'; label: string }
   | { status: 'error'; message: string }
-  | { status: 'success'; count: number; filename: string };
+  | { status: 'success'; count: number; label: string };
 
 /**
  * CTA panel shown inside EmptyState. Accepts a .zip file via native file input,
@@ -34,13 +44,16 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
     e.target.value = '';
     if (!file) return;
 
-    setState({ status: 'parsing', filename: file.name });
+    // Capture the masked label ONCE at the entry point — after this,
+    // the raw `file.name` does not enter React state or the DOM.
+    const label = maskedUploadLabel(file);
+    setState({ status: 'parsing', label });
     try {
       const data = await parseCloudZip(file);
       setState({
         status: 'success',
         count: data.manifest.sessions.length,
-        filename: file.name,
+        label,
       });
       onLoaded(data);
     } catch (err) {
@@ -88,7 +101,7 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
 
       {state.status === 'parsing' && (
         <div className="lcars-upload-panel__status" role="status" aria-live="polite">
-          PARSING {state.filename}…
+          PARSING {state.label}…
         </div>
       )}
       {state.status === 'error' && (
@@ -102,7 +115,7 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
           role="status"
           aria-live="polite"
         >
-          LOADED {state.count} CONVERSATIONS FROM {state.filename}
+          LOADED {state.count} CONVERSATIONS FROM {state.label}
         </div>
       )}
     </section>

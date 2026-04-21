@@ -88,6 +88,7 @@
  */
 
 import { env, pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
+import { resolveOrtWasmPaths } from './ortWasmPaths.js';
 
 // Anthropic's Privacy Export is content-only, so we never send conversation
 // text back to HuggingFace. The *model weights* come from the HF CDN on
@@ -146,23 +147,22 @@ const wasmThreads = 1;
 // `.mjs` import still falls through to `import.meta.url`-relative
 // resolution (which in a Vite-bundled worker resolves to the Vite
 // chunk URL, not our self-hosted path).
-let resolvedWasmPaths: string | null = null;
-try {
-  const self_ = self as unknown as { location?: { origin?: string } };
-  const origin = self_.location?.origin;
-  if (typeof origin === 'string' && origin.length > 0) {
-    const base = `${origin}/ort-wasm/`;
-    (env as any).backends.onnx.wasm.wasmPaths = {
-      mjs: `${base}ort-wasm-simd-threaded.jsep.mjs`,
-      wasm: `${base}ort-wasm-simd-threaded.jsep.wasm`,
-    };
-    resolvedWasmPaths = base;
-  }
-} catch {
-  // fall back to the default jsdelivr path if `self.location` isn't
-  // available for some reason (very old worker runtimes). Won't break
-  // the common case.
-}
+// Fail-closed: if we cannot derive a same-origin base for the ORT
+// WASM assets, we throw and abort worker init. Silently falling
+// through to transformers.js's default (cdn.jsdelivr.net) would be
+// a surprise third-party fetch at inference time — even with the
+// app's CSP blocking the actual load, users would see a confusing
+// "embedder timed out" instead of a clear "self-hosted ORT assets
+// missing". The resolver lives in its own module (`ortWasmPaths.ts`)
+// so its guard can be unit-tested without booting this worker.
+const resolvedOrt = resolveOrtWasmPaths(
+  (self as unknown as { location?: { origin?: string } }).location?.origin,
+);
+(env as any).backends.onnx.wasm.wasmPaths = {
+  mjs: resolvedOrt.mjs,
+  wasm: resolvedOrt.wasm,
+};
+const resolvedWasmPaths: string = resolvedOrt.base;
 
 // Belt-and-braces: disable the WASM proxy worker. Transformers' onnx.js
 // already does this (proxy=false) but it lives in module-init code and
@@ -399,7 +399,7 @@ function formatWorkerError(err: unknown): string {
     `COI=${(self as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated === true}, ` +
     `WebGPU=${typeof navigator !== 'undefined' && typeof (navigator as { gpu?: unknown }).gpu !== 'undefined'}, ` +
     `device=${initAttemptingDevice ?? 'unknown'}, ` +
-    `wasmPaths=${resolvedWasmPaths ?? 'default'}${pf}]`;
+    `wasmPaths=${resolvedWasmPaths}${pf}]`;
 
   if (/^\d+$/.test(raw.trim())) {
     // ORT heap-pointer masquerading as a message. Keep the pointer for
@@ -554,8 +554,7 @@ async function ensurePipeline(): Promise<{
     // in-app WebViews that strip SAB for security) simply can't run
     // this feature regardless of headers.
     const hasSAB = typeof SharedArrayBuffer !== 'undefined';
-    const coi =
-      (self as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
+    const coi = (self as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
     if (!hasSAB || !coi) {
       throw new Error(
         `Semantic analysis needs a cross-origin-isolated page context ` +
@@ -573,10 +572,10 @@ async function ensurePipeline(): Promise<{
     // Preflight the self-hosted wasm/mjs so the eventual error (if any)
     // carries useful context. Must run before `pipeline()` — once ORT
     // fails with a heap-pointer the original HTTP state is already gone
-    // from the network log in most cases.
-    if (resolvedWasmPaths !== null) {
-      await runPreflight(resolvedWasmPaths);
-    }
+    // from the network log in most cases. `resolvedWasmPaths` is
+    // unconditionally set at module-init (or the worker throws),
+    // so no null-guard is needed here.
+    await runPreflight(resolvedWasmPaths);
 
     // Feature-detect WebGPU. Present when navigator.gpu exists.
     const hasWebGPU =

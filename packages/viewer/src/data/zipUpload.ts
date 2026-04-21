@@ -2,6 +2,10 @@ import { unzipSync, strFromU8 } from 'fflate';
 import type { CloudConversation, CloudMemories, CloudProject, CloudUser } from '@chat-arch/schema';
 import { buildCloudEntries, type CloudSourceData } from '@chat-arch/exporter/cloud-mapping';
 import type { UploadedCloudData } from '../types.js';
+// Re-export so call sites that already live on `zipUpload` can pull
+// the masker without reaching into the utility module directly.
+export { maskedUploadLabel } from './uploadLabel.js';
+import { maskedUploadLabel } from './uploadLabel.js';
 
 const CONVERSATIONS_JSON = 'conversations.json';
 const PROJECTS_JSON = 'projects.json';
@@ -70,7 +74,14 @@ export async function parseCloudZip(file: File): Promise<UploadedCloudData> {
       sessions: mapped.entries,
     },
     conversationsById: mapped.conversationsById,
-    sourceLabel: `${file.name} (${formatBytes(file.size)})`,
+    // Mask the raw filename — claude.ai Privacy Exports are named
+    // `data-YYYY-MM-DD-<email>.zip` by default, and this label is
+    // IDB-persisted + rendered in the UI. A shared screenshot /
+    // exported activity log would otherwise leak the user's email.
+    // The raw `file.name` is not retained anywhere after this function
+    // returns; callers that need it should handle it in ephemeral
+    // state only. See `maskedUploadLabel` for the redaction rule.
+    sourceLabel: maskedUploadLabel(file),
   };
 }
 
@@ -87,10 +98,4 @@ function parseJsonArray<T>(buf: Uint8Array, filename: string): readonly T[] {
     throw new Error(`${filename} is not a JSON array (got ${typeof parsed}).`);
   }
   return parsed as readonly T[];
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }

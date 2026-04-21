@@ -187,6 +187,36 @@ The most relevant points for the typical local-dev use case:
 - The production build emits a strict Content-Security-Policy header
   (`script-src 'self'`, no inline, no eval) as defense-in-depth.
 
+### Model-weight trust boundary
+
+The semantic-labels panel runs `Xenova/bge-small-en-v1.5` (a ~36 MB ONNX
+embedder) entirely in the browser via
+[`@huggingface/transformers`](https://huggingface.co/docs/transformers.js).
+The model weights are fetched from the Hugging Face CDN on first run and
+cached locally by the browser's HTTP cache and transformers.js's own
+IndexedDB layer.
+
+**There is no Subresource Integrity / SHA-256 pin on the weights.** This
+is the same posture as every other in-browser ML tool that ships via
+transformers.js today — SRI on arbitrary-origin fetches from
+`huggingface.co` isn't wired through the library, and hand-maintaining a
+per-revision SHA-256 allowlist would drift out of date on the first
+upstream patch. The practical trust boundary is:
+
+- You trust Hugging Face as the weight distributor (same as you trust
+  npm for JS packages or Docker Hub for images).
+- You trust TLS + HTTP cache for in-transit integrity.
+- You accept that a compromised HF CDN could ship modified weights
+  that degrade the viewer's clustering quality (but cannot exfiltrate
+  data — the worker has no network permission beyond its own asset
+  fetches, and no conversation content is ever sent back).
+
+The ORT-WASM runtime itself (the JS glue + WASM binary that executes
+the weights) is self-hosted under `apps/standalone/public/ort-wasm/`
+and loaded same-origin — not from a third-party CDN. See
+`packages/viewer/src/data/ortWasmPaths.ts` for the fail-closed resolver
+that refuses to fall back to `cdn.jsdelivr.net`.
+
 ## Disclaimers
 
 **Not affiliated with Anthropic.** "Claude" and "Claude Code" are trademarks
