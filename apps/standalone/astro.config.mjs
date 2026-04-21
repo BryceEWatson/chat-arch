@@ -47,6 +47,46 @@ export default defineConfig({
   integrations: [react()],
   output: 'static',
   adapter: node({ mode: 'standalone' }),
+  // Astro 5.9+ ships an auto-hashing CSP. It computes a SHA-256 hash
+  // for every inline <script> and <style> block it emits (including
+  // the astro-island loader + hydration bootstrap) and injects those
+  // hashes into script-src / style-src — so inline scripts we ship
+  // are permitted while anything injected at runtime (e.g. from
+  // transcript content that bypassed the viewer's sanitizer) still
+  // gets blocked.
+  //
+  // Replaces the hand-written <meta http-equiv="Content-Security-
+  // Policy"> that used to live in BaseLayout.astro. That pinned
+  // script-src to 'self' with no inline allowance, which blocked the
+  // island loader and stranded every page on "LOADING MANIFEST…"
+  // because hydration never started.
+  //
+  // `resources` *replaces* Astro's default resources for each
+  // directive (it does not merge), so anything we want permitted has
+  // to be listed explicitly alongside the auto-generated hashes.
+  // style-src keeps 'unsafe-inline' because React components can
+  // inject runtime <style> tags that Astro doesn't see at build
+  // time (no hash generated); scripts have no equivalent runtime
+  // injection path, so script-src stays tight.
+  experimental: {
+    csp: {
+      directives: [
+        "default-src 'self'",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data: blob:",
+        "connect-src 'self'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "object-src 'none'",
+      ],
+      scriptDirective: {
+        resources: ["'self'"],
+      },
+      styleDirective: {
+        resources: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      },
+    },
+  },
   vite: {
     server: {
       headers: crossOriginIsolationHeaders,
