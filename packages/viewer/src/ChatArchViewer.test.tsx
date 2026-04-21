@@ -3,6 +3,12 @@ import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/re
 import { zipSync, strToU8 } from 'fflate';
 import type { CloudConversation, SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
 import { ChatArchViewer } from './ChatArchViewer.js';
+import {
+  loadUploadedData,
+  saveUploadedData,
+  clearUploadedData,
+} from './data/uploadedDataStore.js';
+import type { UploadedCloudData } from './types.js';
 
 function buildConv(uuid: string, name: string): CloudConversation {
   return {
@@ -93,7 +99,7 @@ const sampleManifest: SessionManifest = {
   ],
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.restoreAllMocks();
   // Default jsdom width is ~1024 which clears the 900px gate.
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 });
@@ -102,6 +108,11 @@ beforeEach(() => {
   if (window.location.hash) {
     window.history.replaceState(null, '', window.location.pathname);
   }
+  // fake-indexeddb persists across tests in the same worker. Clear the
+  // single persisted-archive key so each test starts from a clean slate.
+  // (We avoid `deleteDatabase` here — it would deadlock against the idb-
+  // keyval connection that remains open across tests.)
+  await clearUploadedData();
 });
 
 afterEach(() => {
@@ -302,28 +313,88 @@ describe('ChatArchViewer', () => {
     });
   });
 
-  it('top-bar `×` clear-upload chip only appears when an upload is active, and reverts', async () => {
-    render(<ChatArchViewer manifest={sampleManifest} />);
-    // No upload yet → chip is not rendered.
-    expect(screen.queryByRole('button', { name: /clear uploaded ZIP/i })).toBeNull();
+  // -------------------------------------------------------------------------
+  // IndexedDB persistence — uploaded ZIP survives a refresh.
+  //
+  // Browser-only deploys (GitHub Pages, CDN, file://) have no server-backed
+  // storage, so the uploaded archive must persist in IDB or the user's
+  // upload disappears on every page reload. These tests exercise that round
+  // trip end-to-end: the actual `loadUploadedData` is invoked on mount, and
+  // the actual `saveUploadedData` is invoked from the persist effect.
+  // -------------------------------------------------------------------------
 
-    // Upload a ZIP.
+  function persistedArchive(): UploadedCloudData {
+    return {
+      manifest: {
+        schemaVersion: 1,
+        generatedAt: 1_700_000_000_000,
+        counts: { cloud: 1, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 },
+        sessions: [entry('persisted-x', 'cloud', { title: 'Persisted X' })],
+      },
+      conversationsById: new Map<string, CloudConversation>([
+        ['persisted-x', buildConv('persisted-x', 'Persisted X')],
+      ]),
+      sourceLabel: 'restored.zip (1.0 KB)',
+    };
+  }
+
+  it('rehydrates uploaded archive from IndexedDB on mount', async () => {
+    await saveUploadedData(persistedArchive());
+    render(<ChatArchViewer manifest={emptyManifest} />);
+    await waitFor(() => expect(screen.getByText('Persisted X')).toBeDefined());
+  });
+
+  it('persists a fresh upload to IndexedDB and a re-mount sees it', async () => {
+    const { unmount } = render(<ChatArchViewer manifest={emptyManifest} />);
     const fileInput = document.body.querySelector('input[type=file]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [uploadFixtureFile()] } });
     await waitFor(() => expect(screen.getByText('Uploaded Alpha')).toBeDefined());
 
-    // Chip is now visible.
-    const clear = screen.getByRole('button', { name: /clear uploaded ZIP/i });
-    expect(clear).toBeDefined();
-
-    // Clicking the chip reverts to the fetched manifest (same path as UNLOAD).
-    fireEvent.click(clear);
-    await waitFor(() => {
-      expect(screen.getByText('Apple pie recipe')).toBeDefined();
-      expect(screen.queryByText('Uploaded Alpha')).toBeNull();
+    // The persist effect is async; wait for IDB to actually contain the row
+    // before tearing the viewer down. Otherwise we'd race the unmount and
+    // the second mount would see an empty store.
+    await waitFor(async () => {
+      const stored = await loadUploadedData();
+      expect(stored?.manifest.sessions.length).toBeGreaterThan(0);
     });
-    // And the chip disappears again.
-    expect(screen.queryByRole('button', { name: /clear uploaded ZIP/i })).toBeNull();
+
+    unmount();
+
+    render(<ChatArchViewer manifest={emptyManifest} />);
+    await waitFor(() => expect(screen.getByText('Uploaded Alpha')).toBeDefined());
+  });
+
+  it('clearing the upload via the UpperPanel UNLOAD chip wipes IndexedDB too', async () => {
+    await saveUploadedData(persistedArchive());
+    render(<ChatArchViewer manifest={sampleManifest} />);
+    await waitFor(() => expect(screen.getByText('Persisted X')).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /unload uploaded ZIP/i }));
+
+    await waitFor(async () => {
+      const stored = await loadUploadedData();
+      expect(stored).toBeNull();
+    });
+  });
+
+  it('does not write to IndexedDB before hydration completes', async () => {
+    // Plant a stored archive, then mount. If the persist effect ran on the
+    // initial `null` state it would clobber the stored archive before the
+    // load effect could rehydrate it. Verify the row survives the mount.
+    await saveUploadedData(persistedArchive());
+    render(<ChatArchViewer manifest={emptyManifest} />);
+    await waitFor(() => expect(screen.getByText('Persisted X')).toBeDefined());
+    const stored = await loadUploadedData();
+    expect(stored).not.toBeNull();
+    expect(stored!.manifest.sessions[0]!.title).toBe('Persisted X');
+  });
+
+  it('falls through to fetched manifest when IDB is empty', async () => {
+    await clearUploadedData();
+    render(<ChatArchViewer manifest={sampleManifest} />);
+    // Sample fetched data renders, no rehydrated upload appears.
+    await waitFor(() => expect(screen.getByText('Apple pie recipe')).toBeDefined());
+    expect(screen.queryByText('Persisted X')).toBeNull();
   });
 
   it('sessions are sorted newest first', () => {
@@ -338,5 +409,100 @@ describe('ChatArchViewer', () => {
     render(<ChatArchViewer manifest={many} />);
     const titles = screen.getAllByText(/First|Second|Third/).map((el) => el.textContent);
     expect(titles).toEqual(['Second', 'Third', 'First']);
+  });
+
+  // --- Phase 2: browser-side analysis over uploaded data ---------------------
+  //
+  // When a cloud-only user uploads a ZIP and no exporter-written
+  // `analysis/*.json` files are available, the viewer must still surface
+  // DUP chips (exact duplicates) and ZOMBIE chips — computed in-page from
+  // the uploaded data. Without this, the "core tier runs in-page against
+  // your manifest" promise is false for web-upload users.
+  // --------------------------------------------------------------------------
+
+  function duplicateConv(uuid: string, name: string, duplicateText: string): CloudConversation {
+    return {
+      ...buildConv(uuid, name),
+      chat_messages: [
+        {
+          uuid: 'm1',
+          parent_message_uuid: '00000000-0000-4000-8000-000000000000',
+          sender: 'human',
+          text: duplicateText,
+          content: [{ type: 'text', text: duplicateText }],
+          created_at: '2026-01-01T10:00:00Z',
+          updated_at: '2026-01-01T10:00:00Z',
+          attachments: [],
+          files: [],
+        },
+      ],
+    };
+  }
+
+  it('browser-computes DUP clusters over uploaded data when no analysis files are fetched', async () => {
+    // Two conversations with identical first-human text → one duplicate
+    // cluster with two members. Text is > 40 chars so it clears the
+    // ceremonial-noise floor (DEFAULT_MIN_NORMALIZED_LEN).
+    const duplicateText =
+      'Please refactor the authentication module to use JWT tokens and update all the call sites.';
+    const archive: UploadedCloudData = {
+      manifest: {
+        schemaVersion: 1,
+        generatedAt: 0,
+        counts: { cloud: 2, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 },
+        sessions: [
+          entry('dup-a', 'cloud', { title: 'JWT refactor — first pass' }),
+          entry('dup-b', 'cloud', { title: 'JWT refactor — second attempt' }),
+        ],
+      },
+      conversationsById: new Map<string, CloudConversation>([
+        ['dup-a', duplicateConv('dup-a', 'JWT refactor — first pass', duplicateText)],
+        ['dup-b', duplicateConv('dup-b', 'JWT refactor — second attempt', duplicateText)],
+      ]),
+      sourceLabel: 'dup-demo.zip (1.0 KB)',
+    };
+    await saveUploadedData(archive);
+    render(<ChatArchViewer manifest={emptyManifest} />);
+    await waitFor(() => expect(screen.getByText('JWT refactor — first pass')).toBeDefined());
+    // Each duplicate session gets a DUP (2) chip — the in-page cluster
+    // computation feeds the same sessionDupIndex the CLI-source path uses.
+    const dupChips = document.querySelectorAll('.lcars-chip--dup');
+    expect(dupChips.length).toBe(2);
+    expect(dupChips[0]!.textContent).toMatch(/DUP \(2\)/);
+  });
+
+  it('browser-computes ZOMBIE classification over uploaded data when no analysis files are fetched', async () => {
+    // Build a project that ran 2 years ago with no recent activity. The
+    // heuristic's silent-zombie rule (SILENT_ZOMBIE_DAYS = 180) should
+    // classify it as zombie without needing a probe session.
+    const longDormantTs = Date.UTC(2024, 0, 1); // >= 2 years before the current date
+    const archive: UploadedCloudData = {
+      manifest: {
+        schemaVersion: 1,
+        generatedAt: 0,
+        counts: { cloud: 1, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 },
+        sessions: [
+          entry('zombie-1', 'cloud', {
+            title: 'Chat Archaeologist kickoff',
+            project: 'chat-arch',
+            startedAt: longDormantTs,
+            updatedAt: longDormantTs,
+          }),
+        ],
+      },
+      conversationsById: new Map<string, CloudConversation>([
+        ['zombie-1', buildConv('zombie-1', 'Chat Archaeologist kickoff')],
+      ]),
+      sourceLabel: 'zombie-demo.zip (1.0 KB)',
+    };
+    await saveUploadedData(archive);
+    render(<ChatArchViewer manifest={emptyManifest} />);
+    await waitFor(() =>
+      expect(screen.getByText('Chat Archaeologist kickoff')).toBeDefined(),
+    );
+    // The zombie heuristic groups by project and classifies. The session
+    // should carry the ZOMBIE chip because its project is dormant.
+    const zombieChips = document.querySelectorAll('.lcars-chip--zombie');
+    expect(zombieChips.length).toBeGreaterThan(0);
   });
 });

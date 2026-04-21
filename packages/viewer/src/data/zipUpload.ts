@@ -1,6 +1,6 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import type { CloudConversation, CloudMemories, CloudProject, CloudUser } from '@chat-arch/schema';
-import { buildCloudEntries, type CloudSourceData } from '@chat-arch/exporter/cloud-mapping';
+import { buildCloudEntries, type CloudSourceData } from '@chat-arch/analysis';
 import type { UploadedCloudData } from '../types.js';
 // Re-export so call sites that already live on `zipUpload` can pull
 // the masker without reaching into the utility module directly.
@@ -74,6 +74,12 @@ export async function parseCloudZip(file: File): Promise<UploadedCloudData> {
       sessions: mapped.entries,
     },
     conversationsById: mapped.conversationsById,
+    // Retain the user's projects.json on the upload so the Phase 3
+    // semantic classifier can build per-project centroid embeddings. If
+    // the export didn't ship a projects.json, the field stays undefined
+    // and the semantic-labels panel surfaces that honestly rather than
+    // silently embedding an empty list.
+    ...(data.projects ? { projects: data.projects } : {}),
     // Mask the raw filename — claude.ai Privacy Exports are named
     // `data-YYYY-MM-DD-<email>.zip` by default, and this label is
     // IDB-persisted + rendered in the UI. A shared screenshot /

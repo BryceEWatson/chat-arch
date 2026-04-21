@@ -83,8 +83,23 @@ export function CostMode({
     'top-20': top20Ref,
   });
 
+  // When every visible session is from a claude.ai Privacy Export, cost data
+  // is structurally unavailable (no token counts, no model identity, no cache
+  // signal — see the SessionCard COST tooltip for the full caveat). Rather
+  // than render four empty cost panels, surface a single honest notice so
+  // the user knows why and what unlocks real numbers.
+  const allCloud = sessions.length > 0 && sessions.every((s) => s.source === 'cloud');
+
   return (
     <div className="lcars-cost-mode" aria-label="cost analysis">
+      {allCloud && (
+        <div className="lcars-cost-cloud-notice" role="note">
+          <strong>CLOUD-ONLY DATA.</strong> claude.ai Privacy Exports don&apos;t include token
+          counts or model identity, so cost isn&apos;t recoverable for these conversations. Run
+          the CLI exporter on local sessions (Claude Code, Cowork, Claude Desktop) for measured
+          cost.
+        </div>
+      )}
       <div ref={stackedRef}>
         <CostStackedBar sessions={sessions} highlight={kpiEntry === 'stacked-bar'} />
       </div>

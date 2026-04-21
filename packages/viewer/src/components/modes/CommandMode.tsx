@@ -16,6 +16,13 @@ export interface CommandModeProps {
   onDuplicateChipClick?: (clusterId: string, sessionId: string) => void;
   /** ZOMBIE-chip navigation → CONSTELLATION mode filtered to zombies. */
   onZombieChipClick?: (sessionId: string) => void;
+  /**
+   * Ids of sessions whose `project` came from the Phase 3 semantic
+   * classifier rather than the string matcher / CLI data. SessionCard
+   * renders these with a `~` prefix so users can tell an inferred label
+   * from a ground-truth one.
+   */
+  semanticSessionIds?: ReadonlySet<string>;
 }
 
 const PAGE_SIZE = 50;
@@ -27,6 +34,7 @@ export function CommandMode({
   zombieProjectIds,
   onDuplicateChipClick,
   onZombieChipClick,
+  semanticSessionIds,
 }: CommandModeProps) {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const now = useMemo(() => Date.now(), []);
@@ -49,6 +57,7 @@ export function CommandMode({
         {slice.map((s) => {
           const dup = sessionDupIndex?.get(s.id);
           const isZombie = !!(s.project && zombieProjectIds?.has(s.project));
+          const isSemanticProject = !!semanticSessionIds?.has(s.id);
           return (
             <div role="listitem" key={`${s.source}:${s.id}`}>
               <SessionCard
@@ -57,6 +66,7 @@ export function CommandMode({
                 now={now}
                 {...(dup ? { duplicateInfo: dup } : {})}
                 isZombieProject={isZombie}
+                isSemanticProject={isSemanticProject}
                 {...(onDuplicateChipClick ? { onDuplicateChipClick } : {})}
                 {...(onZombieChipClick ? { onZombieChipClick } : {})}
               />

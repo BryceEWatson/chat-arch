@@ -51,10 +51,13 @@ describe('Sparkline', () => {
     const all = [base('a', sunday), base('b', sunday + WEEK), base('c', sunday + 2 * WEEK)];
     const visible = [all[0]!, all[2]!]; // middle week is missing
     const { container } = render(<Sparkline allSessions={all} visibleSessions={visible} />);
-    const bars = Array.from(container.querySelectorAll('rect.lcars-sparkline__bar'));
-    // second bar should have the dim class
-    expect(bars[1]!.classList.contains('lcars-sparkline__bar--dim')).toBe(true);
-    expect(bars[0]!.classList.contains('lcars-sparkline__bar--dim')).toBe(false);
+    // Each week is now a `<g>` group (so per-source stack segments share
+    // state) with the dim class applied at the group level, not on each
+    // rect — the source-color fill would be lost if we faded individual rects.
+    const groups = Array.from(container.querySelectorAll('g.lcars-sparkline__bar-group'));
+    expect(groups.length).toBe(3);
+    expect(groups[1]!.classList.contains('lcars-sparkline__bar-group--dim')).toBe(true);
+    expect(groups[0]!.classList.contains('lcars-sparkline__bar-group--dim')).toBe(false);
   });
 
   it('axis shows first and last week labels', () => {

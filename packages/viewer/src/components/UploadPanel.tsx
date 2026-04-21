@@ -7,6 +7,14 @@ export interface UploadPanelProps {
   onLoaded: (data: UploadedCloudData) => void;
   /** Optional compact variant — omits the headline copy. */
   variant?: 'prominent' | 'compact';
+  /**
+   * Optional "Load Demo Data" affordance. When provided, renders a
+   * secondary button that populates the viewer with a generated
+   * fixture so users can explore the UI without needing their own
+   * export. The host wires this up to `generateDemoUpload()` +
+   * `onUpload`.
+   */
+  onLoadDemo?: () => void;
 }
 
 /**
@@ -29,7 +37,7 @@ type UploadState =
  * parses it in the browser via `parseCloudZip`, and calls `onLoaded` with the
  * resulting in-memory manifest. LCARS-styled, mobile-responsive.
  */
-export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProps) {
+export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<UploadState>({ status: 'idle' });
 
@@ -79,15 +87,35 @@ export function UploadPanel({ onLoaded, variant = 'prominent' }: UploadPanelProp
         </>
       )}
 
-      <button
-        type="button"
-        className="lcars-upload-panel__button"
-        onClick={openPicker}
-        disabled={state.status === 'parsing'}
-        aria-label="choose cloud export zip"
-      >
-        {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
-      </button>
+      <div className="lcars-upload-panel__buttons">
+        <button
+          type="button"
+          className="lcars-upload-panel__button"
+          onClick={openPicker}
+          disabled={state.status === 'parsing'}
+          aria-label="choose cloud export zip"
+        >
+          {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
+        </button>
+        {onLoadDemo && (
+          <button
+            type="button"
+            className="lcars-upload-panel__button lcars-upload-panel__button--secondary"
+            onClick={onLoadDemo}
+            disabled={state.status === 'parsing'}
+            aria-label="load demo data — populate the viewer with generated fake conversations"
+            title="Populate the viewer with generated fake conversations so you can explore the UI."
+          >
+            LOAD DEMO DATA
+          </button>
+        )}
+      </div>
+      {onLoadDemo && variant === 'prominent' && (
+        <p className="lcars-upload-panel__hint lcars-upload-panel__hint--demo">
+          No export handy? Load the bundled fixture — about 100 hand-written fake conversations
+          — so you can try the filters, sparkline, and analysis tab. Nothing is stored server-side.
+        </p>
+      )}
 
       <input
         ref={inputRef}

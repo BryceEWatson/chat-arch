@@ -103,14 +103,18 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
         </header>
         <p className="lcars-tier-sheet__summary">{headerCopy}</p>
         <p className="lcars-tier-sheet__hint">
-          The core tier is live — search, filters, cost sparklines, exact-duplicate clusters, and
-          zombie-project heuristics all run in-page against your manifest. The extended tier is what
-          LLM-assisted analysis over your full transcript corpus would add: semantic similarity, why
-          a project stalled, problems you re-solved months apart, reusable prompt templates, cost
-          post-mortems, and candidate Claude-Code skills synthesized from your actual usage. Those
-          need a local pass because running an LLM over every session isn&apos;t something a browser
-          tab should do (cost, privacy, throughput) — but the tool that runs that pass isn&apos;t
-          written yet. This sheet is the preview.
+          Search, filters, exact-duplicate clusters, and zombie-project detection run in-page for
+          every source, including claude.ai uploads. What&apos;s genuinely missing for cloud
+          sessions is model identity, token counts, and cost: the claude.ai Privacy Export is
+          content-only, so those fields are hidden on cloud cards and the cost sparklines cover
+          CLI / Desktop / Cowork sessions only. Running SCAN LOCAL doesn&apos;t change this —
+          model/cost for cloud rows can&apos;t be recovered from any side of the pipeline. The
+          extended tier is what LLM-assisted analysis over your full transcript corpus would add:
+          semantic similarity, why a project stalled, problems you re-solved months apart,
+          reusable prompt templates, cost post-mortems, and candidate Claude-Code skills
+          synthesized from your actual usage. Those need a local pass because running an LLM over
+          every session isn&apos;t something a browser tab should do (cost, privacy, throughput)
+          — but the tool that runs that pass isn&apos;t written yet. This sheet is the preview.
         </p>
         <ul className="lcars-tier-sheet__list" aria-label="tier-2 analysis files">
           {PHASE_7_RESERVED_FILES.map((filename) => {
