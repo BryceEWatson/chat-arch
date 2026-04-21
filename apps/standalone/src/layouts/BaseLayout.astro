@@ -3,37 +3,21 @@ interface Props {
   title: string;
 }
 const { title } = Astro.props;
-// Vite/Astro dev mode relies on inline scripts and eval for HMR + the
-// React fast-refresh preamble; a strict script-src 'self' CSP breaks
-// hydration. Production builds emit only bundled scripts, so the
-// strict policy applies cleanly there. Gate on import.meta.env.PROD.
-const isProd = import.meta.env.PROD;
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    {isProd && (
-      /*
-        Defense-in-depth Content Security Policy. The viewer's transcript
-        renderer escapes user content before passing it to
-        dangerouslySetInnerHTML; this policy guarantees that even if that
-        escape order ever regresses, an injected <script> from transcript
-        content cannot execute. Allowed:
-          - scripts only from same origin (no inline, no eval)
-          - styles inline (BaseLayout has a <style> tag) + Google Fonts
-          - fonts from Google Fonts
-          - images from same origin, data:, and blob: (upload previews)
-          - fetch only to same origin (covers /api/rescan, manifest, etc.)
-        frame-ancestors via meta is ignored by browsers; a future
-        production deployment should set it as an HTTP response header.
-      */
-      <meta
-        http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
-      />
-    )}
+    {/*
+      Content Security Policy is emitted by Astro's experimental CSP
+      machinery (see astro.config.mjs). It auto-hashes every inline
+      script/style we ship and merges that with the directive list in
+      the config. Keeping the meta tag out of here means the CSP can't
+      silently diverge from what Astro actually emits for hashes.
+      frame-ancestors lives in apps/standalone/public/_headers because
+      it only takes effect as an HTTP response header.
+    */}
     <title>{title}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
