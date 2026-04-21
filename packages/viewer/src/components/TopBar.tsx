@@ -220,6 +220,29 @@ export function TopBar({
       <div className="lcars-top-bar__left">
         <span className="lcars-top-bar__dot" aria-hidden="true" />
         <h1 className="lcars-top-bar__title">CHAT ARCHAEOLOGIST</h1>
+        {/*
+          Design-system colophon. A small ⓘ anchored to the title that
+          opens a sentence-length credit and a link to
+          /design-system/. Reuses the existing InfoPopover pattern so
+          it reads as a natural help chip rather than new chrome —
+          the goal was a subtle discovery affordance, not another CTA.
+          The link navigates same-origin to the walkthrough page
+          served by the standalone app (apps/standalone/src/pages/
+          design-system/index.astro).
+        */}
+        <InfoPopover
+          ariaLabel="about the Supergraphic Panel design system"
+          className="lcars-top-bar__title-info"
+        >
+          <strong>Supergraphic Panel</strong>
+          <p>
+            This UI uses the Supergraphic Panel design system — published with
+            its source, DTCG tokens, and an LLM-consumable specification.
+          </p>
+          <p>
+            <a href="/design-system/">View the walkthrough →</a>
+          </p>
+        </InfoPopover>
         {onCloudUpload && (
           <>
             <div className="lcars-top-bar__source-group">
