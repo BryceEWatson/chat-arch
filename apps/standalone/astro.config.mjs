@@ -39,6 +39,11 @@ const crossOriginIsolationHeaders = {
 };
 
 export default defineConfig({
+  // Public URL of the hosted deploy. Used for sitemap generation and
+  // any canonical-URL emission. The custom domain resolves via
+  // Cloudflare Pages (DNS CNAME → chat-arch.pages.dev); the Pages
+  // default `.pages.dev` subdomain continues to serve the same build.
+  site: 'https://chat-arch.dev',
   integrations: [react()],
   output: 'static',
   adapter: node({ mode: 'standalone' }),
