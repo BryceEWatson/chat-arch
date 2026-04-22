@@ -82,7 +82,7 @@ const durations = Object.entries(tokens.duration);
             <tbody>
               {palette.map(([name, token]) => (
                 <tr>
-                  <td><span class="ds-swatch" style={`background:${token.$value}`} aria-hidden="true"></span></td>
+                  <td><span class={`ds-swatch ds-swatch--${name}`} aria-hidden="true"></span></td>
                   <td><code>color.{name}</code></td>
                   <td><code>{token.$value}</code></td>
                   <td>{token.$description}</td>
@@ -156,17 +156,17 @@ const durations = Object.entries(tokens.duration);
           <div class="ds-component">
             <div class="ds-component__title">Source pill</div>
             <div class="ds-component__demo">
-              <button class="lcars-source-pill lcars-source-pill--active" style="--source-color: var(--lcars-ice)">
+              <button class="lcars-source-pill lcars-source-pill--active ds-accent--ice">
                 <span class="lcars-source-pill__badge">CC</span>
                 <span class="lcars-source-pill__label">CLAUDE CODE</span>
                 <span class="lcars-source-pill__count">247</span>
               </button>
-              <button class="lcars-source-pill" style="--source-color: var(--lcars-violet)">
+              <button class="lcars-source-pill ds-accent--violet">
                 <span class="lcars-source-pill__badge">GT</span>
                 <span class="lcars-source-pill__label">CHATGPT</span>
                 <span class="lcars-source-pill__count">82</span>
               </button>
-              <button class="lcars-source-pill" style="--source-color: var(--lcars-peach)">
+              <button class="lcars-source-pill ds-accent--peach">
                 <span class="lcars-source-pill__badge">CD</span>
                 <span class="lcars-source-pill__label">CLI-DIRECT</span>
                 <span class="lcars-source-pill__count">6</span>
@@ -203,9 +203,9 @@ const durations = Object.entries(tokens.duration);
           <div class="ds-component">
             <div class="ds-component__title">Session card</div>
             <div class="ds-component__demo">
-              <article class="lcars-session-card ds-demo-card" style="--source-color: var(--lcars-ice)">
+              <article class="lcars-session-card ds-demo-card ds-accent--ice">
                 <div class="lcars-session-card__row lcars-session-card__row--top">
-                  <button class="lcars-source-pill" style="--source-color: var(--lcars-ice)">
+                  <button class="lcars-source-pill ds-accent--ice">
                     <span class="lcars-source-pill__badge">CC</span>
                     <span class="lcars-source-pill__label">CLAUDE CODE</span>
                   </button>
@@ -229,15 +229,15 @@ const durations = Object.entries(tokens.duration);
             <div class="ds-component__title">Sidebar tab</div>
             <div class="ds-component__demo">
               <ul class="ds-inline-sidebar">
-                <li class="lcars-sidebar__item lcars-sidebar__item--active" style="--mode-color: var(--lcars-ice)">
+                <li class="lcars-sidebar__item lcars-sidebar__item--active ds-accent--ice">
                   <span class="lcars-sidebar__item-short">01</span>
                   <span class="lcars-sidebar__item-label">COMMAND</span>
                 </li>
-                <li class="lcars-sidebar__item" style="--mode-color: var(--lcars-violet)">
+                <li class="lcars-sidebar__item ds-accent--violet">
                   <span class="lcars-sidebar__item-short">02</span>
                   <span class="lcars-sidebar__item-label">TOPICS</span>
                 </li>
-                <li class="lcars-sidebar__item" style="--mode-color: var(--lcars-peach)">
+                <li class="lcars-sidebar__item ds-accent--peach">
                   <span class="lcars-sidebar__item-short">03</span>
                   <span class="lcars-sidebar__item-label">COSTS</span>
                 </li>
@@ -254,7 +254,7 @@ const durations = Object.entries(tokens.duration);
           <div class="ds-component">
             <div class="ds-component__title">Mid bar</div>
             <div class="ds-component__demo">
-              <div class="lcars-mid-bar" style="background: var(--lcars-butterscotch)">
+              <div class="lcars-mid-bar ds-mid-bar--butterscotch">
                 <span class="lcars-mid-bar__label">BROWSE / COMMAND</span>
               </div>
             </div>
@@ -267,17 +267,17 @@ const durations = Object.entries(tokens.duration);
           <div class="ds-component">
             <div class="ds-component__title">Source pill — grouped</div>
             <div class="ds-component__demo">
-              <button class="lcars-source-pill lcars-source-pill--active" style="--source-color: var(--lcars-sunflower)">
+              <button class="lcars-source-pill lcars-source-pill--active ds-accent--sunflower">
                 <span class="lcars-source-pill__badge">A</span>
                 <span class="lcars-source-pill__label">ALL</span>
                 <span class="lcars-source-pill__count">335</span>
               </button>
-              <button class="lcars-source-pill" style="--source-color: var(--lcars-ice)">
+              <button class="lcars-source-pill ds-accent--ice">
                 <span class="lcars-source-pill__badge">CC</span>
                 <span class="lcars-source-pill__label">CLAUDE CODE</span>
                 <span class="lcars-source-pill__count">247</span>
               </button>
-              <button class="lcars-source-pill" style="--source-color: var(--lcars-violet)">
+              <button class="lcars-source-pill ds-accent--violet">
                 <span class="lcars-source-pill__badge">GT</span>
                 <span class="lcars-source-pill__label">CHATGPT</span>
                 <span class="lcars-source-pill__count">82</span>
@@ -706,6 +706,43 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       border-radius: 4px;
       border: 1px solid rgba(255, 204, 153, 0.2);
     }
+    /* Per-token swatch backgrounds. Previously these lived as inline
+       style="background:#xxx" attributes on each <span>, but the page's
+       CSP has auto-hashed style-src (which voids 'unsafe-inline' per CSP3
+       spec), so inline style attributes get blocked. Moving the values
+       into this scoped <style> block lets Astro auto-hash them cleanly.
+       Values mirror design-system/tokens.json — update both when adding
+       a palette entry. */
+    .ds-swatch--sunflower { background: #ffcc99; }
+    .ds-swatch--sunflower-muted { background: #d9ad82; }
+    .ds-swatch--butterscotch { background: #dd9944; }
+    .ds-swatch--butterscotch-muted { background: #6a4a20; }
+    .ds-swatch--ice { background: #99ccff; }
+    .ds-swatch--violet { background: #cc99cc; }
+    .ds-swatch--peach { background: #ff9933; }
+    .ds-swatch--bg { background: #000000; }
+    .ds-swatch--bg-1 { background: #07070a; }
+    .ds-swatch--bg-2 { background: #0d0d12; }
+    .ds-swatch--text { background: #ffcc99; }
+    .ds-swatch--dim { background: #665544; }
+    .ds-swatch--divider { background: rgba(221, 153, 68, 0.18); }
+
+    /* Per-accent helpers for demo components. Same CSP reason — the
+       spec shows per-instance inline style="--source-color: var(...)",
+       but the walkthrough page can't emit inline style attrs. These
+       helper classes set both --source-color and --mode-color so the
+       same class works on source-pill, sidebar-item, and session-card
+       demos. */
+    .ds-accent--sunflower { --source-color: var(--lcars-sunflower); --mode-color: var(--lcars-sunflower); }
+    .ds-accent--butterscotch { --source-color: var(--lcars-butterscotch); --mode-color: var(--lcars-butterscotch); }
+    .ds-accent--ice { --source-color: var(--lcars-ice); --mode-color: var(--lcars-ice); }
+    .ds-accent--violet { --source-color: var(--lcars-violet); --mode-color: var(--lcars-violet); }
+    .ds-accent--peach { --source-color: var(--lcars-peach); --mode-color: var(--lcars-peach); }
+
+    /* .lcars-mid-bar sets structural properties only (height, radius,
+       padding); the background is set per-instance. */
+    .ds-mid-bar--butterscotch { background: var(--lcars-butterscotch); }
+
     /* High-contrast users: the 20%-alpha sunflower border on a swatch
        can read as invisible against either the bg or the swatch color.
        Lift to a solid 2px sunflower border and adopt a square corner
