@@ -82,7 +82,7 @@ const durations = Object.entries(tokens.duration);
             <tbody>
               {palette.map(([name, token]) => (
                 <tr>
-                  <td><span class={`ds-swatch ds-swatch--${name}`} aria-hidden="true"></span></td>
+                  <td><span class="ds-swatch-frame" aria-hidden="true"><span class={`ds-swatch ds-swatch--${name}`}></span></span></td>
                   <td><code>color.{name}</code></td>
                   <td><code>{token.$value}</code></td>
                   <td>{token.$description}</td>
@@ -699,11 +699,34 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       font-size: 11.5px;
       color: var(--lcars-ice);
     }
+    /* Two-tone backing frame. The system's bg family (bg #000, bg-1
+       #07070a, bg-2 #0d0d12) differs by 7–13 RGB units — intentional
+       subtle surface stepping that works in the viewer's large-area
+       context but disappears in a 36×22 swatch on a dark card (the
+       swatch and the card are both near-black, so the swatch visually
+       vanishes). The divider token (rgba butterscotch at 18% alpha)
+       has the same problem for a different reason: it composites
+       against whatever's behind it, and against a dark card it reads
+       as empty. Wrapping every swatch in a frame with a half-dark /
+       half-light backing gives the near-blacks a visible edge against
+       the light half, and lets the divider's translucency show through
+       both halves. Gray neutrals rather than design-system colors so
+       the backing doesn't bias the perceived hue of the swatch. */
+    .ds-swatch-frame {
+      display: inline-flex;
+      width: 44px;
+      height: 26px;
+      padding: 2px;
+      border-radius: 5px;
+      background: linear-gradient(to right, #1a1a1a 50%, #e5e5e5 50%);
+      box-sizing: border-box;
+      vertical-align: middle;
+    }
     .ds-swatch {
-      display: inline-block;
-      width: 36px;
-      height: 22px;
-      border-radius: 4px;
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 3px;
       border: 1px solid rgba(255, 204, 153, 0.2);
     }
     /* Per-token swatch backgrounds. Previously these lived as inline
@@ -746,8 +769,14 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
     /* High-contrast users: the 20%-alpha sunflower border on a swatch
        can read as invisible against either the bg or the swatch color.
        Lift to a solid 2px sunflower border and adopt a square corner
-       so the swatch reads as a distinct object, not a tinted region. */
+       so the swatch reads as a distinct object, not a tinted region.
+       Replace the neutral two-tone frame with solid sunflower so the
+       boundary stays unambiguous regardless of the swatch fill. */
     @media (prefers-contrast: more) {
+      .ds-swatch-frame {
+        background: var(--lcars-sunflower);
+        border-radius: 0;
+      }
       .ds-swatch {
         border: 2px solid var(--lcars-sunflower);
         border-radius: 0;
