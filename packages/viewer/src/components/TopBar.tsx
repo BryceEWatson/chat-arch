@@ -270,12 +270,10 @@ export function TopBar({
                 className="lcars-top-bar__source-info"
               >
                 <strong>Upload / Update Cloud</strong>
-                <p>Add or refresh conversations from a Claude.ai cloud export.</p>
                 <p>
-                  <strong>Local-only:</strong> the ZIP is parsed in your browser and kept in this
-                  tab&rsquo;s IndexedDB — it&rsquo;s never sent to a server. The word
-                  &ldquo;upload&rdquo; here means you&rsquo;re loading the file into the viewer,
-                  not pushing it anywhere.
+                  Add or refresh conversations from a Claude.ai cloud export. The word
+                  &ldquo;upload&rdquo; means loading the file into the viewer, not pushing it to a
+                  server.
                 </p>
                 <p>
                   <strong>How to get the ZIP:</strong> open claude.ai →{' '}
@@ -283,9 +281,8 @@ export function TopBar({
                   when it&rsquo;s ready; download it and pick it here.
                 </p>
                 <p>
-                  Uploading the same ZIP twice is harmless — duplicates are merged by conversation
-                  id, and a second ZIP that&rsquo;s newer just adds the new conversations on top of
-                  what&rsquo;s already loaded.
+                  Re-uploading the same ZIP is harmless — duplicates are merged by conversation id,
+                  and a newer ZIP just adds its new conversations on top.
                 </p>
               </InfoPopover>
             </div>
@@ -355,8 +352,8 @@ export function TopBar({
               ) : (
                 <>
                   <p>
-                    Walks the two local chat-data directories and rebuilds the viewer&rsquo;s
-                    manifest:
+                    Walks the two local chat-data directories and rebuilds the manifest served by
+                    the Astro dev server on <code>localhost</code>:
                   </p>
                   <ul>
                     <li>
@@ -367,18 +364,12 @@ export function TopBar({
                     </li>
                   </ul>
                   <p>
-                    <strong>Local-only:</strong> the scan reads JSONL files off your own disk and
-                    writes the manifest to a local directory served by the Astro dev server on{' '}
-                    <code>localhost</code>. Nothing leaves your machine.
-                  </p>
-                  <p>
                     Cloud data is <em>not</em> touched — it only refreshes when you upload a fresh
                     ZIP via the Cloud button.
                   </p>
                   <p>
-                    The scan is incremental: unchanged transcripts are reused from the previous run
-                    via cached file mtimes, so repeated runs are sub-second when nothing&rsquo;s
-                    new.
+                    The scan is incremental: unchanged transcripts are reused via cached file
+                    mtimes, so repeated runs are sub-second when nothing&rsquo;s new.
                   </p>
                 </>
               )}

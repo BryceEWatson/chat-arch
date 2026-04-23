@@ -73,11 +73,13 @@ See [Getting your own data](#getting-your-own-data) below for the full
 walkthrough of each ingestion path.
 
 > **No Claude Code or Anthropic account required to _run_ chat-arch.** The
-> tool is a plain static web app — it just reads Claude transcripts that
-> already exist on your disk or in a Privacy-Export ZIP you download from
-> claude.ai. No API calls, no login, no telemetry. If you've never used any
-> Claude product, chat-arch has nothing to show you beyond the demo; see
-> [Not a Claude user (yet)](#not-a-claude-user-yet) at the bottom.
+> viewer parses Claude transcripts that already exist on your disk or in
+> a Privacy-Export ZIP you downloaded from claude.ai — no API calls, no
+> login, no telemetry. Never used Claude? Click **LOAD DEMO DATA** to
+> explore the full viewer (filters, sparkline, duplicate detection,
+> topic clustering) against ~100 hand-written synthetic sessions; see
+> [Not a Claude user (yet)](#not-a-claude-user-yet) at the bottom for
+> multi-provider alternatives if Claude isn't your primary assistant.
 
 ### Requirements
 
