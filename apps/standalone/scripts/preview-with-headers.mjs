@@ -24,7 +24,7 @@
  * fidelity matters more than the zero-install story.
  */
 import http from 'node:http';
-import { createReadStream, statSync, readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,8 +36,12 @@ const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..', 'dist', 'client
 // octet-stream`, which is correct for unknown blobs.
 const MIME = {
   '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.mjs': 'application/javascript; charset=utf-8',
+  // No charset on JS to mirror CF Pages exactly — Chrome's module
+  // worker loader can be surprisingly picky about Content-Type for
+  // `type: 'module'` scripts, and empirically `application/javascript`
+  // without the charset suffix matches prod behavior.
+  '.js': 'application/javascript',
+  '.mjs': 'application/javascript',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -135,6 +139,17 @@ const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent(url.pathname);
 
   applyHeaders(res, urlPath);
+  // Headers CF Pages sets on every response that `_headers` doesn't
+  // cover. Matching them here is what made the difference for the
+  // ORT-Web module worker — empirically, without `X-Content-Type-
+  // Options: nosniff` + `Access-Control-Allow-Origin: *` on the
+  // worker script response, Chrome fires a completely empty error
+  // event on `new Worker(url, { type: 'module' })` and refuses to
+  // instantiate the worker (no CSP violation, no console message,
+  // no `e.message`). Adding them makes the local build behave like
+  // the production CF Pages deploy.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   const filePath = resolveFile(urlPath);
   if (!filePath) {
@@ -148,9 +163,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Read the whole file into memory and write it in one shot rather
+  // than streaming via pipe(). `pipe()` produces a chunked-encoded
+  // response, which Chrome's module-worker loader has historically
+  // treated less predictably than a declared-length body.
+  // Empirically, switching from streaming to buffered here is what
+  // finally made the `new Worker(url, { type: 'module' })` spawn
+  // succeed against the local preview — CF Pages serves with
+  // Content-Length + full body, and this matches it.
+  let body;
+  try {
+    body = readFileSync(filePath);
+  } catch {
+    res.statusCode = 500;
+    res.end('Read error');
+    return;
+  }
+
   const ext = extname(filePath).toLowerCase();
   res.setHeader('Content-Type', MIME[ext] ?? 'application/octet-stream');
-  createReadStream(filePath).pipe(res);
+  res.setHeader('Content-Length', String(body.length));
+  res.end(body);
 });
 
 server.listen(PORT, () => {
