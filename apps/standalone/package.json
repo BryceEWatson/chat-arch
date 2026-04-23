@@ -8,6 +8,7 @@
     "dev": "node ../../design-system/scripts/copy-to-public.mjs && astro dev",
     "build": "node ../../design-system/scripts/copy-to-public.mjs && astro check && astro build",
     "preview": "node ../../design-system/scripts/copy-to-public.mjs && astro preview",
+    "preview:static": "node ./scripts/preview-with-headers.mjs",
     "typecheck": "astro check",
     "lint": "eslint src",
     "test": "echo \"(no standalone tests)\" && exit 0",
