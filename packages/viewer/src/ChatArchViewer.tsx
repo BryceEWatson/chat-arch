@@ -18,6 +18,7 @@ import { MidBar } from './components/MidBar.js';
 import { EmptyState } from './components/EmptyState.js';
 import { ErrorState } from './components/ErrorState.js';
 import { UploadPanel } from './components/UploadPanel.js';
+import { TrustStrip } from './components/TrustStrip.js';
 import { FilterBar } from './components/FilterBar.js';
 import { TierIndicator } from './components/TierIndicator.js';
 import {
@@ -1740,11 +1741,12 @@ export function ChatArchViewer({
             uploadStatus={uploadStatus}
             hasCloudData={false}
             {...(uploadHint ? { uploadHint } : {})}
-            deleteAvailable={rescanCtl.available}
+            deleteAvailable={false}
             onDeleteUnload={onUnload}
             deleteCounts={{ cloud: 0, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 }}
           />
           <main className="lcars-empty-main">
+            <TrustStrip />
             <ErrorState
               title="NO DATA YET"
               detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`}

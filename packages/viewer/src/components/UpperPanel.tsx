@@ -455,6 +455,15 @@ export function UpperPanel({
         >
           OVERVIEW
         </button>
+        {/*
+          Renamed from "ANALYSIS" → "FINDINGS" to disentangle from the
+          sidebar's ANL/ANALYSIS entry (which opens the constellation
+          workspace). Same component still drives a tab called
+          `analysis` internally — only the visible label moved — so
+          ChatArchViewer wiring and semantic state stay stable while
+          the UI stops having two differently-scoped surfaces both
+          shouting "ANALYSIS".
+        */}
         <button
           type="button"
           className={
@@ -466,7 +475,7 @@ export function UpperPanel({
           onClick={() => setTab('analysis')}
           title="duplicates, zombies, topic clusters"
         >
-          ANALYSIS
+          FINDINGS
           <span className="lcars-upper-panel__tab-badge">{analysisBadgeCount}</span>
         </button>
       </div>

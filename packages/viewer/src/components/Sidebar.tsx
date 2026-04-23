@@ -1,6 +1,7 @@
 import type { Mode } from '../types.js';
 import { MODE_COLOR } from '../types.js';
 import { onActivate } from '../util/a11y.js';
+import { RepoLink } from './RepoLink.js';
 
 export type SidebarVariant = 'vertical' | 'horizontal';
 
@@ -81,6 +82,17 @@ export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarPro
             );
           })}
         </ul>
+        {/*
+          Mobile also needs a way to reach the repo. Without this the
+          trust claim ("view source to verify") becomes mobile-unreachable
+          the moment the user loads data — TrustStrip only renders on
+          the empty state. Rendering the chip trailing the pill bar
+          keeps it within the same horizontal band the user's thumb is
+          already on.
+        */}
+        <div className="lcars-sidebar__footer lcars-sidebar__footer--horizontal">
+          <RepoLink variant="chip" />
+        </div>
       </nav>
     );
   }
@@ -126,6 +138,16 @@ export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarPro
           </ul>
         </div>
       ))}
+      {/*
+        Footer: SOURCE ↗ chip linking to the open-source repo. Lives
+        between the last nav group and the bottom elbow so the elbow
+        still anchors the rail visually while the link sits in a
+        dedicated slot. `mt: auto` on the elbow's existing rule pushes
+        both toward the bottom of the rail when the mode list is short.
+      */}
+      <div className="lcars-sidebar__footer">
+        <RepoLink variant="chip" />
+      </div>
       <div className="lcars-sidebar__elbow lcars-sidebar__elbow--bottom" aria-hidden="true" />
     </nav>
   );

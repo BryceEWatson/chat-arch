@@ -272,6 +272,12 @@ export function TopBar({
                 <strong>Upload / Update Cloud</strong>
                 <p>Add or refresh conversations from a Claude.ai cloud export.</p>
                 <p>
+                  <strong>Local-only:</strong> the ZIP is parsed in your browser and kept in this
+                  tab&rsquo;s IndexedDB — it&rsquo;s never sent to a server. The word
+                  &ldquo;upload&rdquo; here means you&rsquo;re loading the file into the viewer,
+                  not pushing it anywhere.
+                </p>
+                <p>
                   <strong>How to get the ZIP:</strong> open claude.ai →{' '}
                   <em>Settings → Privacy → &ldquo;Export data&rdquo;</em>. Claude emails you a ZIP
                   when it&rsquo;s ready; download it and pick it here.
@@ -360,6 +366,11 @@ export function TopBar({
                       <code>%APPDATA%\Claude\</code> — Cowork + Desktop-CLI sessions
                     </li>
                   </ul>
+                  <p>
+                    <strong>Local-only:</strong> the scan reads JSONL files off your own disk and
+                    writes the manifest to a local directory served by the Astro dev server on{' '}
+                    <code>localhost</code>. Nothing leaves your machine.
+                  </p>
                   <p>
                     Cloud data is <em>not</em> touched — it only refreshes when you upload a fresh
                     ZIP via the Cloud button.
