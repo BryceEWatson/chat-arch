@@ -16,18 +16,32 @@ preferred for anything exploitable.
 
 ## Threat model
 
-`chat-arch` is a local-first developer tool. The realistic attackers and
-attack surfaces:
+`chat-arch` ships in two postures, both with a deliberately narrow
+attack surface:
 
-| Surface                        | Realistic attacker                                                        |
-| ------------------------------ | ------------------------------------------------------------------------- |
-| `/api/rescan` (Astro dev mode) | Hostile cross-origin page in the same browser; DNS-rebinding probes       |
-| Privacy-Export ZIP upload      | A maliciously crafted ZIP given to a user                                 |
-| Transcript content rendering   | A transcript containing attacker-supplied content (e.g. pasted from a PR) |
-| `chat-arch-data/` re-share     | A user sharing or downloading someone else's `chat-arch-data/` bundle     |
+1. **Local dev checkout** (`pnpm dev` on `localhost:4321`) — has the
+   `/api/rescan` + `/api/clear` endpoints, which walk the user's own
+   filesystem. CSRF gates below apply here.
+2. **Hosted static deploy** at [chat-arch.dev](https://chat-arch.dev)
+   (Cloudflare Pages) — the `pnpm build` client bundle only. The server
+   routes are not deployed, so there is no endpoint that reads the
+   filesystem, no endpoint that mutates server-side state, and nothing
+   for a cross-origin attacker to reach besides the static HTML/JS/CSS
+   and the CF edge.
 
-Production and cloud-deployment threat models are out of scope — the tool
-is designed for `localhost:4321` against the user's own filesystem.
+The realistic attackers and surfaces across both:
+
+| Surface                       | Realistic attacker                                                        |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `/api/rescan` (dev-only)      | Hostile cross-origin page in the same browser; DNS-rebinding probes       |
+| Privacy-Export ZIP upload     | A maliciously crafted ZIP given to a user                                 |
+| Transcript content rendering  | A transcript containing attacker-supplied content (e.g. pasted from a PR) |
+| `chat-arch-data/` re-share    | A user sharing or downloading someone else's `chat-arch-data/` bundle     |
+| Hosted deploy (chat-arch.dev) | Supply-chain compromise of a build dependency; CF edge misconfiguration   |
+
+Server-side threats against the hosted deploy are bounded by it being a
+static build with no backend — there is no application logic running at
+chat-arch.dev beyond CF's own edge.
 
 ## Current mitigations
 
@@ -64,10 +78,13 @@ is designed for `localhost:4321` against the user's own filesystem.
 - **GET `/api/rescan` is unauthenticated**: it returns only
   `{ok, available, busy}` with no side effects, so the unauthenticated probe
   is intentional.
-- **`frame-ancestors` via meta-CSP is ignored by browsers**: a future
-  production deployment behind a real reverse proxy should set
-  `frame-ancestors 'none'` as an actual HTTP response header to fully
-  prevent clickjacking.
+- **`frame-ancestors` via meta-CSP is ignored by browsers**: the
+  chat-arch.dev Cloudflare Pages deploy sets `X-Frame-Options: DENY` as
+  an HTTP response header via `apps/standalone/public/_headers`, which
+  is the widely-supported predecessor of `frame-ancestors` and prevents
+  clickjacking on the hosted surface. Any other deployment host needs
+  to set an equivalent header at its own edge — a meta-CSP won't cover
+  this.
 
 ## Out of scope
 
