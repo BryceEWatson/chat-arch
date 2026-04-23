@@ -389,7 +389,7 @@ export function AnalysisLauncher({
             STALE
           </span>
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">LOCAL ANALYSIS</span>
+            <span className="lcars-analysis-launcher__title">LOCAL FINDINGS</span>
             <span className="lcars-analysis-launcher__subtitle">
               {newSessionCount.toLocaleString()} new {pluralize(newSessionCount, 'session')} since the last run{' '}
               {newSessionCount === 1 ? 'is' : 'are'} unanalyzed · {analyzedCount.toLocaleString()} /{' '}
@@ -422,7 +422,7 @@ export function AnalysisLauncher({
             DONE
           </span>
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">LOCAL ANALYSIS</span>
+            <span className="lcars-analysis-launcher__title">LOCAL FINDINGS</span>
             <span className="lcars-analysis-launcher__subtitle">
               {analyzedCount.toLocaleString()} / {totalEligibleSessions.toLocaleString()} analyzed
               {' '}
@@ -454,7 +454,7 @@ export function AnalysisLauncher({
     <section className="lcars-analysis-launcher lcars-analysis-launcher--cta" aria-label="run analysis">
       <div className="lcars-analysis-launcher__heading">
         <div className="lcars-analysis-launcher__title-group">
-          <span className="lcars-analysis-launcher__title">LOCAL ANALYSIS</span>
+          <span className="lcars-analysis-launcher__title">LOCAL FINDINGS</span>
           <span className="lcars-analysis-launcher__subtitle">
             Discover re-asked prompts, zombie projects, and emergent topic clusters across your
             conversations. Runs entirely in-browser — your data never leaves the page.

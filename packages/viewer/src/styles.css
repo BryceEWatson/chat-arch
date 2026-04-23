@@ -34,7 +34,19 @@
  * em-dashes ("—") and similar inert glyphs.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Fonts are loaded by the consumer (e.g. apps/standalone/src/layouts/
+   BaseLayout.astro imports @fontsource/antonio etc.), not by this
+   stylesheet. The previous @import from fonts.googleapis.com leaked
+   the visitor's IP to Google on every page load — incompatible with
+   the "runs entirely in your browser · no servers, no telemetry"
+   promise the empty state now makes. Keeping font loading at the app
+   layer lets each consumer pick weights and source (self-hosted via
+   @fontsource, CDN, system stack) without the viewer dictating a
+   cross-origin fetch.
+
+   If the font stacks below don't match anything the consumer loaded,
+   the generic fallbacks (Oswald/Impact/system-ui/Consolas) keep the
+   layout readable while making the missing-font case obvious. */
 
 .lcars-root {
   /* Crisp text on the black LCARS frame. Without these, Windows ClearType
@@ -648,8 +660,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  /* WCAG 2.2 SC 2.5.8 ("Target Size (Minimum)") asks for 24×24 CSS
+     pixels on interactive targets. The privacy/trust copy for the
+     UPLOAD CLOUD and SCAN LOCAL buttons lives behind these triggers
+     on mobile, so missing the hit target is worse here than on a
+     cosmetic chip. Bumped from 20→24; visual dot diameter held the
+     same via a slightly smaller glyph so the chrome doesn't get
+     bulkier, only the tappable area grows. */
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--lcars-bg);
   color: var(--lcars-sunflower);
@@ -1018,7 +1037,43 @@
 }
 .lcars-sidebar__elbow--bottom {
   border-radius: 0 0 0 32px;
+}
+/* Footer hosts the SOURCE ↗ chip.
+ *
+ * Layout:
+ *   `margin-top: auto` pushes the footer to the bottom of the sidebar
+ *   flex column, with the bottom elbow rendering immediately below.
+ *   `position: sticky; bottom: 12px` then pins the chip to 12px from
+ *   the bottom of the scroll ancestor once the sidebar's bottom edge
+ *   would otherwise scroll out of view — so the chip stays visible
+ *   in the lower-left of the viewport even when the session list is
+ *   5000+ px long.
+ *
+ * Why sticky rather than fixed:
+ *   `position: fixed` anchors to the browser window regardless of
+ *   embed context, which would float the chip over unrelated host
+ *   UI when the viewer is embedded in a split pane / modal / docs
+ *   page / multi-instance wrapper. Sticky uses the nearest scrolling
+ *   ancestor — the viewport for the standalone app, the embed
+ *   container for host apps — so the chip reads as "bottom-left of
+ *   the viewer" in every consumer. (Codex PR review on #14, P2.)
+ *
+ * When the user scrolls all the way to the session-list bottom, the
+ * chip naturally un-sticks at the sidebar's bottom edge, which is
+ * fine — the viewer has already been fully explored at that point
+ * and the trust signal has done its job.
+ *
+ * Mobile's horizontal variant renders its own inline footer (see
+ * `.lcars-sidebar__footer--horizontal` further down) so the sticky
+ * layout only engages at tier B+ width. */
+.lcars-sidebar__footer {
   margin-top: auto;
+  position: sticky;
+  bottom: 12px;
+  padding: 10px 8px 8px 10px;
+  display: flex;
+  justify-content: flex-start;
+  z-index: 1;
 }
 .lcars-sidebar__list {
   list-style: none;
@@ -1158,6 +1213,26 @@
 /* --- sidebar horizontal pill bar (mobile only) --- */
 .lcars-sidebar--horizontal {
   background: var(--lcars-bg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Horizontal footer hosts the SOURCE chip alongside the scrolling
+   pill bar. `flex-shrink: 0` keeps the chip visible while the
+   pill-bar handles overflow on narrow viewports. */
+.lcars-sidebar__footer--horizontal {
+  /* Neutralize the vertical-variant's sticky/auto-margin tricks —
+     the horizontal pill-bar wants a plain inline chip on the right. */
+  position: static;
+  margin-top: 0;
+  margin-left: auto;
+  padding: 0 8px 0 0;
+  flex-shrink: 0;
+  z-index: auto;
+}
+.lcars-sidebar__footer--horizontal .lcars-repo-link--chip {
+  padding: 6px 10px;
+  font-size: 10px;
 }
 .lcars-sidebar__pill-bar {
   list-style: none;
@@ -1167,6 +1242,11 @@
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: thin;
+  /* `flex: 1 1 0; min-width: 0` keeps the pill-bar scrolling inside
+     its allotted space instead of pushing the trailing sidebar footer
+     off the edge on narrow mobile viewports. */
+  flex: 1 1 0;
+  min-width: 0;
 }
 .lcars-sidebar__pill-bar::-webkit-scrollbar {
   height: 4px;
@@ -5391,4 +5471,127 @@
     max-width: 360px;
     min-width: 260px;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RepoLink + TrustStrip (privacy-trust surfaces)
+
+   RepoLink renders in two variants:
+     - `chip`   — sidebar footer, subdued LCARS pill
+     - `inline` — inside TrustStrip prose, reads as a link
+
+   TrustStrip is the landing-state reassurance bar. Only renders on
+   the empty/error states so returning users with data don't see a
+   re-pitch they already read. Uses butterscotch (not sunflower) so
+   it doesn't compete with the CTAs in the UploadPanel below it.
+   ───────────────────────────────────────────────────────────────── */
+
+.lcars-repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-decoration: none;
+  color: var(--lcars-butterscotch);
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+.lcars-repo-link:hover,
+.lcars-repo-link:focus-visible {
+  color: var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-repo-link:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-repo-link__glyph {
+  font-family: var(--lcars-font-mono);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.lcars-repo-link__label {
+  white-space: nowrap;
+}
+.lcars-repo-link__arrow {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Chip variant (sidebar footer) — outlined pill, pressable-looking. */
+.lcars-repo-link--chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--lcars-butterscotch-muted);
+  background: rgba(221, 153, 68, 0.06);
+}
+.lcars-repo-link--chip:hover,
+.lcars-repo-link--chip:focus-visible {
+  border-color: var(--lcars-butterscotch);
+  background: rgba(221, 153, 68, 0.14);
+}
+
+/* Inline variant (inside TrustStrip) — underline on hover, no chrome. */
+.lcars-repo-link--inline {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.lcars-repo-link--inline:hover .lcars-repo-link__label,
+.lcars-repo-link--inline:focus-visible .lcars-repo-link__label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Trust strip — one-line pledge + body + inline source link, plus
+   a small footnote disclosing the HF model-download caveat. */
+.lcars-trust-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 4px;
+  border-left: 3px solid var(--lcars-butterscotch);
+  background: rgba(221, 153, 68, 0.06);
+  font-family: var(--lcars-font-prose);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--lcars-text);
+}
+.lcars-trust-strip__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.lcars-trust-strip__pledge {
+  font-family: var(--lcars-font-chrome);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  font-size: 11px;
+  color: var(--lcars-butterscotch);
+  white-space: nowrap;
+}
+.lcars-trust-strip__body {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.lcars-trust-strip__footnote {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--lcars-dim);
+  padding-left: 0;
+}
+.lcars-trust-strip__footnote code {
+  font-family: var(--lcars-font-mono);
+  font-size: 10px;
+  color: var(--lcars-butterscotch-muted);
+}
+/* Center + align within the empty-state column to match its other
+   children (max-width 640, centered). */
+.lcars-empty-main .lcars-trust-strip {
+  align-self: center;
+  max-width: 640px;
 }

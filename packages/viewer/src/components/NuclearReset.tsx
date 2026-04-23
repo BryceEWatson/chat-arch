@@ -88,7 +88,36 @@ const LOCAL_STORAGE_PREFIX = 'chat-arch:';
 
 type Phase = 'idle' | 'armed' | 'running' | 'error';
 
-export function NuclearReset({ available, onUnload, counts }: NuclearResetProps) {
+export function NuclearReset(props: NuclearResetProps) {
+  // Self-hide when there's genuinely nothing to wipe. Two cases both
+  // mean "no data" and should hide the chip:
+  //   - `counts` is undefined (caller hasn't computed sources yet, or
+  //     didn't pass it at all — e.g. tests that rely on defaults)
+  //   - `counts` is defined and every source is 0
+  //
+  // Both map to the same user-visible state (a destructive-styled chip
+  // on an empty manifest reads as noise at best, a trap at worst) so
+  // we collapse them into one visibility check here. The chip
+  // reappears automatically the moment any source lands a session.
+  //
+  // The null-check lives in this outer wrapper so the hook-bearing
+  // inner component only mounts when there's actually something to
+  // delete — keeps Rules-of-Hooks happy while still making the
+  // visibility fall out of prop state.
+  const { counts } = props;
+  const nothingToDelete =
+    !counts ||
+    (counts.cloud === 0 &&
+      counts.cowork === 0 &&
+      counts['cli-direct'] === 0 &&
+      counts['cli-desktop'] === 0);
+  if (nothingToDelete) {
+    return null;
+  }
+  return <NuclearResetInner {...props} />;
+}
+
+function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<SourceId>>(new Set());
   const [phase, setPhase] = useState<Phase>('idle');

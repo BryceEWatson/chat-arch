@@ -3,6 +3,34 @@ interface Props {
   title: string;
 }
 const { title } = Astro.props;
+
+// Self-hosted fonts via @fontsource. Replaces the Google Fonts <link>
+// we used to emit from <head>. Google's CSS was fetching from
+// fonts.googleapis.com and the woff2 files from fonts.gstatic.com —
+// both would leak the visitor's IP to Google, which directly
+// contradicts the "nothing leaves your machine" pledge the empty
+// state now promises. @fontsource ships the same woff2 assets from
+// node_modules and Astro bundles them into /_astro/ alongside the
+// rest of the build output, so every font byte comes from the same
+// origin as the HTML.
+//
+// Weights chosen to match what the viewer's styles.css previously
+// pulled via Google's @import: Antonio 400/500/600/700 (chrome),
+// IBM Plex Sans 400/500/600 (prose), JetBrains Mono 400/500/600
+// (mono). Adding a weight here is how a viewer CSS change lands in
+// production — the viewer package intentionally does not import
+// font CSS itself so consumers stay in control of what weights
+// ship.
+import '@fontsource/antonio/400.css';
+import '@fontsource/antonio/500.css';
+import '@fontsource/antonio/600.css';
+import '@fontsource/antonio/700.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/jetbrains-mono/600.css';
 ---
 <!doctype html>
 <html lang="en">
@@ -19,12 +47,6 @@ const { title } = Astro.props;
       it only takes effect as an HTTP response header.
     */}
     <title>{title}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;600;700&display=swap"
-    />
     <style is:global>
       html, body { margin: 0; padding: 0; background: #000; color: #FFCC99; }
       body {

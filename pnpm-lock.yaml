@@ -56,6 +56,15 @@ importers:
       '@chat-arch/viewer':
         specifier: workspace:*
         version: link:../../packages/viewer
+      '@fontsource/antonio':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/ibm-plex-sans':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/jetbrains-mono':
+        specifier: ^5.2.8
+        version: 5.2.8
       astro:
         specifier: ^5.18.1
         version: 5.18.1(@types/node@22.19.17)(idb-keyval@6.2.2)(rollup@4.60.1)(typescript@5.9.3)(yaml@2.8.3)
@@ -707,6 +716,15 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@fontsource/antonio@5.2.8':
+    resolution: {integrity: sha512-kDt+PP5i0uj06l8mFfzozVbnYTAmHvedLEIOcT4TDUkBrY8R6N3Lvl2pU48SajpcVyc2xfi7zht0bnBUrVzvPQ==}
+
+  '@fontsource/ibm-plex-sans@5.2.8':
+    resolution: {integrity: sha512-eztSXjDhPhcpxNIiGTgMebdLP9qS4rWkysuE1V7c+DjOR0qiezaiDaTwQE7bTnG5HxAY/8M43XKDvs3cYq6ZYQ==}
+
+  '@fontsource/jetbrains-mono@5.2.8':
+    resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
 
   '@huggingface/jinja@0.5.7':
     resolution: {integrity: sha512-OosMEbF/R6zkKNNzqhI7kvKYCpo1F0UeIv46/h4D4UjVEKKd6k3TiV8sgu6fkreX4lbBiRI+lZG8UnXnqVQmEQ==}
@@ -4303,6 +4321,12 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@fontsource/antonio@5.2.8': {}
+
+  '@fontsource/ibm-plex-sans@5.2.8': {}
+
+  '@fontsource/jetbrains-mono@5.2.8': {}
 
   '@huggingface/jinja@0.5.7': {}
 

@@ -72,7 +72,12 @@ export default defineConfig({
     csp: {
       directives: [
         "default-src 'self'",
-        "font-src 'self' https://fonts.gstatic.com",
+        // Fonts are self-hosted via @fontsource (see BaseLayout.astro).
+        // Google Fonts hosts used to be allowlisted here; removed once
+        // the app stopped fetching from fonts.gstatic.com so an
+        // accidental future regression (e.g. a copy-pasted <link>) can
+        // be caught by CSP instead of silently leaking IPs.
+        "font-src 'self'",
         "img-src 'self' data: blob:",
         "connect-src 'self'",
         "base-uri 'self'",
@@ -83,7 +88,10 @@ export default defineConfig({
         resources: ["'self'"],
       },
       styleDirective: {
-        resources: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        // Mirror the font-src tightening: no remote stylesheet origin
+        // is needed now that @fontsource ships the @font-face rules
+        // bundled with the rest of our CSS.
+        resources: ["'self'", "'unsafe-inline'"],
       },
     },
   },

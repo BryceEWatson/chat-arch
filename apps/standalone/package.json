@@ -8,6 +8,7 @@
     "dev": "node ../../design-system/scripts/copy-to-public.mjs && astro dev",
     "build": "node ../../design-system/scripts/copy-to-public.mjs && astro check && astro build",
     "preview": "node ../../design-system/scripts/copy-to-public.mjs && astro preview",
+    "preview:static": "node ./scripts/preview-with-headers.mjs",
     "typecheck": "astro check",
     "lint": "eslint src",
     "test": "echo \"(no standalone tests)\" && exit 0",
@@ -19,6 +20,9 @@
     "@astrojs/react": "^4.2.0",
     "@chat-arch/schema": "workspace:*",
     "@chat-arch/viewer": "workspace:*",
+    "@fontsource/antonio": "^5.2.8",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "astro": "^5.18.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
