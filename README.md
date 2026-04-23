@@ -8,11 +8,16 @@ JSONL files Claude Code writes to disk plus the ZIP you get from
 gives you search, filters, cost analytics, and a duplicate / zombie-project
 view for the corpus you've already built.
 
-**Local-first by construction.** All parsing happens in the browser. No API
-calls, no cloud sync, no analytics beacons — true for both the hosted viewer
-at **[chat-arch.dev](https://chat-arch.dev)** (static files on Cloudflare
-Pages, no backend) and a local `pnpm dev` checkout. Your transcripts never
-leave the tab they were opened in.
+**Local-first by construction.** Your transcripts never leave your machine.
+The hosted viewer at **[chat-arch.dev](https://chat-arch.dev)** is a static
+Cloudflare Pages build with no backend — Privacy-Export ZIPs are parsed
+entirely in the browser. A local `pnpm dev` checkout additionally exposes
+a same-origin `/api/rescan` endpoint so **SCAN LOCAL** can walk
+`~/.claude/projects/` and `%APPDATA%\Claude` via the Astro dev server
+(`localhost` only; nothing egresses). The only cross-origin fetch on
+either path is the optional Hugging Face model-weight download on first
+**Analyze Topics** run — see [Model-weight trust boundary](#model-weight-trust-boundary)
+below. No telemetry, no analytics beacons, no transcript upload.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Live demo: chat-arch.dev](https://img.shields.io/badge/demo-chat--arch.dev-5b7cff)](https://chat-arch.dev)
@@ -73,13 +78,14 @@ See [Getting your own data](#getting-your-own-data) below for the full
 walkthrough of each ingestion path.
 
 > **No Claude Code or Anthropic account required to _run_ chat-arch.** The
-> viewer parses Claude transcripts that already exist on your disk or in
-> a Privacy-Export ZIP you downloaded from claude.ai — no API calls, no
-> login, no telemetry. Never used Claude? Click **LOAD DEMO DATA** to
-> explore the full viewer (filters, sparkline, duplicate detection,
-> topic clustering) against ~100 hand-written synthetic sessions; see
-> [Not a Claude user (yet)](#not-a-claude-user-yet) at the bottom for
-> multi-provider alternatives if Claude isn't your primary assistant.
+> viewer reads Claude transcripts that already exist on your disk or in
+> a Privacy-Export ZIP you downloaded from claude.ai — no Claude-API
+> calls, no login, no telemetry. Never used Claude? Click **LOAD DEMO
+> DATA** to explore the full viewer (filters, sparkline, duplicate
+> detection, topic clustering) against ~120 hand-written synthetic
+> sessions; see [Not a Claude user (yet)](#not-a-claude-user-yet) at the
+> bottom for multi-provider alternatives if Claude isn't your primary
+> assistant.
 
 ### Requirements
 
@@ -186,15 +192,18 @@ a standalone, replicable design system called **Supergraphic Panel**:
 - [**Walkthrough**](https://chat-arch.dev/design-system/) — human-facing
   tour with live specimens, swatches, and port recipes.
 - [**Prose spec**](https://chat-arch.dev/design-system/spec.md) — the
-  canonical ~2400-word specification, written to be consumable by an LLM
-  agent applying the system to another project.
+  canonical specification, written to be consumable by an LLM agent
+  applying the system to another project.
 - [**Design tokens**](https://chat-arch.dev/design-system/tokens.json) —
   [DTCG 2025.10](https://www.designtokens.org/schemas/2025.10/format.json)
   format. Source palette and font families are extracted from the viewer
   stylesheet; scale tokens are prescriptive.
 
-Source lives under [`design-system/`](design-system/) at the repo root;
-the standalone build mirrors it to the hosted deploy.
+The prose spec and token source live under
+[`design-system/`](design-system/) at the repo root and are mirrored to
+the hosted deploy by the standalone build. The walkthrough page source
+is an Astro page at
+[`apps/standalone/src/pages/design-system/index.astro`](apps/standalone/src/pages/design-system/index.astro).
 
 ## Repo layout
 
@@ -221,11 +230,15 @@ design-system/       Supergraphic Panel source — prose spec + token
 
 ## Privacy
 
-`chat-arch` is local-first by construction — no telemetry, no API calls, no
-cloud sync. Transcripts stay in the environment you loaded them from: on
-disk if you ran `pnpm dev` and clicked **SCAN LOCAL**, or in the browser
-tab's memory / IndexedDB if you uploaded a Privacy-Export ZIP to
-chat-arch.dev. Nothing is transmitted to a server in either case.
+`chat-arch` is local-first by construction — no telemetry, no analytics
+beacons, no transcript upload. Transcripts stay in the environment you
+loaded them from: on disk if you ran `pnpm dev` and clicked **SCAN LOCAL**
+(parsed by the Astro dev server on `localhost`), or in the browser tab's
+memory / IndexedDB if you uploaded a Privacy-Export ZIP to chat-arch.dev.
+The one cross-origin fetch on either path is the optional Hugging Face
+model-weight download on first **Analyze Topics** run — see
+[Model-weight trust boundary](#model-weight-trust-boundary) below for the
+full disclosure.
 
 **Note for users**: your own transcripts may contain other people's content
 (prompts about colleagues, pasted client work, customer data). If you publish
@@ -251,8 +264,9 @@ Headline points:
   cross-origin page in your browser cannot trigger a rescan.
 - The viewer escapes user content before passing it to React's
   `dangerouslySetInnerHTML`, with regression tests pinning the escape order.
-- The production build emits a strict Content-Security-Policy header
-  (`script-src 'self'`, no inline, no eval) as defense-in-depth.
+- The production build emits a strict Content-Security-Policy
+  (`script-src 'self'` plus hash-allowlisted inline scripts for Astro's
+  island loader; no eval; no remote script origins) as defense-in-depth.
 - **Session IDs appear in the URL hash** (`#session/<uuid>`) so a specific
   conversation can be deep-linked. The hash lands in browser history and
   in any outbound `Referer` header to a clicked external link. The IDs

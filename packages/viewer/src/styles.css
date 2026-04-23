@@ -5559,6 +5559,21 @@
   font-size: 13px;
   line-height: 1.4;
   color: var(--lcars-text);
+  transition:
+    opacity 140ms ease-out,
+    visibility 140ms ease-out;
+}
+/* When a TopBar info-popover is open, fade the TrustStrip out — the
+   popover drops down from the TopBar and would otherwise partially
+   occlude the strip. Hiding the strip while the user is reading the
+   popover removes the z-stack awkwardness without any React-side
+   state coupling. CSS :has() is supported in all evergreen browsers
+   (Chrome 105+, Safari 15.4+, Firefox 121+) — well within our
+   browser baseline. */
+.lcars-frame--empty:has(.lcars-top-bar .lcars-info-popover__trigger--open)
+  .lcars-trust-strip {
+  opacity: 0;
+  visibility: hidden;
 }
 .lcars-trust-strip__row {
   display: flex;

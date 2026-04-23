@@ -270,10 +270,11 @@ export function TopBar({
                 className="lcars-top-bar__source-info"
               >
                 <strong>Upload / Update Cloud</strong>
+                <p>Add or refresh conversations from a Claude.ai cloud export.</p>
                 <p>
-                  Add or refresh conversations from a Claude.ai cloud export. The word
-                  &ldquo;upload&rdquo; means loading the file into the viewer, not pushing it to a
-                  server.
+                  The word &ldquo;upload&rdquo; means loading the file into the viewer, not sending
+                  it anywhere. The ZIP is parsed in this tab and kept in IndexedDB so a refresh
+                  doesn&rsquo;t lose it.
                 </p>
                 <p>
                   <strong>How to get the ZIP:</strong> open claude.ai →{' '}
@@ -351,10 +352,7 @@ export function TopBar({
                 </>
               ) : (
                 <>
-                  <p>
-                    Walks the two local chat-data directories and rebuilds the manifest served by
-                    the Astro dev server on <code>localhost</code>:
-                  </p>
+                  <p>Walks the two local chat-data directories:</p>
                   <ul>
                     <li>
                       <code>~/.claude/projects/</code> — Claude Code CLI transcripts
@@ -363,6 +361,11 @@ export function TopBar({
                       <code>%APPDATA%\Claude\</code> — Cowork + Desktop-CLI sessions
                     </li>
                   </ul>
+                  <p>
+                    The Astro dev server on <code>localhost</code> reads those files, writes the
+                    refreshed manifest to a local directory, and serves it back to this tab.
+                    Nothing leaves your machine.
+                  </p>
                   <p>
                     Cloud data is <em>not</em> touched — it only refreshes when you upload a fresh
                     ZIP via the Cloud button.
