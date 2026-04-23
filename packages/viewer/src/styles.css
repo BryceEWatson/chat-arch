@@ -1037,46 +1037,43 @@
 }
 .lcars-sidebar__elbow--bottom {
   border-radius: 0 0 0 32px;
-  margin-top: auto;
 }
-/* Footer hosts the SOURCE ↗ chip — viewport-fixed at bottom-left so
-   the trust signal ("the code is over there, go verify") stays
-   reachable regardless of how long the session list scrolls.
-   Previously this sat in the grid-cell sidebar; the sidebar's own
-   height expanded with the session list, stranding the footer 5000+
-   pixels below the fold for anyone with more than a dozen
-   conversations. Fixed positioning honors the user's original
-   "bottom-left" direction while making it functionally discoverable.
-   Mobile gets its own footer via the horizontal sidebar variant — so
-   the fixed layout only engages at tablet+ width. */
+/* Footer hosts the SOURCE ↗ chip.
+ *
+ * Layout:
+ *   `margin-top: auto` pushes the footer to the bottom of the sidebar
+ *   flex column, with the bottom elbow rendering immediately below.
+ *   `position: sticky; bottom: 12px` then pins the chip to 12px from
+ *   the bottom of the scroll ancestor once the sidebar's bottom edge
+ *   would otherwise scroll out of view — so the chip stays visible
+ *   in the lower-left of the viewport even when the session list is
+ *   5000+ px long.
+ *
+ * Why sticky rather than fixed:
+ *   `position: fixed` anchors to the browser window regardless of
+ *   embed context, which would float the chip over unrelated host
+ *   UI when the viewer is embedded in a split pane / modal / docs
+ *   page / multi-instance wrapper. Sticky uses the nearest scrolling
+ *   ancestor — the viewport for the standalone app, the embed
+ *   container for host apps — so the chip reads as "bottom-left of
+ *   the viewer" in every consumer. (Codex PR review on #14, P2.)
+ *
+ * When the user scrolls all the way to the session-list bottom, the
+ * chip naturally un-sticks at the sidebar's bottom edge, which is
+ * fine — the viewer has already been fully explored at that point
+ * and the trust signal has done its job.
+ *
+ * Mobile's horizontal variant renders its own inline footer (see
+ * `.lcars-sidebar__footer--horizontal` further down) so the sticky
+ * layout only engages at tier B+ width. */
 .lcars-sidebar__footer {
-  position: fixed;
+  margin-top: auto;
+  position: sticky;
   bottom: 12px;
-  left: 12px;
-  z-index: 10;
-  padding: 0;
+  padding: 10px 8px 8px 10px;
   display: flex;
   justify-content: flex-start;
-  /* Tiny shadow off the dark frame so the pill doesn't fight the
-     transcript text it now floats over. Kept subtle — LCARS is
-     shadow-averse by design. */
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
-}
-/* On mobile the horizontal sidebar renders its own inline footer
-   (see `.lcars-sidebar__footer--horizontal`), so the fixed-position
-   version must not apply there. */
-.lcars-sidebar__footer--horizontal {
-  position: static;
-  filter: none;
-}
-/* Narrow tier (mobile portrait) hides the fixed desktop footer
-   entirely since the horizontal pill-bar already carries the chip. */
-@media (max-width: 599px) {
-  .lcars-sidebar:not(.lcars-sidebar--horizontal) .lcars-sidebar__footer:not(.lcars-sidebar__footer--horizontal) {
-    position: static;
-    margin-top: auto;
-    filter: none;
-  }
+  z-index: 1;
 }
 .lcars-sidebar__list {
   list-style: none;
@@ -1224,10 +1221,14 @@
    pill bar. `flex-shrink: 0` keeps the chip visible while the
    pill-bar handles overflow on narrow viewports. */
 .lcars-sidebar__footer--horizontal {
+  /* Neutralize the vertical-variant's sticky/auto-margin tricks —
+     the horizontal pill-bar wants a plain inline chip on the right. */
+  position: static;
   margin-top: 0;
   margin-left: auto;
   padding: 0 8px 0 0;
   flex-shrink: 0;
+  z-index: auto;
 }
 .lcars-sidebar__footer--horizontal .lcars-repo-link--chip {
   padding: 6px 10px;
