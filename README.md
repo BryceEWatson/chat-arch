@@ -8,11 +8,32 @@ JSONL files Claude Code writes to disk plus the ZIP you get from
 gives you search, filters, cost analytics, and a duplicate / zombie-project
 view for the corpus you've already built.
 
-**Local-first.** Runs entirely in a browser tab against a local web server.
-No API calls, no cloud sync, no analytics beacons. Your transcripts never
-leave your machine.
+**Local-first by construction.** All parsing happens in the browser. No API
+calls, no cloud sync, no analytics beacons — true for both the hosted viewer
+at **[chat-arch.dev](https://chat-arch.dev)** (static files on Cloudflare
+Pages, no backend) and a local `pnpm dev` checkout. Your transcripts never
+leave the tab they were opened in.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Live demo: chat-arch.dev](https://img.shields.io/badge/demo-chat--arch.dev-5b7cff)](https://chat-arch.dev)
+
+---
+
+## Try it without installing
+
+The fastest path to kick the tires:
+
+1. Open **[chat-arch.dev](https://chat-arch.dev)**.
+2. Click **LOAD DEMO DATA** to populate the viewer with a synthetic
+   fixture corpus (clearly marked `DEMO DATA`), or drop a claude.ai
+   **Privacy-Export ZIP** on **UPLOAD CLOUD** to view your own archive.
+3. Everything renders client-side — the page ships as static files with
+   no server routes, so nothing you upload is transmitted anywhere.
+
+The hosted viewer can't read files from disk (it has no filesystem
+access). To index your local `~/.claude/projects/` or `%APPDATA%\Claude`
+transcripts from Claude Code CLI / Desktop / Cowork, run chat-arch
+locally via the [Quickstart](#quickstart) below and use **SCAN LOCAL**.
 
 ---
 
@@ -36,17 +57,26 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:4321. You'll see a populated viewer immediately —
-the first run auto-seeds a **synthetic demo corpus** so nothing ever renders
-empty. A `DEMO DATA` chip marks it as fictional. The demo is only useful for
-getting a feel for the interface; jump to **[Getting your own data](#getting-your-own-data)**
-below to wire up a real corpus.
+Open http://localhost:4321. The viewer lands on a **NO DATA YET** screen
+with three ways in:
+
+- **SCAN LOCAL** — index your on-disk transcripts (Claude Code CLI,
+  Desktop, Cowork). Dev-server-only, since it hits a local `/api/rescan`
+  route that isn't part of the static deploy.
+- **UPLOAD CLOUD** — drop a claude.ai Privacy-Export ZIP. Pure browser,
+  works in dev and on [chat-arch.dev](https://chat-arch.dev).
+- **LOAD DEMO DATA** — populate with a synthetic fixture corpus so you
+  can explore the UI without exposing real conversations. A `DEMO DATA`
+  chip marks it as fictional.
+
+See [Getting your own data](#getting-your-own-data) below for the full
+walkthrough of each ingestion path.
 
 > **No Claude Code or Anthropic account required to _run_ chat-arch.** The
-> tool is a plain Node app — it just reads Claude transcripts that already
-> exist on your disk or in a Privacy-Export ZIP you download from claude.ai.
-> No API calls, no login, no telemetry. If you've never used any Claude
-> product, chat-arch has nothing to show you beyond the demo; see
+> tool is a plain static web app — it just reads Claude transcripts that
+> already exist on your disk or in a Privacy-Export ZIP you download from
+> claude.ai. No API calls, no login, no telemetry. If you've never used any
+> Claude product, chat-arch has nothing to show you beyond the demo; see
 > [Not a Claude user (yet)](#not-a-claude-user-yet) at the bottom.
 
 ### Requirements
@@ -89,8 +119,10 @@ email with a download link, usually within a few minutes.
 3. Open the **Privacy** tab → click **Export data**.
 4. Wait for the confirmation email. The ZIP is typically under 50 MB even
    for heavy users.
-5. Back in chat-arch, click **UPLOAD CLOUD** in the top bar and pick the
-   ZIP you just downloaded.
+5. Open chat-arch — either [chat-arch.dev](https://chat-arch.dev) or a
+   local `pnpm dev` checkout — click **UPLOAD CLOUD** in the top bar, and
+   pick the ZIP you just downloaded. Parsing happens entirely in the
+   browser; nothing is transmitted.
 
 The same ZIP can be re-uploaded any time — chat-arch deduplicates by
 conversation id, so re-exporting monthly to pull in new conversations is
@@ -143,26 +175,55 @@ sparkline timeline) computed on the user's own machine — everything needed
 to navigate the corpus is live the moment the viewer loads, no pre-compute
 step required.
 
+## Design system
+
+The viewer's retro-computing look — chunky supergraphic panels, dual-track
+typography, a stepped butterscotch/salmon/peach palette — is extracted into
+a standalone, replicable design system called **Supergraphic Panel**:
+
+- [**Walkthrough**](https://chat-arch.dev/design-system/) — human-facing
+  tour with live specimens, swatches, and port recipes.
+- [**Prose spec**](https://chat-arch.dev/design-system/spec.md) — the
+  canonical ~2400-word specification, written to be consumable by an LLM
+  agent applying the system to another project.
+- [**Design tokens**](https://chat-arch.dev/design-system/tokens.json) —
+  [DTCG 2025.10](https://www.designtokens.org/schemas/2025.10/format.json)
+  format. Source palette and font families are extracted from the viewer
+  stylesheet; scale tokens are prescriptive.
+
+Source lives under [`design-system/`](design-system/) at the repo root;
+the standalone build mirrors it to the hosted deploy.
+
 ## Repo layout
 
 ```
 apps/
-  standalone/        Astro shell that serves the viewer + the dev-only
-                     /api/rescan endpoint. The dev server seeds a demo
-                     corpus on first run if no real data is present.
+  standalone/        Astro shell. Hosts the viewer and, in dev, the
+                     /api/rescan + /api/clear endpoints. The `pnpm build`
+                     output (static client bundle) is what ships to
+                     chat-arch.dev via Cloudflare Pages.
 packages/
   schema/            UnifiedSessionEntry + manifest types. Pure TypeScript.
   exporter/          CLI + parsers for the four input sources, plus the
                      core-tier analysis writers (duplicates.exact,
                      zombies.heuristic, meta).
+  analysis/          Shared cloud-mapping + clustering utilities used by
+                     both the exporter (at build time) and the viewer
+                     (at runtime).
   viewer/            React viewer. Mounts against
                      /chat-arch-data/manifest.json.
+design-system/       Supergraphic Panel source — prose spec + token
+                     generator. Mirrored to chat-arch.dev/design-system/
+                     at build time.
 ```
 
 ## Privacy
 
 `chat-arch` is local-first by construction — no telemetry, no API calls, no
-cloud sync. Your transcripts stay on your disk.
+cloud sync. Transcripts stay in the environment you loaded them from: on
+disk if you ran `pnpm dev` and clicked **SCAN LOCAL**, or in the browser
+tab's memory / IndexedDB if you uploaded a Privacy-Export ZIP to
+chat-arch.dev. Nothing is transmitted to a server in either case.
 
 **Note for users**: your own transcripts may contain other people's content
 (prompts about colleagues, pasted client work, customer data). If you publish
@@ -177,11 +238,15 @@ For security-sensitive issues, please open a private security advisory on
 GitHub rather than a public issue. See [`SECURITY.md`](SECURITY.md) for
 the full disclosure policy and the list of known limitations.
 
-The most relevant points for the typical local-dev use case:
+Headline points:
 
-- The `/api/rescan` dev-server endpoint requires same-origin Origin and a
-  custom `X-Requested-With` header — a hostile cross-origin page in your
-  browser cannot trigger a rescan.
+- **The hosted deploy has no server-side endpoints.** `chat-arch.dev`
+  serves only static HTML/JS/CSS from Cloudflare Pages — there is no
+  `/api/rescan`, no `/api/clear`, and no backend that can read the
+  filesystem or mutate server-side state.
+- In a local `pnpm dev` checkout, the `/api/rescan` endpoint requires
+  same-origin Origin and a custom `X-Requested-With` header — a hostile
+  cross-origin page in your browser cannot trigger a rescan.
 - The viewer escapes user content before passing it to React's
   `dangerouslySetInnerHTML`, with regression tests pinning the escape order.
 - The production build emits a strict Content-Security-Policy header
