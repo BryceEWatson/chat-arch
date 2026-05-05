@@ -4065,6 +4065,154 @@
   cursor: not-allowed;
 }
 
+/* ---------------------------------------------------------------- *
+ * v2 Phase 9 — PRACTICE four-lens audit (spec §5.4 / D13).         *
+ * ---------------------------------------------------------------- */
+
+.lcars-practice {
+  padding: 14px 18px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lcars-practice__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-practice__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--lcars-violet);
+  margin: 0;
+}
+.lcars-practice__lead {
+  margin: 0;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
+  line-height: 1.45;
+}
+.lcars-practice__lens {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--lcars-violet);
+  background: rgba(204, 153, 204, 0.04);
+  border-radius: 0 8px 8px 0;
+}
+.lcars-practice__lens-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lcars-practice__lens-title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-violet);
+  margin: 0;
+}
+.lcars-practice__lens-blurb {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+}
+.lcars-practice__empty {
+  margin: 0;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--lcars-text) 50%, transparent);
+}
+.lcars-practice__finding-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-practice__finding {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid color-mix(in srgb, var(--lcars-violet) 30%, transparent);
+  border-radius: 6px;
+}
+.lcars-practice__finding-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lcars-practice__severity {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid currentColor;
+}
+.lcars-practice__severity--info {
+  color: var(--lcars-ice);
+  background: rgba(153, 204, 255, 0.10);
+}
+.lcars-practice__severity--warn {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.12);
+}
+.lcars-practice__severity--alert {
+  color: var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.14);
+}
+.lcars-practice__finding-title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--lcars-text);
+}
+.lcars-practice__finding-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+}
+.lcars-practice__evidence {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lcars-practice__evidence-pill {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--lcars-violet) 50%, transparent);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--lcars-text);
+  cursor: pointer;
+}
+.lcars-practice__evidence-pill:hover,
+.lcars-practice__evidence-pill:focus-visible {
+  background: rgba(204, 153, 204, 0.20);
+  outline: none;
+}
+.lcars-practice__evidence-pill--static {
+  cursor: default;
+  opacity: 0.85;
+}
+
 /* --- 2s highlight ring keyframe ([R-D19]) --- */
 @keyframes lcars-kpi-highlight {
   0% {

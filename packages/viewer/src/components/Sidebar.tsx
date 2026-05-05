@@ -65,6 +65,13 @@ const NAV: readonly NavGroup[] = [
   {
     group: 'INSIGHTS',
     items: [
+      // v2 spec §5.4 / D6b+D6c: PRACTICE leads INSIGHTS — it's the
+      // primary audit surface and absorbs CONSTELLATION's "value
+      // leaks" outputs + COST's outlier surfacing. The standalone
+      // CONSTELLATION + COST entries remain accessible for deep-dives
+      // until a follow-up phase consolidates their surfaces into
+      // PRACTICE / per-project panels.
+      { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
       { mode: 'constellation', label: 'ANALYSIS', short: 'ANL' },
       { mode: 'cost', label: 'COST', short: 'CST' },
     ],

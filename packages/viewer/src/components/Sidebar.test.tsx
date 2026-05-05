@@ -5,16 +5,18 @@ import { Sidebar } from './Sidebar.js';
 afterEach(() => cleanup());
 
 describe('Sidebar (vertical variant, default)', () => {
-  it('renders PROJECTS + TOPICS + SESSIONS + ANALYSIS + COST (TIMELINE absorbed; DETAIL is not a sidebar destination)', () => {
+  it('renders PROJECTS + TOPICS + SESSIONS in BROWSE; PRACTICE + ANALYSIS + COST in INSIGHTS', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
-    // v2 §5.1 / §5.2: PROJECTS + TOPICS surfaces — discovery-driven
-    // entities surfaced under BROWSE alongside the v1 SESSIONS grid.
+    // BROWSE
     expect(screen.getByRole('button', { name: /mode PROJECTS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode TOPICS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode SESSIONS/i })).toBeDefined();
-    expect(screen.queryByRole('button', { name: /mode TIMELINE/i })).toBeNull();
+    // INSIGHTS — PRACTICE leads (D6b/D6c).
+    expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode ANALYSIS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode COST/i })).toBeDefined();
+    // Absent.
+    expect(screen.queryByRole('button', { name: /mode TIMELINE/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /mode DETAIL/i })).toBeNull();
   });
 
@@ -119,8 +121,8 @@ describe('Sidebar (horizontal variant)', () => {
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
     expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(0);
-    // 5 mode pills now: PRJ (PROJECTS), TOP (TOPICS), SES (SESSIONS), ANL, CST.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
+    // 6 mode pills now: PRJ, TOP, SES, PRC, ANL, CST.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
   });
 
   it('shows only the short label in horizontal pills', () => {
@@ -128,9 +130,9 @@ describe('Sidebar (horizontal variant)', () => {
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(5);
+    expect(pillShorts.length).toBe(6);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['PRJ', 'TOP', 'SES', 'ANL', 'CST']);
+    expect(texts).toEqual(['PRJ', 'TOP', 'SES', 'PRC', 'ANL', 'CST']);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -148,6 +150,7 @@ describe('Sidebar (horizontal variant)', () => {
       'PRJ',
       'TOP',
       'SES',
+      'PRC',
       'ANL',
       'CST',
       'DAT',

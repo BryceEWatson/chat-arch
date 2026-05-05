@@ -31,6 +31,7 @@ import {
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
+import { PracticeMode } from './components/modes/PracticeMode.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
@@ -92,6 +93,7 @@ const HASH_PROJECTS = '#projects';
 const HASH_PROJECT_PREFIX = '#project/';
 const HASH_TOPICS = '#topics';
 const HASH_TOPIC_PREFIX = '#topic/';
+const HASH_PRACTICE = '#practice';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
@@ -139,6 +141,12 @@ function readProjectsHash(): { surface: 'projects' | null; selectedProjectId: st
       : { surface: 'projects', selectedProjectId: null };
   }
   return { surface: null, selectedProjectId: null };
+}
+
+/** PRACTICE has no detail dimension — either we're on it or we aren't. */
+function readPracticeHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_PRACTICE;
 }
 
 /** Topics counterpart to readProjectsHash — same contract / same pattern. */
@@ -208,13 +216,14 @@ export function ChatArchViewer({
 
   // --- UI state ---
   const [mode, setMode] = useState<Mode>(() => {
-    // v2 spec §5.1 / §5.2: prefer the URL hash so deep-link entries
-    // land directly in the right surface. Falls through to SESSIONS
+    // v2 spec §5.1 / §5.2 / §5.4: prefer the URL hash so deep-link
+    // entries land in the right surface. Falls through to SESSIONS
     // (`command` mode) when the hash is absent or unrecognized.
     const proj = readProjectsHash();
     if (proj.surface === 'projects') return 'projects';
     const top = readTopicsHash();
     if (top.surface === 'topics') return 'topics';
+    if (readPracticeHash()) return 'practice';
     return 'command';
   });
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
@@ -457,16 +466,21 @@ export function ChatArchViewer({
       setSelectedId(id);
       setSelectedProjectId(proj.selectedProjectId);
       setSelectedTopicId(top.selectedTopicId);
+      const onPractice = readPracticeHash();
       if (id) {
         setMode('detail');
       } else if (proj.surface === 'projects') {
         setMode('projects');
       } else if (top.surface === 'topics') {
         setMode('topics');
+      } else if (onPractice) {
+        setMode('practice');
       } else {
         // Hash cleared — reset surface modes back to SESSIONS.
         setMode((prev) =>
-          prev === 'detail' || prev === 'projects' || prev === 'topics' ? 'command' : prev,
+          prev === 'detail' || prev === 'projects' || prev === 'topics' || prev === 'practice'
+            ? 'command'
+            : prev,
         );
       }
     };
@@ -1912,6 +1926,7 @@ export function ChatArchViewer({
     cost: 'COST',
     projects: 'PROJECTS',
     topics: 'TOPICS',
+    practice: 'PRACTICE',
   };
 
   // Has-data flags drive the "Scan Local" → "Update Local" and
@@ -2084,6 +2099,12 @@ export function ChatArchViewer({
                 setSelectedTopicId(null);
                 if (typeof window !== 'undefined') {
                   window.history.pushState(null, '', HASH_TOPICS);
+                }
+              }
+              // v2 §5.4: PRACTICE has no detail dimension — single hash.
+              if (m === 'practice') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_PRACTICE);
                 }
               }
               setMode(m);
@@ -2268,6 +2289,26 @@ export function ChatArchViewer({
                           }
                         }}
                         onSelectSession={onSelect}
+                      />
+                    ) : baseMode === 'practice' ? (
+                      <PracticeMode
+                        sessions={activeManifest.sessions}
+                        projects={effectiveV2Entities.projects ?? []}
+                        narratives={effectiveV2Entities.narratives ?? []}
+                        duplicateClusters={mergedClusters}
+                        zombieProjects={zombieProjects}
+                        onSelectSession={onSelect}
+                        onSelectProject={(id) => {
+                          setSelectedProjectId(id);
+                          setMode('projects');
+                          if (typeof window !== 'undefined') {
+                            window.history.pushState(
+                              null,
+                              '',
+                              `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`,
+                            );
+                          }
+                        }}
                       />
                     ) : baseMode === 'topics' ? (
                       <TopicsMode

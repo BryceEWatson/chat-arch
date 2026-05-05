@@ -1,0 +1,15 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ChatArchViewer } from '@chat-arch/viewer';
+import '@chat-arch/viewer/style.css';
+---
+<BaseLayout title="Chat Archaeologist — Practice">
+  <script is:inline>
+    if (typeof window !== 'undefined' && window.location.hash !== '#practice') {
+      window.history.replaceState(null, '', window.location.pathname + '#practice');
+    }
+  </script>
+  <main>
+    <ChatArchViewer client:load />
+  </main>
+</BaseLayout>
