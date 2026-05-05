@@ -302,8 +302,6 @@ export function UpperPanel({
   onOpenTopicAnalysis,
   onOpenLabelsAnalysis,
 }: UpperPanelProps) {
-  const total = manifest.sessions.length;
-  const visible = filtered.length;
   const range = dateRange(filtered);
   const kpis = useMemo(() => computeKpis(filtered), [filtered]);
 
@@ -383,11 +381,14 @@ export function UpperPanel({
   }, []);
 
   // Rationale for the IA this renders:
-  //   Row 1 "stats": data-scope signals — VISIBLE / RANGE describe what's
-  //     currently filtered in; the ZIP chip belongs here because it's the
-  //     same kind of "what data am I looking at" signal, not a view or
-  //     analysis control. Clean left-right split keeps the eye moving
-  //     only when something actually changes.
+  //   Row 1 "stats": data-scope signals — RANGE describes the date span
+  //     of what's currently filtered in; the ZIP chip belongs here
+  //     because it's the same kind of "what data am I looking at"
+  //     signal, not a view or analysis control. (VISIBLE / TOTAL counts
+  //     used to live here too but were pulled — the sparkline readout
+  //     beneath this row carries them with thousands separators and
+  //     extra context like PEAK / AVG-PER-WEEK; rendering them twice
+  //     in two formats was the bug v2-visual-polish #2 fixed.)
   //   Row 2 "tab bar": centered directly above the body so the tabs sit
   //     *over* what they control. Segmented-control shape, nothing else
   //     competing for the row.
@@ -400,13 +401,6 @@ export function UpperPanel({
     <section className="lcars-upper-panel" aria-label="manifest summary">
       <div className="lcars-upper-panel__stats">
         <div className="lcars-upper-panel__stats-start">
-          <div className="lcars-upper-panel__stat">
-            <span className="lcars-upper-panel__stat-label">VISIBLE</span>
-            <span className="lcars-upper-panel__stat-value">
-              {visible}
-              <span className="lcars-upper-panel__stat-total"> / {total}</span>
-            </span>
-          </div>
           <div className="lcars-upper-panel__stat">
             <span className="lcars-upper-panel__stat-label">RANGE</span>
             <span className="lcars-upper-panel__stat-value">{range}</span>

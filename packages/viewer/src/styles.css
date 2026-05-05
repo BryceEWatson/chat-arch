@@ -1334,12 +1334,6 @@
   letter-spacing: 0.02em;
   line-height: 1;
 }
-.lcars-upper-panel__stat-total {
-  color: var(--lcars-text);
-  font-size: 13px;
-  opacity: 0.55;
-  font-variant-numeric: tabular-nums;
-}
 .lcars-upper-panel__pills {
   display: flex;
   flex-wrap: wrap;
@@ -1431,9 +1425,6 @@
   }
   .lcars-upper-panel__stat-value {
     font-size: 20px;
-  }
-  .lcars-upper-panel__stat-total {
-    font-size: 13px;
   }
   .lcars-upper-panel__tier-slot {
     margin-top: 0;
