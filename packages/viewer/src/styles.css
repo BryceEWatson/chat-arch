@@ -1028,12 +1028,37 @@
   min-height: 0;
 }
 /* v2 single-L chrome (spec §10). Replaces the v1 .lcars-sidebar__elbow
-   pair — one SVG, one element, concave quarter-arc inner corner. The
-   SVG sizes itself; CSS only positions and supplies a default top
-   offset so the L sits flush with the sidebar's leading edge. */
+   pair — one SVG, one element, concave quarter-arc inner corner.
+   Positioned absolutely so the vertical leg can extend the full sidebar
+   height (left-edge-only frame) while the nav pills render above it
+   in document order. The SVG path's tall fixed height is clipped by
+   the SVG's intrinsic viewport (preserveAspectRatio="xMinYMin slice")
+   so no JS resize-measurement is needed. */
+.lcars-sidebar {
+  /* Clip the L's overflow at the sidebar's bottom edge. */
+  overflow: hidden;
+  /* Push flex content below the L's top stub (36px) + the inner quarter-
+     arc transition (31px). At 36+31 = 67px the chrome narrows to the
+     vertical bar (24px wide); group labels can sit there. The L is
+     positioned absolutely (z-index 0); without this padding the first
+     group's BROWSE label would render under the stub area where its
+     butterscotch text would disappear into the butterscotch fill. */
+  padding-top: 72px;
+}
 .lcars-sidebar__l-frame {
-  display: block;
-  margin-bottom: 4px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.lcars-sidebar__group,
+.lcars-sidebar__footer {
+  /* Sit above the L-frame backdrop so the nav pills aren't obscured. */
+  position: relative;
+  z-index: 1;
 }
 /* Footer hosts the SOURCE ↗ chip.
  *
@@ -1067,7 +1092,8 @@
   margin-top: auto;
   position: sticky;
   bottom: 12px;
-  padding: 10px 8px 8px 10px;
+  /* Left padding clears the v2 single-L vertical bar (24px). */
+  padding: 10px 8px 8px 30px;
   display: flex;
   justify-content: flex-start;
   z-index: 1;
@@ -1093,7 +1119,11 @@
   font-weight: 700;
   letter-spacing: 0.22em;
   color: var(--lcars-butterscotch);
-  padding: 10px 8px 4px 10px;
+  /* Left padding clears the v2 single-L vertical bar (24px) so the
+     butterscotch text doesn't disappear into the butterscotch frame.
+     Pills do their own layering via .lcars-sidebar__item — their
+     opaque fills cover the bar — so they keep zero left padding. */
+  padding: 10px 8px 4px 30px;
   user-select: none;
 }
 /* Only the first group needs top padding trimmed; the elbow already

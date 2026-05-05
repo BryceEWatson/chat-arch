@@ -7,13 +7,15 @@
  * circle CONCAVE inner radius. Only the left edge of the layout carries
  * frame chrome — no top arm spanning the whole header, no four-sided box.
  *
- * The L sits at the top of the sidebar:
+ * The L sits along the left edge of the sidebar:
  *   - short horizontal stub at the top
- *   - vertical bar dropping down the left
+ *   - vertical bar dropping down the left, full sidebar height
  *   - the inner corner where they meet rounds inward via SVG quarter-arc
  *
- * Rendered as a single inline SVG. CSS controls width/height; the path
- * adapts to whatever box the parent gives it.
+ * Rendered as a single inline SVG. The vertical bar's path uses a large
+ * fixed coordinate (DEFAULT_FILL_HEIGHT) and the SVG's intrinsic clipping
+ * handles overflow against the parent's `height: 100%`, so the L visually
+ * extends to the bottom of the sidebar without re-measuring on resize.
  */
 
 import type { CSSProperties } from 'react';
@@ -25,7 +27,12 @@ export interface ElbowProps {
   radius?: number;
   /** Total chrome width in px (vertical bar + stub). Default 56. */
   width?: number;
-  /** Total chrome height in px (top stub + vertical bar). Default 80. */
+  /**
+   * Path height in px — the y-coordinate the vertical leg extends to.
+   * Defaults to a tall fixed value so the leg appears full-height when
+   * the SVG is sized via CSS to fill its parent. Override only when
+   * explicit dimensions are needed (e.g. snapshot tests).
+   */
   height?: number;
   /** Width of the vertical bar, must be < `width`. Default 24. */
   barWidth?: number;
@@ -37,11 +44,13 @@ export interface ElbowProps {
   style?: CSSProperties;
 }
 
+const DEFAULT_FILL_HEIGHT = 4000;
+
 export function Elbow({
   color = 'var(--lcars-butterscotch)',
   radius = 36,
   width = 56,
-  height = 80,
+  height = DEFAULT_FILL_HEIGHT,
   barWidth = 24,
   stubHeight = 36,
   className = 'lcars-l-frame',
@@ -78,12 +87,17 @@ export function Elbow({
     `L 0 ${H} ` +
     `Z`;
 
+  // Intentionally NO viewBox — the SVG uses raw pixel coordinates so the
+  // path draws 1:1 regardless of the rendered SVG box. CSS sizes the
+  // outer SVG (width: 56px, height: 100%); the SVG's intrinsic clipping
+  // handles overflow. This avoids viewBox-induced scaling/distortion of
+  // the corner arc that would otherwise appear when the parent height
+  // doesn't match the path height.
   return (
     <svg
       className={className}
       width={W}
       height={H}
-      viewBox={`0 0 ${W} ${H}`}
       role="presentation"
       aria-hidden="true"
       style={style}
