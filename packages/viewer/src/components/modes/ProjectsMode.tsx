@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   UnifiedSessionEntry,
   Project,
@@ -10,6 +10,20 @@ import { isUnassignedProject } from '@chat-arch/schema';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
 import { SessionCard } from '../SessionCard.js';
+import {
+  buildCorrectivePromptBody,
+  buildPatternFromNarrative,
+  copyToClipboard,
+  encodePattern,
+  fetchRepoGround,
+  probeNarrativeActionsAvailable,
+  savePrompt,
+} from '../../data/narrativeActions.js';
+// `buildClaudeMdMarkdown` is exported by narrativeActions and consumed
+// by the encode-pattern endpoint when a `claudeMdMarkdown` payload is
+// supplied — Phase 7 ships the endpoint + helper, while the UI flow
+// for picking a target repo + flipping the "also append" checkbox
+// follows in Phase 7.1 (TODO: hoist a CLAUDE.md toggle here).
 
 /**
  * v2 spec §5.1: PROJECTS surface — index + detail in one component
@@ -340,13 +354,83 @@ interface NarrativeCardProps {
 function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
   const isPositive = narrative.sentiment === 'positive';
   const accent = isPositive ? 'positive' : 'negative';
+
+  // v2 spec §3 / D11-D12: actions are local-tier only — probe the
+  // three /api endpoints once to decide whether to render the button
+  // enabled or as disabled-with-explanation.
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    probeNarrativeActionsAvailable().then((v) => {
+      if (!cancelled) setAvailable(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const [actionPhase, setActionPhase] = useState<'idle' | 'running' | 'ok' | 'error'>('idle');
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const isAvailable = available !== false; // null (unknown) optimistically allows
+  const actionDisabled = actionPhase === 'running' || available === false;
+
+  const handlePositive = async (): Promise<void> => {
+    setActionPhase('running');
+    setActionMessage(null);
+    try {
+      const pattern = buildPatternFromNarrative(narrative, false);
+      const result = await encodePattern(pattern);
+      setActionPhase('ok');
+      setActionMessage(
+        `Saved pattern (${result.patternsCount} total) to ${result.sidecarPath}.`,
+      );
+    } catch (err) {
+      setActionPhase('error');
+      setActionMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleNegative = async (): Promise<void> => {
+    setActionPhase('running');
+    setActionMessage(null);
+    try {
+      const ground = await fetchRepoGround();
+      const body = buildCorrectivePromptBody(narrative, ground);
+      const path = await savePrompt(narrative.id, body);
+      let clipboardOk = true;
+      try {
+        await copyToClipboard(body);
+      } catch {
+        clipboardOk = false;
+      }
+      setActionPhase('ok');
+      setActionMessage(
+        `Saved prompt to ${path}.${clipboardOk ? ' Copied to clipboard.' : ' Clipboard copy failed — open the file to copy manually.'}`,
+      );
+    } catch (err) {
+      setActionPhase('error');
+      setActionMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Build a small ARIA hint string for the disabled-with-explanation
+  // state per spec §3. Browser-tier deploys get the same copy used
+  // by the SCAN LOCAL chip's tooltip.
+  const disabledHint =
+    available === false
+      ? 'Available when running locally. Clone the repo and run `pnpm --filter @chat-arch/standalone dev`, then reload.'
+      : undefined;
+
   return (
     <article
       className={`lcars-narrative-card lcars-narrative-card--${accent}`}
       aria-label={`${narrative.sentiment} narrative: ${narrative.title}`}
     >
       <header className="lcars-narrative-card__header">
-        <span className={`lcars-narrative-card__sentiment lcars-narrative-card__sentiment--${accent}`}>
+        <span
+          className={`lcars-narrative-card__sentiment lcars-narrative-card__sentiment--${accent}`}
+        >
           {narrative.sentiment.toUpperCase()}
         </span>
         <h4 className="lcars-narrative-card__title">{narrative.title}</h4>
@@ -372,6 +456,14 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
         </ul>
       )}
       <footer className="lcars-narrative-card__footer">
+        {actionMessage && (
+          <p
+            className={`lcars-narrative-card__status lcars-narrative-card__status--${actionPhase}`}
+            role={actionPhase === 'error' ? 'alert' : 'status'}
+          >
+            {actionMessage}
+          </p>
+        )}
         <button
           type="button"
           className="lcars-narrative-card__action"
@@ -380,14 +472,22 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
               ? 'encode this narrative as a pattern'
               : 'generate a corrective prompt from this narrative'
           }
-          title={
-            isPositive
-              ? 'Phase 7 wires this to analysis/patterns.json + optional CLAUDE.md append.'
-              : 'Phase 7 wires this to a generated prompt under _planning/prompts/.'
-          }
-          disabled
+          {...(disabledHint ? { title: disabledHint } : {})}
+          aria-disabled={actionDisabled || !isAvailable}
+          disabled={actionDisabled}
+          onClick={isPositive ? handlePositive : handleNegative}
         >
-          {isPositive ? 'ENCODE AS PATTERN' : 'GENERATE CORRECTIVE PROMPT'}
+          {actionPhase === 'running'
+            ? isPositive
+              ? 'ENCODING…'
+              : 'GENERATING…'
+            : actionPhase === 'ok'
+              ? isPositive
+                ? 'ENCODED ✓'
+                : 'PROMPT SAVED ✓'
+              : isPositive
+                ? 'ENCODE AS PATTERN'
+                : 'GENERATE CORRECTIVE PROMPT'}
         </button>
       </footer>
     </article>

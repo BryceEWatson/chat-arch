@@ -3897,6 +3897,26 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+.lcars-narrative-card__action:hover:not(:disabled),
+.lcars-narrative-card__action:focus-visible:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+.lcars-narrative-card__status {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+.lcars-narrative-card__status--ok {
+  color: var(--lcars-ice);
+}
+.lcars-narrative-card__status--error {
+  color: var(--lcars-peach);
+}
+.lcars-narrative-card__status--running {
+  color: var(--lcars-violet);
+}
 
 /* --- 2s highlight ring keyframe ([R-D19]) --- */
 @keyframes lcars-kpi-highlight {
