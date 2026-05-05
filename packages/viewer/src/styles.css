@@ -3322,6 +3322,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Coverage caption beneath the KPI value (currently only TOP
+   PROJECT uses it). Lives on its own line so it wraps freely
+   instead of riding the value span's `text-overflow: ellipsis`
+   and getting clipped mid-word. v2-visual-polish #5. */
 .lcars-kpi__coverage {
   font-family: var(--lcars-font-prose);
   font-size: 11px;
@@ -3329,6 +3333,9 @@
   font-weight: 400;
   opacity: 0.55;
   letter-spacing: 0;
+  line-height: 1.25;
+  white-space: normal;
+  overflow: visible;
 }
 
 /* --- project pills (Decision 13 / [R-D13]) --- */

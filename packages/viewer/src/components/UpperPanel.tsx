@@ -537,15 +537,27 @@ export function UpperPanel({
               onKeyDown={(e) => onActivate(e, () => onKpiClick('by-project'))}
             >
               <span className="lcars-kpi__label">TOP PROJECT</span>
-              <span className="lcars-kpi__value">
+              {/*
+                v2-visual-polish #5: split the project name and the
+                coverage caption into two elements. Previously they
+                lived in the same `__value` span, which (with
+                `white-space: nowrap; text-overflow: ellipsis`)
+                truncated mid-word — e.g. `HighlightExplain (112 of
+                1010 t...`. Now the project name ellipsizes on its own
+                line and the coverage wraps freely beneath, with a
+                `title` for the full string on hover.
+              */}
+              <span
+                className="lcars-kpi__value"
+                title={kpis.topProject?.name ?? undefined}
+              >
                 {kpis.topProject ? kpis.topProject.name : '—'}
-                {projectCoverageLow && kpis.topProject && (
-                  <span className="lcars-kpi__coverage">
-                    {' '}
-                    ({kpis.projectTaggedCount} of {kpis.totalSessions} tagged)
-                  </span>
-                )}
               </span>
+              {projectCoverageLow && kpis.topProject && (
+                <span className="lcars-kpi__coverage">
+                  {kpis.projectTaggedCount} of {kpis.totalSessions} tagged
+                </span>
+              )}
             </div>
           </div>
 
