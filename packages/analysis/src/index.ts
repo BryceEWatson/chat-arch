@@ -109,6 +109,29 @@ export {
 } from './umapProject.js';
 
 export {
+  scoreSentiment,
+  type SentimentScore,
+} from './sentimentHeuristic.js';
+
+export {
+  discoverProjects,
+  type DiscoverProjectsOptions,
+  type DiscoverProjectsResult,
+} from './discoverProjects.js';
+
+export {
+  discoverTopics,
+  type DiscoverTopicsOptions,
+  type DiscoverTopicsResult,
+} from './discoverTopics.js';
+
+export {
+  discoverNarratives,
+  type DiscoverNarrativesOptions,
+  type DiscoverNarrativesResult,
+} from './discoverNarratives.js';
+
+export {
   kmeansCluster,
   type KmeansClusterInput,
   type KmeansClusterOptions,

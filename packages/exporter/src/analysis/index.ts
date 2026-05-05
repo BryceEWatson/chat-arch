@@ -24,6 +24,9 @@ import { logger } from '../lib/logger.js';
 import {
   buildDuplicatesFile,
   buildZombiesFile,
+  discoverProjects,
+  discoverTopics,
+  discoverNarratives,
   type DuplicateInput,
 } from '@chat-arch/analysis';
 
@@ -44,6 +47,9 @@ export interface RunAnalysisResult {
     duplicates: string;
     zombies: string;
     meta: string;
+    projects: string;
+    topics: string;
+    narratives: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -51,6 +57,9 @@ export interface RunAnalysisResult {
     active: number;
     dormant: number;
     zombie: number;
+    projects: number;
+    topics: number;
+    narratives: number;
   };
 }
 
@@ -115,6 +124,68 @@ export async function runAnalysis(
     `analysis: zombies.heuristic.json — ${zombiesFile.projects.length} projects (active=${classCounts.active}, dormant=${classCounts.dormant}, zombie=${classCounts.zombie})`,
   );
 
+  // ---- v2 entity discovery: projects → topics → narratives ----
+  // Pure functions over the manifest; deterministic given identical input.
+  // Three sidecars per spec §13 / decision D2. Browser-side parity is
+  // preserved by `demoUpload.ts` calling the same kernels.
+  const projectsResult = discoverProjects(manifest.sessions, { now });
+  const topicsResult = discoverTopics(
+    manifest.sessions,
+    projectsResult.sessionToProject,
+    { now },
+  );
+  const narrativesResult = discoverNarratives(manifest.sessions, projectsResult.projects, {
+    now,
+  });
+
+  // Backfill narrative ids + sentiment + topicIds onto each Project.
+  const enrichedProjects = projectsResult.projects.map((p) => {
+    const topicIds = new Set<string>();
+    for (const sid of p.sessionIds) {
+      for (const tid of topicsResult.sessionToTopics.get(sid) ?? []) {
+        topicIds.add(tid);
+      }
+    }
+    return {
+      ...p,
+      narrativeIds: narrativesResult.narrativesByProject.get(p.id) ?? [],
+      topicIds: [...topicIds],
+      sentiment: narrativesResult.projectSentiment.get(p.id) ?? p.sentiment,
+    };
+  });
+
+  const projectsPath = path.join(analysisDir, 'projects.json');
+  await writeFile(
+    projectsPath,
+    JSON.stringify({ generatedAt: now, projects: enrichedProjects }, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(
+    `analysis: projects.json — ${enrichedProjects.length} projects (incl. UNASSIGNED if present)`,
+  );
+
+  const topicsPath = path.join(analysisDir, 'topics.json');
+  await writeFile(
+    topicsPath,
+    JSON.stringify({ generatedAt: now, topics: topicsResult.topics }, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(`analysis: topics.json — ${topicsResult.topics.length} topics`);
+
+  const narrativesPath = path.join(analysisDir, 'narratives.json');
+  await writeFile(
+    narrativesPath,
+    JSON.stringify(
+      { generatedAt: now, narratives: narrativesResult.narratives },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
+  logger.info(
+    `analysis: narratives.json — ${narrativesResult.narratives.length} narratives`,
+  );
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -127,7 +198,13 @@ export async function runAnalysis(
     tiers: {
       browser: {
         generatedAt: now,
-        files: ['duplicates.exact.json', 'zombies.heuristic.json'],
+        files: [
+          'duplicates.exact.json',
+          'zombies.heuristic.json',
+          'projects.json',
+          'topics.json',
+          'narratives.json',
+        ],
       },
     },
     counts: {
@@ -137,6 +214,9 @@ export async function runAnalysis(
         sessions: duplicatesSessionCount,
       },
       zombies: classCounts,
+      projects: enrichedProjects.length,
+      topics: topicsResult.topics.length,
+      narratives: narrativesResult.narratives.length,
     },
   };
   const metaPath = path.join(analysisDir, 'meta.json');
@@ -149,11 +229,17 @@ export async function runAnalysis(
       duplicates: duplicatesPath,
       zombies: zombiesPath,
       meta: metaPath,
+      projects: projectsPath,
+      topics: topicsPath,
+      narratives: narrativesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
       duplicatesSessions: duplicatesSessionCount,
       ...classCounts,
+      projects: enrichedProjects.length,
+      topics: topicsResult.topics.length,
+      narratives: narrativesResult.narratives.length,
     },
   };
 }

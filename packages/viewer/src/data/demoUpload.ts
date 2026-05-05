@@ -475,7 +475,7 @@ export function generateDemoUpload(): UploadedCloudData {
 
   return {
     manifest: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       generatedAt: now,
       counts: {
         cloud: enriched.length,

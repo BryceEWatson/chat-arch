@@ -98,11 +98,14 @@ describe('Phase 6 analysis pipeline integration', () => {
       gitSha: null,
     });
 
-    // (a) Three tier-1 files exist.
+    // (a) Phase 6 tier-1 files + Phase 2 v2 entity sidecars all exist.
     const dirEntries = await readdir(path.join(outDir, 'analysis'));
     expect(dirEntries).toContain('duplicates.exact.json');
     expect(dirEntries).toContain('zombies.heuristic.json');
     expect(dirEntries).toContain('meta.json');
+    expect(dirEntries).toContain('projects.json');
+    expect(dirEntries).toContain('topics.json');
+    expect(dirEntries).toContain('narratives.json');
 
     // (b) No Phase-7 reserved filename exists.
     for (const reserved of PHASE_7_RESERVED) {
@@ -124,9 +127,15 @@ describe('Phase 6 analysis pipeline integration', () => {
     // (c) Session count in meta matches fixture.
     expect(meta.counts.sessions).toBe(sessions.length);
 
-    // (d) browser.files lists exactly the three Phase-6 files.
+    // (d) browser.files lists Phase-6 tier-1 files + Phase 2 v2 entity sidecars.
     expect(meta.tiers.browser.files.sort()).toEqual(
-      ['duplicates.exact.json', 'zombies.heuristic.json'].sort(),
+      [
+        'duplicates.exact.json',
+        'zombies.heuristic.json',
+        'projects.json',
+        'topics.json',
+        'narratives.json',
+      ].sort(),
     );
     // Phase 6 does not populate the `local` tier.
     expect(meta.tiers.local).toBeUndefined();
