@@ -9,9 +9,12 @@ export type UploadStatus = 'idle' | 'running' | 'error' | 'ok';
  * Hosts (in order, left → right):
  *
  *   - Sunflower title chip (CHAT ARCHAEOLOGIST + design-system InfoPopover)
- *   - Tier indicator slot (TierIndicator + EXTENDED-COMING-SOON sibling)
+ *   - Tier indicator slot (TierIndicator — single chip; an earlier
+ *     EXTENDED-COMING-SOON sibling was dropped in v2-visual-polish)
  *   - Location chip (current surface label, e.g. PROJECTS / SESSIONS)
- *   - EARTHDATE chip (today's date, LCARS-style)
+ *   - EARTHDATE chip (today's date, value-only — the prefix label
+ *     was dropped in v2-visual-polish to keep the row from wrapping
+ *     at ~1280px desktop)
  *   - Search input (right-aligned)
  *
  * NO action buttons. UPLOAD CLOUD / SCAN LOCAL / DELETE actions live in
@@ -96,9 +99,6 @@ export function TopBar({
           </div>
         )}
         <div className="lcars-top-bar__earthdate" aria-label={`earthdate ${dateText}`}>
-          <span className="lcars-top-bar__earthdate-label" aria-hidden="true">
-            EARTHDATE
-          </span>
           <span className="lcars-top-bar__earthdate-value">{dateText}</span>
         </div>
       </div>

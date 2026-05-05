@@ -136,6 +136,34 @@ test.describe('PRACTICE surface (spec §5.4 / D13)', () => {
   });
 });
 
+test.describe('TopBar single-row invariant (v2-visual-polish)', () => {
+  // The TopBar must fit on a single row at desktop widths. Two prior
+  // sources of wrap have been removed:
+  //   - the `EXTENDED · COMING SOON` sibling chip in the tier slot
+  //   - the `EARTHDATE` prefix label on the date chip
+  // Asserts the chip count + that title and earthdate share a row.
+  test('@desktop tier indicator is a single chip; earthdate has no label prefix', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'desktop',
+      'Single-row guarantee is only meaningful at desktop widths.',
+    );
+    await loadDemo(page);
+    await expect(page.locator('.lcars-tier-indicator')).toHaveCount(1);
+    await expect(page.locator('.lcars-tier-indicator--pending')).toHaveCount(0);
+    // Earthdate chip renders just the value — no inner label span.
+    await expect(page.locator('.lcars-top-bar__earthdate-label')).toHaveCount(0);
+    const titleTop = await page
+      .locator('.lcars-top-bar__title')
+      .evaluate((el) => Math.round(el.getBoundingClientRect().top));
+    const earthdateTop = await page
+      .locator('.lcars-top-bar__earthdate')
+      .evaluate((el) => Math.round(el.getBoundingClientRect().top));
+    expect(Math.abs(titleTop - earthdateTop)).toBeLessThanOrEqual(2);
+  });
+});
+
 test.describe('Surface chrome gating (regression)', () => {
   // The shared SESSIONS chrome (UpperPanel KPI tiles + sparkline,
   // MidBar label, FilterBar source pills + project chips) reads from
