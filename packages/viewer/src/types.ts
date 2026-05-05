@@ -35,7 +35,14 @@ export interface UploadedCloudData {
 }
 
 /** UI mode — which main-content surface is active. */
-export type Mode = 'command' | 'timeline' | 'detail' | 'constellation' | 'cost';
+export type Mode =
+  | 'command'
+  | 'timeline'
+  | 'detail'
+  | 'constellation'
+  | 'cost'
+  /** v2 spec §5.1: PROJECTS surface (index + detail in one mode, driven by hash). */
+  | 'projects';
 
 /** Generic async-fetch state. Used uniformly for manifest + drill-in fetches. */
 export type FetchState<T> =
@@ -102,6 +109,7 @@ export const MODE_COLOR: Record<Mode, string> = {
   detail: 'var(--lcars-sunflower)',
   constellation: 'var(--lcars-violet)',
   cost: 'var(--lcars-peach)',
+  projects: 'var(--lcars-sunflower)',
 };
 
 /**

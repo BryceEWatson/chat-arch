@@ -5,11 +5,11 @@ import { Sidebar } from './Sidebar.js';
 afterEach(() => cleanup());
 
 describe('Sidebar (vertical variant, default)', () => {
-  it('renders the three top-level mode buttons (TIMELINE absorbed; DETAIL is not a sidebar destination)', () => {
+  it('renders PROJECTS + SESSIONS + ANALYSIS + COST mode buttons (TIMELINE absorbed; DETAIL is not a sidebar destination)', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
-    // v2 D6a: TIMELINE is no longer a top-level surface, it's a view
-    // toggle inside SESSIONS — sidebar exposes SESSIONS only under
-    // BROWSE.
+    // v2 §5.1: PROJECTS surface — narrative-bearing first-class entity.
+    expect(screen.getByRole('button', { name: /mode PROJECTS/i })).toBeDefined();
+    // v2 D6a: TIMELINE absorbed into SESSIONS as a view toggle.
     expect(screen.getByRole('button', { name: /mode SESSIONS/i })).toBeDefined();
     expect(screen.queryByRole('button', { name: /mode TIMELINE/i })).toBeNull();
     expect(screen.getByRole('button', { name: /mode ANALYSIS/i })).toBeDefined();
@@ -118,8 +118,8 @@ describe('Sidebar (horizontal variant)', () => {
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
     expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(0);
-    // 3 mode pills now: SES (SESSIONS), ANL, CST.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(3);
+    // 4 mode pills now: PRJ (PROJECTS), SES (SESSIONS), ANL, CST.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(4);
   });
 
   it('shows only the short label in horizontal pills', () => {
@@ -127,9 +127,9 @@ describe('Sidebar (horizontal variant)', () => {
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(3);
+    expect(pillShorts.length).toBe(4);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['SES', 'ANL', 'CST']);
+    expect(texts).toEqual(['PRJ', 'SES', 'ANL', 'CST']);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -144,6 +144,7 @@ describe('Sidebar (horizontal variant)', () => {
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
     expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'PRJ',
       'SES',
       'ANL',
       'CST',

@@ -202,6 +202,21 @@ describe('ChatArchViewer', () => {
     expect(screen.getByText('Apple pie recipe')).toBeDefined();
   });
 
+  it('switches to PROJECTS surface from the sidebar and pushes the #projects hash (v2 §5.1)', () => {
+    window.location.hash = '';
+    render(<ChatArchViewer manifest={sampleManifest} />);
+    fireEvent.click(screen.getByRole('button', { name: /mode PROJECTS/i }));
+    expect(window.location.hash).toBe('#projects');
+    // PROJECTS index renders its own header; the test fixture has at
+    // least one discovered project (in-browser kernel pass over the
+    // sample manifest), so the index list is non-empty.
+    const headings = screen.getAllByText(/^PROJECTS$/);
+    expect(headings.length).toBeGreaterThan(0);
+    // Reset for downstream tests so a leftover hash doesn't poison
+    // the next render's initial state.
+    window.location.hash = '';
+  });
+
   it('switches to Timeline view from the SESSIONS view toggle (v2 D6a)', () => {
     render(<ChatArchViewer manifest={sampleManifest} />);
     // v2 D6a: TIMELINE is no longer reachable from the sidebar. The

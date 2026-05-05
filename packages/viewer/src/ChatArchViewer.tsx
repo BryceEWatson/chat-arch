@@ -29,10 +29,12 @@ import {
   ConstellationMode,
   CostMode,
 } from './components/modes/index.js';
+import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
+import { computeV2Entities } from './data/computeV2Entities.js';
 import {
   parseDuplicatesFile,
   mergeDuplicateClusters,
@@ -85,6 +87,8 @@ const SEARCH_DEBOUNCE_MS = 100;
 const FALLBACK_BANNER_PX = 320;
 
 const HASH_SESSION_PREFIX = '#session/';
+const HASH_PROJECTS = '#projects';
+const HASH_PROJECT_PREFIX = '#project/';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
@@ -111,6 +115,27 @@ function readSessionHash(): string | null {
   if (!h.startsWith(HASH_SESSION_PREFIX)) return null;
   const id = decodeURIComponent(h.slice(HASH_SESSION_PREFIX.length));
   return id.length > 0 ? id : null;
+}
+
+/**
+ * v2 spec §5.1 / decision D3: hash-driven PROJECTS routing within the
+ * single-island viewer.
+ *   - `#projects`      → PROJECTS index
+ *   - `#project/<id>`  → PROJECTS detail (selectedProjectId set)
+ * The parallel Astro routes (`/projects`, `/projects/[id]`) populate
+ * the hash on mount so a deep-linked URL lands in the right state.
+ */
+function readProjectsHash(): { surface: 'projects' | null; selectedProjectId: string | null } {
+  if (typeof window === 'undefined') return { surface: null, selectedProjectId: null };
+  const h = window.location.hash;
+  if (h === HASH_PROJECTS) return { surface: 'projects', selectedProjectId: null };
+  if (h.startsWith(HASH_PROJECT_PREFIX)) {
+    const id = decodeURIComponent(h.slice(HASH_PROJECT_PREFIX.length));
+    return id.length > 0
+      ? { surface: 'projects', selectedProjectId: id }
+      : { surface: 'projects', selectedProjectId: null };
+  }
+  return { surface: null, selectedProjectId: null };
 }
 
 /**
@@ -165,7 +190,16 @@ export function ChatArchViewer({
   const [uploadedHydrated, setUploadedHydrated] = useState(false);
 
   // --- UI state ---
-  const [mode, setMode] = useState<Mode>('command');
+  const [mode, setMode] = useState<Mode>(() => {
+    // v2 spec §5.1: prefer the URL hash so deep-link entries land
+    // directly in the right surface. Falls through to SESSIONS
+    // (`command` mode) when the hash is absent or unrecognized.
+    const proj = readProjectsHash();
+    return proj.surface === 'projects' ? 'projects' : 'command';
+  });
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    () => readProjectsHash().selectedProjectId,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(() => readSessionHash());
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -395,11 +429,16 @@ export function ChatArchViewer({
     if (typeof window === 'undefined') return undefined;
     const sync = () => {
       const id = readSessionHash();
+      const proj = readProjectsHash();
       setSelectedId(id);
+      setSelectedProjectId(proj.selectedProjectId);
       if (id) {
         setMode('detail');
+      } else if (proj.surface === 'projects') {
+        setMode('projects');
       } else {
-        setMode((prev) => (prev === 'detail' ? 'command' : prev));
+        // Hash cleared — reset detail/projects modes back to SESSIONS.
+        setMode((prev) => (prev === 'detail' || prev === 'projects' ? 'command' : prev));
       }
     };
     sync();
@@ -1187,11 +1226,47 @@ export function ChatArchViewer({
     return s;
   }, [zombieProjects]);
 
+  // v2 Phase 6: effective Project / Topic / Narrative arrays. Prefer
+  // the exporter-written sidecars when present (server-rendered
+  // manifest path); fall back to the in-browser kernel pass when
+  // sidecars are absent or an upload is active. Browser-side parity
+  // is preserved by reusing the same `discoverProjects`/`discoverTopics`/
+  // `discoverNarratives` kernels the exporter calls.
+  const effectiveV2Entities = useMemo(() => {
+    const sidecarsPresent =
+      analysisState.v2Projects !== null &&
+      analysisState.v2Topics !== null &&
+      analysisState.v2Narratives !== null;
+    if (!uploadedData && sidecarsPresent) {
+      return {
+        projects: analysisState.v2Projects,
+        topics: analysisState.v2Topics,
+        narratives: analysisState.v2Narratives,
+      };
+    }
+    if (!manifest) {
+      return { projects: null, topics: null, narratives: null };
+    }
+    const computed = computeV2Entities(manifest.sessions);
+    return {
+      projects: computed.projects,
+      topics: computed.topics,
+      narratives: computed.narratives,
+    };
+  }, [
+    uploadedData,
+    manifest,
+    analysisState.v2Projects,
+    analysisState.v2Topics,
+    analysisState.v2Narratives,
+  ]);
+
   // v2 Phase 5: per-session topic + narrative lookup tables for SessionCard
-  // chips. Built once per fetch — empty maps when sidecars are absent.
+  // chips. Now derives from `effectiveV2Entities` so uploaded data and
+  // sidecar-less fetched manifests both surface chips.
   const sessionV2Index = useMemo(
-    () => buildSessionV2Index(analysisState.v2Topics, analysisState.v2Narratives),
-    [analysisState.v2Topics, analysisState.v2Narratives],
+    () => buildSessionV2Index(effectiveV2Entities.topics, effectiveV2Entities.narratives),
+    [effectiveV2Entities.topics, effectiveV2Entities.narratives],
   );
 
   const filteredSorted = useMemo<readonly UnifiedSessionEntry[]>(() => {
@@ -1806,6 +1881,7 @@ export function ChatArchViewer({
     detail: 'DETAIL',
     constellation: 'ANALYSIS',
     cost: 'COST',
+    projects: 'PROJECTS',
   };
 
   // Has-data flags drive the "Scan Local" → "Update Local" and
@@ -1964,6 +2040,14 @@ export function ChatArchViewer({
                 setConstellationHighlightClusterId(null);
                 setConstellationOriginSessionId(null);
                 setZombieFilterActive(false);
+              }
+              // v2 §5.1: PROJECTS uses its own hash so deep-links round
+              // trip cleanly. Sidebar click → push #projects (index).
+              if (m === 'projects') {
+                setSelectedProjectId(null);
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_PROJECTS);
+                }
               }
               setMode(m);
             }}
@@ -2129,6 +2213,24 @@ export function ChatArchViewer({
                         costDiagnosedPresent={
                           !!analysisState.tierFiles['cost-diagnoses.json']?.present
                         }
+                      />
+                    ) : baseMode === 'projects' ? (
+                      <ProjectsMode
+                        projects={effectiveV2Entities.projects ?? []}
+                        topics={effectiveV2Entities.topics ?? []}
+                        narratives={effectiveV2Entities.narratives ?? []}
+                        sessions={activeManifest.sessions}
+                        selectedProjectId={selectedProjectId}
+                        onSelectProject={(id) => {
+                          setSelectedProjectId(id);
+                          if (typeof window !== 'undefined') {
+                            const next = id
+                              ? `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`
+                              : HASH_PROJECTS;
+                            window.history.pushState(null, '', next);
+                          }
+                        }}
+                        onSelectSession={onSelect}
                       />
                     ) : null}
                   </div>

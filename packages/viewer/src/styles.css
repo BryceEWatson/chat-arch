@@ -3606,6 +3606,298 @@
   padding: 1px 7px;
 }
 
+/* ---------------------------------------------------------------- *
+ * v2 Phase 6 — PROJECTS surface (spec §5.1).                        *
+ *                                                                   *
+ *   - .lcars-projects-index           full-width scroll-list of     *
+ *                                     discovered projects with      *
+ *                                     sentiment + counts + last     *
+ *                                     activity.                     *
+ *   - .lcars-project-detail           single-scroll detail layout   *
+ *                                     per spec §5.1: narratives at  *
+ *                                     top, sessions below.          *
+ *   - .lcars-narrative-card           sentiment-aware narrative     *
+ *                                     card with action button (§7). *
+ * ---------------------------------------------------------------- */
+
+.lcars-projects-index {
+  padding: 14px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lcars-projects-index__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lcars-projects-index__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--lcars-sunflower);
+  margin: 0;
+}
+.lcars-projects-index__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
+  cursor: pointer;
+}
+.lcars-projects-index__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-projects-index__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: rgba(255, 204, 102, 0.04);
+  border-left: 3px solid var(--lcars-sunflower);
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+  transition:
+    background 120ms,
+    transform 120ms;
+}
+.lcars-projects-index__row:hover,
+.lcars-projects-index__row:focus-visible {
+  background: rgba(255, 204, 102, 0.12);
+  outline: none;
+  transform: translateX(2px);
+}
+.lcars-projects-index__row--unassigned {
+  border-left-color: color-mix(in srgb, var(--lcars-text) 30%, transparent);
+  background: rgba(255, 255, 255, 0.02);
+}
+.lcars-projects-index__row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lcars-projects-index__row-name {
+  font-family: var(--lcars-font-chrome);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--lcars-text);
+}
+.lcars-projects-index__row-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+}
+.lcars-projects-index__sentiment {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--lcars-font-chrome);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+}
+.lcars-projects__sentiment--positive {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.12);
+}
+.lcars-projects__sentiment--negative {
+  color: var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.12);
+}
+.lcars-projects__sentiment--mixed {
+  color: var(--lcars-violet);
+  background: rgba(204, 153, 204, 0.12);
+}
+.lcars-projects__sentiment--neutral {
+  color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lcars-project-detail {
+  padding: 14px 18px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lcars-project-detail__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  background: var(--lcars-bg);
+  padding: 6px 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--lcars-divider) 60%, transparent);
+  z-index: 4;
+}
+.lcars-project-detail__back {
+  background: transparent;
+  color: var(--lcars-ice);
+  border: 1px solid var(--lcars-ice);
+  border-radius: 6px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 3px 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+.lcars-project-detail__back:hover,
+.lcars-project-detail__back:focus-visible {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+  outline: none;
+}
+.lcars-project-detail__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--lcars-sunflower);
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.lcars-project-detail__topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lcars-project-detail__section-title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--lcars-butterscotch);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+.lcars-project-detail__narrative-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lcars-project-detail__empty-narratives {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
+}
+.lcars-project-detail__session-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 899px) {
+  .lcars-project-detail__session-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lcars-narrative-card {
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-narrative-card--positive {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.06);
+}
+.lcars-narrative-card--negative {
+  color: var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.06);
+}
+.lcars-narrative-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lcars-narrative-card__sentiment {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+}
+.lcars-narrative-card__title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--lcars-text);
+}
+.lcars-narrative-card__body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
+}
+.lcars-narrative-card__evidence {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lcars-narrative-card__evidence-pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 50%, transparent);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  text-decoration: none;
+}
+.lcars-narrative-card__evidence-pill:hover,
+.lcars-narrative-card__evidence-pill:focus-visible {
+  background: rgba(0, 0, 0, 0.4);
+  outline: none;
+}
+.lcars-narrative-card__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+.lcars-narrative-card__action {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.lcars-narrative-card__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* --- 2s highlight ring keyframe ([R-D19]) --- */
 @keyframes lcars-kpi-highlight {
   0% {

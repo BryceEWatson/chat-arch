@@ -53,7 +53,13 @@ interface NavGroup {
 const NAV: readonly NavGroup[] = [
   {
     group: 'BROWSE',
-    items: [{ mode: 'command', label: 'SESSIONS', short: 'SES' }],
+    items: [
+      // v2 spec §5.1: PROJECTS sits above SESSIONS in BROWSE — narratives
+      // live on projects, so PROJECTS is where users land for insights
+      // about how their work is going. SESSIONS is the v1 grid.
+      { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
+      { mode: 'command', label: 'SESSIONS', short: 'SES' },
+    ],
   },
   {
     group: 'INSIGHTS',
