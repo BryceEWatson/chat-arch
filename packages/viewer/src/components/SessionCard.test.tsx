@@ -257,4 +257,117 @@ describe('SessionCard', () => {
     const attr = container.querySelectorAll('.lcars-attribution');
     expect(Array.from(attr).some((e) => e.textContent === ' · estimate')).toBe(true);
   });
+
+  describe('v2 spec §5.3 — chips, narratives, deep-link anchor', () => {
+    it('exposes a deep-link anchor id of the form session-<id>', () => {
+      const { container } = render(<SessionCard session={base()} onSelect={() => {}} />);
+      const card = container.querySelector('.lcars-session-card') as HTMLElement;
+      expect(card.id).toBe('session-id-1');
+    });
+
+    it('renders topic chips when topics array is non-empty', () => {
+      render(
+        <SessionCard
+          session={base()}
+          onSelect={() => {}}
+          topics={['Bluefin Mobile', 'Codex Archive']}
+        />,
+      );
+      expect(screen.getByText(/Bluefin Mobile/)).toBeDefined();
+      expect(screen.getByText(/Codex Archive/)).toBeDefined();
+    });
+
+    it('renders no topics row when topics is empty / undefined', () => {
+      const { container } = render(<SessionCard session={base()} onSelect={() => {}} />);
+      expect(container.querySelector('.lcars-session-card__topics')).toBeNull();
+    });
+
+    it('renders NARR chip with sentiment-positive accent when only positive narratives attach', () => {
+      const { container } = render(
+        <SessionCard
+          session={base()}
+          onSelect={() => {}}
+          narratives={[
+            {
+              id: 'n1',
+              projectId: 'p1',
+              sessionIds: ['id-1'],
+              sentiment: 'positive',
+              title: 'Pattern: incremental refactor',
+              body: '',
+              evidence: [],
+              generatedAt: '2026-05-01T00:00:00Z',
+              actionType: 'encode-as-pattern',
+            },
+          ]}
+        />,
+      );
+      const chip = container.querySelector('.lcars-chip--narrative');
+      expect(chip).not.toBeNull();
+      expect(chip!.className).toContain('lcars-chip--narrative-positive');
+      expect(chip!.textContent).toContain('NARR (1)');
+    });
+
+    it('NARR chip uses negative accent when any attached narrative is negative', () => {
+      const { container } = render(
+        <SessionCard
+          session={base()}
+          onSelect={() => {}}
+          narratives={[
+            {
+              id: 'n1',
+              projectId: 'p1',
+              sessionIds: ['id-1'],
+              sentiment: 'positive',
+              title: 'Win',
+              body: '',
+              evidence: [],
+              generatedAt: '2026-05-01T00:00:00Z',
+              actionType: 'encode-as-pattern',
+            },
+            {
+              id: 'n2',
+              projectId: 'p1',
+              sessionIds: ['id-1'],
+              sentiment: 'negative',
+              title: 'Loss',
+              body: '',
+              evidence: [],
+              generatedAt: '2026-05-01T00:00:00Z',
+              actionType: 'generate-corrective-prompt',
+            },
+          ]}
+        />,
+      );
+      const chip = container.querySelector('.lcars-chip--narrative');
+      expect(chip!.className).toContain('lcars-chip--narrative-negative');
+      expect(chip!.textContent).toContain('NARR (2)');
+    });
+
+    it('NARR chip click fires onNarrativeChipClick with first narrative + project ids', () => {
+      const onNarrative = vi.fn();
+      render(
+        <SessionCard
+          session={base()}
+          onSelect={() => {}}
+          narratives={[
+            {
+              id: 'n7',
+              projectId: 'pX',
+              sessionIds: ['id-1'],
+              sentiment: 'negative',
+              title: 'Loss',
+              body: '',
+              evidence: [],
+              generatedAt: '2026-05-01T00:00:00Z',
+              actionType: 'generate-corrective-prompt',
+            },
+          ]}
+          onNarrativeChipClick={onNarrative}
+        />,
+      );
+      fireEvent.click(screen.getByText(/NARR \(1\)/));
+      expect(onNarrative).toHaveBeenCalledWith('n7', 'pX');
+    });
+  });
 });

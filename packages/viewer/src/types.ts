@@ -1,5 +1,11 @@
 import type { SessionManifest, SessionSource, UnifiedSessionEntry } from '@chat-arch/schema';
-import type { CloudConversation, CloudProject } from '@chat-arch/schema';
+import type {
+  CloudConversation,
+  CloudProject,
+  Project,
+  Topic,
+  Narrative,
+} from '@chat-arch/schema';
 import type { TierFileState } from './data/analysisFetch.js';
 
 /**
@@ -127,6 +133,16 @@ export interface AnalysisState {
   tierPresentCount: number;
   /** Per-Phase-7-reserved-filename state map. Keys are the six reserved filenames. */
   tierFiles: Record<string, TierFileState>;
+  /**
+   * v2 (Phase 2) entity sidecars. `null` until Phase 6 wires in-browser
+   * parallel emission for uploads — for fetched manifests these come
+   * from `analysis/projects.json`, `topics.json`, `narratives.json`
+   * written by the exporter. The viewer treats them as best-effort:
+   * a missing file just means no chips for that surface.
+   */
+  v2Projects: readonly Project[] | null;
+  v2Topics: readonly Topic[] | null;
+  v2Narratives: readonly Narrative[] | null;
 }
 
 export type { SessionManifest, UnifiedSessionEntry, SessionSource };

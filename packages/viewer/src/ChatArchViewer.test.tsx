@@ -202,10 +202,17 @@ describe('ChatArchViewer', () => {
     expect(screen.getByText('Apple pie recipe')).toBeDefined();
   });
 
-  it('switches to Timeline mode from the sidebar', () => {
+  it('switches to Timeline view from the SESSIONS view toggle (v2 D6a)', () => {
     render(<ChatArchViewer manifest={sampleManifest} />);
-    fireEvent.click(screen.getByRole('button', { name: /mode TIMELINE/i }));
-    // Timeline shows lane labels.
+    // v2 D6a: TIMELINE is no longer reachable from the sidebar. The
+    // user toggles VIEW: TIMELINE inside the SESSIONS surface chrome.
+    const timelineBtn = screen
+      .getAllByRole('button', { name: /^TIMELINE$/i })
+      .find((el) => el.className.includes('lcars-mid-bar__view-btn'));
+    expect(timelineBtn).toBeDefined();
+    fireEvent.click(timelineBtn!);
+    expect(timelineBtn!.getAttribute('aria-pressed')).toBe('true');
+    // Timeline shows lane labels — at least one per source lane.
     expect(screen.getAllByText(/CLOUD/i).length).toBeGreaterThan(0);
   });
 

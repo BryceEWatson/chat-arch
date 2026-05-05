@@ -37,9 +37,14 @@ interface NavGroup {
   items: readonly NavItem[];
 }
 
-// Two-tier IA (redesign handoff Phase 1):
-//   BROWSE   → Command, Timeline   (list-y surfaces)
-//   INSIGHTS → Analysis, Cost      (aggregate / pattern surfaces)
+// Two-tier IA:
+//   BROWSE   → Sessions          (the v1 grid surface)
+//   INSIGHTS → Analysis, Cost    (aggregate / pattern surfaces)
+//
+// v2 spec §5.3 / decision D6a: TIMELINE is no longer a top-level surface;
+// it's absorbed into SESSIONS as an in-surface view toggle. The internal
+// `command` mode id is preserved for code stability — only the user-
+// facing label flips to SESSIONS so the sidebar matches the spec naming.
 //
 // `detail` is intentionally missing — it's a drill-in surface reached by
 // clicking a session card, not a top-level mode. `constellation` is the
@@ -48,10 +53,7 @@ interface NavGroup {
 const NAV: readonly NavGroup[] = [
   {
     group: 'BROWSE',
-    items: [
-      { mode: 'command', label: 'COMMAND', short: 'CMD' },
-      { mode: 'timeline', label: 'TIMELINE', short: 'TIM' },
-    ],
+    items: [{ mode: 'command', label: 'SESSIONS', short: 'SES' }],
   },
   {
     group: 'INSIGHTS',

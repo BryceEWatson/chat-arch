@@ -3558,6 +3558,53 @@
   background: rgba(255, 153, 51, 0.25);
   outline: none;
 }
+/* v2 spec §5.3: NARR (narrative-attached) and topic chips. NARR
+   borrows the existing sentiment palette (sunflower=positive,
+   peach=negative) so the user's color associations carry across
+   surfaces. Topic chips are a quieter ice variant — informational,
+   not action-y, so no hover transition. */
+.lcars-chip--narrative {
+  cursor: default;
+}
+.lcars-chip--narrative-positive {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.14);
+}
+.lcars-chip--narrative-positive[role='button'] {
+  cursor: pointer;
+}
+.lcars-chip--narrative-positive[role='button']:hover,
+.lcars-chip--narrative-positive[role='button']:focus-visible {
+  background: rgba(255, 204, 102, 0.28);
+  outline: none;
+}
+.lcars-chip--narrative-negative {
+  color: var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.14);
+}
+.lcars-chip--narrative-negative[role='button'] {
+  cursor: pointer;
+}
+.lcars-chip--narrative-negative[role='button']:hover,
+.lcars-chip--narrative-negative[role='button']:focus-visible {
+  background: rgba(255, 153, 51, 0.28);
+  outline: none;
+}
+.lcars-session-card__topics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 4px 0 2px;
+}
+.lcars-chip--topic {
+  color: var(--lcars-ice);
+  background: rgba(153, 204, 255, 0.10);
+  border-color: color-mix(in srgb, var(--lcars-ice) 55%, transparent);
+  cursor: default;
+  font-size: 9.5px;
+  padding: 1px 7px;
+}
 
 /* --- 2s highlight ring keyframe ([R-D19]) --- */
 @keyframes lcars-kpi-highlight {
@@ -5390,8 +5437,47 @@
   letter-spacing: 0.14em;
   font-weight: 700;
   color: #000;
-  margin-left: auto;
   padding: 0 12px;
+}
+/* v2 D6a: SESSIONS chrome hosts the GRID / TIMELINE view toggle next
+   to the SORT control. Group container right-justifies both inside
+   the existing MidBar slot (sort had `margin-left: auto` standalone). */
+.lcars-mid-bar__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.lcars-mid-bar__view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #000;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 1px;
+}
+.lcars-mid-bar__view-btn {
+  background: transparent;
+  color: #000;
+  border: none;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 9px;
+  line-height: 1;
+}
+.lcars-mid-bar__view-btn--active {
+  background: #000;
+  color: var(--lcars-sunflower);
+}
+.lcars-mid-bar__view-btn:hover:not(.lcars-mid-bar__view-btn--active),
+.lcars-mid-bar__view-btn:focus-visible:not(.lcars-mid-bar__view-btn--active) {
+  background: rgba(0, 0, 0, 0.18);
+  outline: none;
 }
 .lcars-mid-bar__sort-label {
   opacity: 0.8;

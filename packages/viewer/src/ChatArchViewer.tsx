@@ -32,6 +32,7 @@ import {
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
+import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
 import {
   parseDuplicatesFile,
   mergeDuplicateClusters,
@@ -184,15 +185,24 @@ export function ChatArchViewer({
       // localStorage unavailable — preference lasts only this session.
     }
   }, [sortBy]);
+  // v2 D6a: TIMELINE is no longer a top-level sidebar destination —
+  // it lives inside the SESSIONS surface as a view toggle. Default
+  // GRID matches the v1 SESSIONS rendering; switching to TIMELINE
+  // swaps in the existing TimelineMode component without changing
+  // the active mode (which stays `command` for filter / sort state).
+  const [sessionsView, setSessionsView] = useState<'grid' | 'timeline'>('grid');
   const [cache, setCache] = useState<ConversationCache>(new Map());
 
-  // --- analysis state (Phase 6) ---
+  // --- analysis state (Phase 6 + v2 Phase 5) ---
   const [analysisState, setAnalysisState] = useState<AnalysisState>({
     duplicatesExact: null,
     zombiesHeuristic: null,
     tierStatus: 'browser',
     tierPresentCount: 0,
     tierFiles: {},
+    v2Projects: null,
+    v2Topics: null,
+    v2Narratives: null,
   });
 
   // --- Phase 3 semantic-classification state ---
@@ -581,7 +591,7 @@ export function ChatArchViewer({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [tier2, dupExact, zombies] = await Promise.all([
+      const [tier2, dupExact, zombies, v2] = await Promise.all([
         fetchAnalysisTierStatus(dataRoot),
         fetchJsonOrNull(
           `${dataRoot.endsWith('/') ? dataRoot.slice(0, -1) : dataRoot}/analysis/duplicates.exact.json`,
@@ -589,6 +599,10 @@ export function ChatArchViewer({
         fetchJsonOrNull(
           `${dataRoot.endsWith('/') ? dataRoot.slice(0, -1) : dataRoot}/analysis/zombies.heuristic.json`,
         ),
+        // v2 Phase 5: Project / Topic / Narrative sidecars feed the
+        // SESSIONS surface chips. Missing files resolve to nulls;
+        // chips just don't render.
+        fetchV2Entities(dataRoot),
       ]);
       if (cancelled) return;
       setAnalysisState({
@@ -597,6 +611,9 @@ export function ChatArchViewer({
         tierStatus: tier2.tierStatus,
         tierPresentCount: tier2.tierPresentCount,
         tierFiles: tier2.tierFiles,
+        v2Projects: v2.projects,
+        v2Topics: v2.topics,
+        v2Narratives: v2.narratives,
       });
     })();
     return () => {
@@ -1169,6 +1186,13 @@ export function ChatArchViewer({
     }
     return s;
   }, [zombieProjects]);
+
+  // v2 Phase 5: per-session topic + narrative lookup tables for SessionCard
+  // chips. Built once per fetch — empty maps when sidecars are absent.
+  const sessionV2Index = useMemo(
+    () => buildSessionV2Index(analysisState.v2Topics, analysisState.v2Narratives),
+    [analysisState.v2Topics, analysisState.v2Narratives],
+  );
 
   const filteredSorted = useMemo<readonly UnifiedSessionEntry[]>(() => {
     if (!manifest) return [];
@@ -1774,8 +1798,11 @@ export function ChatArchViewer({
   // don't match the user-facing surface labels (ANALYSIS, COST). This
   // is the same naming that `Sidebar` uses, kept in sync by hand.
   const LOCATION_LABEL: Record<Mode, string> = {
-    command: 'COMMAND',
-    timeline: 'TIMELINE',
+    command: 'SESSIONS',
+    // v2 D6a: TIMELINE is an in-surface view toggle now; this entry is
+    // kept so the legacy mode id keeps a label, but in practice the
+    // sidebar can't navigate here anymore.
+    timeline: 'SESSIONS · TIMELINE',
     detail: 'DETAIL',
     constellation: 'ANALYSIS',
     cost: 'COST',
@@ -1983,25 +2010,58 @@ export function ChatArchViewer({
             />
             <MidBar
               color={modeColor}
-              label={activeMode.toUpperCase()}
+              label={baseMode === 'command' ? 'SESSIONS' : activeMode.toUpperCase()}
               {...(baseMode === 'command'
                 ? {
                     rightSlot: (
-                      <label className="lcars-mid-bar__sort">
-                        <span className="lcars-mid-bar__sort-label">SORT</span>
-                        <select
-                          className="lcars-mid-bar__sort-select"
-                          aria-label="sort sessions"
-                          value={sortBy}
-                          onChange={(e) => setSortBy(e.target.value as SortBy)}
+                      <div className="lcars-mid-bar__controls">
+                        {/*
+                          v2 D6a: TIMELINE absorbed into SESSIONS as a
+                          view toggle. GRID is the default; TIMELINE
+                          swaps in the lane chart over the same filtered
+                          session set so the user's filters / search
+                          carry across the toggle.
+                        */}
+                        <div
+                          className="lcars-mid-bar__view-toggle"
+                          role="group"
+                          aria-label="sessions view"
                         >
-                          <option value="recent">RECENT</option>
-                          <option value="oldest">OLDEST</option>
-                          <option value="cost">COST ↓</option>
-                          <option value="turns">TURNS ↓</option>
-                          <option value="project">PROJECT</option>
-                        </select>
-                      </label>
+                          <button
+                            type="button"
+                            className={`lcars-mid-bar__view-btn${sessionsView === 'grid' ? ' lcars-mid-bar__view-btn--active' : ''}`}
+                            aria-pressed={sessionsView === 'grid'}
+                            onClick={() => setSessionsView('grid')}
+                          >
+                            GRID
+                          </button>
+                          <button
+                            type="button"
+                            className={`lcars-mid-bar__view-btn${sessionsView === 'timeline' ? ' lcars-mid-bar__view-btn--active' : ''}`}
+                            aria-pressed={sessionsView === 'timeline'}
+                            onClick={() => setSessionsView('timeline')}
+                          >
+                            TIMELINE
+                          </button>
+                        </div>
+                        {sessionsView === 'grid' && (
+                          <label className="lcars-mid-bar__sort">
+                            <span className="lcars-mid-bar__sort-label">SORT</span>
+                            <select
+                              className="lcars-mid-bar__sort-select"
+                              aria-label="sort sessions"
+                              value={sortBy}
+                              onChange={(e) => setSortBy(e.target.value as SortBy)}
+                            >
+                              <option value="recent">RECENT</option>
+                              <option value="oldest">OLDEST</option>
+                              <option value="cost">COST ↓</option>
+                              <option value="turns">TURNS ↓</option>
+                              <option value="project">PROJECT</option>
+                            </select>
+                          </label>
+                        )}
+                      </div>
                     ),
                   }
                 : {})}
@@ -2032,15 +2092,21 @@ export function ChatArchViewer({
                 <>
                   <div className="lcars-mode-area__base" hidden={showDetailOverlay}>
                     {baseMode === 'command' ? (
-                      <CommandMode
-                        sessions={filteredSorted}
-                        onSelect={onSelect}
-                        sessionDupIndex={sessionDupIndex}
-                        zombieProjectIds={zombieProjectIds}
-                        semanticSessionIds={semanticSessionIds}
-                        onDuplicateChipClick={onDuplicateChipClick}
-                        onZombieChipClick={onZombieChipClick}
-                      />
+                      sessionsView === 'timeline' ? (
+                        <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
+                      ) : (
+                        <CommandMode
+                          sessions={filteredSorted}
+                          onSelect={onSelect}
+                          sessionDupIndex={sessionDupIndex}
+                          zombieProjectIds={zombieProjectIds}
+                          semanticSessionIds={semanticSessionIds}
+                          topicsBySession={sessionV2Index.topicsBySession}
+                          narrativesBySession={sessionV2Index.narrativesBySession}
+                          onDuplicateChipClick={onDuplicateChipClick}
+                          onZombieChipClick={onZombieChipClick}
+                        />
+                      )
                     ) : baseMode === 'timeline' ? (
                       <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
                     ) : baseMode === 'constellation' ? (
