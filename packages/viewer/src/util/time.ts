@@ -90,4 +90,19 @@ export function formatShortDate(ts: number, reference: number = Date.now()): str
   return formatAbsolute(ts, reference);
 }
 
+/**
+ * Always-ISO short date `YYYY-MM-DD`. Use when two dates must be
+ * formatted together and any chance they span years would otherwise
+ * mix `Mmm D` and `YYYY-MM-DD` formats — e.g. the RANGE chip on the
+ * upper panel, which previously rendered `2023-07-18 → Apr 19`.
+ */
+export function formatIsoDate(ts: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return '—';
+  const d = new Date(ts);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export const TIME_CONST = { MS_MIN, MS_HOUR, MS_DAY };

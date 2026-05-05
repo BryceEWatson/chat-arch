@@ -4,7 +4,7 @@ import type { FilterState, UploadedCloudData } from '../types.js';
 import { SOURCE_LABEL } from '../types.js';
 import { Sparkline } from './Sparkline.js';
 import { SourceAttribution } from './SourceAttribution.js';
-import { formatShortDate, minTimestamp, maxTimestamp } from '../util/time.js';
+import { formatIsoDate, minTimestamp, maxTimestamp } from '../util/time.js';
 import { onActivate } from '../util/a11y.js';
 import type { CostKpiSection } from './modes/CostMode.js';
 import type { ClassifyProgress, SemanticLabelsBundle } from '../data/semanticClassify.js';
@@ -177,12 +177,18 @@ function labelsDescription(counts: AnalysisCounts | undefined): string {
   return parts.join(' · ');
 }
 
+/**
+ * Format the corpus span as `YYYY-MM-DD → YYYY-MM-DD`. Always ISO on
+ * both endpoints so cross-year ranges don't render as
+ * `2023-07-18 → Apr 19` — the rest of the chrome already leans ISO,
+ * so this matches established convention (v2-visual-polish #3).
+ */
 function dateRange(sessions: readonly UnifiedSessionEntry[]): string {
   const mins = sessions.map((s) => s.updatedAt);
   const min = minTimestamp(mins);
   const max = maxTimestamp(mins);
   if (min === null || max === null) return '—';
-  return `${formatShortDate(min)} → ${formatShortDate(max)}`;
+  return `${formatIsoDate(min)} → ${formatIsoDate(max)}`;
 }
 
 /**

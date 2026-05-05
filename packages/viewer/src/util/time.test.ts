@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { formatRelative, minTimestamp, maxTimestamp, weekStart, formatShortDate } from './time.js';
+import {
+  formatRelative,
+  minTimestamp,
+  maxTimestamp,
+  weekStart,
+  formatShortDate,
+  formatIsoDate,
+} from './time.js';
 
 const NOW = Date.UTC(2026, 3, 15, 12, 0, 0); // 2026-04-15 12:00 UTC
 
@@ -55,5 +62,19 @@ describe('weekStart', () => {
 describe('formatShortDate', () => {
   it('same year uses Mmm D', () => {
     expect(formatShortDate(Date.UTC(2026, 0, 1), NOW)).toBe('Jan 1');
+  });
+});
+
+describe('formatIsoDate', () => {
+  it('always renders YYYY-MM-DD regardless of year', () => {
+    expect(formatIsoDate(Date.UTC(2026, 0, 1))).toBe('2026-01-01');
+    expect(formatIsoDate(Date.UTC(2023, 6, 18))).toBe('2023-07-18');
+  });
+  it('zero-pads single-digit month + day', () => {
+    expect(formatIsoDate(Date.UTC(2025, 4, 5))).toBe('2025-05-05');
+  });
+  it('returns em-dash for invalid timestamps', () => {
+    expect(formatIsoDate(0)).toBe('—');
+    expect(formatIsoDate(Number.NaN)).toBe('—');
   });
 });
