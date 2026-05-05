@@ -1900,6 +1900,18 @@ export function ChatArchViewer({
   const showDetailOverlay = activeMode === 'detail' && !!selectedSession;
   const baseMode: Mode = mode === 'detail' ? 'command' : mode;
 
+  // v2 spec §§5.1, 5.2, 5.4: PROJECTS / TOPICS / PRACTICE are
+  // self-contained surfaces with their own headers + filter
+  // affordances. The shared SESSIONS chrome (UpperPanel KPI tiles +
+  // sparkline, MidBar label, FilterBar source pills + project chips)
+  // reads from the filtered-session list and is therefore noise on
+  // these surfaces — toggling CLOUD/CLI-DIRECT pills does nothing
+  // because the v2 surfaces don't consume `filteredSorted`. Hide it.
+  // CONSTELLATION / COST keep the chrome since they're roll-ups over
+  // the same filtered session list as SESSIONS.
+  const isV2Surface =
+    baseMode === 'projects' || baseMode === 'topics' || baseMode === 'practice';
+
   const activeManifest = manifest!;
 
   const tierIndicator = (
@@ -2111,6 +2123,8 @@ export function ChatArchViewer({
             }}
           />
           <div className="lcars-content-column">
+            {!isV2Surface && (
+              <>
             <UpperPanel
               manifest={activeManifest}
               filtered={filteredSorted}
@@ -2223,6 +2237,8 @@ export function ChatArchViewer({
               streaming={semanticStatus === 'running'}
               {...(filterFocus ? { filterFocus } : {})}
             />
+              </>
+            )}
             <main
               className="lcars-mode-area"
               aria-label={`${activeMode} mode`}

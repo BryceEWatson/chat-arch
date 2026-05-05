@@ -135,3 +135,32 @@ test.describe('PRACTICE surface (spec §5.4 / D13)', () => {
     ]);
   });
 });
+
+test.describe('Surface chrome gating (regression)', () => {
+  // The shared SESSIONS chrome (UpperPanel KPI tiles + sparkline,
+  // MidBar label, FilterBar source pills + project chips) reads from
+  // the filtered-session list and is therefore noise on the v2
+  // surfaces (PROJECTS, TOPICS, PRACTICE). Toggling its source pills
+  // does nothing on those surfaces because they don't consume
+  // `filteredSorted`. This regression suite asserts the chrome is
+  // ABSENT on the v2 surfaces and PRESENT on SESSIONS.
+  for (const surface of ['PROJECTS', 'TOPICS', 'PRACTICE'] as const) {
+    test(`${surface} hides the SESSIONS chrome (UpperPanel + MidBar + FilterBar)`, async ({
+      page,
+    }) => {
+      await loadDemo(page);
+      await page.locator(`[role="button"][aria-label*="mode ${surface}"]`).click();
+      await expect(page.locator('.lcars-upper-panel')).toHaveCount(0);
+      await expect(page.locator('.lcars-mid-bar')).toHaveCount(0);
+      await expect(page.locator('.lcars-filter-bar')).toHaveCount(0);
+    });
+  }
+
+  test('SESSIONS keeps the chrome present', async ({ page }) => {
+    await loadDemo(page);
+    await page.locator('[role="button"][aria-label*="mode SESSIONS"]').click();
+    await expect(page.locator('.lcars-upper-panel')).toHaveCount(1);
+    await expect(page.locator('.lcars-mid-bar')).toHaveCount(1);
+    await expect(page.locator('.lcars-filter-bar')).toHaveCount(1);
+  });
+});
