@@ -30,6 +30,7 @@ import {
   CostMode,
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
+import { TopicsMode } from './components/modes/TopicsMode.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
@@ -89,6 +90,8 @@ const FALLBACK_BANNER_PX = 320;
 const HASH_SESSION_PREFIX = '#session/';
 const HASH_PROJECTS = '#projects';
 const HASH_PROJECT_PREFIX = '#project/';
+const HASH_TOPICS = '#topics';
+const HASH_TOPIC_PREFIX = '#topic/';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
@@ -136,6 +139,20 @@ function readProjectsHash(): { surface: 'projects' | null; selectedProjectId: st
       : { surface: 'projects', selectedProjectId: null };
   }
   return { surface: null, selectedProjectId: null };
+}
+
+/** Topics counterpart to readProjectsHash — same contract / same pattern. */
+function readTopicsHash(): { surface: 'topics' | null; selectedTopicId: string | null } {
+  if (typeof window === 'undefined') return { surface: null, selectedTopicId: null };
+  const h = window.location.hash;
+  if (h === HASH_TOPICS) return { surface: 'topics', selectedTopicId: null };
+  if (h.startsWith(HASH_TOPIC_PREFIX)) {
+    const id = decodeURIComponent(h.slice(HASH_TOPIC_PREFIX.length));
+    return id.length > 0
+      ? { surface: 'topics', selectedTopicId: id }
+      : { surface: 'topics', selectedTopicId: null };
+  }
+  return { surface: null, selectedTopicId: null };
 }
 
 /**
@@ -191,14 +208,20 @@ export function ChatArchViewer({
 
   // --- UI state ---
   const [mode, setMode] = useState<Mode>(() => {
-    // v2 spec §5.1: prefer the URL hash so deep-link entries land
-    // directly in the right surface. Falls through to SESSIONS
+    // v2 spec §5.1 / §5.2: prefer the URL hash so deep-link entries
+    // land directly in the right surface. Falls through to SESSIONS
     // (`command` mode) when the hash is absent or unrecognized.
     const proj = readProjectsHash();
-    return proj.surface === 'projects' ? 'projects' : 'command';
+    if (proj.surface === 'projects') return 'projects';
+    const top = readTopicsHash();
+    if (top.surface === 'topics') return 'topics';
+    return 'command';
   });
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     () => readProjectsHash().selectedProjectId,
+  );
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(
+    () => readTopicsHash().selectedTopicId,
   );
   const [selectedId, setSelectedId] = useState<string | null>(() => readSessionHash());
   const [rawQuery, setRawQuery] = useState('');
@@ -430,15 +453,21 @@ export function ChatArchViewer({
     const sync = () => {
       const id = readSessionHash();
       const proj = readProjectsHash();
+      const top = readTopicsHash();
       setSelectedId(id);
       setSelectedProjectId(proj.selectedProjectId);
+      setSelectedTopicId(top.selectedTopicId);
       if (id) {
         setMode('detail');
       } else if (proj.surface === 'projects') {
         setMode('projects');
+      } else if (top.surface === 'topics') {
+        setMode('topics');
       } else {
-        // Hash cleared — reset detail/projects modes back to SESSIONS.
-        setMode((prev) => (prev === 'detail' || prev === 'projects' ? 'command' : prev));
+        // Hash cleared — reset surface modes back to SESSIONS.
+        setMode((prev) =>
+          prev === 'detail' || prev === 'projects' || prev === 'topics' ? 'command' : prev,
+        );
       }
     };
     sync();
@@ -1882,6 +1911,7 @@ export function ChatArchViewer({
     constellation: 'ANALYSIS',
     cost: 'COST',
     projects: 'PROJECTS',
+    topics: 'TOPICS',
   };
 
   // Has-data flags drive the "Scan Local" → "Update Local" and
@@ -2047,6 +2077,13 @@ export function ChatArchViewer({
                 setSelectedProjectId(null);
                 if (typeof window !== 'undefined') {
                   window.history.pushState(null, '', HASH_PROJECTS);
+                }
+              }
+              // v2 §5.2: TOPICS surface follows the same hash contract.
+              if (m === 'topics') {
+                setSelectedTopicId(null);
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_TOPICS);
                 }
               }
               setMode(m);
@@ -2231,6 +2268,34 @@ export function ChatArchViewer({
                           }
                         }}
                         onSelectSession={onSelect}
+                      />
+                    ) : baseMode === 'topics' ? (
+                      <TopicsMode
+                        topics={effectiveV2Entities.topics ?? []}
+                        projects={effectiveV2Entities.projects ?? []}
+                        sessions={activeManifest.sessions}
+                        selectedTopicId={selectedTopicId}
+                        onSelectTopic={(id) => {
+                          setSelectedTopicId(id);
+                          if (typeof window !== 'undefined') {
+                            const next = id
+                              ? `${HASH_TOPIC_PREFIX}${encodeURIComponent(id)}`
+                              : HASH_TOPICS;
+                            window.history.pushState(null, '', next);
+                          }
+                        }}
+                        onSelectSession={onSelect}
+                        onSelectProject={(id) => {
+                          setSelectedProjectId(id);
+                          setMode('projects');
+                          if (typeof window !== 'undefined') {
+                            window.history.pushState(
+                              null,
+                              '',
+                              `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`,
+                            );
+                          }
+                        }}
                       />
                     ) : null}
                   </div>

@@ -58,6 +58,7 @@ const NAV: readonly NavGroup[] = [
       // live on projects, so PROJECTS is where users land for insights
       // about how their work is going. SESSIONS is the v1 grid.
       { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
+      { mode: 'topics', label: 'TOPICS', short: 'TOP' },
       { mode: 'command', label: 'SESSIONS', short: 'SES' },
     ],
   },

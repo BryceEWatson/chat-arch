@@ -42,7 +42,9 @@ export type Mode =
   | 'constellation'
   | 'cost'
   /** v2 spec §5.1: PROJECTS surface (index + detail in one mode, driven by hash). */
-  | 'projects';
+  | 'projects'
+  /** v2 spec §5.2: TOPICS surface (index + detail in one mode, driven by hash). */
+  | 'topics';
 
 /** Generic async-fetch state. Used uniformly for manifest + drill-in fetches. */
 export type FetchState<T> =
@@ -110,6 +112,7 @@ export const MODE_COLOR: Record<Mode, string> = {
   constellation: 'var(--lcars-violet)',
   cost: 'var(--lcars-peach)',
   projects: 'var(--lcars-sunflower)',
+  topics: 'var(--lcars-ice)',
 };
 
 /**

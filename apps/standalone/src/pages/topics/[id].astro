@@ -1,0 +1,22 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { ChatArchViewer } from '@chat-arch/viewer';
+import '@chat-arch/viewer/style.css';
+
+export const prerender = false;
+
+const id = Astro.params.id ?? '';
+---
+<BaseLayout title={`Chat Archaeologist — Topic ${id}`}>
+  <script is:inline define:vars={{ id }}>
+    if (typeof window !== 'undefined') {
+      const target = '#topic/' + encodeURIComponent(id);
+      if (window.location.hash !== target) {
+        window.history.replaceState(null, '', window.location.pathname + target);
+      }
+    }
+  </script>
+  <main>
+    <ChatArchViewer client:load />
+  </main>
+</BaseLayout>
