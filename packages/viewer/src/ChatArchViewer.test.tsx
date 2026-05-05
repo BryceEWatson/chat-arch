@@ -301,9 +301,15 @@ describe('ChatArchViewer', () => {
     // Fetched manifest loads first.
     expect(screen.getByText('Apple pie recipe')).toBeDefined();
 
-    // Simulate upload via the compact UploadPanel inside UpperPanel.
-    const container = document.body;
-    const fileInput = container.querySelector('input[type=file]') as HTMLInputElement;
+    // v2 spec §6 / D4: uploads are reached through the DATA sidebar
+    // panel — open it first, then drive the hidden file input that
+    // backs the UPLOAD CLOUD button inside the panel.
+    fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
+    const fileInput = (await waitFor(() => {
+      const el = document.body.querySelector('input[type=file]') as HTMLInputElement | null;
+      if (!el) throw new Error('file input not yet mounted');
+      return el;
+    })) as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [uploadFixtureFile()] } });
 
     await waitFor(() => expect(screen.getByText('Uploaded Alpha')).toBeDefined());

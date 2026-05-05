@@ -16,7 +16,7 @@ describe('Sidebar (vertical variant, default)', () => {
     expect(screen.queryByRole('button', { name: /mode DETAIL/i })).toBeNull();
   });
 
-  it('groups the nav into BROWSE and INSIGHTS sections', () => {
+  it('groups the nav into BROWSE and INSIGHTS sections (no DATA without onOpenDataPanel)', () => {
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
     const labels = container.querySelectorAll('.lcars-sidebar__group-label');
     expect(Array.from(labels).map((el) => el.textContent)).toEqual(['BROWSE', 'INSIGHTS']);
@@ -61,6 +61,54 @@ describe('Sidebar (vertical variant, default)', () => {
   });
 });
 
+describe('Sidebar — DATA panel trigger (v2 spec §6 / D4)', () => {
+  it('renders the DATA item under an ACTIONS group when onOpenDataPanel is provided', () => {
+    const { container } = render(
+      <Sidebar mode="command" onSelectMode={() => {}} onOpenDataPanel={() => {}} />,
+    );
+    const labels = container.querySelectorAll('.lcars-sidebar__group-label');
+    expect(Array.from(labels).map((el) => el.textContent)).toEqual([
+      'BROWSE',
+      'INSIGHTS',
+      'ACTIONS',
+    ]);
+    expect(screen.getByRole('button', { name: /open DATA panel/i })).toBeDefined();
+  });
+
+  it('invokes onOpenDataPanel on click', () => {
+    const onOpenDataPanel = vi.fn();
+    render(
+      <Sidebar mode="command" onSelectMode={() => {}} onOpenDataPanel={onOpenDataPanel} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
+    expect(onOpenDataPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('reflects open state via aria-pressed', () => {
+    const { rerender } = render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        onOpenDataPanel={() => {}}
+        dataPanelOpen={false}
+      />,
+    );
+    let btn = screen.getByRole('button', { name: /open DATA panel/i });
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    rerender(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        onOpenDataPanel={() => {}}
+        dataPanelOpen={true}
+      />,
+    );
+    btn = screen.getByRole('button', { name: /open DATA panel/i });
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    expect(btn.className).toContain('lcars-sidebar__item--active');
+  });
+});
+
 describe('Sidebar (horizontal variant)', () => {
   it('renders a pill bar without chrome frame, DETAIL dropped', () => {
     const { container } = render(
@@ -80,6 +128,28 @@ describe('Sidebar (horizontal variant)', () => {
     expect(pillShorts.length).toBe(4);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
     expect(texts).toEqual(['CMD', 'TIM', 'ANL', 'CST']);
+  });
+
+  it('appends a DAT pill when onOpenDataPanel is provided', () => {
+    const onOpenDataPanel = vi.fn();
+    const { container } = render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        onOpenDataPanel={onOpenDataPanel}
+        variant="horizontal"
+      />,
+    );
+    const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
+    expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'CMD',
+      'TIM',
+      'ANL',
+      'CST',
+      'DAT',
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
+    expect(onOpenDataPanel).toHaveBeenCalledTimes(1);
   });
 
   it('marks the active pill', () => {

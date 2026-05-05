@@ -5614,3 +5614,183 @@
   align-self: center;
   max-width: 640px;
 }
+
+/* ---------------------------------------------------------------- *
+ * v2 Phase 4 chrome — TopBar informational chips + DATA panel       *
+ *   - .lcars-top-bar__tier-slot wraps the TierIndicator + sibling   *
+ *     so they render as a single inline cluster between the title   *
+ *     and the location chip.                                         *
+ *   - .lcars-top-bar__location is the current-surface chip          *
+ *     (PROJECTS / SESSIONS / ANALYSIS / etc.) per spec §6.          *
+ *   - .lcars-top-bar__earthdate is the EARTHDATE chip.              *
+ *   - .lcars-data-panel is the slide-in sheet hosting UPLOAD CLOUD, *
+ *     SCAN LOCAL, and DELETE actions per decision D4.               *
+ * ---------------------------------------------------------------- */
+
+.lcars-top-bar__tier-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.lcars-top-bar__location,
+.lcars-top-bar__earthdate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1.5px solid rgba(0, 0, 0, 0.5);
+  color: var(--lcars-bg);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+.lcars-top-bar__location-prefix {
+  color: var(--lcars-sunflower);
+  font-size: 12px;
+  line-height: 1;
+}
+.lcars-top-bar__location-label,
+.lcars-top-bar__earthdate-value {
+  padding-bottom: 2px;
+  line-height: 1;
+}
+.lcars-top-bar__earthdate-label {
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  padding-bottom: 2px;
+}
+@media (max-width: 899px) {
+  /* Mirror the source-btn mobile inversion — dark title bar needs
+     light-on-dark chips. */
+  .lcars-top-bar__location,
+  .lcars-top-bar__earthdate {
+    background: rgba(255, 204, 153, 0.12);
+    border-color: var(--lcars-butterscotch);
+    color: var(--lcars-butterscotch);
+  }
+  .lcars-top-bar__earthdate-label {
+    color: color-mix(in srgb, var(--lcars-butterscotch) 65%, transparent);
+  }
+}
+
+/* DATA sidebar item — distinct accent (peach) so it visually
+   separates from the BROWSE / INSIGHTS surface modes. The
+   --mode-color CSS variable is set inline by Sidebar.tsx. */
+.lcars-sidebar__group--actions {
+  margin-top: 6px;
+}
+.lcars-sidebar__item--data {
+  /* Inherit base item layout; just nudge the accent to make the
+     trigger feel action-y rather than nav-y. */
+  border-top: 1px solid color-mix(in srgb, var(--lcars-peach) 30%, transparent);
+}
+.lcars-sidebar__pill--data {
+  /* Horizontal-variant pill: same accent system, no extra layout. */
+}
+
+/* DATA panel — slide-in sheet anchored to the left edge so it sits
+   adjacent to the sidebar trigger that opened it. Width matches the
+   ActivityLogPanel for visual consistency. */
+.lcars-data-panel__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 49;
+}
+.lcars-data-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: min(440px, 100vw);
+  height: 100vh;
+  background: var(--lcars-bg-0, #000);
+  border-right: 1px solid var(--lcars-divider, #333);
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+  overflow-y: auto;
+}
+.lcars-data-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--lcars-divider);
+  background: color-mix(in srgb, var(--lcars-peach) 10%, transparent);
+  flex-shrink: 0;
+}
+.lcars-data-panel__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--lcars-peach);
+  margin: 0;
+}
+.lcars-data-panel__close {
+  background: transparent;
+  color: var(--lcars-ice);
+  border: 1px solid var(--lcars-ice);
+  border-radius: 4px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  padding: 2px 7px;
+  cursor: pointer;
+  line-height: 1;
+}
+.lcars-data-panel__close:hover {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+}
+.lcars-data-panel__lead {
+  margin: 12px 14px 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
+}
+.lcars-data-panel__section {
+  padding: 12px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--lcars-divider) 60%, transparent);
+}
+.lcars-data-panel__section-title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  color: var(--lcars-butterscotch);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+.lcars-data-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* DataPanel reuses the existing source-btn / source-group classes so
+   button label / status colors stay consistent with the prior TopBar
+   placement. The host bg (panel) is dark, so kick the chip palette
+   to the same mobile-inversion treatment used below 900px. */
+.lcars-data-panel .lcars-top-bar__source-btn {
+  background: rgba(255, 204, 153, 0.12);
+  border-color: var(--lcars-butterscotch);
+  color: var(--lcars-butterscotch);
+}
+.lcars-data-panel .lcars-top-bar__source-btn:hover,
+.lcars-data-panel .lcars-top-bar__source-btn:focus-visible {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+}

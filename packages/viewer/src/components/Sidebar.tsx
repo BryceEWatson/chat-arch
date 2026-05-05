@@ -10,6 +10,15 @@ export interface SidebarProps {
   mode: Mode;
   onSelectMode: (m: Mode) => void;
   /**
+   * v2 spec §6 / decision D4: an additional sidebar item that opens the
+   * DATA panel (UPLOAD CLOUD / SCAN LOCAL / DELETE ALL). Optional so
+   * tests and embeddings without a host data layer can still render the
+   * sidebar in isolation.
+   */
+  onOpenDataPanel?: () => void;
+  /** True when the data panel is currently open — flips the DATA item's aria-pressed. */
+  dataPanelOpen?: boolean;
+  /**
    * `vertical` (default) — the full-desktop / tablet double-elbow sidebar.
    * `horizontal` — Tier C mobile layout: a scrollable pill bar that takes
    * over the sidebar role below 600px.
@@ -55,7 +64,21 @@ const NAV: readonly NavGroup[] = [
 
 const ALL_ITEMS: readonly NavItem[] = NAV.flatMap((g) => g.items);
 
-export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarProps) {
+// DATA item is rendered separately from the mode-driven nav: it's a
+// panel trigger, not a content surface, so it doesn't slot into the
+// `Mode` enum or the BROWSE/INSIGHTS groupings. The accent borrows the
+// destructive peach used by the existing data-source chip cluster.
+const DATA_ITEM_LABEL = 'DATA';
+const DATA_ITEM_SHORT = 'DAT';
+const DATA_ITEM_COLOR = 'var(--lcars-peach)';
+
+export function Sidebar({
+  mode,
+  onSelectMode,
+  onOpenDataPanel,
+  dataPanelOpen = false,
+  variant = 'vertical',
+}: SidebarProps) {
   if (variant === 'horizontal') {
     return (
       <nav className="lcars-sidebar lcars-sidebar--horizontal" aria-label="primary">
@@ -82,6 +105,22 @@ export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarPro
               </li>
             );
           })}
+          {onOpenDataPanel && (
+            <li>
+              <div
+                className={`lcars-sidebar__pill lcars-sidebar__pill--data${dataPanelOpen ? ' lcars-sidebar__pill--active' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={dataPanelOpen}
+                aria-label="open DATA panel"
+                style={{ ['--mode-color' as string]: DATA_ITEM_COLOR } as React.CSSProperties}
+                onClick={onOpenDataPanel}
+                onKeyDown={(e) => onActivate(e, onOpenDataPanel)}
+              >
+                <span className="lcars-sidebar__pill-short">{DATA_ITEM_SHORT}</span>
+              </div>
+            </li>
+          )}
         </ul>
         {/*
           Mobile also needs a way to reach the repo. Without this the
@@ -145,6 +184,32 @@ export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarPro
           </ul>
         </div>
       ))}
+      {onOpenDataPanel && (
+        <div className="lcars-sidebar__group lcars-sidebar__group--actions">
+          <div className="lcars-sidebar__group-label" aria-hidden="true">
+            ACTIONS
+          </div>
+          <ul className="lcars-sidebar__list">
+            <li>
+              <div
+                className={`lcars-sidebar__item lcars-sidebar__item--data${dataPanelOpen ? ' lcars-sidebar__item--active' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={dataPanelOpen}
+                aria-label="open DATA panel"
+                style={{ ['--mode-color' as string]: DATA_ITEM_COLOR } as React.CSSProperties}
+                onClick={onOpenDataPanel}
+                onKeyDown={(e) => onActivate(e, onOpenDataPanel)}
+              >
+                <span className="lcars-sidebar__item-short" aria-hidden="true">
+                  {DATA_ITEM_SHORT}
+                </span>
+                <span className="lcars-sidebar__item-label">{DATA_ITEM_LABEL}</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      )}
       {/*
         Footer: SOURCE ↗ chip linking to the open-source repo. Lives
         between the last nav group and the bottom elbow so the elbow

@@ -13,6 +13,7 @@ import { TopBar } from './components/TopBar.js';
 import { ActivityLogPanel } from './components/ActivityLogPanel.js';
 import { useActivityLog } from './data/activityLog.js';
 import { Sidebar } from './components/Sidebar.js';
+import { DataPanel } from './components/DataPanel.js';
 import { UpperPanel } from './components/UpperPanel.js';
 import { MidBar } from './components/MidBar.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -216,11 +217,15 @@ export function ChatArchViewer({
   // Session-scoped, in-memory ring buffer of user-visible actions +
   // process milestones. Surfaces what the system is doing without
   // forcing the user to open DevTools. Closed by default — the user
-  // opens it on demand via the LOG chip in the TopBar. Entries still
-  // accumulate in the background so the log is populated whenever the
-  // user decides to look.
+  // opens it on demand via the always-visible ACTIVITY LOG edge tab.
+  // Entries still accumulate in the background so the log is populated
+  // whenever the user decides to look.
   const { entries: logEntries, log, clear: clearLog } = useActivityLog();
   const [activityLogOpen, setActivityLogOpen] = useState<boolean>(false);
+  // v2 spec §6 / D4: data-source actions live in a sidebar-triggered
+  // DATA panel, not the TopBar. Open state is hoisted here so the
+  // sidebar's DATA item and the panel itself share the toggle.
+  const [dataPanelOpen, setDataPanelOpen] = useState<boolean>(false);
   // Log mount once — gives the user a "system online" anchor so an
   // empty log during early interactions doesn't look broken. The ref
   // guard prevents StrictMode's intentional double-invoke from
@@ -1728,22 +1733,11 @@ export function ChatArchViewer({
             onQueryChange={() => {}}
             tier={tier}
             disabled
-            // SCAN LOCAL + UPLOAD CLOUD remain the primary actions out of
-            // this state, so the top bar stays visible with both buttons
-            // wired to the same handlers as the populated flow.
-            onRescan={onRescan}
-            rescanStatus={rescanCtl.status}
-            rescanProgress={rescanCtl.progress}
-            scanAvailable={rescanCtl.available}
-            hasLocalData={false}
-            {...(rescanToast ? { rescanHint: rescanToast } : {})}
-            onCloudUpload={onCloudUpload}
-            uploadStatus={uploadStatus}
-            hasCloudData={false}
-            {...(uploadHint ? { uploadHint } : {})}
-            deleteAvailable={false}
-            onDeleteUnload={onUnload}
-            deleteCounts={{ cloud: 0, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 }}
+            // v2 spec §6 / D4: data-source actions (UPLOAD CLOUD,
+            // SCAN LOCAL, DELETE) live in the DATA panel triggered
+            // from the empty-state UploadPanel below — the TopBar
+            // stays informational even on the no-data landing.
+            locationLabel="WELCOME"
           />
           <main className="lcars-empty-main">
             <TrustStrip />
@@ -1773,6 +1767,19 @@ export function ChatArchViewer({
       tierFiles={analysisState.tierFiles}
     />
   );
+
+  // v2 spec §6: location chip in the TopBar mirrors the active surface.
+  // Mode → label mapping is intentionally local to the chrome — the
+  // mode ids (`constellation`, `cost`) carry historical names that
+  // don't match the user-facing surface labels (ANALYSIS, COST). This
+  // is the same naming that `Sidebar` uses, kept in sync by hand.
+  const LOCATION_LABEL: Record<Mode, string> = {
+    command: 'COMMAND',
+    timeline: 'TIMELINE',
+    detail: 'DETAIL',
+    constellation: 'ANALYSIS',
+    cost: 'COST',
+  };
 
   // Has-data flags drive the "Scan Local" → "Update Local" and
   // "Upload Cloud" → "Update Cloud" label swaps. Computed from the
@@ -1906,45 +1913,15 @@ export function ChatArchViewer({
           onQueryChange={setRawQuery}
           tier={tier}
           disabled={showDetailOverlay}
-          // Scan Local: always render the button so web-only users
-          // see *why* it's disabled. The button itself reads
-          // `scanAvailable` to decide whether to fire.
-          onRescan={onRescan}
-          rescanStatus={rescanCtl.status}
-          rescanProgress={rescanCtl.progress}
-          scanAvailable={rescanCtl.available}
-          hasLocalData={hasLocalData}
-          {...(rescanToast ? { rescanHint: rescanToast } : {})}
-          // Upload Cloud: always available (pure in-browser parse).
-          onCloudUpload={onCloudUpload}
-          uploadStatus={uploadStatus}
-          hasCloudData={hasCloudData}
-          {...(uploadHint ? { uploadHint } : {})}
-          deleteAvailable={rescanCtl.available}
-          onDeleteUnload={onUnload}
-          deleteCounts={{
-            cloud: manifestCounts?.cloud ?? 0,
-            cowork: manifestCounts?.cowork ?? 0,
-            'cli-direct': manifestCounts?.['cli-direct'] ?? 0,
-            'cli-desktop': manifestCounts?.['cli-desktop'] ?? 0,
-          }}
-          rightSlot={
-            <button
-              type="button"
-              className={`lcars-activity-log-toggle${activityLogOpen ? ' lcars-activity-log-toggle--open' : ''}`}
-              aria-pressed={activityLogOpen}
-              aria-label={activityLogOpen ? 'close activity log' : 'open activity log'}
-              title={activityLogOpen ? 'Close activity log (Esc)' : 'Open activity log — see what the system is doing'}
-              onClick={() => setActivityLogOpen((v) => !v)}
-            >
-              LOG
-            </button>
-          }
+          tierIndicator={tierIndicator}
+          locationLabel={LOCATION_LABEL[activeMode]}
         />
         <div className="lcars-body">
           <Sidebar
             mode={activeMode}
             variant={sidebarVariant}
+            onOpenDataPanel={() => setDataPanelOpen(true)}
+            dataPanelOpen={dataPanelOpen}
             onSelectMode={(m) => {
               if (m !== 'detail') {
                 clearHash();
@@ -2120,6 +2097,28 @@ export function ChatArchViewer({
         onOpen={() => setActivityLogOpen(true)}
         onClose={() => setActivityLogOpen(false)}
         onClear={clearLog}
+      />
+      <DataPanel
+        isOpen={dataPanelOpen}
+        onClose={() => setDataPanelOpen(false)}
+        onCloudUpload={onCloudUpload}
+        uploadStatus={uploadStatus}
+        hasCloudData={hasCloudData}
+        {...(uploadHint ? { uploadHint } : {})}
+        onRescan={onRescan}
+        rescanStatus={rescanCtl.status}
+        rescanProgress={rescanCtl.progress}
+        scanAvailable={rescanCtl.available}
+        hasLocalData={hasLocalData}
+        {...(rescanToast ? { rescanHint: rescanToast } : {})}
+        deleteAvailable={rescanCtl.available}
+        onDeleteUnload={onUnload}
+        deleteCounts={{
+          cloud: manifestCounts?.cloud ?? 0,
+          cowork: manifestCounts?.cowork ?? 0,
+          'cli-direct': manifestCounts?.['cli-direct'] ?? 0,
+          'cli-desktop': manifestCounts?.['cli-desktop'] ?? 0,
+        }}
       />
     </div>
   );
