@@ -3404,15 +3404,28 @@
   background: var(--lcars-butterscotch-muted);
   color: var(--lcars-text);
 }
+/* Disclosure pill that toggles the row's hidden tail in-place. v2-
+   visual-polish #4: previously dashed at 0.7 opacity, which read as
+   "informational / disabled" rather than "interactive". Now solid
+   border with full opacity so the affordance reads unambiguously
+   as a clickable disclosure — a 2px sunflower glow on hover/focus
+   confirms the click target. The chevron in the label
+   (`SHOW N MORE ▾` / `COLLAPSE ▴`) carries the disclosure-state
+   semantics for reduced-motion / non-pointer users. */
 .lcars-project-pill--rest {
   cursor: pointer;
-  border-style: dashed;
-  opacity: 0.7;
+  border-style: solid;
+  opacity: 1;
+  background: color-mix(in srgb, var(--lcars-butterscotch) 14%, transparent);
 }
 .lcars-project-pill--rest:hover,
 .lcars-project-pill--rest:focus-visible {
-  opacity: 1;
-  border-style: solid;
+  background: color-mix(in srgb, var(--lcars-butterscotch) 22%, transparent);
+  box-shadow: 0 0 0 2px var(--lcars-sunflower);
+  outline: none;
+}
+.lcars-project-pill--rest[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 22%, transparent);
 }
 
 /*

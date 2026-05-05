@@ -358,7 +358,9 @@ export function FilterBar({
             onClick={() => setProjectsExpanded((v) => !v)}
             onKeyDown={(e) => onActivate(e, () => setProjectsExpanded((v) => !v))}
           >
-            {projectsExpanded ? `− collapse` : `+${filterPills.projects.rest.length} more`}
+            {projectsExpanded
+              ? `COLLAPSE ▴`
+              : `SHOW ${filterPills.projects.rest.length} MORE ▾`}
           </span>
         )}
       </div>
@@ -428,7 +430,9 @@ export function FilterBar({
               onClick={() => setTopicsExpanded((v) => !v)}
               onKeyDown={(e) => onActivate(e, () => setTopicsExpanded((v) => !v))}
             >
-              {topicsExpanded ? `− collapse` : `+${filterPills.topics.rest.length} more`}
+              {topicsExpanded
+                ? `COLLAPSE ▴`
+                : `SHOW ${filterPills.topics.rest.length} MORE ▾`}
             </span>
           )}
         </div>

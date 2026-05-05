@@ -136,6 +136,41 @@ test.describe('PRACTICE surface (spec §5.4 / D13)', () => {
   });
 });
 
+test.describe('FilterBar disclosure (v2-visual-polish)', () => {
+  // The `+N more` pill on the projects row was perceived as static
+  // because of dashed borders + 0.7 opacity. The fix swapped those
+  // for a solid, full-opacity treatment with a chevron in the label
+  // and asserts the click handler still reveals the hidden tail —
+  // i.e. when expanded, the row's project-pill count grows by
+  // exactly the disclosed `rest.length`.
+  test('clicking SHOW N MORE expands the projects row in-place', async ({ page }) => {
+    await loadDemo(page);
+    await page.locator('[role="button"][aria-label*="mode SESSIONS"]').click();
+    const projectsRow = page.locator('.lcars-filter-bar__pills--project').first();
+    await expect(projectsRow).toBeVisible();
+    const restPill = projectsRow.locator('.lcars-project-pill--rest');
+    if ((await restPill.count()) === 0) {
+      // Demo manifest may have ≤ 8 projects so no rest tail is shown;
+      // the affordance only renders when there's something to disclose.
+      test.skip(true, 'Demo manifest has no rest tail — disclosure not exercised.');
+      return;
+    }
+    await expect(restPill).toHaveAttribute('aria-expanded', 'false');
+    const collapsedCount = await projectsRow
+      .locator('.lcars-project-pill:not(.lcars-project-pill--rest):not(.lcars-project-pill--unknown)')
+      .count();
+    const labelText = (await restPill.textContent()) ?? '';
+    const more = Number((labelText.match(/SHOW (\d+) MORE/) ?? [])[1] ?? '0');
+    expect(more).toBeGreaterThan(0);
+    await restPill.click();
+    await expect(restPill).toHaveAttribute('aria-expanded', 'true');
+    const expandedCount = await projectsRow
+      .locator('.lcars-project-pill:not(.lcars-project-pill--rest):not(.lcars-project-pill--unknown)')
+      .count();
+    expect(expandedCount).toBe(collapsedCount + more);
+  });
+});
+
 test.describe('TopBar single-row invariant (v2-visual-polish)', () => {
   // The TopBar must fit on a single row at desktop widths. Two prior
   // sources of wrap have been removed:
