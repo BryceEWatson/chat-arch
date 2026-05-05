@@ -128,7 +128,7 @@ describe('processDesktopCliManifest', () => {
     expect(typeof first?.entry.sourceMtimeMs).toBe('number');
 
     // Seed a "previous" cache and re-process.
-    const prev = new Map<string, (typeof first)['entry']>();
+    const prev = new Map<string, NonNullable<typeof first>['entry']>();
     if (first) prev.set(`cli-desktop:${first.entry.id}`, first.entry);
     const second = await processDesktopCliManifest(fixture, outDir, prev as never);
     expect(second?.reused).toBe(true);

@@ -73,7 +73,7 @@ maybeDescribe('LIVE all integration — runs only with CHAT_ARCH_LIVE=1', () => 
 
     // Viewer-fetchable — parseable from disk.
     const disk = JSON.parse(await readFile(manifestAbs, 'utf8')) as SessionManifest;
-    expect(disk.schemaVersion).toBe(1);
+    expect(disk.schemaVersion).toBe(3);
     expect(disk.sessions).toHaveLength(merged.sessions.length);
     expect(disk.counts).toEqual(merged.counts);
   }, 90_000);

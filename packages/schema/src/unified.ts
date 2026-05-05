@@ -158,8 +158,30 @@ export interface UnifiedSessionEntry {
    * Only populated for cloud-source sessions (emergent clustering is
    * cloud-only today — the classifier runs on the uploaded ZIP). CLI
    * sources never get a topic assignment.
+   *
+   * v2 (schemaVersion 3): treated as a derived display value. The
+   * authoritative reference is `topicIds[]` (foreign keys into
+   * `analysis/topics.json`). v1/v2 manifests without `topicIds` still
+   * render via this string.
    */
   topic?: string;
+
+  /**
+   * v2 foreign key: stable id of the discovered project this session
+   * belongs to. Resolves against `analysis/projects.json`. When absent
+   * on a v3 manifest, the session is conceptually unassigned —
+   * consumers MAY treat as `UNASSIGNED_PROJECT_ID`. Older manifests
+   * (schemaVersion <= 2) never carry this field; consumers fall back
+   * to the flat `project` string.
+   */
+  projectId?: string;
+
+  /**
+   * v2 foreign keys: stable ids of topics the session is tagged with.
+   * Resolves against `analysis/topics.json`. Absent on v1/v2 manifests
+   * — consumers fall back to the flat `topic` string.
+   */
+  topicIds?: readonly string[];
 
   // ---- Economics ----
 
@@ -274,17 +296,35 @@ export interface UnifiedSessionEntry {
 }
 
 export interface SessionManifest {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   generatedAt: number;
   counts: Readonly<Record<SessionSource, number>>;
   sessions: readonly UnifiedSessionEntry[];
+  /**
+   * v3-only: paths (relative to manifest dir) of the analysis sidecars
+   * the exporter produced this run. Optional so v1/v2 manifests still
+   * satisfy the type. Consumers branch on presence.
+   */
+  analysisSidecars?: {
+    projects?: string;
+    topics?: string;
+    narratives?: string;
+    patterns?: string;
+    practice?: string;
+  };
 }
 
 export const UNTITLED_SESSION = 'Untitled session';
 
 /**
- * Current manifest schema version. Phase 6 bumps to 2 (adds cost-estimate
- * fields on every entry). The viewer tolerates v1 manifests by treating the
- * new fields as absent. Future schema changes bump this constant.
+ * Current manifest schema version.
+ *  - 1: pre-cost-estimate.
+ *  - 2: cost-estimate fields on every entry.
+ *  - 3: v2 entity layer — adds `projectId` / `topicIds` foreign keys on
+ *       sessions and the `analysisSidecars` map on the manifest. Sidecars
+ *       (`analysis/projects.json`, `topics.json`, `narratives.json`,
+ *       `patterns.json`, `practice.json`) carry the entities themselves.
+ *       Consumers MUST tolerate v1/v2 manifests by treating new fields as
+ *       absent (back-compat AC).
  */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;

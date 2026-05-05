@@ -2,3 +2,8 @@ export * from './unified.js';
 export * from './cowork.js';
 export * from './cli.js';
 export * from './cloud.js';
+export * from './sentiment.js';
+export * from './project.js';
+export * from './topic.js';
+export * from './narrative.js';
+export * from './pattern.js';
