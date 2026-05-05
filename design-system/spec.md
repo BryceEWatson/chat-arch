@@ -60,14 +60,20 @@ components, not globally:
 
 The layout is mobile-first and progressively enhances through three
 tiers via `min-width` breakpoints at 600px (tablet) and 900px
-(desktop). The desktop tier composes a 2×2 grid where the sidebar
-owns a vertical butterscotch arm, the top-bar owns a horizontal
-butterscotch arm, and they meet at a square inner corner with rounded
-outer corners — the LCARS "L" at rest
-([styles.css:432](../packages/viewer/src/styles.css#L432)). Below 320px
-the consumer renders a dignified fallback banner
-(`.lcars-root--narrow`,
+(desktop). Below 320px the consumer renders a dignified fallback
+banner (`.lcars-root--narrow`,
 [styles.css:106](../packages/viewer/src/styles.css#L106)).
+
+**v2 chrome geometry (May 2026).** The chrome is a **single L-shape**
+rendered as one inline SVG with a quarter-circle CONCAVE inner-radius
+elbow ([Elbow.tsx](../packages/viewer/src/components/Elbow.tsx)). The
+v1 implementation — two rectangular blocks (`__elbow--top` and
+`__elbow--bottom`) butted at a square inner corner — is retired. The
+v2 frame is **left-edge-only**: no top arm spans the page, no four-
+sided wrapper. The L sits at the top of the sidebar; the rest of the
+sidebar's left edge is bare. This is the structural change between
+v1 and v2; palette, typography, and component vocabulary are
+preserved.
 
 ## 3. Palette with semantic roles
 
@@ -328,8 +334,9 @@ honor `prefers-reduced-motion: reduce` on any non-trivial animation.
   JetBrains Mono is the triad. Adding a display serif or a geometric
   sans breaks the voice.
 - **Don't soften the asymmetric radii** into four-corner-equal
-  corners. The L-corner elbow (`32px 0 0 0` / `0 0 0 32px`) and the
-  half-pill (`0 14px 14px 0`) are the signature shapes.
+  corners. The single-L chrome (one element, concave quarter-arc
+  inner corner — see §2 v2 geometry note below) and the half-pill
+  (`0 14px 14px 0`) are the signature shapes.
 - **Don't use `#665544` (dim) for body text.** It fails AA. It is
   for inert glyphs only.
 - **Don't put butterscotch on bg for long paragraphs.** Butterscotch

@@ -2,6 +2,7 @@ import type { Mode } from '../types.js';
 import { MODE_COLOR } from '../types.js';
 import { onActivate } from '../util/a11y.js';
 import { RepoLink } from './RepoLink.js';
+import { Elbow } from './Elbow.js';
 
 export type SidebarVariant = 'vertical' | 'horizontal';
 
@@ -99,7 +100,13 @@ export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarPro
 
   return (
     <nav className="lcars-sidebar" aria-label="primary">
-      <div className="lcars-sidebar__elbow lcars-sidebar__elbow--top" aria-hidden="true" />
+      {/*
+        v2 chrome (spec §10): a single L-shape rendered as one inline SVG.
+        Replaces the v1 two-rectangle elbow pair (--top + --bottom). Only
+        the top-of-sidebar L is drawn; v2 explicitly drops the bottom-elbow
+        — left-edge-only frame, no four-sided wrapper.
+      */}
+      <Elbow className="lcars-sidebar__l-frame" />
       {NAV.map((g) => (
         <div key={g.group} className="lcars-sidebar__group">
           <div className="lcars-sidebar__group-label" aria-hidden="true">
@@ -148,7 +155,6 @@ export function Sidebar({ mode, onSelectMode, variant = 'vertical' }: SidebarPro
       <div className="lcars-sidebar__footer">
         <RepoLink variant="chip" />
       </div>
-      <div className="lcars-sidebar__elbow lcars-sidebar__elbow--bottom" aria-hidden="true" />
     </nav>
   );
 }

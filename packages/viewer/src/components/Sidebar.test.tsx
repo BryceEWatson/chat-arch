@@ -52,19 +52,23 @@ describe('Sidebar (vertical variant, default)', () => {
     expect(onSelectMode).toHaveBeenCalledWith('cost');
   });
 
-  it('renders the double-elbow chrome divs', () => {
+  it('renders the v2 single-L chrome (one element, not two)', () => {
+    // Spec §10: single L-shape, left-edge-only frame. The v1 two-rectangle
+    // pair (`__elbow--top` + `__elbow--bottom`) is retired.
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
-    expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(2);
+    expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
+    expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(1);
   });
 });
 
 describe('Sidebar (horizontal variant)', () => {
-  it('renders a pill bar without elbows, DETAIL dropped', () => {
+  it('renders a pill bar without chrome frame, DETAIL dropped', () => {
     const { container } = render(
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
+    expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(0);
     expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(4);
   });
 
