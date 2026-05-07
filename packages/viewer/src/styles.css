@@ -1027,16 +1027,19 @@
   position: relative;
   min-height: 0;
 }
-/* v2 corner-chip chrome (spec §10, AMENDED 2026-05-06 — see
-   _planning/v2-decisions-amend.md). Replaces the v1
-   .lcars-sidebar__elbow pair with a single inline SVG that renders
-   only the top-left L-bend (stub + concave quarter-arc + short
-   tail). NO continuing vertical rail down the sidebar's left edge —
-   pills float in a transparent sidebar column anchored only by the
-   chip at top. */
-.lcars-sidebar__l-frame {
-  display: block;
-  margin-bottom: 4px;
+/* Top elbow — canonical design-system shape: butterscotch rectangle
+   with ONE rounded outer corner (top-left). Sized per the elbow
+   radius tokens — 32px mobile, 36px tablet, 40px desktop — and tall
+   enough to read as a chrome cap above the nav. Spec §10 retires the
+   matching bottom elbow; v2 frame is left-edge-only. */
+.lcars-sidebar__elbow {
+  width: 100%;
+  height: 32px;
+  background: var(--lcars-butterscotch);
+  flex-shrink: 0;
+}
+.lcars-sidebar__elbow--top {
+  border-radius: 32px 0 0 0;
 }
 /* Footer hosts the SOURCE ↗ chip.
  *
@@ -1148,6 +1151,12 @@
 }
 
 @media (min-width: 600px) {
+  .lcars-sidebar__elbow {
+    height: 36px;
+  }
+  .lcars-sidebar__elbow--top {
+    border-radius: 36px 0 0 0;
+  }
   .lcars-sidebar__item {
     justify-content: center;
     padding: 10px 4px;
@@ -1159,14 +1168,20 @@
 }
 
 @media (min-width: 900px) {
-  /* At desktop the sidebar itself is transparent. The single-L chrome
-     anchors the top-left corner of the layout — the mode-button tabs
-     remain the only other visible chrome on the left. v2 (spec §10)
-     drops the bottom elbow entirely: left-edge-only frame. */
+  /* At desktop the sidebar itself is transparent. The top elbow is
+     the only persistent chrome on the column; the mode-button tabs
+     do the rest. v2 (spec §10) drops the bottom elbow entirely:
+     left-edge-only frame. */
   .lcars-sidebar {
     background: transparent;
     border-radius: 0;
     overflow: visible;
+  }
+  .lcars-sidebar__elbow {
+    height: 40px;
+  }
+  .lcars-sidebar__elbow--top {
+    border-radius: 40px 0 0 0;
   }
   .lcars-sidebar__item {
     gap: 10px;

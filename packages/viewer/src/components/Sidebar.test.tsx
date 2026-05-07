@@ -56,12 +56,17 @@ describe('Sidebar (vertical variant, default)', () => {
     expect(onSelectMode).toHaveBeenCalledWith('cost');
   });
 
-  it('renders the v2 single-L chrome (one element, not two)', () => {
-    // Spec §10: single L-shape, left-edge-only frame. The v1 two-rectangle
-    // pair (`__elbow--top` + `__elbow--bottom`) is retired.
+  it('renders only the top elbow (left-edge-only frame, no bottom elbow)', () => {
+    // Spec §10 (amended 2026-05-07): the canonical design-system shape
+    // is the asymmetric one-corner-rounded rectangle (radius.elbow-lg);
+    // v2 keeps only the top elbow — bottom elbow is retired so the
+    // sidebar's lower edge stays bare. The earlier single-SVG concave-
+    // arc Elbow component diverged from the design system and has been
+    // removed.
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
-    expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
-    expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(1);
+    expect(container.querySelectorAll('.lcars-sidebar__elbow--top').length).toBe(1);
+    expect(container.querySelectorAll('.lcars-sidebar__elbow--bottom').length).toBe(0);
+    expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(0);
   });
 });
 
@@ -120,7 +125,6 @@ describe('Sidebar (horizontal variant)', () => {
     );
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
-    expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(0);
     // 6 mode pills now: PRJ, TOP, SES, PRC, ANL, CST.
     expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
   });

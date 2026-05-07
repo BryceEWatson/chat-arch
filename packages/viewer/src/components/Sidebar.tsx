@@ -2,7 +2,6 @@ import type { Mode } from '../types.js';
 import { MODE_COLOR } from '../types.js';
 import { onActivate } from '../util/a11y.js';
 import { RepoLink } from './RepoLink.js';
-import { Elbow } from './Elbow.js';
 
 export type SidebarVariant = 'vertical' | 'horizontal';
 
@@ -156,12 +155,16 @@ export function Sidebar({
   return (
     <nav className="lcars-sidebar" aria-label="primary">
       {/*
-        v2 chrome (spec §10): a single L-shape rendered as one inline SVG.
-        Replaces the v1 two-rectangle elbow pair (--top + --bottom). Only
-        the top-of-sidebar L is drawn; v2 explicitly drops the bottom-elbow
-        — left-edge-only frame, no four-sided wrapper.
+        Top elbow: butterscotch rectangle with one rounded corner per the
+        canonical design-system shape (radius.elbow-lg = 40px desktop,
+        radius.elbow = 32px mobile, 36px tablet — see
+        design-system/tokens.json + spec.md §4 "Shapes"). v2 keeps only
+        the top elbow — the bottom elbow is dropped per spec §10's
+        "left-edge-only frame" constraint, so the sidebar's lower edge
+        is bare. The earlier single-L SVG with concave quarter-arc was a
+        divergence from the design system and has been retired.
       */}
-      <Elbow className="lcars-sidebar__l-frame" />
+      <div className="lcars-sidebar__elbow lcars-sidebar__elbow--top" aria-hidden="true" />
       {NAV.map((g) => (
         <div key={g.group} className="lcars-sidebar__group">
           <div className="lcars-sidebar__group-label" aria-hidden="true">
