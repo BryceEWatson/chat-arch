@@ -1,21 +1,16 @@
 /**
- * LCARS chrome — v2 single-L geometry.
+ * LCARS chrome — v2 corner-chip geometry.
  *
- * Spec §10 / decision: the v1 chrome was two rectangles butted at a square
- * inner corner (top elbow + bottom elbow as separate elements). v2 replaces
- * that with a single L-shape rendered as one SVG element with a quarter-
- * circle CONCAVE inner radius. Only the left edge of the layout carries
- * frame chrome — no top arm spanning the whole header, no four-sided box.
+ * Spec §10, AMENDED 2026-05-06 (see _planning/v2-decisions-amend.md):
+ * the L renders as a TOP-CORNER CHIP only — horizontal stub + concave
+ * quarter-arc inner radius + a short vertical tail terminating at the
+ * chip's bottom edge. It does NOT continue down the sidebar's left
+ * edge as a frame rail. Pills sit in a transparent sidebar column
+ * anchored visually only by the chip at top.
  *
- * The L sits along the left edge of the sidebar:
- *   - short horizontal stub at the top
- *   - vertical bar dropping down the left, full sidebar height
- *   - the inner corner where they meet rounds inward via SVG quarter-arc
- *
- * Rendered as a single inline SVG. The vertical bar's path uses a large
- * fixed coordinate (DEFAULT_FILL_HEIGHT) and the SVG's intrinsic clipping
- * handles overflow against the parent's `height: 100%`, so the L visually
- * extends to the bottom of the sidebar without re-measuring on resize.
+ * The single-SVG-element + concave-quarter-arc constraints from the
+ * original §10 are preserved; only the path's previously-fixed-height
+ * vertical extension is dropped.
  */
 
 import type { CSSProperties } from 'react';
@@ -28,10 +23,10 @@ export interface ElbowProps {
   /** Total chrome width in px (vertical bar + stub). Default 56. */
   width?: number;
   /**
-   * Path height in px — the y-coordinate the vertical leg extends to.
-   * Defaults to a tall fixed value so the leg appears full-height when
-   * the SVG is sized via CSS to fill its parent. Override only when
-   * explicit dimensions are needed (e.g. snapshot tests).
+   * Path height in px — the y-coordinate the chip's bottom edge sits
+   * at. Default `120` makes the chip a self-contained corner: stub
+   * (36) + arc transition (31) + a 53px tail = 120px tall. Override
+   * for explicit dimensions (e.g. snapshot tests).
    */
   height?: number;
   /** Width of the vertical bar, must be < `width`. Default 24. */
@@ -44,7 +39,7 @@ export interface ElbowProps {
   style?: CSSProperties;
 }
 
-const DEFAULT_FILL_HEIGHT = 4000;
+const DEFAULT_FILL_HEIGHT = 120;
 
 export function Elbow({
   color = 'var(--lcars-butterscotch)',
@@ -88,11 +83,9 @@ export function Elbow({
     `Z`;
 
   // Intentionally NO viewBox — the SVG uses raw pixel coordinates so the
-  // path draws 1:1 regardless of the rendered SVG box. CSS sizes the
-  // outer SVG (width: 56px, height: 100%); the SVG's intrinsic clipping
-  // handles overflow. This avoids viewBox-induced scaling/distortion of
-  // the corner arc that would otherwise appear when the parent height
-  // doesn't match the path height.
+  // path draws 1:1. The SVG element sizes itself to (W × H) — a finite
+  // 56×120 default — and renders inline at the top of the sidebar; the
+  // amended spec §10 no longer asks for a full-height vertical leg.
   return (
     <svg
       className={className}
