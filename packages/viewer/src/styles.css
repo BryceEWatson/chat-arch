@@ -6831,6 +6831,22 @@
   color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
   letter-spacing: 0.06em;
 }
+.lcars-corrections__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.lcars-corrections__running-abort {
+  margin-left: 8px;
+  font-size: 9.5px;
+  padding: 4px 10px;
+}
 .lcars-corrections__running-elapsed {
   margin-left: auto;
   font-variant-numeric: tabular-nums;

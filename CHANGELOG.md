@@ -61,10 +61,12 @@ on-disk shape with this changelog.
   whitelist), added `soft-redirect` (`actually,` / `wait,` / `hmm,` /
   `let's …`) and `want-prefer` (`I want / need / prefer / I'd rather /
   I would like`) families, added `just|please` to the imperative-
-  override family. Audited against a 472-session corpus: candidate
-  count rose from 196 → 590 (3.05×) with most lift from `soft-redirect`
-  (179 hits), `explicit-no` broadening (11 → 135), and `want-prefer`
-  (90).
+  override family. Measured against a single 472-session author corpus
+  via `scripts/audit-correction-recall.mjs`: candidate count on that
+  corpus rose from 196 → 590 (about 3×) with most lift from
+  `soft-redirect`, broadened `explicit-no`, and `want-prefer`.
+  Per-corpus results will vary — re-run the audit script to see your
+  own numbers.
 - **Corrections panel readability pass** — bumped body-text
   transparencies from the 50-82% tier to 88-95% across all paragraphs,
   notes, captions, and instance excerpts. Body font sizes nudged up by
@@ -83,10 +85,13 @@ on-disk shape with this changelog.
 
 - **Incremental corrections scan** — the heuristic-recall pass now
   reuses prior candidates for sessions whose `updatedAt` predates the
-  prior file's `generatedAt`. On the audited 472-session corpus, warm
-  rescans dropped from **18.4s → 5ms** (3,700×); cold rescans (after
-  a heuristic-version bump or fresh corpus) dropped from 18.4s to
-  ~1.5s due to the parallel I/O change below.
+  prior file's `generatedAt`. On the same 472-session author corpus
+  used for the recall audit, a warm rescan (no sessions changed) ran
+  in ~5ms vs. ~18s previously; cold rescans (after a heuristic-
+  version bump or fresh corpus) ran in ~1.5s on that corpus due to
+  the parallel I/O change below. These are single-machine, single-
+  corpus measurements — magnitude of the speedup is what matters,
+  not the specific numbers.
 - **Parallel transcript I/O** — `buildCorrectionsCandidatesFile` reads
   transcripts via an 8-way worker-pool (`parallelMap`) instead of a
   serial `for await` loop. Cold rescan I/O bucket dropped ~12×.

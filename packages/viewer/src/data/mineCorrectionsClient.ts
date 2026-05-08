@@ -129,12 +129,20 @@ export async function probeMineCorrections(
  * (corrections.json + correction-status-*.json + orphan target-id
  * files); leaves correction-candidates.json intact so the next mine
  * has input. Returns the list of deleted filenames for display.
+ *
+ * Accepts an AbortSignal so the caller can enforce a timeout — the
+ * server's deletion is small and bounded, but a hung connection or
+ * a stalled disk would otherwise leave the UI in "Clearing…" forever.
  */
-export async function clearCorrections(): Promise<{ removed: string[] }> {
-  const res = await fetch(CLEAR_CORRECTIONS_PATH, {
+export async function clearCorrections(
+  signal?: AbortSignal,
+): Promise<{ removed: string[] }> {
+  const init: RequestInit = {
     method: 'POST',
     headers: { 'X-Requested-With': CLEAR_HEADER_VALUE },
-  });
+  };
+  if (signal !== undefined) init.signal = signal;
+  const res = await fetch(CLEAR_CORRECTIONS_PATH, init);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`clear-corrections failed (status ${res.status}): ${text}`);

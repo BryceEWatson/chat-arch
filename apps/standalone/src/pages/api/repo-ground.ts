@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, isAbsolute } from 'node:path';
+import { dirname, resolve, relative, isAbsolute, sep } from 'node:path';
 
 /**
  * v2 spec §8 / decision D12: Repo-grounding endpoint for the
@@ -92,9 +92,20 @@ async function readNamed(
 ): Promise<{ content?: string; error?: string }> {
   // Path-traversal guard: resolve under repoPath and reject if it
   // walks above. Absolute named paths are rejected outright.
+  // The startsWith check is NOT sufficient on its own — given
+  // repoPath = `/foo/chat-arch`, the path `../chat-arch-secret/x`
+  // resolves to `/foo/chat-arch-secret/x`, which startsWith
+  // `/foo/chat-arch` returns true (sibling-prefix attack).
+  // Use `path.relative()` + a `..` / absolute check instead.
   if (isAbsolute(rel)) return { error: 'absolute paths are not allowed' };
   const abs = resolve(repoPath, rel);
-  if (!abs.startsWith(resolve(repoPath))) {
+  const rootAbs = resolve(repoPath);
+  const rel2 = relative(rootAbs, abs);
+  if (
+    rel2.startsWith('..') ||
+    isAbsolute(rel2) ||
+    rel2.split(sep).includes('..')
+  ) {
     return { error: 'path escapes repo root' };
   }
   try {

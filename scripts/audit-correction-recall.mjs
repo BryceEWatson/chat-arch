@@ -27,6 +27,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ---------- Patterns mirror packages/analysis/src/detectCorrectionCandidates.ts ----------
+// MAINTENANCE NOTE: these regexes are duplicated from
+// `packages/analysis/src/detectCorrectionCandidates.ts` deliberately —
+// the script runs as a one-shot Node ESM with no build step and the
+// analysis package's `dist/` may not exist on a fresh clone. If you
+// change the patterns there, update them here too. A future cleanup
+// could expose the patterns as a separate exported module so both
+// places import the canonical source.
 const STOP_PATTERNS = [
   /\b(stop|quit|cease)\b\s+(adding|generating|writing|using|making|doing|including)\b/i,
   /\bplease\s+(stop|don'?t)\b/i,

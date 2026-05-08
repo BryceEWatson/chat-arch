@@ -199,15 +199,27 @@ export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
 
   const runClear = useCallback(async () => {
     setClearState({ status: 'busy' });
+    // Bound the request so the UI can't get stuck in 'Clearing…' if
+    // the server hangs (stalled disk, dropped connection). 15s is
+    // generous — clear-corrections only deletes a handful of small
+    // files, typical p99 is <100ms.
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
     try {
-      await clearCorrections();
+      await clearCorrections(controller.signal);
     } catch (err) {
       if (!aliveRef.current) return;
-      setClearState({
-        status: 'error',
-        message: err instanceof Error ? err.message : String(err),
-      });
+      const aborted =
+        err instanceof DOMException && err.name === 'AbortError';
+      const message = aborted
+        ? 'clear-corrections timed out after 15s'
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      setClearState({ status: 'error', message });
       return;
+    } finally {
+      window.clearTimeout(timeoutId);
     }
     if (!aliveRef.current) return;
     setClearState({ status: 'idle' });
@@ -326,6 +338,13 @@ export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
           });
           return;
         }
+        // The 409-then-not-busy race: the prior run completed in the
+        // tiny window between our POST and our re-probe. Don't show a
+        // scary "in flight" error for a run that's already done —
+        // refresh and let the user retry from a clean state.
+        setMining({ status: 'idle' });
+        await refresh();
+        return;
       }
       setRunError(message);
       setMining({ status: 'idle' });
@@ -414,7 +433,16 @@ export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
       {coverage !== null && <CoverageMeter coverage={coverage} />}
 
       {mining.status === 'running' && (
-        <RunningBanner state={mining} nowMs={nowTick} />
+        <RunningBanner
+          state={mining}
+          nowMs={nowTick}
+          onAbort={() => {
+            // The server's claude CLI keeps running; we just detach
+            // the viewer's tracking. A subsequent rescan/refresh will
+            // re-attach via the busyRequestId probe response.
+            setMining({ status: 'idle' });
+          }}
+        />
       )}
 
       {runError && mining.status !== 'running' && (
@@ -585,8 +613,9 @@ function CoverageMeter({ coverage }: CoverageMeterProps) {
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           aria-controls="lcars-corrections-pipeline-detail"
+          aria-label={`pipeline funnel: ${fmt(scanStats.sessionsScanned)} transcripts produced ${fmt(scanStats.survivingTurns)} prompts producing ${fmt(total)} candidates. ${expanded ? 'Hide' : 'Show'} details.`}
         >
-          <span>
+          <span aria-hidden="true">
             {fmt(scanStats.sessionsScanned)} transcripts →{' '}
             {fmt(scanStats.survivingTurns)} prompts → {fmt(total)} candidates
           </span>
@@ -641,6 +670,30 @@ function CoverageDetail({
       id="lcars-corrections-pipeline-detail"
       className="lcars-corrections__coverage-detail"
     >
+      {(scanStats.sessionsMissing > 0 || absent.length > 0) && (
+        <div className="lcars-corrections__pipeline">
+          <span className="lcars-corrections__pipeline-label">NOT SCANNED</span>
+          <ul className="lcars-corrections__pipeline-list">
+            {Object.entries(scanStats.sessionsMissingBySource).map(
+              ([source, n]) => (
+                <li key={`miss-${source}`}>
+                  <strong>{fmt(n)}</strong> {SOURCE_LABEL[source] ?? source}{' '}
+                  sessions — no transcript file on disk (stub entries from
+                  aborted/deleted sessions)
+                </li>
+              ),
+            )}
+            {absent.map((source) => (
+              <li key={`absent-${source}`}>
+                <strong>0</strong> {SOURCE_LABEL[source] ?? source} sessions —
+                {source === 'cloud'
+                  ? ' no claude.ai export loaded'
+                  : ' source not present in this corpus'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="lcars-corrections__pipeline">
         <span className="lcars-corrections__pipeline-label">PIPELINE</span>
         <ul className="lcars-corrections__pipeline-list">
@@ -652,7 +705,8 @@ function CoverageDetail({
             <strong>{fmt(scanStats.sessionsScanned)}</strong> with transcripts
             {scanStats.sessionsMissing > 0 && (
               <span className="lcars-corrections__pipeline-note">
-                ← {fmt(scanStats.sessionsMissing)} missing (no transcript file)
+                <span aria-hidden="true">←</span>{' '}
+                {fmt(scanStats.sessionsMissing)} missing (no transcript file)
               </span>
             )}
           </li>
@@ -660,9 +714,9 @@ function CoverageDetail({
             <strong>{fmt(scanStats.survivingTurns)}</strong> user prompts
             {drops > 0 && (
               <span className="lcars-corrections__pipeline-note">
-                ← {fmt(drops)} dropped ({fmt(scanStats.wrapperFiltered)}{' '}
-                system wrappers + {fmt(scanStats.tooLongFiltered)} pastes
-                &gt;4KB)
+                <span aria-hidden="true">←</span> {fmt(drops)} dropped (
+                {fmt(scanStats.wrapperFiltered)} system wrappers +{' '}
+                {fmt(scanStats.tooLongFiltered)} pastes &gt;4KB)
               </span>
             )}
           </li>
@@ -691,37 +745,13 @@ function CoverageDetail({
                 <strong>{fmt(patterns)}</strong>{' '}
                 {patterns === 1 ? 'pattern' : 'patterns'} surfaced
                 <span className="lcars-corrections__pipeline-note">
-                  (clusters of ≥3 distinct sessions)
+                  (clusters of &ge;3 distinct sessions)
                 </span>
               </li>
             </>
           )}
         </ul>
       </div>
-      {(scanStats.sessionsMissing > 0 || absent.length > 0) && (
-        <div className="lcars-corrections__pipeline">
-          <span className="lcars-corrections__pipeline-label">NOT SCANNED</span>
-          <ul className="lcars-corrections__pipeline-list">
-            {Object.entries(scanStats.sessionsMissingBySource).map(
-              ([source, n]) => (
-                <li key={`miss-${source}`}>
-                  <strong>{fmt(n)}</strong> {SOURCE_LABEL[source] ?? source}{' '}
-                  sessions — no transcript file on disk (stub entries from
-                  aborted/deleted sessions)
-                </li>
-              ),
-            )}
-            {absent.map((source) => (
-              <li key={`absent-${source}`}>
-                <strong>0</strong> {SOURCE_LABEL[source] ?? source} sessions —
-                {source === 'cloud'
-                  ? ' no claude.ai export loaded'
-                  : ' source not present in this corpus'}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
@@ -771,11 +801,22 @@ function DangerZone({
         </div>
       )}
       {state.status === 'armed' && (
-        <div className="lcars-corrections__danger-row" role="dialog">
+        <div
+          className="lcars-corrections__danger-row"
+          role="dialog"
+          aria-label="confirm clear corrections"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              onCancel();
+            }
+          }}
+        >
           <p className="lcars-corrections__danger-confirm">
-            This permanently deletes <code>corrections.json</code> and all{' '}
-            <code>correction-status-*.json</code> files. The next MINE rebuilds
-            from candidates. Confirm?
+            Deletes <code>corrections.json</code> and any{' '}
+            <code>correction-status-*.json</code> orphans. Reversible — the next
+            MINE run rebuilds <code>corrections.json</code> from the existing
+            <code> correction-candidates.json</code>. Confirm?
           </p>
           <div className="lcars-corrections__danger-actions">
             <button
@@ -941,7 +982,17 @@ function ArmedPreview({ autoWindow, onRun, onCancel }: ArmedPreviewProps) {
   const windowDays = autoWindow?.windowDays ?? 0;
   const reasoning = autoWindow?.reasoning ?? 'Auto-window selection unavailable.';
   return (
-    <div className="lcars-corrections__armed" role="dialog" aria-label="confirm mine">
+    <div
+      className="lcars-corrections__armed"
+      role="dialog"
+      aria-label="confirm mine"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+    >
       <p className="lcars-corrections__armed-summary">
         Will mine {candidateCount.toLocaleString()} candidate
         {candidateCount === 1 ? '' : 's'} from the last {windowDays}{' '}
@@ -976,6 +1027,7 @@ function ArmedPreview({ autoWindow, onRun, onCancel }: ArmedPreviewProps) {
 interface RunningBannerProps {
   state: Extract<MiningState, { status: 'running' }>;
   nowMs: number;
+  onAbort?: () => void;
 }
 
 const STATUS_LABELS: Record<CorrectionRunStatus['status'], string> = {
@@ -1007,7 +1059,7 @@ function formatStaleness(ms: number): string {
   return `${m}m ago`;
 }
 
-function RunningBanner({ state, nowMs }: RunningBannerProps) {
+function RunningBanner({ state, nowMs, onAbort }: RunningBannerProps) {
   const rs = state.runStatus;
   // Prefer the skill's structured status file over the regex-parsed
   // stdout phase — it's the source of truth, updated on every stage
@@ -1039,13 +1091,26 @@ function RunningBanner({ state, nowMs }: RunningBannerProps) {
       ? statusLog.slice(statusLog.length - STATUS_LOG_TAIL)
       : statusLog;
 
+  // Accessibility: aria-busy on the outer container marks the panel
+  // as in-progress without re-announcing every 1.5s status poll.
+  // Phase TRANSITIONS get their own aria-live region (the dedicated
+  // span below containing only `phaseLabel`), so SR users hear "now
+  // classifying" once per stage instead of once per poll.
   return (
-    <div className="lcars-corrections__running" role="status" aria-live="polite">
+    <div
+      className="lcars-corrections__running"
+      role="status"
+      aria-busy="true"
+      aria-label="mining in progress"
+    >
+      <span className="lcars-corrections__sr-only" aria-live="polite">
+        {phaseLabel ?? 'starting'}
+      </span>
       <div className="lcars-corrections__running-header">
         <span className="lcars-corrections__spinner" aria-hidden="true" />
         <span className="lcars-corrections__running-title">MINING</span>
         {phaseLabel && (
-          <span className="lcars-corrections__running-phase">
+          <span className="lcars-corrections__running-phase" aria-hidden="true">
             {phaseLabel}
             {subPhase && subPhase !== phaseLabel ? ` · ${subPhase}` : ''}
             {progressText ? ` · ${progressText}` : ''}
@@ -1066,6 +1131,16 @@ function RunningBanner({ state, nowMs }: RunningBannerProps) {
           >
             updated {staleness}
           </span>
+        )}
+        {onAbort && (
+          <button
+            type="button"
+            className="lcars-corrections__btn lcars-corrections__btn--ghost lcars-corrections__running-abort"
+            onClick={onAbort}
+            title="Detach from this run. The skill keeps running on the server; this just stops the viewer from tracking it."
+          >
+            DETACH
+          </button>
         )}
       </div>
       {rs?.error && (

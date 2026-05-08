@@ -21,10 +21,10 @@ export const prerender = false;
  *   2. `X-Requested-With: chat-arch-mine-corrections` — a custom
  *      header an attacker page cannot set on a simple form submit.
  */
-const REQUIRED_HEADER = 'chat-arch-mine-corrections';
+export const REQUIRED_HEADER = 'chat-arch-mine-corrections';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-function isLocalOrigin(origin: string | null): boolean {
+export function isLocalOrigin(origin: string | null): boolean {
   if (!origin) return false;
   try {
     const u = new URL(origin);
@@ -280,7 +280,7 @@ function outcomeAwareTarget(
  *   idle: too few unprocessed to bother running.
  *   unavailable: data files missing or corrupt.
  */
-async function computeAutoWindow(
+export async function computeAutoWindow(
   rootAbs: string,
   dataDir: string,
   selection: 'recent' | 'backfill' = 'recent',

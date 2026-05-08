@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import { readFile, writeFile, mkdir, appendFile, stat } from 'node:fs/promises';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join, isAbsolute } from 'node:path';
+import { dirname, resolve, relative, join, isAbsolute, sep } from 'node:path';
 import type { Pattern } from '@chat-arch/schema';
 
 /**
@@ -45,6 +46,39 @@ function csrfReject(reason: string): Response {
 function repoRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, '..', '..', '..', '..', '..');
+}
+
+/**
+ * Resolve `apps/standalone/public/chat-arch-data` relative to the repo
+ * root. This is the same data directory `/api/rescan` and the viewer
+ * use; previously the sidecar was written under `<repo>/public/...`
+ * (skipping `apps/standalone/`) so encoded patterns landed in a
+ * directory the viewer never reads.
+ */
+function standaloneDataDir(): string {
+  return join(repoRoot(), 'apps', 'standalone', 'public', 'chat-arch-data');
+}
+
+/**
+ * Path-traversal guard: returns true iff `candidate` resolves to a
+ * location at or below `root`. Defends against the sibling-prefix
+ * attack — `startsWith(root)` alone admits `/foo/chat-arch-secret`
+ * when root is `/foo/chat-arch`. Using `path.relative()` + a
+ * `..`/absolute check is the canonical safe pattern.
+ */
+function isPathInside(candidate: string, root: string): boolean {
+  const candAbs = resolve(candidate);
+  const rootAbs = resolve(root);
+  if (candAbs === rootAbs) return true;
+  const rel = relative(rootAbs, candAbs);
+  if (rel === '' || rel === '.') return true;
+  if (rel.startsWith('..')) return false;
+  if (isAbsolute(rel)) return false;
+  // Defense-in-depth: also reject paths whose first segment equals
+  // `..` after a separator (some pathological inputs round-trip
+  // through resolve in a way that `relative` doesn't normalize).
+  if (rel.split(sep).includes('..')) return false;
+  return true;
 }
 
 interface PatternsFile {
@@ -127,7 +161,10 @@ export const POST: APIRoute = async ({ request }) => {
   const errors: string[] = [];
 
   // ---- Always: sidecar append ----
-  const sidecarDir = join(repoRoot(), 'public', 'chat-arch-data', 'analysis');
+  // Sibling of the other analysis writers (duplicates.exact.json,
+  // corrections.json, …) so the viewer's loader picks it up at the
+  // same base URL as the rest of chat-arch-data/.
+  const sidecarDir = join(standaloneDataDir(), 'analysis');
   const sidecarPath = join(sidecarDir, 'patterns.json');
   let patternsCount = 0;
   try {
@@ -151,12 +188,24 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   // ---- Optional: project CLAUDE.md append ----
+  // Path-traversal posture: the CSRF gate above ensures the request
+  // came from a same-origin local page, but a confused-deputy
+  // scenario (a buggy client passing user-typed input as projectPath)
+  // could still ask us to append to `/etc`, `~/.ssh/`, or any other
+  // sensitive absolute path. Constrain projectPath to the user's
+  // home directory so the worst-case write target is somewhere the
+  // user already owns. Project repos almost always live under home;
+  // anyone working outside home can run the exporter directly.
   let claudeMdAppended = false;
   let claudeMdPath: string | undefined;
   if (body.projectPath && body.claudeMdMarkdown) {
     const projectPath = body.projectPath.trim();
     if (!isAbsolute(projectPath)) {
       errors.push(`projectPath must be absolute (got ${projectPath})`);
+    } else if (!isPathInside(projectPath, os.homedir())) {
+      errors.push(
+        `projectPath must be under your home directory (got ${projectPath})`,
+      );
     } else {
       try {
         const st = await stat(projectPath);

@@ -11,7 +11,7 @@
     "preview:static": "node ./scripts/preview-with-headers.mjs",
     "typecheck": "astro check",
     "lint": "eslint src",
-    "test": "echo \"(no standalone tests)\" && exit 0",
+    "test": "vitest run",
     "seed-demo": "node scripts/seed-demo-data.mjs"
   },
   "dependencies": {

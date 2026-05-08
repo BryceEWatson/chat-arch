@@ -5,5 +5,5 @@ export default defineWorkspace([
   'packages/analysis',
   'packages/exporter',
   'packages/viewer',
-  // apps/standalone intentionally not in vitest workspace — Astro tests later
+  'apps/standalone',
 ]);

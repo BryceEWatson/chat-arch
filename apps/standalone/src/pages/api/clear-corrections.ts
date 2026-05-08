@@ -29,10 +29,10 @@ import { dirname, join, resolve } from 'node:path';
  */
 export const prerender = false;
 
-const REQUIRED_HEADER = 'chat-arch-clear-corrections';
+export const REQUIRED_HEADER = 'chat-arch-clear-corrections';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-function isLocalOrigin(origin: string | null): boolean {
+export function isLocalOrigin(origin: string | null): boolean {
   if (!origin) return false;
   try {
     const u = new URL(origin);
@@ -60,8 +60,23 @@ function analysisDir(): string {
  * Identify a file as belonging to the mining pipeline's writable set.
  * Conservative on purpose — anything not matching is left alone so a
  * misconfigured deploy can't accidentally wipe sibling analysis output.
+ *
+ * Defense-in-depth: even though `readdir` only ever returns flat
+ * entries from a single directory (no path traversal possible at this
+ * layer), reject any name containing path separators or `..` segments
+ * so a future caller that feeds user input through this predicate
+ * doesn't accidentally widen the deletion scope.
+ *
+ * NOTE FOR FUTURE MAINTAINERS: this allow-list MUST stay in sync with
+ * `.claude/skills/mine-corrections/SKILL.md` Stage 6, which lists the
+ * sidecar files the skill writes. Adding a new sidecar pattern there
+ * without updating this predicate leaves orphan files on disk; adding
+ * a pattern here without the skill writing it has no effect.
  */
-function isMiningArtifact(name: string): boolean {
+export function isMiningArtifact(name: string): boolean {
+  if (name.length === 0) return false;
+  if (name.includes('/') || name.includes('\\')) return false;
+  if (name.split(/[._-]/).includes('..')) return false;
   if (name === 'corrections.json') return true;
   if (name.startsWith('correction-status-') && name.endsWith('.json')) return true;
   if (name.startsWith('_correction-target-ids-') && name.endsWith('.json')) return true;
