@@ -13,7 +13,10 @@
     }
   },
   "bin": {
-    "chat-arch": "./dist/cli.js"
+    "chat-arch": "./dist/cli.js",
+    "chat-arch-embed": "./dist/cli/embed-cli.js",
+    "chat-arch-ingest-configs": "./dist/cli/ingest-configs-cli.js",
+    "chat-arch-cluster-corrections": "./dist/cli/cluster-corrections-cli.js"
   },
   "files": [
     "dist"

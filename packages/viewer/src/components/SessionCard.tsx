@@ -1,4 +1,4 @@
-import type { UnifiedSessionEntry } from '@chat-arch/schema';
+import type { UnifiedSessionEntry, Narrative } from '@chat-arch/schema';
 import { SOURCE_COLOR } from '../types.js';
 import { formatRelative } from '../util/time.js';
 import { onActivate } from '../util/a11y.js';
@@ -30,11 +30,30 @@ export interface SessionCardProps {
    */
   isSemanticProject?: boolean;
   /**
+   * v2 spec §5.3: topic chips. Each entry is the topic's `displayName`.
+   * Renders a row of compact chips below the project label. Empty /
+   * undefined renders nothing.
+   */
+  topics?: readonly string[];
+  /**
+   * v2 spec §5.3: narrative-attachment chip. When this session is
+   * referenced by one or more narratives, render a chip whose color
+   * tracks the dominant sentiment. Click opens the project-detail
+   * narrative view (Phase 6) — for Phase 5 the chip is informational.
+   */
+  narratives?: readonly Narrative[];
+  /**
    * Navigation handler for chip clicks. Receives the targeted cluster id
    * (for DUP) or `null` (for ZOMBIE — no cluster, just the zombie filter).
    */
   onDuplicateChipClick?: (clusterId: string, sessionId: string) => void;
   onZombieChipClick?: (sessionId: string) => void;
+  /**
+   * v2 spec §5.3: narrative chip click handler. Receives the first
+   * attached narrative's id; the host routes to the project detail
+   * page in Phase 6. When unset, the chip renders as a static badge.
+   */
+  onNarrativeChipClick?: (narrativeId: string, projectId: string) => void;
 }
 
 const NA = '—';
@@ -118,8 +137,11 @@ export function SessionCard({
   duplicateInfo,
   isZombieProject = false,
   isSemanticProject = false,
+  topics,
+  narratives,
   onDuplicateChipClick,
   onZombieChipClick,
+  onNarrativeChipClick,
 }: SessionCardProps) {
   const borderColor = SOURCE_COLOR[session.source];
   const preview = session.preview ?? '(no preview)';
@@ -157,8 +179,28 @@ export function SessionCard({
   // the limitation; duplicating "not exported" on every row is noise.
   const isCloud = session.source === 'cloud';
 
+  // v2 spec §5.3: deep-link anchor. The id lets `/sessions#session-{id}`
+  // scroll to the card without forcing a route change. Source is part
+  // of the React key but NOT the anchor — manifest ids are unique
+  // enough to round-trip URLs.
+  const anchorId = `session-${session.id}`;
+
+  // Pick the dominant sentiment for the narrative chip's accent color.
+  // For Phase 5 we render a single chip even when multiple narratives
+  // attach — the chip count badge says how many. Negative wins ties
+  // because it's the more actionable signal (corrective-prompt flow
+  // per spec §8 vs. encode-as-pattern celebration per §9).
+  const narrativeChip = (() => {
+    if (!narratives || narratives.length === 0) return null;
+    const hasNegative = narratives.some((n) => n.sentiment === 'negative');
+    const sentiment: 'negative' | 'positive' = hasNegative ? 'negative' : 'positive';
+    const first = narratives[0]!;
+    return { sentiment, count: narratives.length, first };
+  })();
+
   return (
     <div
+      id={anchorId}
       className="lcars-session-card"
       data-source={session.source}
       style={{ ['--source-color' as string]: borderColor } as React.CSSProperties}
@@ -187,8 +229,36 @@ export function SessionCard({
             </span>
           ))}
         <time className="lcars-session-card__time">{relTime}</time>
-        {(duplicateInfo || isZombieProject) && (
+        {(duplicateInfo || isZombieProject || narrativeChip) && (
           <div className="lcars-session-card__chips">
+            {narrativeChip &&
+              (onNarrativeChipClick ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className={`lcars-chip lcars-chip--narrative lcars-chip--narrative-${narrativeChip.sentiment}`}
+                  aria-label={`${narrativeChip.count} narrative${narrativeChip.count === 1 ? '' : 's'} attached (${narrativeChip.sentiment}), click to open project view`}
+                  onClick={(e) => {
+                    stop(e);
+                    onNarrativeChipClick(narrativeChip.first.id, narrativeChip.first.projectId);
+                  }}
+                  onKeyDown={(e) =>
+                    onActivate(e, () => {
+                      onNarrativeChipClick(narrativeChip.first.id, narrativeChip.first.projectId);
+                    })
+                  }
+                >
+                  NARR ({narrativeChip.count})
+                </span>
+              ) : (
+                <span
+                  className={`lcars-chip lcars-chip--narrative lcars-chip--narrative-${narrativeChip.sentiment}`}
+                  aria-label={`${narrativeChip.count} narrative${narrativeChip.count === 1 ? '' : 's'} attached (${narrativeChip.sentiment})`}
+                  title={narrativeChip.first.title}
+                >
+                  NARR ({narrativeChip.count})
+                </span>
+              ))}
             {duplicateInfo && (
               <span
                 role="button"
@@ -228,6 +298,24 @@ export function SessionCard({
           </div>
         )}
       </div>
+      {topics && topics.length > 0 && (
+        <div
+          className="lcars-session-card__topics"
+          role="list"
+          aria-label="session topics"
+        >
+          {topics.map((t) => (
+            <span
+              key={t}
+              role="listitem"
+              className="lcars-chip lcars-chip--topic"
+              title={`topic: ${t}`}
+            >
+              # {t}
+            </span>
+          ))}
+        </div>
+      )}
       <div
         className={`lcars-session-card__title${
           session.titleSource === 'fallback' ? ' lcars-session-card__title--fallback' : ''

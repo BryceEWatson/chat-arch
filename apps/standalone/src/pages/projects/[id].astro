@@ -1,0 +1,29 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { ChatArchViewer } from '@chat-arch/viewer';
+import '@chat-arch/viewer/style.css';
+
+// v2 spec §5.1 / decision D3: PROJECTS detail at /projects/[id]. The
+// id is read at request time and serialized into the page so the
+// pre-hydration hash-set script can hand it to the viewer's existing
+// readProjectsHash routing. We do NOT pre-fetch the project here —
+// the viewer is the canonical owner of `analysis/projects.json` so a
+// refresh on this URL stays consistent with the rest of the SPA.
+
+export const prerender = false;
+
+const id = Astro.params.id ?? '';
+---
+<BaseLayout title={`Chat Archaeologist — Project ${id}`}>
+  <script is:inline define:vars={{ id }}>
+    if (typeof window !== 'undefined') {
+      const target = '#project/' + encodeURIComponent(id);
+      if (window.location.hash !== target) {
+        window.history.replaceState(null, '', window.location.pathname + target);
+      }
+    }
+  </script>
+  <main>
+    <ChatArchViewer client:load />
+  </main>
+</BaseLayout>

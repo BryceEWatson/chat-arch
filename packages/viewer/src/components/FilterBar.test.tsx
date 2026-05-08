@@ -57,7 +57,7 @@ describe('FilterBar project pills (AC12)', () => {
     expect(screen.getByText('UNKNOWN')).toBeDefined();
     const unknownPill = screen.getByText('UNKNOWN').closest('[role="button"]')!;
     expect(unknownPill.querySelector('.lcars-project-pill__count')!.textContent).toBe('3');
-    expect(screen.getByText(/\+2 more/)).toBeDefined();
+    expect(screen.getByText(/SHOW 2 MORE/)).toBeDefined();
   });
 
   it('UNKNOWN pill click fires onToggleUnknownProject', () => {

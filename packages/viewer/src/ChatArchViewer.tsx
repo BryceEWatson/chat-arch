@@ -13,6 +13,7 @@ import { TopBar } from './components/TopBar.js';
 import { ActivityLogPanel } from './components/ActivityLogPanel.js';
 import { useActivityLog } from './data/activityLog.js';
 import { Sidebar } from './components/Sidebar.js';
+import { DataPanel } from './components/DataPanel.js';
 import { UpperPanel } from './components/UpperPanel.js';
 import { MidBar } from './components/MidBar.js';
 import { EmptyState } from './components/EmptyState.js';
@@ -28,9 +29,15 @@ import {
   ConstellationMode,
   CostMode,
 } from './components/modes/index.js';
+import { ProjectsMode } from './components/modes/ProjectsMode.js';
+import { TopicsMode } from './components/modes/TopicsMode.js';
+import { PracticeMode } from './components/modes/PracticeMode.js';
+import { CorrectionsPanel } from './components/CorrectionsPanel.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
+import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
+import { computeV2Entities } from './data/computeV2Entities.js';
 import {
   parseDuplicatesFile,
   mergeDuplicateClusters,
@@ -83,6 +90,11 @@ const SEARCH_DEBOUNCE_MS = 100;
 const FALLBACK_BANNER_PX = 320;
 
 const HASH_SESSION_PREFIX = '#session/';
+const HASH_PROJECTS = '#projects';
+const HASH_PROJECT_PREFIX = '#project/';
+const HASH_TOPICS = '#topics';
+const HASH_TOPIC_PREFIX = '#topic/';
+const HASH_PRACTICE = '#practice';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
@@ -109,6 +121,47 @@ function readSessionHash(): string | null {
   if (!h.startsWith(HASH_SESSION_PREFIX)) return null;
   const id = decodeURIComponent(h.slice(HASH_SESSION_PREFIX.length));
   return id.length > 0 ? id : null;
+}
+
+/**
+ * v2 spec §5.1 / decision D3: hash-driven PROJECTS routing within the
+ * single-island viewer.
+ *   - `#projects`      → PROJECTS index
+ *   - `#project/<id>`  → PROJECTS detail (selectedProjectId set)
+ * The parallel Astro routes (`/projects`, `/projects/[id]`) populate
+ * the hash on mount so a deep-linked URL lands in the right state.
+ */
+function readProjectsHash(): { surface: 'projects' | null; selectedProjectId: string | null } {
+  if (typeof window === 'undefined') return { surface: null, selectedProjectId: null };
+  const h = window.location.hash;
+  if (h === HASH_PROJECTS) return { surface: 'projects', selectedProjectId: null };
+  if (h.startsWith(HASH_PROJECT_PREFIX)) {
+    const id = decodeURIComponent(h.slice(HASH_PROJECT_PREFIX.length));
+    return id.length > 0
+      ? { surface: 'projects', selectedProjectId: id }
+      : { surface: 'projects', selectedProjectId: null };
+  }
+  return { surface: null, selectedProjectId: null };
+}
+
+/** PRACTICE has no detail dimension — either we're on it or we aren't. */
+function readPracticeHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_PRACTICE;
+}
+
+/** Topics counterpart to readProjectsHash — same contract / same pattern. */
+function readTopicsHash(): { surface: 'topics' | null; selectedTopicId: string | null } {
+  if (typeof window === 'undefined') return { surface: null, selectedTopicId: null };
+  const h = window.location.hash;
+  if (h === HASH_TOPICS) return { surface: 'topics', selectedTopicId: null };
+  if (h.startsWith(HASH_TOPIC_PREFIX)) {
+    const id = decodeURIComponent(h.slice(HASH_TOPIC_PREFIX.length));
+    return id.length > 0
+      ? { surface: 'topics', selectedTopicId: id }
+      : { surface: 'topics', selectedTopicId: null };
+  }
+  return { surface: null, selectedTopicId: null };
 }
 
 /**
@@ -163,7 +216,23 @@ export function ChatArchViewer({
   const [uploadedHydrated, setUploadedHydrated] = useState(false);
 
   // --- UI state ---
-  const [mode, setMode] = useState<Mode>('command');
+  const [mode, setMode] = useState<Mode>(() => {
+    // v2 spec §5.1 / §5.2 / §5.4: prefer the URL hash so deep-link
+    // entries land in the right surface. Falls through to SESSIONS
+    // (`command` mode) when the hash is absent or unrecognized.
+    const proj = readProjectsHash();
+    if (proj.surface === 'projects') return 'projects';
+    const top = readTopicsHash();
+    if (top.surface === 'topics') return 'topics';
+    if (readPracticeHash()) return 'practice';
+    return 'command';
+  });
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    () => readProjectsHash().selectedProjectId,
+  );
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(
+    () => readTopicsHash().selectedTopicId,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(() => readSessionHash());
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -183,15 +252,24 @@ export function ChatArchViewer({
       // localStorage unavailable — preference lasts only this session.
     }
   }, [sortBy]);
+  // v2 D6a: TIMELINE is no longer a top-level sidebar destination —
+  // it lives inside the SESSIONS surface as a view toggle. Default
+  // GRID matches the v1 SESSIONS rendering; switching to TIMELINE
+  // swaps in the existing TimelineMode component without changing
+  // the active mode (which stays `command` for filter / sort state).
+  const [sessionsView, setSessionsView] = useState<'grid' | 'timeline'>('grid');
   const [cache, setCache] = useState<ConversationCache>(new Map());
 
-  // --- analysis state (Phase 6) ---
+  // --- analysis state (Phase 6 + v2 Phase 5) ---
   const [analysisState, setAnalysisState] = useState<AnalysisState>({
     duplicatesExact: null,
     zombiesHeuristic: null,
     tierStatus: 'browser',
     tierPresentCount: 0,
     tierFiles: {},
+    v2Projects: null,
+    v2Topics: null,
+    v2Narratives: null,
   });
 
   // --- Phase 3 semantic-classification state ---
@@ -216,11 +294,15 @@ export function ChatArchViewer({
   // Session-scoped, in-memory ring buffer of user-visible actions +
   // process milestones. Surfaces what the system is doing without
   // forcing the user to open DevTools. Closed by default — the user
-  // opens it on demand via the LOG chip in the TopBar. Entries still
-  // accumulate in the background so the log is populated whenever the
-  // user decides to look.
+  // opens it on demand via the always-visible ACTIVITY LOG edge tab.
+  // Entries still accumulate in the background so the log is populated
+  // whenever the user decides to look.
   const { entries: logEntries, log, clear: clearLog } = useActivityLog();
   const [activityLogOpen, setActivityLogOpen] = useState<boolean>(false);
+  // v2 spec §6 / D4: data-source actions live in a sidebar-triggered
+  // DATA panel, not the TopBar. Open state is hoisted here so the
+  // sidebar's DATA item and the panel itself share the toggle.
+  const [dataPanelOpen, setDataPanelOpen] = useState<boolean>(false);
   // Log mount once — gives the user a "system online" anchor so an
   // empty log during early interactions doesn't look broken. The ref
   // guard prevents StrictMode's intentional double-invoke from
@@ -380,11 +462,27 @@ export function ChatArchViewer({
     if (typeof window === 'undefined') return undefined;
     const sync = () => {
       const id = readSessionHash();
+      const proj = readProjectsHash();
+      const top = readTopicsHash();
       setSelectedId(id);
+      setSelectedProjectId(proj.selectedProjectId);
+      setSelectedTopicId(top.selectedTopicId);
+      const onPractice = readPracticeHash();
       if (id) {
         setMode('detail');
+      } else if (proj.surface === 'projects') {
+        setMode('projects');
+      } else if (top.surface === 'topics') {
+        setMode('topics');
+      } else if (onPractice) {
+        setMode('practice');
       } else {
-        setMode((prev) => (prev === 'detail' ? 'command' : prev));
+        // Hash cleared — reset surface modes back to SESSIONS.
+        setMode((prev) =>
+          prev === 'detail' || prev === 'projects' || prev === 'topics' || prev === 'practice'
+            ? 'command'
+            : prev,
+        );
       }
     };
     sync();
@@ -576,7 +674,7 @@ export function ChatArchViewer({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [tier2, dupExact, zombies] = await Promise.all([
+      const [tier2, dupExact, zombies, v2] = await Promise.all([
         fetchAnalysisTierStatus(dataRoot),
         fetchJsonOrNull(
           `${dataRoot.endsWith('/') ? dataRoot.slice(0, -1) : dataRoot}/analysis/duplicates.exact.json`,
@@ -584,6 +682,10 @@ export function ChatArchViewer({
         fetchJsonOrNull(
           `${dataRoot.endsWith('/') ? dataRoot.slice(0, -1) : dataRoot}/analysis/zombies.heuristic.json`,
         ),
+        // v2 Phase 5: Project / Topic / Narrative sidecars feed the
+        // SESSIONS surface chips. Missing files resolve to nulls;
+        // chips just don't render.
+        fetchV2Entities(dataRoot),
       ]);
       if (cancelled) return;
       setAnalysisState({
@@ -592,6 +694,9 @@ export function ChatArchViewer({
         tierStatus: tier2.tierStatus,
         tierPresentCount: tier2.tierPresentCount,
         tierFiles: tier2.tierFiles,
+        v2Projects: v2.projects,
+        v2Topics: v2.topics,
+        v2Narratives: v2.narratives,
       });
     })();
     return () => {
@@ -1165,6 +1270,49 @@ export function ChatArchViewer({
     return s;
   }, [zombieProjects]);
 
+  // v2 Phase 6: effective Project / Topic / Narrative arrays. Prefer
+  // the exporter-written sidecars when present (server-rendered
+  // manifest path); fall back to the in-browser kernel pass when
+  // sidecars are absent or an upload is active. Browser-side parity
+  // is preserved by reusing the same `discoverProjects`/`discoverTopics`/
+  // `discoverNarratives` kernels the exporter calls.
+  const effectiveV2Entities = useMemo(() => {
+    const sidecarsPresent =
+      analysisState.v2Projects !== null &&
+      analysisState.v2Topics !== null &&
+      analysisState.v2Narratives !== null;
+    if (!uploadedData && sidecarsPresent) {
+      return {
+        projects: analysisState.v2Projects,
+        topics: analysisState.v2Topics,
+        narratives: analysisState.v2Narratives,
+      };
+    }
+    if (!manifest) {
+      return { projects: null, topics: null, narratives: null };
+    }
+    const computed = computeV2Entities(manifest.sessions);
+    return {
+      projects: computed.projects,
+      topics: computed.topics,
+      narratives: computed.narratives,
+    };
+  }, [
+    uploadedData,
+    manifest,
+    analysisState.v2Projects,
+    analysisState.v2Topics,
+    analysisState.v2Narratives,
+  ]);
+
+  // v2 Phase 5: per-session topic + narrative lookup tables for SessionCard
+  // chips. Now derives from `effectiveV2Entities` so uploaded data and
+  // sidecar-less fetched manifests both surface chips.
+  const sessionV2Index = useMemo(
+    () => buildSessionV2Index(effectiveV2Entities.topics, effectiveV2Entities.narratives),
+    [effectiveV2Entities.topics, effectiveV2Entities.narratives],
+  );
+
   const filteredSorted = useMemo<readonly UnifiedSessionEntry[]>(() => {
     if (!manifest) return [];
     let filtered = filterSessions(manifest.sessions, debouncedQuery, sourceFilter);
@@ -1728,22 +1876,11 @@ export function ChatArchViewer({
             onQueryChange={() => {}}
             tier={tier}
             disabled
-            // SCAN LOCAL + UPLOAD CLOUD remain the primary actions out of
-            // this state, so the top bar stays visible with both buttons
-            // wired to the same handlers as the populated flow.
-            onRescan={onRescan}
-            rescanStatus={rescanCtl.status}
-            rescanProgress={rescanCtl.progress}
-            scanAvailable={rescanCtl.available}
-            hasLocalData={false}
-            {...(rescanToast ? { rescanHint: rescanToast } : {})}
-            onCloudUpload={onCloudUpload}
-            uploadStatus={uploadStatus}
-            hasCloudData={false}
-            {...(uploadHint ? { uploadHint } : {})}
-            deleteAvailable={false}
-            onDeleteUnload={onUnload}
-            deleteCounts={{ cloud: 0, cowork: 0, 'cli-direct': 0, 'cli-desktop': 0 }}
+            // v2 spec §6 / D4: data-source actions (UPLOAD CLOUD,
+            // SCAN LOCAL, DELETE) live in the DATA panel triggered
+            // from the empty-state UploadPanel below — the TopBar
+            // stays informational even on the no-data landing.
+            locationLabel="WELCOME"
           />
           <main className="lcars-empty-main">
             <TrustStrip />
@@ -1764,6 +1901,21 @@ export function ChatArchViewer({
   const showDetailOverlay = activeMode === 'detail' && !!selectedSession;
   const baseMode: Mode = mode === 'detail' ? 'command' : mode;
 
+  // v2 spec §§5.1, 5.2, 5.4: PROJECTS / TOPICS / PRACTICE are
+  // self-contained surfaces with their own headers + filter
+  // affordances. The shared SESSIONS chrome (UpperPanel KPI tiles +
+  // sparkline, MidBar label, FilterBar source pills + project chips)
+  // reads from the filtered-session list and is therefore noise on
+  // these surfaces — toggling CLOUD/CLI-DIRECT pills does nothing
+  // because the v2 surfaces don't consume `filteredSorted`. Hide it.
+  // CONSTELLATION / COST keep the chrome since they're roll-ups over
+  // the same filtered session list as SESSIONS.
+  const isV2Surface =
+    baseMode === 'projects' ||
+    baseMode === 'topics' ||
+    baseMode === 'practice' ||
+    baseMode === 'corrections';
+
   const activeManifest = manifest!;
 
   const tierIndicator = (
@@ -1773,6 +1925,26 @@ export function ChatArchViewer({
       tierFiles={analysisState.tierFiles}
     />
   );
+
+  // v2 spec §6: location chip in the TopBar mirrors the active surface.
+  // Mode → label mapping is intentionally local to the chrome — the
+  // mode ids (`constellation`, `cost`) carry historical names that
+  // don't match the user-facing surface labels (ANALYSIS, COST). This
+  // is the same naming that `Sidebar` uses, kept in sync by hand.
+  const LOCATION_LABEL: Record<Mode, string> = {
+    command: 'SESSIONS',
+    // v2 D6a: TIMELINE is an in-surface view toggle now; this entry is
+    // kept so the legacy mode id keeps a label, but in practice the
+    // sidebar can't navigate here anymore.
+    timeline: 'SESSIONS · TIMELINE',
+    detail: 'DETAIL',
+    constellation: 'ANALYSIS',
+    cost: 'COST',
+    projects: 'PROJECTS',
+    topics: 'TOPICS',
+    practice: 'PRACTICE',
+    corrections: 'CORRECTIONS',
+  };
 
   // Has-data flags drive the "Scan Local" → "Update Local" and
   // "Upload Cloud" → "Update Cloud" label swaps. Computed from the
@@ -1906,45 +2078,15 @@ export function ChatArchViewer({
           onQueryChange={setRawQuery}
           tier={tier}
           disabled={showDetailOverlay}
-          // Scan Local: always render the button so web-only users
-          // see *why* it's disabled. The button itself reads
-          // `scanAvailable` to decide whether to fire.
-          onRescan={onRescan}
-          rescanStatus={rescanCtl.status}
-          rescanProgress={rescanCtl.progress}
-          scanAvailable={rescanCtl.available}
-          hasLocalData={hasLocalData}
-          {...(rescanToast ? { rescanHint: rescanToast } : {})}
-          // Upload Cloud: always available (pure in-browser parse).
-          onCloudUpload={onCloudUpload}
-          uploadStatus={uploadStatus}
-          hasCloudData={hasCloudData}
-          {...(uploadHint ? { uploadHint } : {})}
-          deleteAvailable={rescanCtl.available}
-          onDeleteUnload={onUnload}
-          deleteCounts={{
-            cloud: manifestCounts?.cloud ?? 0,
-            cowork: manifestCounts?.cowork ?? 0,
-            'cli-direct': manifestCounts?.['cli-direct'] ?? 0,
-            'cli-desktop': manifestCounts?.['cli-desktop'] ?? 0,
-          }}
-          rightSlot={
-            <button
-              type="button"
-              className={`lcars-activity-log-toggle${activityLogOpen ? ' lcars-activity-log-toggle--open' : ''}`}
-              aria-pressed={activityLogOpen}
-              aria-label={activityLogOpen ? 'close activity log' : 'open activity log'}
-              title={activityLogOpen ? 'Close activity log (Esc)' : 'Open activity log — see what the system is doing'}
-              onClick={() => setActivityLogOpen((v) => !v)}
-            >
-              LOG
-            </button>
-          }
+          tierIndicator={tierIndicator}
+          locationLabel={LOCATION_LABEL[activeMode]}
         />
         <div className="lcars-body">
           <Sidebar
             mode={activeMode}
             variant={sidebarVariant}
+            onOpenDataPanel={() => setDataPanelOpen(true)}
+            dataPanelOpen={dataPanelOpen}
             onSelectMode={(m) => {
               if (m !== 'detail') {
                 clearHash();
@@ -1961,10 +2103,33 @@ export function ChatArchViewer({
                 setConstellationOriginSessionId(null);
                 setZombieFilterActive(false);
               }
+              // v2 §5.1: PROJECTS uses its own hash so deep-links round
+              // trip cleanly. Sidebar click → push #projects (index).
+              if (m === 'projects') {
+                setSelectedProjectId(null);
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_PROJECTS);
+                }
+              }
+              // v2 §5.2: TOPICS surface follows the same hash contract.
+              if (m === 'topics') {
+                setSelectedTopicId(null);
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_TOPICS);
+                }
+              }
+              // v2 §5.4: PRACTICE has no detail dimension — single hash.
+              if (m === 'practice') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_PRACTICE);
+                }
+              }
               setMode(m);
             }}
           />
           <div className="lcars-content-column">
+            {!isV2Surface && (
+              <>
             <UpperPanel
               manifest={activeManifest}
               filtered={filteredSorted}
@@ -2006,25 +2171,58 @@ export function ChatArchViewer({
             />
             <MidBar
               color={modeColor}
-              label={activeMode.toUpperCase()}
+              label={baseMode === 'command' ? 'SESSIONS' : activeMode.toUpperCase()}
               {...(baseMode === 'command'
                 ? {
                     rightSlot: (
-                      <label className="lcars-mid-bar__sort">
-                        <span className="lcars-mid-bar__sort-label">SORT</span>
-                        <select
-                          className="lcars-mid-bar__sort-select"
-                          aria-label="sort sessions"
-                          value={sortBy}
-                          onChange={(e) => setSortBy(e.target.value as SortBy)}
+                      <div className="lcars-mid-bar__controls">
+                        {/*
+                          v2 D6a: TIMELINE absorbed into SESSIONS as a
+                          view toggle. GRID is the default; TIMELINE
+                          swaps in the lane chart over the same filtered
+                          session set so the user's filters / search
+                          carry across the toggle.
+                        */}
+                        <div
+                          className="lcars-mid-bar__view-toggle"
+                          role="group"
+                          aria-label="sessions view"
                         >
-                          <option value="recent">RECENT</option>
-                          <option value="oldest">OLDEST</option>
-                          <option value="cost">COST ↓</option>
-                          <option value="turns">TURNS ↓</option>
-                          <option value="project">PROJECT</option>
-                        </select>
-                      </label>
+                          <button
+                            type="button"
+                            className={`lcars-mid-bar__view-btn${sessionsView === 'grid' ? ' lcars-mid-bar__view-btn--active' : ''}`}
+                            aria-pressed={sessionsView === 'grid'}
+                            onClick={() => setSessionsView('grid')}
+                          >
+                            GRID
+                          </button>
+                          <button
+                            type="button"
+                            className={`lcars-mid-bar__view-btn${sessionsView === 'timeline' ? ' lcars-mid-bar__view-btn--active' : ''}`}
+                            aria-pressed={sessionsView === 'timeline'}
+                            onClick={() => setSessionsView('timeline')}
+                          >
+                            TIMELINE
+                          </button>
+                        </div>
+                        {sessionsView === 'grid' && (
+                          <label className="lcars-mid-bar__sort">
+                            <span className="lcars-mid-bar__sort-label">SORT</span>
+                            <select
+                              className="lcars-mid-bar__sort-select"
+                              aria-label="sort sessions"
+                              value={sortBy}
+                              onChange={(e) => setSortBy(e.target.value as SortBy)}
+                            >
+                              <option value="recent">RECENT</option>
+                              <option value="oldest">OLDEST</option>
+                              <option value="cost">COST ↓</option>
+                              <option value="turns">TURNS ↓</option>
+                              <option value="project">PROJECT</option>
+                            </select>
+                          </label>
+                        )}
+                      </div>
                     ),
                   }
                 : {})}
@@ -2044,6 +2242,8 @@ export function ChatArchViewer({
               streaming={semanticStatus === 'running'}
               {...(filterFocus ? { filterFocus } : {})}
             />
+              </>
+            )}
             <main
               className="lcars-mode-area"
               aria-label={`${activeMode} mode`}
@@ -2055,15 +2255,21 @@ export function ChatArchViewer({
                 <>
                   <div className="lcars-mode-area__base" hidden={showDetailOverlay}>
                     {baseMode === 'command' ? (
-                      <CommandMode
-                        sessions={filteredSorted}
-                        onSelect={onSelect}
-                        sessionDupIndex={sessionDupIndex}
-                        zombieProjectIds={zombieProjectIds}
-                        semanticSessionIds={semanticSessionIds}
-                        onDuplicateChipClick={onDuplicateChipClick}
-                        onZombieChipClick={onZombieChipClick}
-                      />
+                      sessionsView === 'timeline' ? (
+                        <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
+                      ) : (
+                        <CommandMode
+                          sessions={filteredSorted}
+                          onSelect={onSelect}
+                          sessionDupIndex={sessionDupIndex}
+                          zombieProjectIds={zombieProjectIds}
+                          semanticSessionIds={semanticSessionIds}
+                          topicsBySession={sessionV2Index.topicsBySession}
+                          narrativesBySession={sessionV2Index.narrativesBySession}
+                          onDuplicateChipClick={onDuplicateChipClick}
+                          onZombieChipClick={onZombieChipClick}
+                        />
+                      )
                     ) : baseMode === 'timeline' ? (
                       <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
                     ) : baseMode === 'constellation' ? (
@@ -2086,6 +2292,74 @@ export function ChatArchViewer({
                         costDiagnosedPresent={
                           !!analysisState.tierFiles['cost-diagnoses.json']?.present
                         }
+                      />
+                    ) : baseMode === 'projects' ? (
+                      <ProjectsMode
+                        projects={effectiveV2Entities.projects ?? []}
+                        topics={effectiveV2Entities.topics ?? []}
+                        narratives={effectiveV2Entities.narratives ?? []}
+                        sessions={activeManifest.sessions}
+                        selectedProjectId={selectedProjectId}
+                        onSelectProject={(id) => {
+                          setSelectedProjectId(id);
+                          if (typeof window !== 'undefined') {
+                            const next = id
+                              ? `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`
+                              : HASH_PROJECTS;
+                            window.history.pushState(null, '', next);
+                          }
+                        }}
+                        onSelectSession={onSelect}
+                      />
+                    ) : baseMode === 'practice' ? (
+                      <PracticeMode
+                        sessions={activeManifest.sessions}
+                        projects={effectiveV2Entities.projects ?? []}
+                        narratives={effectiveV2Entities.narratives ?? []}
+                        duplicateClusters={mergedClusters}
+                        zombieProjects={zombieProjects}
+                        onSelectSession={onSelect}
+                        onSelectProject={(id) => {
+                          setSelectedProjectId(id);
+                          setMode('projects');
+                          if (typeof window !== 'undefined') {
+                            window.history.pushState(
+                              null,
+                              '',
+                              `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`,
+                            );
+                          }
+                        }}
+                      />
+                    ) : baseMode === 'corrections' ? (
+                      <CorrectionsPanel dataDirBaseUrl={dataRoot} />
+                    ) : baseMode === 'topics' ? (
+                      <TopicsMode
+                        topics={effectiveV2Entities.topics ?? []}
+                        projects={effectiveV2Entities.projects ?? []}
+                        sessions={activeManifest.sessions}
+                        selectedTopicId={selectedTopicId}
+                        onSelectTopic={(id) => {
+                          setSelectedTopicId(id);
+                          if (typeof window !== 'undefined') {
+                            const next = id
+                              ? `${HASH_TOPIC_PREFIX}${encodeURIComponent(id)}`
+                              : HASH_TOPICS;
+                            window.history.pushState(null, '', next);
+                          }
+                        }}
+                        onSelectSession={onSelect}
+                        onSelectProject={(id) => {
+                          setSelectedProjectId(id);
+                          setMode('projects');
+                          if (typeof window !== 'undefined') {
+                            window.history.pushState(
+                              null,
+                              '',
+                              `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`,
+                            );
+                          }
+                        }}
                       />
                     ) : null}
                   </div>
@@ -2120,6 +2394,28 @@ export function ChatArchViewer({
         onOpen={() => setActivityLogOpen(true)}
         onClose={() => setActivityLogOpen(false)}
         onClear={clearLog}
+      />
+      <DataPanel
+        isOpen={dataPanelOpen}
+        onClose={() => setDataPanelOpen(false)}
+        onCloudUpload={onCloudUpload}
+        uploadStatus={uploadStatus}
+        hasCloudData={hasCloudData}
+        {...(uploadHint ? { uploadHint } : {})}
+        onRescan={onRescan}
+        rescanStatus={rescanCtl.status}
+        rescanProgress={rescanCtl.progress}
+        scanAvailable={rescanCtl.available}
+        hasLocalData={hasLocalData}
+        {...(rescanToast ? { rescanHint: rescanToast } : {})}
+        deleteAvailable={rescanCtl.available}
+        onDeleteUnload={onUnload}
+        deleteCounts={{
+          cloud: manifestCounts?.cloud ?? 0,
+          cowork: manifestCounts?.cowork ?? 0,
+          'cli-direct': manifestCounts?.['cli-direct'] ?? 0,
+          'cli-desktop': manifestCounts?.['cli-desktop'] ?? 0,
+        }}
       />
     </div>
   );

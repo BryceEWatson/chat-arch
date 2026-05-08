@@ -1,0 +1,64 @@
+name: Visual tests
+
+# v2 spec §11 / decision D15: Playwright visual / structural tests
+# are gated behind a `needs-visual-tests` PR label so we don't pay
+# for browser-install + headless-Chrome on every PR. Triggered on
+# `labeled` and on `synchronize` whenever the label is already
+# present, so updates to a labeled branch re-run automatically.
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  visual:
+    name: Playwright visual / structural
+    if: contains(github.event.pull_request.labels.*.name, 'needs-visual-tests')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        # Same ordering rationale as ci.yml — workspace cross-imports
+        # resolve through dist/ on a clean checkout.
+        run: pnpm build
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright visual / structural tests
+        # The Playwright config's `webServer` block boots Astro on
+        # 127.0.0.1:4321; the suite asserts on DOM shape rather than
+        # comparing screenshots so cross-platform pixel drift can't
+        # destabilize the run.
+        run: pnpm test:visual
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

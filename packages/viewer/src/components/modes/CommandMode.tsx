@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { UnifiedSessionEntry } from '@chat-arch/schema';
+import type { UnifiedSessionEntry, Narrative } from '@chat-arch/schema';
 import { SessionCard } from '../SessionCard.js';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
@@ -23,6 +23,10 @@ export interface CommandModeProps {
    * from a ground-truth one.
    */
   semanticSessionIds?: ReadonlySet<string>;
+  /** v2 Phase 5: topic display names per session — drives topic chips. */
+  topicsBySession?: ReadonlyMap<string, readonly string[]>;
+  /** v2 Phase 5: narrative attachments per session — drives the narrative chip. */
+  narrativesBySession?: ReadonlyMap<string, readonly Narrative[]>;
 }
 
 const PAGE_SIZE = 50;
@@ -35,6 +39,8 @@ export function CommandMode({
   onDuplicateChipClick,
   onZombieChipClick,
   semanticSessionIds,
+  topicsBySession,
+  narrativesBySession,
 }: CommandModeProps) {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const now = useMemo(() => Date.now(), []);
@@ -58,6 +64,8 @@ export function CommandMode({
           const dup = sessionDupIndex?.get(s.id);
           const isZombie = !!(s.project && zombieProjectIds?.has(s.project));
           const isSemanticProject = !!semanticSessionIds?.has(s.id);
+          const topics = topicsBySession?.get(s.id);
+          const narratives = narrativesBySession?.get(s.id);
           return (
             <div role="listitem" key={`${s.source}:${s.id}`}>
               <SessionCard
@@ -67,6 +75,8 @@ export function CommandMode({
                 {...(dup ? { duplicateInfo: dup } : {})}
                 isZombieProject={isZombie}
                 isSemanticProject={isSemanticProject}
+                {...(topics && topics.length > 0 ? { topics } : {})}
+                {...(narratives && narratives.length > 0 ? { narratives } : {})}
                 {...(onDuplicateChipClick ? { onDuplicateChipClick } : {})}
                 {...(onZombieChipClick ? { onZombieChipClick } : {})}
               />

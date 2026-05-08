@@ -210,23 +210,64 @@ is an Astro page at
 ```
 apps/
   standalone/        Astro shell. Hosts the viewer and, in dev, the
-                     /api/rescan + /api/clear endpoints. The `pnpm build`
+                     /api/rescan + /api/clear + /api/mine-corrections +
+                     /api/clear-corrections endpoints. The `pnpm build`
                      output (static client bundle) is what ships to
                      chat-arch.dev via Cloudflare Pages.
 packages/
-  schema/            UnifiedSessionEntry + manifest types. Pure TypeScript.
+  schema/            UnifiedSessionEntry + manifest + correction types.
+                     Pure TypeScript.
   exporter/          CLI + parsers for the four input sources, plus the
                      core-tier analysis writers (duplicates.exact,
-                     zombies.heuristic, meta).
-  analysis/          Shared cloud-mapping + clustering utilities used by
-                     both the exporter (at build time) and the viewer
-                     (at runtime).
+                     zombies.heuristic, projects, topics, narratives,
+                     correction-candidates, meta) and a set of CLIs
+                     used by the /mine-corrections skill (embed-cli,
+                     ingest-configs-cli, cluster-corrections-cli).
+  analysis/          Shared cloud-mapping + clustering + correction-
+                     recall kernels used by both the exporter (at
+                     build time) and the viewer (at runtime).
   viewer/            React viewer. Mounts against
                      /chat-arch-data/manifest.json.
 design-system/       Supergraphic Panel source — prose spec + token
                      generator. Mirrored to chat-arch.dev/design-system/
                      at build time.
+scripts/             One-off audit + diagnostic scripts (e.g.
+                     audit-correction-recall.mjs).
+.claude/skills/
+  mine-corrections/  Claude Code skill that drives the LLM stages of
+                     the corrections pipeline. Invoked locally via
+                     /api/mine-corrections.
 ```
+
+### Corrections (dev-only mining)
+
+The exporter writes `analysis/correction-candidates.json` — a heuristic
+recall pass over every user turn that finds likely
+corrections-to-the-AI (negation, "instead of", caps frustration, repeat
+instructions, soft redirects, preference statements, …). The viewer's
+**CORRECTIONS** panel reads this plus an LLM-classified
+`analysis/corrections.json` and surfaces clustered patterns in three
+buckets:
+
+- `RECURRING AFTER APPLIED` — you wrote a rule, the model still gets
+  it wrong.
+- `ALREADY ENCODED BUT FAILING` — the rule already lives in your
+  CLAUDE.md but is being violated.
+- `NEW PATTERNS TO ENCODE` — recurring corrections with no matching
+  config, paired with proposed CLAUDE.md / settings-hook / skill /
+  agent / command upgrades.
+
+Each pattern card shows confidence, distinct-session count, instance
+excerpts, and concrete patch text — `COPY PATCH` for manual review,
+`APPLY` to write to disk after explicit per-proposal approval.
+
+The LLM stages run **locally** via the `/mine-corrections` Claude Code
+skill, which the panel invokes through the dev-only
+`/api/mine-corrections` endpoint. The endpoint spawns the `claude` CLI
+in your shell against the project's `.claude/skills/mine-corrections/`
+directory; nothing is uploaded anywhere — your transcripts and your
+classifications stay on your machine. Counts against your Claude Code
+plan usage; no separate billing.
 
 ## Privacy
 
@@ -239,6 +280,16 @@ The one cross-origin fetch on either path is the optional Hugging Face
 model-weight download on first **Analyze Topics** run — see
 [Model-weight trust boundary](#model-weight-trust-boundary) below for the
 full disclosure.
+
+The corrections-mining pipeline (the **MINE CORRECTIONS** button in a
+local `pnpm dev` checkout) is no exception: the LLM classification +
+clustering stages run against the project's local
+`.claude/skills/mine-corrections/` skill via the user's own `claude`
+CLI binary. Sub-agent calls dispatched by the skill consume the user's
+Claude Code plan usage but no chat-arch process or page sends transcripts
+anywhere — the only network I/O is whatever the user's `claude` install
+already does on their behalf. The hosted `chat-arch.dev` deploy has no
+mining endpoint at all.
 
 **Note for users**: your own transcripts may contain other people's content
 (prompts about colleagues, pasted client work, customer data). If you publish
@@ -257,11 +308,23 @@ Headline points:
 
 - **The hosted deploy has no server-side endpoints.** `chat-arch.dev`
   serves only static HTML/JS/CSS from Cloudflare Pages — there is no
-  `/api/rescan`, no `/api/clear`, and no backend that can read the
-  filesystem or mutate server-side state.
-- In a local `pnpm dev` checkout, the `/api/rescan` endpoint requires
-  same-origin Origin and a custom `X-Requested-With` header — a hostile
-  cross-origin page in your browser cannot trigger a rescan.
+  `/api/rescan`, `/api/clear`, `/api/mine-corrections`, or
+  `/api/clear-corrections`, and no backend that can read the filesystem
+  or mutate server-side state.
+- In a local `pnpm dev` checkout, every `/api/*` endpoint requires
+  same-origin Origin AND a custom `X-Requested-With` header — a hostile
+  cross-origin page in your browser cannot trigger a rescan, a clear,
+  or a corrections-mining run via a simple form submit.
+- `/api/mine-corrections` spawns the `claude` CLI with a fixed
+  `--allowedTools` whitelist (Read / Write / Edit / Bash / Task / Glob /
+  Grep). The `-p` prompt is constructed from a fixed slash-command
+  template plus a server-generated request UUID — there is no path for
+  raw user input to reach the shell.
+- `/api/clear-corrections` only deletes files in
+  `analysis/` whose names match a static allow-list (`corrections.json`,
+  `correction-status-*.json`, `_correction-target-ids-*.json`). It
+  cannot remove anything outside that pattern, including
+  `correction-candidates.json` (the upstream input).
 - The viewer escapes user content before passing it to React's
   `dangerouslySetInnerHTML`, with regression tests pinning the escape order.
 - The production build emits a strict Content-Security-Policy

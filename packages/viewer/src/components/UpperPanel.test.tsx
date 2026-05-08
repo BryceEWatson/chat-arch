@@ -98,7 +98,7 @@ describe('UpperPanel KPI strip (AC7)', () => {
         {...base}
       />,
     );
-    expect(screen.getByText(/\(1 of 5 tagged\)/)).toBeDefined();
+    expect(screen.getByText(/1 of 5 tagged/)).toBeDefined();
   });
 
   it('hides the coverage disclosure when ≥30% tagged', () => {

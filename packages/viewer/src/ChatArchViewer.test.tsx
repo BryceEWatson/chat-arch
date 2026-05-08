@@ -202,10 +202,32 @@ describe('ChatArchViewer', () => {
     expect(screen.getByText('Apple pie recipe')).toBeDefined();
   });
 
-  it('switches to Timeline mode from the sidebar', () => {
+  it('switches to PROJECTS surface from the sidebar and pushes the #projects hash (v2 §5.1)', () => {
+    window.location.hash = '';
     render(<ChatArchViewer manifest={sampleManifest} />);
-    fireEvent.click(screen.getByRole('button', { name: /mode TIMELINE/i }));
-    // Timeline shows lane labels.
+    fireEvent.click(screen.getByRole('button', { name: /mode PROJECTS/i }));
+    expect(window.location.hash).toBe('#projects');
+    // PROJECTS index renders its own header; the test fixture has at
+    // least one discovered project (in-browser kernel pass over the
+    // sample manifest), so the index list is non-empty.
+    const headings = screen.getAllByText(/^PROJECTS$/);
+    expect(headings.length).toBeGreaterThan(0);
+    // Reset for downstream tests so a leftover hash doesn't poison
+    // the next render's initial state.
+    window.location.hash = '';
+  });
+
+  it('switches to Timeline view from the SESSIONS view toggle (v2 D6a)', () => {
+    render(<ChatArchViewer manifest={sampleManifest} />);
+    // v2 D6a: TIMELINE is no longer reachable from the sidebar. The
+    // user toggles VIEW: TIMELINE inside the SESSIONS surface chrome.
+    const timelineBtn = screen
+      .getAllByRole('button', { name: /^TIMELINE$/i })
+      .find((el) => el.className.includes('lcars-mid-bar__view-btn'));
+    expect(timelineBtn).toBeDefined();
+    fireEvent.click(timelineBtn!);
+    expect(timelineBtn!.getAttribute('aria-pressed')).toBe('true');
+    // Timeline shows lane labels — at least one per source lane.
     expect(screen.getAllByText(/CLOUD/i).length).toBeGreaterThan(0);
   });
 
@@ -301,9 +323,15 @@ describe('ChatArchViewer', () => {
     // Fetched manifest loads first.
     expect(screen.getByText('Apple pie recipe')).toBeDefined();
 
-    // Simulate upload via the compact UploadPanel inside UpperPanel.
-    const container = document.body;
-    const fileInput = container.querySelector('input[type=file]') as HTMLInputElement;
+    // v2 spec §6 / D4: uploads are reached through the DATA sidebar
+    // panel — open it first, then drive the hidden file input that
+    // backs the UPLOAD CLOUD button inside the panel.
+    fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
+    const fileInput = (await waitFor(() => {
+      const el = document.body.querySelector('input[type=file]') as HTMLInputElement | null;
+      if (!el) throw new Error('file input not yet mounted');
+      return el;
+    })) as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [uploadFixtureFile()] } });
 
     await waitFor(() => expect(screen.getByText('Uploaded Alpha')).toBeDefined());

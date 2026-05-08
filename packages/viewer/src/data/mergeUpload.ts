@@ -100,7 +100,8 @@ export function mergeUploads(
     manifest: {
       schemaVersion: Math.max(existing.manifest.schemaVersion, incoming.manifest.schemaVersion) as
         | 1
-        | 2,
+        | 2
+        | 3,
       generatedAt: Date.now(),
       counts,
       sessions,
@@ -145,7 +146,7 @@ export function effectiveManifest(
   for (const e of merged) counts[e.source] += 1;
 
   return {
-    schemaVersion: Math.max(fetched.schemaVersion, uploaded.manifest.schemaVersion) as 1 | 2,
+    schemaVersion: Math.max(fetched.schemaVersion, uploaded.manifest.schemaVersion) as 1 | 2 | 3,
     generatedAt: Date.now(),
     counts,
     sessions: merged,

@@ -109,7 +109,38 @@ export {
 } from './umapProject.js';
 
 export {
+  scoreSentiment,
+  type SentimentScore,
+} from './sentimentHeuristic.js';
+
+export {
+  discoverProjects,
+  type DiscoverProjectsOptions,
+  type DiscoverProjectsResult,
+} from './discoverProjects.js';
+
+export {
+  discoverTopics,
+  type DiscoverTopicsOptions,
+  type DiscoverTopicsResult,
+} from './discoverTopics.js';
+
+export {
+  discoverNarratives,
+  type DiscoverNarrativesOptions,
+  type DiscoverNarrativesResult,
+} from './discoverNarratives.js';
+
+export {
   kmeansCluster,
   type KmeansClusterInput,
   type KmeansClusterOptions,
 } from './kmeansCluster.js';
+
+export {
+  HEURISTIC_RECALL_VERSION,
+  detectCorrectionCandidates,
+  type TurnPair,
+} from './detectCorrectionCandidates.js';
+
+export { clusterByThreshold } from './clusterRules.js';

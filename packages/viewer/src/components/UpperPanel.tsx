@@ -4,7 +4,7 @@ import type { FilterState, UploadedCloudData } from '../types.js';
 import { SOURCE_LABEL } from '../types.js';
 import { Sparkline } from './Sparkline.js';
 import { SourceAttribution } from './SourceAttribution.js';
-import { formatShortDate, minTimestamp, maxTimestamp } from '../util/time.js';
+import { formatIsoDate, minTimestamp, maxTimestamp } from '../util/time.js';
 import { onActivate } from '../util/a11y.js';
 import type { CostKpiSection } from './modes/CostMode.js';
 import type { ClassifyProgress, SemanticLabelsBundle } from '../data/semanticClassify.js';
@@ -177,12 +177,18 @@ function labelsDescription(counts: AnalysisCounts | undefined): string {
   return parts.join(' · ');
 }
 
+/**
+ * Format the corpus span as `YYYY-MM-DD → YYYY-MM-DD`. Always ISO on
+ * both endpoints so cross-year ranges don't render as
+ * `2023-07-18 → Apr 19` — the rest of the chrome already leans ISO,
+ * so this matches established convention (v2-visual-polish #3).
+ */
 function dateRange(sessions: readonly UnifiedSessionEntry[]): string {
   const mins = sessions.map((s) => s.updatedAt);
   const min = minTimestamp(mins);
   const max = maxTimestamp(mins);
   if (min === null || max === null) return '—';
-  return `${formatShortDate(min)} → ${formatShortDate(max)}`;
+  return `${formatIsoDate(min)} → ${formatIsoDate(max)}`;
 }
 
 /**
@@ -302,8 +308,6 @@ export function UpperPanel({
   onOpenTopicAnalysis,
   onOpenLabelsAnalysis,
 }: UpperPanelProps) {
-  const total = manifest.sessions.length;
-  const visible = filtered.length;
   const range = dateRange(filtered);
   const kpis = useMemo(() => computeKpis(filtered), [filtered]);
 
@@ -383,11 +387,14 @@ export function UpperPanel({
   }, []);
 
   // Rationale for the IA this renders:
-  //   Row 1 "stats": data-scope signals — VISIBLE / RANGE describe what's
-  //     currently filtered in; the ZIP chip belongs here because it's the
-  //     same kind of "what data am I looking at" signal, not a view or
-  //     analysis control. Clean left-right split keeps the eye moving
-  //     only when something actually changes.
+  //   Row 1 "stats": data-scope signals — RANGE describes the date span
+  //     of what's currently filtered in; the ZIP chip belongs here
+  //     because it's the same kind of "what data am I looking at"
+  //     signal, not a view or analysis control. (VISIBLE / TOTAL counts
+  //     used to live here too but were pulled — the sparkline readout
+  //     beneath this row carries them with thousands separators and
+  //     extra context like PEAK / AVG-PER-WEEK; rendering them twice
+  //     in two formats was the bug v2-visual-polish #2 fixed.)
   //   Row 2 "tab bar": centered directly above the body so the tabs sit
   //     *over* what they control. Segmented-control shape, nothing else
   //     competing for the row.
@@ -400,13 +407,6 @@ export function UpperPanel({
     <section className="lcars-upper-panel" aria-label="manifest summary">
       <div className="lcars-upper-panel__stats">
         <div className="lcars-upper-panel__stats-start">
-          <div className="lcars-upper-panel__stat">
-            <span className="lcars-upper-panel__stat-label">VISIBLE</span>
-            <span className="lcars-upper-panel__stat-value">
-              {visible}
-              <span className="lcars-upper-panel__stat-total"> / {total}</span>
-            </span>
-          </div>
           <div className="lcars-upper-panel__stat">
             <span className="lcars-upper-panel__stat-label">RANGE</span>
             <span className="lcars-upper-panel__stat-value">{range}</span>
@@ -537,15 +537,27 @@ export function UpperPanel({
               onKeyDown={(e) => onActivate(e, () => onKpiClick('by-project'))}
             >
               <span className="lcars-kpi__label">TOP PROJECT</span>
-              <span className="lcars-kpi__value">
+              {/*
+                v2-visual-polish #5: split the project name and the
+                coverage caption into two elements. Previously they
+                lived in the same `__value` span, which (with
+                `white-space: nowrap; text-overflow: ellipsis`)
+                truncated mid-word — e.g. `HighlightExplain (112 of
+                1010 t...`. Now the project name ellipsizes on its own
+                line and the coverage wraps freely beneath, with a
+                `title` for the full string on hover.
+              */}
+              <span
+                className="lcars-kpi__value"
+                title={kpis.topProject?.name ?? undefined}
+              >
                 {kpis.topProject ? kpis.topProject.name : '—'}
-                {projectCoverageLow && kpis.topProject && (
-                  <span className="lcars-kpi__coverage">
-                    {' '}
-                    ({kpis.projectTaggedCount} of {kpis.totalSessions} tagged)
-                  </span>
-                )}
               </span>
+              {projectCoverageLow && kpis.topProject && (
+                <span className="lcars-kpi__coverage">
+                  {kpis.projectTaggedCount} of {kpis.totalSessions} tagged
+                </span>
+              )}
             </div>
           </div>
 

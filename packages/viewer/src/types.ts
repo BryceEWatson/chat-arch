@@ -1,5 +1,11 @@
 import type { SessionManifest, SessionSource, UnifiedSessionEntry } from '@chat-arch/schema';
-import type { CloudConversation, CloudProject } from '@chat-arch/schema';
+import type {
+  CloudConversation,
+  CloudProject,
+  Project,
+  Topic,
+  Narrative,
+} from '@chat-arch/schema';
 import type { TierFileState } from './data/analysisFetch.js';
 
 /**
@@ -29,7 +35,20 @@ export interface UploadedCloudData {
 }
 
 /** UI mode — which main-content surface is active. */
-export type Mode = 'command' | 'timeline' | 'detail' | 'constellation' | 'cost';
+export type Mode =
+  | 'command'
+  | 'timeline'
+  | 'detail'
+  | 'constellation'
+  | 'cost'
+  /** v2 spec §5.1: PROJECTS surface (index + detail in one mode, driven by hash). */
+  | 'projects'
+  /** v2 spec §5.2: TOPICS surface (index + detail in one mode, driven by hash). */
+  | 'topics'
+  /** v2 spec §5.4: PRACTICE four-lens adversarial audit dashboard. */
+  | 'practice'
+  /** Correction-mining surface: clustered patterns + proposed CLAUDE.md upgrades. */
+  | 'corrections';
 
 /** Generic async-fetch state. Used uniformly for manifest + drill-in fetches. */
 export type FetchState<T> =
@@ -96,6 +115,10 @@ export const MODE_COLOR: Record<Mode, string> = {
   detail: 'var(--lcars-sunflower)',
   constellation: 'var(--lcars-violet)',
   cost: 'var(--lcars-peach)',
+  projects: 'var(--lcars-sunflower)',
+  topics: 'var(--lcars-ice)',
+  practice: 'var(--lcars-violet)',
+  corrections: 'var(--lcars-peach)',
 };
 
 /**
@@ -127,6 +150,16 @@ export interface AnalysisState {
   tierPresentCount: number;
   /** Per-Phase-7-reserved-filename state map. Keys are the six reserved filenames. */
   tierFiles: Record<string, TierFileState>;
+  /**
+   * v2 (Phase 2) entity sidecars. `null` until Phase 6 wires in-browser
+   * parallel emission for uploads — for fetched manifests these come
+   * from `analysis/projects.json`, `topics.json`, `narratives.json`
+   * written by the exporter. The viewer treats them as best-effort:
+   * a missing file just means no chips for that surface.
+   */
+  v2Projects: readonly Project[] | null;
+  v2Topics: readonly Topic[] | null;
+  v2Narratives: readonly Narrative[] | null;
 }
 
 export type { SessionManifest, UnifiedSessionEntry, SessionSource };
