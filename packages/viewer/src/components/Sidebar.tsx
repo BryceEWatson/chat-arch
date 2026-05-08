@@ -71,6 +71,7 @@ const NAV: readonly NavGroup[] = [
       // until a follow-up phase consolidates their surfaces into
       // PRACTICE / per-project panels.
       { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
+      { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
       { mode: 'constellation', label: 'ANALYSIS', short: 'ANL' },
       { mode: 'cost', label: 'COST', short: 'CST' },
     ],

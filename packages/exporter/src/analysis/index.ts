@@ -29,6 +29,7 @@ import {
   discoverNarratives,
   type DuplicateInput,
 } from '@chat-arch/analysis';
+import { buildCorrectionsCandidatesFile } from './corrections.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -50,6 +51,7 @@ export interface RunAnalysisResult {
     projects: string;
     topics: string;
     narratives: string;
+    correctionCandidates: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -60,10 +62,11 @@ export interface RunAnalysisResult {
     projects: number;
     topics: number;
     narratives: number;
+    correctionCandidates: number;
   };
 }
 
-const EXPORTER_VERSION = '0.6.0';
+const EXPORTER_VERSION = '0.7.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -186,6 +189,25 @@ export async function runAnalysis(
     `analysis: narratives.json — ${narrativesResult.narratives.length} narratives`,
   );
 
+  // ---- Correction candidates (stage-1 heuristic only) ----
+  // The Claude Code skill `/mine-corrections` consumes this file and
+  // overwrites it with classifications + clustered patterns + proposed
+  // upgrades. Until then `pipeline.llmClassification: false` gates
+  // downstream consumers from treating candidates as confirmed.
+  const correctionsResult = await buildCorrectionsCandidatesFile(manifest, {
+    outDir: options.outDir,
+    now,
+  });
+  const correctionCandidatesPath = path.join(analysisDir, 'correction-candidates.json');
+  await writeFile(
+    correctionCandidatesPath,
+    JSON.stringify(correctionsResult.correctionsFile, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(
+    `analysis: correction-candidates.json — ${correctionsResult.correctionsFile.corrections.length} candidates from ${correctionsResult.scannedSessions} sessions (${correctionsResult.missingTranscripts} missing transcripts)`,
+  );
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -204,6 +226,7 @@ export async function runAnalysis(
           'projects.json',
           'topics.json',
           'narratives.json',
+          'correction-candidates.json',
         ],
       },
     },
@@ -217,6 +240,7 @@ export async function runAnalysis(
       projects: enrichedProjects.length,
       topics: topicsResult.topics.length,
       narratives: narrativesResult.narratives.length,
+      correctionCandidates: correctionsResult.correctionsFile.corrections.length,
     },
   };
   const metaPath = path.join(analysisDir, 'meta.json');
@@ -232,6 +256,7 @@ export async function runAnalysis(
       projects: projectsPath,
       topics: topicsPath,
       narratives: narrativesPath,
+      correctionCandidates: correctionCandidatesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -240,6 +265,7 @@ export async function runAnalysis(
       projects: enrichedProjects.length,
       topics: topicsResult.topics.length,
       narratives: narrativesResult.narratives.length,
+      correctionCandidates: correctionsResult.correctionsFile.corrections.length,
     },
   };
 }

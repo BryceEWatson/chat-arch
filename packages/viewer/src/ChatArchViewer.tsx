@@ -32,6 +32,7 @@ import {
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
 import { PracticeMode } from './components/modes/PracticeMode.js';
+import { CorrectionsPanel } from './components/CorrectionsPanel.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
@@ -1910,7 +1911,10 @@ export function ChatArchViewer({
   // CONSTELLATION / COST keep the chrome since they're roll-ups over
   // the same filtered session list as SESSIONS.
   const isV2Surface =
-    baseMode === 'projects' || baseMode === 'topics' || baseMode === 'practice';
+    baseMode === 'projects' ||
+    baseMode === 'topics' ||
+    baseMode === 'practice' ||
+    baseMode === 'corrections';
 
   const activeManifest = manifest!;
 
@@ -1939,6 +1943,7 @@ export function ChatArchViewer({
     projects: 'PROJECTS',
     topics: 'TOPICS',
     practice: 'PRACTICE',
+    corrections: 'CORRECTIONS',
   };
 
   // Has-data flags drive the "Scan Local" → "Update Local" and
@@ -2326,6 +2331,8 @@ export function ChatArchViewer({
                           }
                         }}
                       />
+                    ) : baseMode === 'corrections' ? (
+                      <CorrectionsPanel dataDirBaseUrl={dataRoot} />
                     ) : baseMode === 'topics' ? (
                       <TopicsMode
                         topics={effectiveV2Entities.topics ?? []}

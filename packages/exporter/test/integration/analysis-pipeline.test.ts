@@ -127,7 +127,8 @@ describe('Phase 6 analysis pipeline integration', () => {
     // (c) Session count in meta matches fixture.
     expect(meta.counts.sessions).toBe(sessions.length);
 
-    // (d) browser.files lists Phase-6 tier-1 files + Phase 2 v2 entity sidecars.
+    // (d) browser.files lists Phase-6 tier-1 files + Phase 2 v2 entity sidecars
+    //     + correction-candidates.json (stage-1 heuristic recall).
     expect(meta.tiers.browser.files.sort()).toEqual(
       [
         'duplicates.exact.json',
@@ -135,6 +136,7 @@ describe('Phase 6 analysis pipeline integration', () => {
         'projects.json',
         'topics.json',
         'narratives.json',
+        'correction-candidates.json',
       ].sort(),
     );
     // Phase 6 does not populate the `local` tier.

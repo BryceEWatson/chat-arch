@@ -136,3 +136,11 @@ export {
   type KmeansClusterInput,
   type KmeansClusterOptions,
 } from './kmeansCluster.js';
+
+export {
+  HEURISTIC_RECALL_VERSION,
+  detectCorrectionCandidates,
+  type TurnPair,
+} from './detectCorrectionCandidates.js';
+
+export { clusterByThreshold } from './clusterRules.js';

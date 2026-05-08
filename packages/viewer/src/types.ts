@@ -46,7 +46,9 @@ export type Mode =
   /** v2 spec §5.2: TOPICS surface (index + detail in one mode, driven by hash). */
   | 'topics'
   /** v2 spec §5.4: PRACTICE four-lens adversarial audit dashboard. */
-  | 'practice';
+  | 'practice'
+  /** Correction-mining surface: clustered patterns + proposed CLAUDE.md upgrades. */
+  | 'corrections';
 
 /** Generic async-fetch state. Used uniformly for manifest + drill-in fetches. */
 export type FetchState<T> =
@@ -116,6 +118,7 @@ export const MODE_COLOR: Record<Mode, string> = {
   projects: 'var(--lcars-sunflower)',
   topics: 'var(--lcars-ice)',
   practice: 'var(--lcars-violet)',
+  corrections: 'var(--lcars-peach)',
 };
 
 /**

@@ -5,14 +5,17 @@ import { Sidebar } from './Sidebar.js';
 afterEach(() => cleanup());
 
 describe('Sidebar (vertical variant, default)', () => {
-  it('renders PROJECTS + TOPICS + SESSIONS in BROWSE; PRACTICE + ANALYSIS + COST in INSIGHTS', () => {
+  it('renders PROJECTS + TOPICS + SESSIONS in BROWSE; PRACTICE + CORRECTIONS + ANALYSIS + COST in INSIGHTS', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
     // BROWSE
     expect(screen.getByRole('button', { name: /mode PROJECTS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode TOPICS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode SESSIONS/i })).toBeDefined();
-    // INSIGHTS — PRACTICE leads (D6b/D6c).
+    // INSIGHTS — PRACTICE leads (D6b/D6c); CORRECTIONS sits between PRACTICE
+    // and ANALYSIS so the "audit → suggest upgrades → deep-dive" flow reads
+    // top-down.
     expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode ANALYSIS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode COST/i })).toBeDefined();
     // Absent.
@@ -125,8 +128,8 @@ describe('Sidebar (horizontal variant)', () => {
     );
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
-    // 6 mode pills now: PRJ, TOP, SES, PRC, ANL, CST.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
+    // 7 mode pills now: PRJ, TOP, SES, PRC, COR, ANL, CST.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(7);
   });
 
   it('shows only the short label in horizontal pills', () => {
@@ -134,9 +137,9 @@ describe('Sidebar (horizontal variant)', () => {
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(6);
+    expect(pillShorts.length).toBe(7);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['PRJ', 'TOP', 'SES', 'PRC', 'ANL', 'CST']);
+    expect(texts).toEqual(['PRJ', 'TOP', 'SES', 'PRC', 'COR', 'ANL', 'CST']);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -155,6 +158,7 @@ describe('Sidebar (horizontal variant)', () => {
       'TOP',
       'SES',
       'PRC',
+      'COR',
       'ANL',
       'CST',
       'DAT',
