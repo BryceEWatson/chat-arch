@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
-import type { CorrectionPattern, CorrectionsFile } from '@chat-arch/schema';
+import type {
+  CorrectionPattern,
+  CorrectionsFile,
+  ProposedUpgrade,
+} from '@chat-arch/schema';
 import type * as CorrectionsLoaderModule from '../data/correctionsLoader.js';
 
 // Mock the loader module before importing the panel so the mocked
@@ -41,6 +45,7 @@ vi.mock('../data/mineCorrectionsClient.js', () => ({
 import {
   loadCorrectionsFile,
   loadCorrectionCandidatesFile,
+  loadAppliedImprovementsFile,
 } from '../data/correctionsLoader.js';
 import { CorrectionsPanel } from './CorrectionsPanel.js';
 
@@ -51,6 +56,7 @@ afterEach(() => {
 
 const mockedLoadCorrections = vi.mocked(loadCorrectionsFile);
 const mockedLoadCandidates = vi.mocked(loadCorrectionCandidatesFile);
+const mockedLoadApplied = vi.mocked(loadAppliedImprovementsFile);
 
 function pattern(overrides: Partial<CorrectionPattern> & { id: string }): CorrectionPattern {
   return {
@@ -86,6 +92,8 @@ describe('CorrectionsPanel', () => {
   beforeEach(() => {
     mockedLoadCorrections.mockReset();
     mockedLoadCandidates.mockReset();
+    mockedLoadApplied.mockReset();
+    mockedLoadApplied.mockResolvedValue(null);
   });
 
   it('renders the empty state when both fetches return null', async () => {
@@ -188,5 +196,96 @@ describe('CorrectionsPanel', () => {
     const encoded = screen.getByLabelText('ALREADY ENCODED BUT FAILING');
     expect(within(recurring).getByText('Nothing here — good.')).toBeDefined();
     expect(within(encoded).getByText('Nothing here — good.')).toBeDefined();
+  });
+
+  describe('applied-improvements merge', () => {
+    it('flips a NEW pattern into RECURRING when ledger entry has appliedAt < lastSeen', async () => {
+      // The pattern itself was emitted with recurringPostApplication =
+      // false, but the ledger says it was applied earlier; merge
+      // should re-categorize it.
+      const u: ProposedUpgrade = {
+        target: 'global-claude-md',
+        targetPath: '~/.claude/CLAUDE.md',
+        patch: '- rule X',
+        rationale: 'r',
+        applied: false,
+        appliedAt: null,
+      };
+      const p = pattern({
+        id: 'p-recurring',
+        canonicalRule: 'flips into recurring',
+        proposedUpgrades: [u],
+        recurringPostApplication: false,
+      });
+      mockedLoadCorrections.mockResolvedValue(file([p]));
+      mockedLoadCandidates.mockResolvedValue(null);
+      mockedLoadApplied.mockResolvedValue({
+        schemaVersion: 1,
+        generatedAt: 1_700_200_000_000,
+        entries: [
+          {
+            id: 'a-1',
+            patternId: 'p-recurring',
+            // lastSeen = 1_700_100_000_000 from the pattern factory.
+            appliedAt: 1_700_050_000_000,
+            ruleSummary: 'flips into recurring',
+            proposedUpgrade: { ...u, applied: true, appliedAt: 1_700_050_000_000 },
+          },
+        ],
+      });
+      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
+        expect(within(recurring).getByText('flips into recurring')).toBeDefined();
+      });
+      const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
+      expect(within(fresh).queryByText('flips into recurring')).toBeNull();
+    });
+
+    it('treats applied: true on the merged upgrade as initial APPLIED state', async () => {
+      const u: ProposedUpgrade = {
+        target: 'global-claude-md',
+        targetPath: '~/.claude/CLAUDE.md',
+        patch: '- rule Y',
+        rationale: 'r',
+        applied: false,
+        appliedAt: null,
+      };
+      const p = pattern({
+        id: 'p-applied',
+        canonicalRule: 'already applied via ledger',
+        proposedUpgrades: [u],
+        instanceIds: [],
+      });
+      mockedLoadCorrections.mockResolvedValue(file([p]));
+      mockedLoadCandidates.mockResolvedValue(null);
+      mockedLoadApplied.mockResolvedValue({
+        schemaVersion: 1,
+        generatedAt: 1_700_200_000_000,
+        entries: [
+          {
+            id: 'a-1',
+            patternId: 'p-applied',
+            appliedAt: 1_700_120_000_000,
+            ruleSummary: 'already applied',
+            proposedUpgrade: { ...u, applied: true, appliedAt: 1_700_120_000_000 },
+          },
+        ],
+      });
+      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        expect(screen.getByText('already applied via ledger')).toBeDefined();
+      });
+      const toggles = screen.getAllByRole('button', { name: /SHOW DETAILS/i });
+      // Three buckets render their cards; the one we want is the one
+      // that surfaces our pattern, but all toggles are equivalent here.
+      // Click the first toggle that belongs to our pattern's card.
+      // Just clicking any toggle for this pattern is enough — there's only one.
+      for (const t of toggles) t.click();
+      // APPLIED ✓ should appear without any APPLY interaction.
+      await waitFor(() => {
+        expect(screen.getByText(/APPLIED ✓/)).toBeDefined();
+      });
+    });
   });
 });

@@ -376,7 +376,7 @@ function UpgradeRow({
         >
           {copied ? 'COPIED' : 'COPY PATCH'}
         </button>
-        {!onApply && (
+        {!onApply && state.kind !== 'applied' && (
           <button
             type="button"
             className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
@@ -386,6 +386,20 @@ function UpgradeRow({
           >
             APPLY
           </button>
+        )}
+        {state.kind === 'applied' && (
+          <span
+            className="lcars-correction-pattern__applied"
+            aria-label={`applied at ${formatAppliedAt(state.appliedAt)}`}
+          >
+            APPLIED ✓
+            {formatAppliedAt(state.appliedAt) && (
+              <span className="lcars-correction-pattern__applied-time">
+                {' '}
+                {formatAppliedAt(state.appliedAt)}
+              </span>
+            )}
+          </span>
         )}
         {onApply && state.kind === 'idle' && (
           <button
@@ -406,20 +420,6 @@ function UpgradeRow({
           >
             {isMe ? 'APPLYING…' : 'APPLY'}
           </button>
-        )}
-        {onApply && state.kind === 'applied' && (
-          <span
-            className="lcars-correction-pattern__applied"
-            aria-label={`applied at ${formatAppliedAt(state.appliedAt)}`}
-          >
-            APPLIED ✓
-            {formatAppliedAt(state.appliedAt) && (
-              <span className="lcars-correction-pattern__applied-time">
-                {' '}
-                {formatAppliedAt(state.appliedAt)}
-              </span>
-            )}
-          </span>
         )}
       </div>
       {onApply && state.kind === 'confirming' && (
