@@ -1,23 +1,31 @@
 # chat-arch
 
-> The personal archive for your Claude conversation history.
+> Find the rules Claude keeps breaking. Patch your CLAUDE.md. Prove the loop closed.
 
-A local-first viewer + indexer for your own Claude Code transcripts. Reads the
+A local-first workshop for turning your Claude conversation history into
+reusable improvements. Mines your transcripts for correction patterns —
+places where you pushed back on Claude — clusters them into recurring
+rules, and helps you encode fixes into your CLAUDE.md, skills, and agent
+configs. Then watches whether those fixes hold on the next pass through
+your data.
+
+Underneath the workshop is a fast viewer + indexer for the corpus
+itself: search, project rollups, and a unified timeline across Claude
+Code CLI, Desktop, Cowork, and claude.ai cloud-export ZIPs. Reads the
 JSONL files Claude Code writes to disk plus the ZIP you get from
-**Settings → Privacy → Export data**, unifies them into a single timeline, and
-gives you search, filters, cost analytics, and a duplicate / zombie-project
-view for the corpus you've already built.
+**Settings → Privacy → Export data**.
 
 **Local-first by construction.** Your transcripts never leave your machine.
 The hosted viewer at **[chat-arch.dev](https://chat-arch.dev)** is a static
-Cloudflare Pages build with no backend — Privacy-Export ZIPs are parsed
-entirely in the browser. A local `pnpm dev` checkout additionally exposes
-a same-origin `/api/rescan` endpoint so **SCAN LOCAL** can walk
-`~/.claude/projects/` and `%APPDATA%\Claude` via the Astro dev server
-(`localhost` only; nothing egresses). The only cross-origin fetch on
-either path is the optional Hugging Face model-weight download on first
-**Analyze Topics** run — see [Model-weight trust boundary](#model-weight-trust-boundary)
-below. No telemetry, no analytics beacons, no transcript upload.
+Cloudflare Pages build with no backend — it's a demo of what chat-arch
+can do. The full workshop loop (SCAN LOCAL, mine corrections, apply
+fixes) runs on a local `pnpm dev` checkout that exposes a same-origin
+`/api/rescan` endpoint so **SCAN LOCAL** can walk `~/.claude/projects/`
+and `%APPDATA%\Claude` (`localhost` only; nothing egresses). The only
+cross-origin fetch on either path is the optional Hugging Face
+model-weight download on first **Analyze Topics** run — see
+[Model-weight trust boundary](#model-weight-trust-boundary) below. No
+telemetry, no analytics beacons, no transcript upload.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Live demo: chat-arch.dev](https://img.shields.io/badge/demo-chat--arch.dev-5b7cff)](https://chat-arch.dev)
