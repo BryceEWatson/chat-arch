@@ -25,6 +25,18 @@ import { formatRelativeUnit } from '../util/time.js';
 
 const MS_DAY = 86_400_000;
 const STALE_THRESHOLD_DAYS = 30;
+/**
+ * Floor for "plausible apply timestamp". A corrupt entry with
+ * `appliedAt: 1` (or any value below this floor) would otherwise
+ * pin maxAppliedAt to the unix epoch and produce nonsense headlines
+ * like "SINCE YOU PATCHED 20148D AGO". 2000-01-01 is well before any
+ * Claude product existed; anything earlier is unambiguously bad
+ * data and gets ignored when computing the headline / stale chip.
+ * (We keep this loose rather than tying it to the apply-pipeline
+ * ship date so older fixture data — Nov-2023 timestamps in the test
+ * suite — still renders correctly.)
+ */
+const MIN_REASONABLE_EPOCH = 946_684_800_000; // 2000-01-01T00:00:00Z
 
 export interface AppliedImprovementsSummaryProps {
   /** The applied-improvements ledger. `null` -> hidden. */
@@ -48,6 +60,15 @@ export interface AppliedImprovementsSummaryProps {
    * scrolling to and highlighting the matching CorrectionPatternCard.
    */
   onSelectPattern: (patternId: string) => void;
+  /**
+   * Optional rescan trigger. When provided, the stale-index warning
+   * renders as an actionable button that fires this callback (so Maya
+   * can click it directly instead of hunting for UPDATE LOCAL in the
+   * chrome). When omitted (e.g. hosted/static build with no rescan
+   * endpoint), the warning falls back to a non-interactive `<span>`
+   * with the same copy.
+   */
+  onRefreshIndex?: () => void;
 }
 
 interface TimelineRow {
@@ -97,6 +118,7 @@ export function AppliedImprovementsSummary({
   corrections,
   manifestGeneratedAt,
   onSelectPattern,
+  onRefreshIndex,
 }: AppliedImprovementsSummaryProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -113,7 +135,7 @@ export function AppliedImprovementsSummary({
   // count walks the entire ledger × pattern set in the worst case.
   const stats = useMemo(() => {
     if (!applied || applied.entries.length === 0) {
-      return { applied: 0, recurring: 0, holding: 0, maxAppliedAt: 0 };
+      return { applied: 0, recurring: 0, holding: 0, gone: 0, maxAppliedAt: 0 };
     }
     let maxAppliedAt = 0;
     // De-dupe by patternId for the recurring/holding split — multiple
@@ -123,20 +145,40 @@ export function AppliedImprovementsSummary({
     // N times".
     const patternIds = new Set<string>();
     for (const entry of applied.entries) {
-      if (entry.appliedAt > maxAppliedAt) maxAppliedAt = entry.appliedAt;
+      // Ignore obviously-corrupt timestamps when computing the
+      // headline anchor. Without this guard a single bad entry with
+      // `appliedAt: 1` pins the headline to "20148D AGO" and the
+      // stale-chip math reads wrong too.
+      if (
+        entry.appliedAt >= MIN_REASONABLE_EPOCH &&
+        entry.appliedAt > maxAppliedAt
+      ) {
+        maxAppliedAt = entry.appliedAt;
+      }
       patternIds.add(entry.patternId);
     }
     let recurring = 0;
+    let gone = 0;
     for (const id of patternIds) {
       const p = patternsById.get(id);
-      if (p?.recurringPostApplication) recurring += 1;
+      if (!p) {
+        // Pattern in the apply ledger but missing from the current
+        // corrections.json — the timeline still renders a GONE row,
+        // but it does NOT count as "still holding" (the original
+        // implementation lumped these into HOLDING, conflating "lost
+        // track of pattern" with "rule is sticking").
+        gone += 1;
+      } else if (p.recurringPostApplication) {
+        recurring += 1;
+      }
     }
     const distinctApplied = patternIds.size;
-    const holding = Math.max(0, distinctApplied - recurring);
+    const holding = Math.max(0, distinctApplied - recurring - gone);
     return {
       applied: applied.entries.length,
       recurring,
       holding,
+      gone,
       maxAppliedAt,
     };
   }, [applied, patternsById]);
@@ -151,7 +193,13 @@ export function AppliedImprovementsSummary({
   // entries.length===0 → return null.
   if (!applied || applied.entries.length === 0) return null;
 
-  const headlineRelative = formatRelativeUnit(stats.maxAppliedAt);
+  // When every entry's appliedAt was implausible (corrupt ledger), we
+  // skip the relative timestamp rather than render gibberish like
+  // "20148D AGO". Headline degrades gracefully to just the verb.
+  const headlineRelative =
+    stats.maxAppliedAt >= MIN_REASONABLE_EPOCH
+      ? formatRelativeUnit(stats.maxAppliedAt)
+      : '';
   const headlineUpper = headlineRelative.toUpperCase();
 
   // Stale-index detection: when the manifest hasn't been refreshed in
@@ -177,9 +225,24 @@ export function AppliedImprovementsSummary({
     >
       <header className="lcars-applied-summary__header">
         <h3 className="lcars-applied-summary__headline">
-          SINCE YOU PATCHED {headlineUpper}
+          {headlineUpper ? `SINCE YOU PATCHED ${headlineUpper}` : 'SINCE YOU PATCHED'}
         </h3>
-        {indexIsStale && (
+        {indexIsStale && (onRefreshIndex ? (
+          // Actionable variant — Maya can fix the warning by clicking
+          // it directly. The arrow glyph telegraphs "this does
+          // something"; the chrome's UPDATE LOCAL button is a longer
+          // hunt.
+          <button
+            type="button"
+            className="lcars-applied-summary__stale lcars-applied-summary__stale--button"
+            aria-label="index is stale — click to refresh"
+            title="Refresh the corpus so recurring counts include new violations."
+            onClick={onRefreshIndex}
+          >
+            INDEX IS STALE — RUN UPDATE LOCAL TO CHECK FOR NEW VIOLATIONS
+            <span className="lcars-applied-summary__stale-arrow" aria-hidden="true"> →</span>
+          </button>
+        ) : (
           <span
             className="lcars-applied-summary__stale"
             role="status"
@@ -188,7 +251,7 @@ export function AppliedImprovementsSummary({
           >
             INDEX IS STALE — RUN UPDATE LOCAL TO CHECK FOR NEW VIOLATIONS
           </span>
-        )}
+        ))}
       </header>
 
       <ul className="lcars-applied-summary__stats" role="list">

@@ -2558,6 +2558,8 @@ export function ChatArchViewer({
                       <CorrectionsPanel
                         dataDirBaseUrl={dataRoot}
                         manifestGeneratedAt={manifest?.generatedAt ?? null}
+                        rescanAvailable={rescanCtl.available}
+                        onRefreshIndex={() => void onRescan()}
                         onSelectSession={(id) => {
                           // Stash the source mode so BACK restores
                           // CORRECTIONS instead of falling to SESSIONS

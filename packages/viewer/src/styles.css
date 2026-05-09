@@ -6815,6 +6815,24 @@
   border: 1px solid color-mix(in srgb, var(--lcars-peach) 60%, transparent);
   background: rgba(255, 153, 51, 0.08);
 }
+/* Actionable variant — same chip, but rendered as a <button> so the */
+/* user can fire onRefreshIndex directly instead of hunting for the  */
+/* chrome's UPDATE LOCAL control.                                    */
+button.lcars-applied-summary__stale--button {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+button.lcars-applied-summary__stale--button:hover,
+button.lcars-applied-summary__stale--button:focus-visible {
+  background: rgba(255, 153, 51, 0.16);
+  border-color: var(--lcars-peach);
+  outline: none;
+}
+.lcars-applied-summary__stale-arrow {
+  display: inline-block;
+  margin-left: 2px;
+}
 .lcars-applied-summary__stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -7005,6 +7023,17 @@
 }
 .lcars-corrections__pattern-item[data-highlighted='true'] {
   animation: lcars-applied-summary-pulse 2s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Static fallback — keep the highlight perceivable for reduced-     */
+  /* motion users without a pulsing animation. A solid amber outline + */
+  /* tint reads as "this card was selected" without movement.          */
+  .lcars-corrections__pattern-item[data-highlighted='true'] {
+    animation: none;
+    outline: 2px solid color-mix(in srgb, var(--lcars-peach) 70%, transparent);
+    outline-offset: 2px;
+    background: color-mix(in srgb, var(--lcars-peach) 6%, transparent);
+  }
 }
 
 .lcars-corrections__coverage {

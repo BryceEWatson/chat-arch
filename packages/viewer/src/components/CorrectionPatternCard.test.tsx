@@ -99,6 +99,64 @@ describe('CorrectionPatternCard', () => {
     expect(screen.getByText('SKILL')).toBeDefined();
   });
 
+  describe('defaultExpanded (P0.3 review fix)', () => {
+    it('auto-expands when defaultExpanded is true', () => {
+      const p = pattern({
+        proposedUpgrades: [upgrade()],
+      });
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      // Body content (PROPOSED UPGRADES section + COPY PATCH) is only
+      // present when expanded — assert it's already visible without
+      // clicking SHOW DETAILS.
+      expect(screen.getByText('PROPOSED UPGRADES')).toBeDefined();
+      expect(screen.getByRole('button', { name: /COPY PATCH/i })).toBeDefined();
+      // Toggle label flips to HIDE DETAILS.
+      expect(
+        screen.getByRole('button', { name: /HIDE DETAILS/i }),
+      ).toBeDefined();
+    });
+
+    it('starts collapsed when defaultExpanded is false (default)', () => {
+      const p = pattern({ proposedUpgrades: [upgrade()] });
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+        />,
+      );
+      expect(screen.queryByText('PROPOSED UPGRADES')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: /SHOW DETAILS/i }),
+      ).toBeDefined();
+    });
+
+    it('flipping defaultExpanded false→true expands a previously collapsed card', () => {
+      const p = pattern({ proposedUpgrades: [upgrade()] });
+      const { rerender } = render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded={false}
+        />,
+      );
+      expect(screen.queryByText('PROPOSED UPGRADES')).toBeNull();
+      rerender(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      expect(screen.getByText('PROPOSED UPGRADES')).toBeDefined();
+    });
+  });
+
   describe('clipboard + apply behavior', () => {
     beforeEach(() => {
       Object.defineProperty(navigator, 'clipboard', {

@@ -47,6 +47,21 @@ export interface CorrectionsPanelProps {
    * is silently skipped.
    */
   manifestGeneratedAt?: number | null;
+  /**
+   * Trigger a corpus rescan. Plumbed from ChatArchViewer (which owns
+   * the `useRescan` controller). When provided AND `rescanAvailable`
+   * is true, the AppliedImprovementsSummary's stale-index chip
+   * upgrades from a passive "go run UPDATE LOCAL" hint to an
+   * actionable button that fires this callback directly.
+   */
+  onRefreshIndex?: () => void;
+  /**
+   * Whether the rescan endpoint probe succeeded on the host. Hosted
+   * static builds with no `/api/rescan` should leave this false so
+   * the stale chip falls back to the non-interactive `<span>` even if
+   * `onRefreshIndex` is somehow defined.
+   */
+  rescanAvailable?: boolean;
 }
 
 type LoadState =
@@ -141,12 +156,21 @@ export function CorrectionsPanel({
   dataDirBaseUrl,
   onSelectSession,
   manifestGeneratedAt = null,
+  onRefreshIndex,
+  rescanAvailable = false,
 }: CorrectionsPanelProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   // Phase 2b: which pattern (if any) the AppliedImprovementsSummary
   // most recently asked us to scroll to. Cleared after the highlight
   // animation completes so a second click on the same row re-fires.
   const [highlightedPatternId, setHighlightedPatternId] = useState<string | null>(null);
+  // Click counter — incremented on every onSelectPattern. The
+  // auto-clear timeout closes over the click-time tick so a stale
+  // timeout (from an earlier click on a now-superseded row) never
+  // wipes a newer highlight. Without this, A → B → A produces the
+  // race where the first A's 2s timeout fires after the second A is
+  // already on screen and clears it prematurely.
+  const [highlightTick, setHighlightTick] = useState(0);
   const [mining, setMining] = useState<MiningState>({ status: 'idle' });
   const [autoWindow, setAutoWindow] = useState<AutoWindowResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -516,14 +540,28 @@ export function CorrectionsPanel({
         applied={applied}
         corrections={corrections}
         manifestGeneratedAt={manifestGeneratedAt}
+        {...(rescanAvailable && onRefreshIndex
+          ? { onRefreshIndex }
+          : {})}
         onSelectPattern={(patternId) => {
-          // Two-phase highlight: set the id (the matching card picks
-          // it up via data-highlighted on the next render), then clear
-          // after a short delay so a second click on the same row
-          // re-triggers the animation.
-          setHighlightedPatternId(patternId);
+          // Three-phase highlight:
+          //   1. Clear current highlight to null synchronously, so
+          //      React can unmount the previous data-highlighted attr
+          //      and the CSS animation actually restarts on round 2 of
+          //      "click the same row twice".
+          //   2. requestAnimationFrame to set the next-tick highlight
+          //      after the DOM has flushed the null state. setting in
+          //      the same render would no-op (React dedupes) and the
+          //      pulse would stay frozen.
+          //   3. Schedule a 2s auto-clear that's gated by the tick at
+          //      click-time — a previous click's timeout cannot wipe
+          //      a newer click's highlight.
+          const nextTick = highlightTick + 1;
+          setHighlightedPatternId(null);
+          setHighlightTick(nextTick);
           if (typeof window !== 'undefined') {
             window.requestAnimationFrame(() => {
+              setHighlightedPatternId(patternId);
               // CSS.escape is missing on older jsdom + some legacy
               // browsers; fall back to attribute-iteration so we still
               // scroll the right card without throwing. Pattern ids are
@@ -555,7 +593,16 @@ export function CorrectionsPanel({
               }
             });
             window.setTimeout(() => {
-              setHighlightedPatternId((prev) => (prev === patternId ? null : prev));
+              // Only clear if THIS click's tick is still the latest —
+              // a newer click bumped highlightTick and owns the
+              // current highlight, so we leave it alone. (The newer
+              // click scheduled its own auto-clear.)
+              setHighlightTick((currentTick) => {
+                if (currentTick === nextTick) {
+                  setHighlightedPatternId(null);
+                }
+                return currentTick;
+              });
             }, 2000);
           }
         }}
@@ -1398,6 +1445,7 @@ function BucketsView({
                       <CorrectionPatternCard
                         pattern={p}
                         instancesById={instancesById}
+                        defaultExpanded={isHighlighted}
                         {...(onApply
                           ? {
                               onApply: (upgrade, extras) => onApply(p, upgrade, extras),

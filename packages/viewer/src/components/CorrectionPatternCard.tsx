@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   Correction,
   CorrectionPattern,
@@ -32,6 +32,14 @@ export interface CorrectionPatternCardProps {
    * renders as static text rather than as a button.
    */
   onSelectSession?: (sessionId: string) => void;
+  /**
+   * Phase 2b: when the parent flips this true (e.g. the
+   * AppliedImprovementsSummary asked us to highlight this card), the
+   * card auto-expands so the proposed upgrades are visible without a
+   * second click. Manual collapses are preserved — flipping back to
+   * false does NOT auto-collapse.
+   */
+  defaultExpanded?: boolean;
 }
 
 const CATEGORY: Array<{
@@ -107,8 +115,16 @@ export function CorrectionPatternCard({
   instancesById,
   onApply,
   onSelectSession,
+  defaultExpanded = false,
 }: CorrectionPatternCardProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  // Re-sync only when the parent flips defaultExpanded → true (e.g. a
+  // newly-clicked timeline row in the summary). False flips are
+  // ignored so a manually-collapsed card stays collapsed even if the
+  // highlight clears.
+  useEffect(() => {
+    if (defaultExpanded) setExpanded(true);
+  }, [defaultExpanded]);
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [copiedIx, setCopiedIx] = useState<number | null>(null);
   const [busyIx, setBusyIx] = useState<number | null>(null);

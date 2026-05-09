@@ -159,10 +159,15 @@ describe('AppliedImprovementsSummary', () => {
         expected: { applied: '2', holding: '1', recurring: '0' },
       },
       {
-        name: 'pattern absent from corrections file → counts as holding (not recurring)',
+        // Phase 2b adversarial-review fix: a pattern in the apply
+        // ledger but missing from the current corrections.json renders
+        // as a GONE row in the timeline. It must NOT inflate HOLDING
+        // (the original implementation lumped these into HOLDING,
+        // conflating "lost track of pattern" with "rule is sticking").
+        name: 'pattern absent from corrections file → GONE row, neither holding nor recurring',
         entries: [entry({ id: 'a', patternId: 'orphan', appliedAt: 1_700_000_000_000 })],
         patterns: [],
-        expected: { applied: '1', holding: '1', recurring: '0' },
+        expected: { applied: '1', holding: '0', recurring: '0' },
       },
     ];
 
@@ -372,6 +377,146 @@ describe('AppliedImprovementsSummary', () => {
           />,
         );
         expect(screen.queryByText(/INDEX IS STALE/i)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('renders chip as a button and fires onRefreshIndex when provided', () => {
+      vi.useFakeTimers();
+      try {
+        const apply = 1_700_000_000_000;
+        const now = apply + 60 * MS_DAY;
+        const manifest = apply - 5 * MS_DAY;
+        vi.setSystemTime(now);
+        const onRefresh = vi.fn();
+        render(
+          <AppliedImprovementsSummary
+            applied={ledger([entry({ id: 'a', patternId: 'p1', appliedAt: apply })])}
+            corrections={corrections([pattern({ id: 'p1' })])}
+            manifestGeneratedAt={manifest}
+            onSelectPattern={() => {}}
+            onRefreshIndex={onRefresh}
+          />,
+        );
+        const chip = screen.getByRole('button', {
+          name: /index is stale — click to refresh/i,
+        });
+        expect(chip.tagName).toBe('BUTTON');
+        fireEvent.click(chip);
+        expect(onRefresh).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('renders chip as non-interactive span when onRefreshIndex omitted', () => {
+      vi.useFakeTimers();
+      try {
+        const apply = 1_700_000_000_000;
+        const now = apply + 60 * MS_DAY;
+        const manifest = apply - 5 * MS_DAY;
+        vi.setSystemTime(now);
+        render(
+          <AppliedImprovementsSummary
+            applied={ledger([entry({ id: 'a', patternId: 'p1', appliedAt: apply })])}
+            corrections={corrections([pattern({ id: 'p1' })])}
+            manifestGeneratedAt={manifest}
+            onSelectPattern={() => {}}
+          />,
+        );
+        const chip = screen.getByText(/INDEX IS STALE — RUN UPDATE LOCAL/i);
+        expect(chip.tagName).toBe('SPAN');
+        // Non-interactive — no click handler attached as a button.
+        expect(
+          screen.queryByRole('button', { name: /index is stale/i }),
+        ).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('GONE pattern classification (P0.2 review fix)', () => {
+    it('GONE entries do not inflate HOLDING and still render the GONE badge', () => {
+      const entries = [
+        entry({ id: 'a', patternId: 'hold', appliedAt: 1_700_000_000_000 }),
+        entry({ id: 'b', patternId: 'gone1', appliedAt: 1_700_010_000_000 }),
+        entry({ id: 'c', patternId: 'gone2', appliedAt: 1_700_020_000_000 }),
+      ];
+      render(
+        <AppliedImprovementsSummary
+          applied={ledger(entries)}
+          corrections={corrections([pattern({ id: 'hold' })])}
+          manifestGeneratedAt={null}
+          onSelectPattern={() => {}}
+        />,
+      );
+      // 1 holding (only "hold"), 0 recurring, 2 gone — but only the
+      // three displayed stats are APPLIED / HOLDING / RECURRING. The
+      // gone tally is implicit via the GONE row badges.
+      const holding = screen.getByText('HOLDING').previousSibling as HTMLElement;
+      const recurring = screen.getByText('RECURRING').previousSibling as HTMLElement;
+      expect(holding.textContent).toBe('1');
+      expect(recurring.textContent).toBe('0');
+
+      // GONE rows still render in the timeline.
+      fireEvent.click(screen.getByRole('button', { name: /VIEW PATCH LEDGER/i }));
+      const goneBadges = Array.from(
+        document.querySelectorAll('.lcars-applied-summary__row-bucket--gone'),
+      );
+      expect(goneBadges).toHaveLength(2);
+      for (const b of goneBadges) {
+        expect(b.textContent).toBe('GONE');
+      }
+    });
+  });
+
+  describe('corrupt appliedAt clamping (P1.2 review fix)', () => {
+    it('ignores entries with implausibly-old appliedAt when computing the headline', () => {
+      vi.useFakeTimers();
+      try {
+        const now = 1_730_000_000_000;
+        vi.setSystemTime(now);
+        // Single entry with a corrupt epoch — without the floor this
+        // would render "SINCE YOU PATCHED 20000D AGO" or similar.
+        render(
+          <AppliedImprovementsSummary
+            applied={ledger([entry({ id: 'a', patternId: 'p1', appliedAt: 1 })])}
+            corrections={corrections([pattern({ id: 'p1' })])}
+            manifestGeneratedAt={null}
+            onSelectPattern={() => {}}
+          />,
+        );
+        const headline = document.querySelector(
+          '.lcars-applied-summary__headline',
+        );
+        expect(headline?.textContent).toBe('SINCE YOU PATCHED');
+        expect(headline?.textContent).not.toMatch(/\d/);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('uses the next-most-recent plausible entry when one is corrupt', () => {
+      vi.useFakeTimers();
+      try {
+        const now = 1_730_000_000_000;
+        vi.setSystemTime(now);
+        const plausible = now - 64 * MS_DAY;
+        render(
+          <AppliedImprovementsSummary
+            applied={ledger([
+              entry({ id: 'corrupt', patternId: 'p1', appliedAt: 1 }),
+              entry({ id: 'good', patternId: 'p2', appliedAt: plausible }),
+            ])}
+            corrections={corrections([pattern({ id: 'p1' }), pattern({ id: 'p2' })])}
+            manifestGeneratedAt={null}
+            onSelectPattern={() => {}}
+          />,
+        );
+        const headline = screen.getByText(/SINCE YOU PATCHED/);
+        expect(headline.textContent).toMatch(/SINCE YOU PATCHED 2MO AGO/);
       } finally {
         vi.useRealTimers();
       }
