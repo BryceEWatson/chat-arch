@@ -6,8 +6,10 @@ import type {
   ScanStats,
 } from '@chat-arch/schema';
 import {
+  loadAppliedImprovementsFile,
   loadCorrectionCandidatesFile,
   loadCorrectionsFile,
+  mergeAppliedImprovements,
 } from '../data/correctionsLoader.js';
 import {
   clearCorrections,
@@ -164,11 +166,19 @@ export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
   const refresh = useCallback(async () => {
     setLoad({ status: 'loading' });
     try {
-      const [corrections, candidates] = await Promise.all([
+      const [rawCorrections, candidates, applied] = await Promise.all([
         loadCorrectionsFile(dataDirBaseUrl),
         loadCorrectionCandidatesFile(dataDirBaseUrl),
+        loadAppliedImprovementsFile(dataDirBaseUrl),
       ]);
       if (!aliveRef.current) return;
+      // Merge the apply ledger over the canonical mining-pipeline
+      // output. corrections.json itself is never mutated — the
+      // merge runs at read time so a future re-mine never clobbers
+      // the user's apply history.
+      const corrections = rawCorrections
+        ? mergeAppliedImprovements(rawCorrections, applied)
+        : null;
       setLoad({ status: 'ready', corrections, candidates });
       void refreshAutoWindow();
     } catch (err) {

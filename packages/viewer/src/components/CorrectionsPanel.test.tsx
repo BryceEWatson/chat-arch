@@ -1,13 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import type { CorrectionPattern, CorrectionsFile } from '@chat-arch/schema';
+import type * as CorrectionsLoaderModule from '../data/correctionsLoader.js';
 
 // Mock the loader module before importing the panel so the mocked
 // implementations are in place when the panel's effects fire.
-vi.mock('../data/correctionsLoader.js', () => ({
-  loadCorrectionsFile: vi.fn(),
-  loadCorrectionCandidatesFile: vi.fn(),
-}));
+vi.mock('../data/correctionsLoader.js', async () => {
+  // Pull the real `mergeAppliedImprovements` so panel-level merge
+  // assertions in the new tests below run against the production
+  // implementation; only the I/O entry points are stubbed.
+  const actual = await vi.importActual<typeof CorrectionsLoaderModule>(
+    '../data/correctionsLoader.js',
+  );
+  return {
+    loadCorrectionsFile: vi.fn(),
+    loadCorrectionCandidatesFile: vi.fn(),
+    loadAppliedImprovementsFile: vi.fn(async () => null),
+    mergeAppliedImprovements: actual.mergeAppliedImprovements,
+  };
+});
 vi.mock('../data/mineCorrectionsClient.js', () => ({
   startMineCorrections: vi.fn(),
   fetchCorrectionRunStatus: vi.fn(async () => null),
