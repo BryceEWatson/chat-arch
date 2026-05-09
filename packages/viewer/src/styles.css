@@ -1106,6 +1106,33 @@
 .lcars-sidebar__group:first-of-type > .lcars-sidebar__group-label {
   padding-top: 6px;
 }
+/* Phase 2a: ANALYTICS group is collapsible. The label becomes
+   interactive — focusable, with a chevron suffix that flips when
+   expanded. The collapsed list hides via display:none so it doesn't
+   steal scroll space. */
+.lcars-sidebar__group-label--toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  outline: none;
+}
+.lcars-sidebar__group-label--toggle::after {
+  content: '▾';
+  font-size: 10px;
+  margin-left: 6px;
+  transition: transform 120ms ease-out;
+}
+.lcars-sidebar__group--collapsed .lcars-sidebar__group-label--toggle::after {
+  transform: rotate(-90deg);
+}
+.lcars-sidebar__group-label--toggle:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-sidebar__group--collapsed .lcars-sidebar__list {
+  display: none;
+}
 .lcars-sidebar__item {
   display: flex;
   align-items: center;
