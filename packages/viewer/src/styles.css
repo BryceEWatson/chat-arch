@@ -6328,9 +6328,38 @@
   line-height: 1;
 }
 .lcars-top-bar__location-label,
-.lcars-top-bar__earthdate-value {
+.lcars-top-bar__earthdate-value,
+.lcars-top-bar__indexed-value {
   padding-bottom: 2px;
   line-height: 1;
+}
+/* INDEXED chip — mirrors the EARTHDATE chip's chrome treatment but
+   slightly muted so the date stays the dominant time-anchor. The
+   stale variant flips to the peach warning palette so a >30-day-old
+   manifest reads as "needs attention" without being alarmist. */
+.lcars-top-bar__indexed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1.5px solid rgba(0, 0, 0, 0.4);
+  color: var(--lcars-bg);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  flex: 0 0 auto;
+  line-height: 1;
+  opacity: 0.85;
+}
+.lcars-top-bar__indexed[data-stale] {
+  background: var(--lcars-peach);
+  border-color: rgba(0, 0, 0, 0.4);
+  color: var(--lcars-bg);
+  opacity: 1;
 }
 .lcars-top-bar__rescan-chip {
   display: inline-flex;
