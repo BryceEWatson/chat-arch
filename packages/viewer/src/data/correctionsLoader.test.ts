@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type {
   AppliedImprovement,
   AppliedImprovementsFile,
@@ -6,7 +6,10 @@ import type {
   CorrectionsFile,
   ProposedUpgrade,
 } from '@chat-arch/schema';
-import { mergeAppliedImprovements } from './correctionsLoader.js';
+import {
+  loadAppliedImprovementsFile,
+  mergeAppliedImprovements,
+} from './correctionsLoader.js';
 
 function upgrade(overrides: Partial<ProposedUpgrade> = {}): ProposedUpgrade {
   return {
@@ -219,5 +222,75 @@ describe('mergeAppliedImprovements', () => {
     expect(merged.patterns).toHaveLength(1);
     expect(merged.patterns[0].id).toBe('p1');
     expect(merged.patterns[0].recurringPostApplication).toBe(false);
+  });
+});
+
+describe('loadAppliedImprovementsFile', () => {
+  const originalFetch = globalThis.fetch;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    warnSpy.mockRestore();
+  });
+
+  it('returns the file when schemaVersion === 1', async () => {
+    const valid: AppliedImprovementsFile = {
+      schemaVersion: 1,
+      generatedAt: Date.now(),
+      entries: [],
+    };
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => valid,
+    })) as unknown as typeof fetch;
+    const result = await loadAppliedImprovementsFile('/chat-arch-data');
+    expect(result).toEqual(valid);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns null and logs a warning when schemaVersion is unsupported (P1.6)', async () => {
+    // A future writer bumps schemaVersion to 2 in a backwards-
+    // incompatible way. The loader must reject the file rather than
+    // silently shipping mismatched data into mergeAppliedImprovements.
+    const future = {
+      schemaVersion: 2,
+      generatedAt: Date.now(),
+      entries: [],
+    };
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => future,
+    })) as unknown as typeof fetch;
+    const result = await loadAppliedImprovementsFile('/chat-arch-data');
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toMatch(/schemaVersion=2/);
+  });
+
+  it('returns null when the body is missing entries', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ schemaVersion: 1, generatedAt: 0 }),
+    })) as unknown as typeof fetch;
+    const result = await loadAppliedImprovementsFile('/chat-arch-data');
+    expect(result).toBeNull();
+  });
+
+  it('returns null on 404', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    })) as unknown as typeof fetch;
+    const result = await loadAppliedImprovementsFile('/chat-arch-data');
+    expect(result).toBeNull();
   });
 });

@@ -5,9 +5,9 @@ import { Sidebar } from './Sidebar.js';
 afterEach(() => cleanup());
 
 describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
-  it('renders WORKSHOP (CORRECTIONS+PRACTICE), BROWSE (SESSIONS), ANALYTICS (PROJECTS+TOPICS+COST+ANALYSIS)', () => {
+  it('renders FIX RULES (CORRECTIONS+PRACTICE), BROWSE (SESSIONS), ANALYTICS (PROJECTS+TOPICS+COST+ANALYSIS)', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
-    // WORKSHOP — primary refocus surfaces lead.
+    // FIX RULES — primary refocus surfaces lead.
     expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
     // BROWSE — sessions only.
@@ -22,11 +22,11 @@ describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
     expect(screen.queryByRole('button', { name: /mode DETAIL/i })).toBeNull();
   });
 
-  it('groups the nav into WORKSHOP, BROWSE, ANALYTICS sections', () => {
+  it('groups the nav into FIX RULES, BROWSE, ANALYTICS sections', () => {
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
     const labels = container.querySelectorAll('.lcars-sidebar__group-label');
     expect(Array.from(labels).map((el) => el.textContent)).toEqual([
-      'WORKSHOP',
+      'FIX RULES',
       'BROWSE',
       'ANALYTICS',
     ]);
@@ -81,7 +81,7 @@ describe('Sidebar — ANALYTICS collapse (Phase 2a)', () => {
       />,
     );
     const groups = container.querySelectorAll('.lcars-sidebar__group');
-    // ANALYTICS is the third group (WORKSHOP, BROWSE, ANALYTICS).
+    // ANALYTICS is the third group (FIX RULES, BROWSE, ANALYTICS).
     const analytics = groups[2];
     expect(analytics.classList.contains('lcars-sidebar__group--collapsed')).toBe(true);
   });
@@ -160,7 +160,7 @@ describe('Sidebar — DATA panel trigger (v2 spec §6 / D4)', () => {
     );
     const labels = container.querySelectorAll('.lcars-sidebar__group-label');
     expect(Array.from(labels).map((el) => el.textContent)).toEqual([
-      'WORKSHOP',
+      'FIX RULES',
       'BROWSE',
       'ANALYTICS',
       'ACTIONS',

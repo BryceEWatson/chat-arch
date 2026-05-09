@@ -40,7 +40,11 @@ import { PracticeMode } from './components/modes/PracticeMode.js';
 import { CorrectionsPanel } from './components/CorrectionsPanel.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
-import { loadAppliedImprovementsFile } from './data/correctionsLoader.js';
+import {
+  loadAppliedImprovementsFile,
+  loadCorrectionsFile,
+} from './data/correctionsLoader.js';
+import type { CorrectionsFile } from '@chat-arch/schema';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
 import { computeV2Entities } from './data/computeV2Entities.js';
@@ -104,7 +108,33 @@ const HASH_PRACTICE = '#practice';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
-const ANALYTICS_COLLAPSED_KEY = 'chat-arch-analytics-collapsed';
+const ANALYTICS_COLLAPSED_KEY = 'chat-arch:analytics-collapsed';
+// Legacy unprefixed key from the Phase 2a ship — read on first mount
+// for existing users so their preference survives the rename.
+const LEGACY_ANALYTICS_COLLAPSED_KEY = 'chat-arch-analytics-collapsed';
+
+/**
+ * Detect whether this browser has any prior chat-arch state — i.e. is
+ * this a returning user, not a fresh install. We probe the `chat-arch:`
+ * prefix used by every persisted preference (boot-seen, sort-by,
+ * demo-banner-dismissed, embed-device-pref-v1) so the heuristic stays
+ * accurate even as new keys are added. Returning true here flips the
+ * ANALYTICS-collapsed default from "collapsed" to "expanded" so the
+ * Phase 2a IA refocus doesn't quietly hide a surface a returning user
+ * might have been using yesterday.
+ */
+function hasExistingChatArchState(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith('chat-arch:')) return true;
+    }
+  } catch {
+    // localStorage policy-locked / private mode — treat as fresh install.
+  }
+  return false;
+}
 
 /**
  * Read the stored SORT preference; fall back to `recent` when missing
@@ -244,12 +274,23 @@ export function ChatArchViewer({
   // Phase 1 corrections-loop: a CORRECTIONS instance-pill clickthrough
   // opens session detail. Hitting BACK should land back in CORRECTIONS,
   // not the default `command` mode — otherwise the loop is broken on
-  // backtrack. We stash the mode at click time and `onBack` restores
-  // it. Only set when a non-default restoration is wanted; cleared
-  // after restoration so a subsequent `onSelect` from an unrelated
-  // surface doesn't accidentally inherit it.
+  // backtrack. We stash the mode at click time and the hashchange
+  // listener restores it when the session hash is popped. Only set
+  // when a non-default restoration is wanted; cleared after restoration
+  // so a subsequent `onSelect` from an unrelated surface doesn't
+  // accidentally inherit it.
+  //
+  // The companion ref mirrors state for the hashchange listener: that
+  // listener is registered once on mount (so it doesn't re-subscribe
+  // on every state change) but needs fresh access to the prior mode
+  // when the user hits BACK. State alone would freeze the closure to
+  // its initial null; the ref bridges the gap.
   const [priorModeBeforeDetail, setPriorModeBeforeDetail] =
     useState<Mode | null>(null);
+  const priorModeBeforeDetailRef = useRef<Mode | null>(null);
+  useEffect(() => {
+    priorModeBeforeDetailRef.current = priorModeBeforeDetail;
+  }, [priorModeBeforeDetail]);
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<FilterState>(new Set<SessionSource>());
@@ -296,6 +337,17 @@ export function ChatArchViewer({
   const [appliedImprovements, setAppliedImprovements] =
     useState<AppliedImprovementsFile | null>(null);
   const [appliedHydrated, setAppliedHydrated] = useState(false);
+  // Phase 2a: also load corrections.json at the viewer level so the
+  // default-mode reroute fires for demo / first-time users who have
+  // patterns to look at but no APPLY clicks yet. Mirrors the
+  // applied-improvements pattern — CorrectionsPanel still does its own
+  // load (so an embedded panel stays self-contained) and tolerates
+  // duplicate fetches; the small extra request is fine for the
+  // landing-routing benefit.
+  const [correctionsRoute, setCorrectionsRoute] =
+    useState<CorrectionsFile | null>(null);
+  const [correctionsRouteHydrated, setCorrectionsRouteHydrated] =
+    useState(false);
 
   // --- Phase 3 semantic-classification state ---
   //
@@ -334,8 +386,19 @@ export function ChatArchViewer({
   const [analyticsCollapsed, setAnalyticsCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     try {
-      const v = window.localStorage.getItem(ANALYTICS_COLLAPSED_KEY);
-      return v === null ? true : v === 'true';
+      // Prefer the canonical (`chat-arch:`-prefixed) key. Fall back to
+      // the legacy unprefixed key written by the Phase 2a ship so
+      // existing users don't lose their preference across the rename.
+      const stored =
+        window.localStorage.getItem(ANALYTICS_COLLAPSED_KEY) ??
+        window.localStorage.getItem(LEGACY_ANALYTICS_COLLAPSED_KEY);
+      if (stored !== null) return stored === 'true';
+      // No persisted preference. New installs land collapsed (workshop
+      // surfaces above the fold, Phase 2a IA intent). Returning users
+      // who never saw this key — i.e. they have OTHER chat-arch state
+      // but no analytics-collapsed entry — land expanded so the
+      // refocus doesn't hide ANALYTICS surfaces they were using.
+      return !hasExistingChatArchState();
     } catch {
       return true;
     }
@@ -532,12 +595,29 @@ export function ChatArchViewer({
       } else if (onPractice) {
         setMode('practice');
       } else {
-        // Hash cleared — reset surface modes back to SESSIONS.
-        setMode((prev) =>
-          prev === 'detail' || prev === 'projects' || prev === 'topics' || prev === 'practice'
-            ? 'command'
-            : prev,
-        );
+        // Hash cleared — reset surface modes back to SESSIONS, OR to
+        // the prior surface the user came from when a session-detail
+        // pill kicked them into `detail` (e.g. CORRECTIONS / PRACTICE
+        // → DETAIL → BACK should return to CORRECTIONS / PRACTICE,
+        // not dump them on SESSIONS). The ref mirrors state so this
+        // closure (registered once) sees the freshest value.
+        setMode((prev) => {
+          if (
+            prev === 'detail' ||
+            prev === 'projects' ||
+            prev === 'topics' ||
+            prev === 'practice'
+          ) {
+            const stashed = priorModeBeforeDetailRef.current;
+            if (prev === 'detail' && stashed) {
+              priorModeBeforeDetailRef.current = null;
+              setPriorModeBeforeDetail(null);
+              return stashed;
+            }
+            return 'command';
+          }
+          return prev;
+        });
       }
     };
     sync();
@@ -569,10 +649,11 @@ export function ChatArchViewer({
     return () => window.cancelAnimationFrame(id);
   }, [isInDetail]);
 
-  // --- Phase 2a: load applied-improvements ledger once ---
-  // Used to drive the default-mode reroute below. Failures resolve to
-  // null (the loader swallows 404 / network / parse errors) so this
-  // never blocks viewer startup.
+  // --- Phase 2a: load applied-improvements ledger + corrections.json once ---
+  // Both feed the default-mode reroute below. Failures resolve to null
+  // (the loaders swallow 404 / network / parse errors) so this never
+  // blocks viewer startup. Loaded in parallel so the reroute decision
+  // doesn't wait for two serial round trips.
   useEffect(() => {
     let cancelled = false;
     loadAppliedImprovementsFile(dataRoot).then((f) => {
@@ -580,26 +661,44 @@ export function ChatArchViewer({
       setAppliedImprovements(f);
       setAppliedHydrated(true);
     });
+    loadCorrectionsFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setCorrectionsRoute(f);
+      setCorrectionsRouteHydrated(true);
+    });
     return () => {
       cancelled = true;
     };
   }, [dataRoot]);
 
   // --- Phase 2a: default-mode reroute ---
-  // When the user has at least one applied improvement, jump them to
+  // When the corpus has *anything* to act on (any APPLY ledger entry
+  // OR any classified correction pattern), jump the user to
   // CORRECTIONS on first paint so the workshop loop is the landing
-  // surface. Defers to URL hash and any prior user navigation so we
-  // never yank an in-progress session.
+  // surface. Demo / first-mine users have patterns but no APPLYs yet —
+  // requiring applied entries would silently leave them on SESSIONS,
+  // which is the wrong default for the Phase 2a refocus. Defers to
+  // URL hash and any prior user navigation so we never yank an
+  // in-progress session.
   const defaultRerouteAppliedRef = useRef(false);
   useEffect(() => {
-    if (!appliedHydrated || defaultRerouteAppliedRef.current) return;
+    if (!appliedHydrated || !correctionsRouteHydrated) return;
+    if (defaultRerouteAppliedRef.current) return;
     defaultRerouteAppliedRef.current = true;
     if (typeof window !== 'undefined' && window.location.hash) return;
     if (mode !== 'command') return;
-    if ((appliedImprovements?.entries.length ?? 0) > 0) {
+    const hasApplied = (appliedImprovements?.entries.length ?? 0) > 0;
+    const hasPatterns = (correctionsRoute?.patterns?.length ?? 0) > 0;
+    if (hasApplied || hasPatterns) {
       setMode('corrections');
     }
-  }, [appliedHydrated, appliedImprovements, mode]);
+  }, [
+    appliedHydrated,
+    correctionsRouteHydrated,
+    appliedImprovements,
+    correctionsRoute,
+    mode,
+  ]);
 
   // --- fetch manifest ---
   useEffect(() => {
@@ -2435,7 +2534,14 @@ export function ChatArchViewer({
                         narratives={effectiveV2Entities.narratives ?? []}
                         duplicateClusters={mergedClusters}
                         zombieProjects={zombieProjects}
-                        onSelectSession={onSelect}
+                        onSelectSession={(id) => {
+                          // Stash the source mode so BACK restores
+                          // PRACTICE instead of dumping the user on
+                          // SESSIONS — same loop-preservation logic
+                          // CORRECTIONS uses for its instance pills.
+                          setPriorModeBeforeDetail('practice');
+                          onSelect(id);
+                        }}
                         onSelectProject={(id) => {
                           setSelectedProjectId(id);
                           setMode('projects');
@@ -2514,7 +2620,14 @@ export function ChatArchViewer({
             </main>
           </div>
         </div>
-        <TrustStrip variant="footer" />
+        {/*
+          Detail-mode hides the footer TrustStrip — the modal-style
+          overlay benefits from the full vertical real estate, and the
+          local-first pledge already had a hundred-row read on the way
+          in. Re-renders on close so the persistent reassurance is
+          back the moment the user returns to a content surface.
+        */}
+        {!showDetailOverlay && <TrustStrip variant="footer" />}
       </div>
       <ActivityLogPanel
         entries={logEntries}

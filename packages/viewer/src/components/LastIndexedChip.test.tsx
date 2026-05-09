@@ -44,6 +44,29 @@ describe('LastIndexedChip', () => {
     expect(chip!.hasAttribute('data-stale')).toBe(true);
   });
 
+  it('renders nothing when generatedAt is 0 (epoch zero treated as no real timestamp)', () => {
+    // A half-initialized manifest (or a parser bug) writing
+    // generatedAt: 0 would otherwise produce "INDEXED 20000d AGO" — a
+    // misleading staleness signal. Treat <=0 as "no timestamp" and
+    // hide the chip.
+    const { container } = render(<LastIndexedChip generatedAt={0} now={NOW} />);
+    expect(container.querySelector('.lcars-top-bar__indexed')).toBeNull();
+  });
+
+  it('clamps future generatedAt to INDEXED TODAY (clock-skew tolerance)', () => {
+    // A user whose clock is behind the build host's clock would see
+    // generatedAt > now. Without the clamp the chip would render
+    // "INDEXED -1d AGO" — a parsing artifact, not a real signal.
+    // Floor elapsed days at 0 and degrade gracefully to today.
+    const { container } = render(
+      <LastIndexedChip generatedAt={NOW + MS_PER_DAY} now={NOW} />,
+    );
+    const chip = container.querySelector('.lcars-top-bar__indexed');
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain('INDEXED TODAY');
+    expect(chip!.hasAttribute('data-stale')).toBe(false);
+  });
+
   it('tooltip contains the ISO timestamp and the UPDATE LOCAL CTA', () => {
     const generatedAt = NOW - 5 * MS_PER_DAY;
     const { container } = render(

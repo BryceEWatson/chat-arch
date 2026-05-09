@@ -74,6 +74,21 @@ export async function loadAppliedImprovementsFile(
   try {
     const body = (await res.json()) as AppliedImprovementsFile;
     if (!body || !Array.isArray(body.entries)) return null;
+    // Reject unknown schema versions outright. A future writer may
+    // bump the schema in a backwards-incompatible way (e.g. rename
+    // `appliedAt` or change the proposedUpgrade shape); silently
+    // accepting it would let the merge step downstream produce
+    // misleading results. Treat unknown schema as "no ledger" — the
+    // viewer behaves the same as a fresh install. Logged so a user
+    // who notices their applies disappeared can find the cause.
+    if (body.schemaVersion !== 1) {
+      console.warn(
+        `[correctionsLoader] applied-improvements.json schemaVersion=${
+          (body as { schemaVersion?: unknown }).schemaVersion
+        } is unsupported (expected 1). Ignoring file.`,
+      );
+      return null;
+    }
     return body;
   } catch {
     return null;

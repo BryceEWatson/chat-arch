@@ -6344,9 +6344,32 @@
   text-overflow: ellipsis;
   font-size: 12px;
 }
+/*
+  Mobile (< 600px) renders a leaner one-line variant instead of
+  hiding the strip entirely. Earlier the strip dropped on mobile so
+  the pill bar + content kept the limited vertical space, but that
+  removed the local-first reassurance from the surface where it
+  matters most (a first-time visitor on their phone). This restyle
+  drops the longer body copy + RepoLink wrapper and keeps just the
+  pledge + a compact VIEW SOURCE link, costing one row of vertical
+  space.
+*/
 @media (max-width: 600px) {
   .lcars-trust-strip--footer {
+    padding: 4px 12px;
+    font-size: 11px;
+    gap: 4px 10px;
+  }
+  .lcars-trust-strip--footer .lcars-trust-strip__row {
+    gap: 10px;
+  }
+  /* Hide the prose body — only the pledge + repo link survive on phones. */
+  .lcars-trust-strip--footer .lcars-trust-strip__body {
     display: none;
+  }
+  .lcars-trust-strip--footer .lcars-trust-strip__pledge {
+    font-size: 10px;
+    letter-spacing: 0.18em;
   }
 }
 

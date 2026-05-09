@@ -127,10 +127,17 @@ export function TopBar({
             <span className="lcars-top-bar__location-label">{locationLabel}</span>
           </div>
         )}
+        {/*
+          INDEXED renders BEFORE EARTHDATE so the eye lands on the
+          data-freshness signal first. Earlier ordering had the
+          misleading "today" date leading and the corrective
+          INDEXED-N-days-ago chip trailing — readers anchored on
+          "today" and treated the trailing chip as supplementary.
+        */}
+        <LastIndexedChip generatedAt={lastIndexed ?? null} />
         <div className="lcars-top-bar__earthdate" aria-label={`earthdate ${dateText}`}>
           <span className="lcars-top-bar__earthdate-value">{dateText}</span>
         </div>
-        <LastIndexedChip generatedAt={lastIndexed ?? null} />
         {rescanDelta && (
           <div
             className="lcars-top-bar__rescan-chip"

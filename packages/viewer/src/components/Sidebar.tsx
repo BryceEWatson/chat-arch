@@ -40,14 +40,17 @@ interface NavItem {
 }
 
 interface NavGroup {
-  group: 'WORKSHOP' | 'BROWSE' | 'ANALYTICS';
+  group: 'FIX RULES' | 'BROWSE' | 'ANALYTICS';
   items: readonly NavItem[];
 }
 
 // Phase 2a refocus IA: three-tier IA aligned to the new "audit your
 // practice" framing.
-//   WORKSHOP   → Corrections, Practice — where the user goes to act
-//                on their own behavior changes.
+//   FIX RULES  → Corrections, Practice — where the user goes to act
+//                on their own behavior changes. (Earlier label was
+//                "WORKSHOP"; the eval flagged it as too abstract for
+//                first-time users — "FIX RULES" announces the loop's
+//                outcome verb-first.)
 //   BROWSE     → Sessions — the v1 grid surface, kept lightweight.
 //   ANALYTICS  → Projects, Topics, Cost, Analysis — descriptive
 //                surfaces that answer "what's in my corpus", collapsed
@@ -59,7 +62,7 @@ interface NavGroup {
 // (keeping the internal mode id stable avoids a cross-codebase rename).
 const NAV: readonly NavGroup[] = [
   {
-    group: 'WORKSHOP',
+    group: 'FIX RULES',
     items: [
       { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
       { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
@@ -82,7 +85,7 @@ const NAV: readonly NavGroup[] = [
 
 // Horizontal-variant pill order is independent of the vertical groups
 // so collapse-state never hides primary nav on mobile. Order mirrors
-// the WORKSHOP → BROWSE → ANALYTICS reading order from the vertical
+// the FIX RULES → BROWSE → ANALYTICS reading order from the vertical
 // rail so muscle memory carries across viewports.
 const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
   { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
@@ -96,7 +99,7 @@ const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
 
 // DATA item is rendered separately from the mode-driven nav: it's a
 // panel trigger, not a content surface, so it doesn't slot into the
-// `Mode` enum or the WORKSHOP/BROWSE/ANALYTICS groupings. The accent
+// `Mode` enum or the FIX-RULES/BROWSE/ANALYTICS groupings. The accent
 // borrows the destructive peach used by the existing data-source chip
 // cluster.
 const DATA_ITEM_LABEL = 'DATA';

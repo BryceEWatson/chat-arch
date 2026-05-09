@@ -45,10 +45,15 @@ vi.mock('./data/applyCorrectionClient.js', () => ({
   probeApplyCorrection: vi.fn(async () => false),
 }));
 
-import { loadAppliedImprovementsFile } from './data/correctionsLoader.js';
+import {
+  loadAppliedImprovementsFile,
+  loadCorrectionsFile,
+} from './data/correctionsLoader.js';
 import { ChatArchViewer } from './ChatArchViewer.js';
+import type { CorrectionsFile } from '@chat-arch/schema';
 
 const mockedLoadApplied = vi.mocked(loadAppliedImprovementsFile);
+const mockedLoadCorrections = vi.mocked(loadCorrectionsFile);
 
 function entry(id: string, overrides: Partial<UnifiedSessionEntry> = {}): UnifiedSessionEntry {
   return {
@@ -159,5 +164,43 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     // links aren't yanked.
     const locationLabel = document.querySelector('.lcars-top-bar__location-label');
     expect(locationLabel?.textContent).toBe('PROJECTS');
+  });
+
+  it('reroutes to CORRECTIONS when corrections.json has patterns but the ledger is empty (P1.2)', async () => {
+    // Demo / first-mine users have classified patterns to inspect but
+    // haven't clicked APPLY yet — the reroute should still fire so they
+    // land in the workshop loop instead of being dumped on SESSIONS.
+    const correctionsWithPattern: CorrectionsFile = {
+      generatedAt: 1_700_000_000_000,
+      corrections: [],
+      patterns: [
+        {
+          id: 'p-demo',
+          canonicalRule: 'use bullets, not paragraphs',
+          instanceIds: [],
+          occurrenceCount: 4,
+          firstSeen: 1_700_000_000_000,
+          lastSeen: 1_700_100_000_000,
+          scope: { kind: 'global' },
+          proposedUpgrades: [],
+          confidence: 0.6,
+          recurringPostApplication: false,
+          alreadyEncoded: false,
+        },
+      ],
+      pipeline: {
+        heuristicRecall: true,
+        llmClassification: true,
+        embeddingClustering: true,
+        claudeMdCrossCheck: true,
+      },
+    };
+    mockedLoadApplied.mockResolvedValueOnce(ledgerEmpty);
+    mockedLoadCorrections.mockResolvedValueOnce(correctionsWithPattern);
+    render(<ChatArchViewer manifest={sampleManifest} />);
+    await waitFor(() => {
+      const locationLabel = document.querySelector('.lcars-top-bar__location-label');
+      expect(locationLabel?.textContent).toBe('CORRECTIONS');
+    });
   });
 });

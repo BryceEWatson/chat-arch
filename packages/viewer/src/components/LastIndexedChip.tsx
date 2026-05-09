@@ -25,9 +25,16 @@ const MS_PER_DAY = 86_400_000;
 const STALE_DAYS_THRESHOLD = 30;
 
 export function LastIndexedChip({ generatedAt, now }: LastIndexedChipProps) {
-  if (generatedAt == null) return null;
+  // Treat null AND non-positive epoch values as "no real timestamp"
+  // so a `0` from a half-initialized manifest doesn't render a
+  // misleading "INDEXED 56 YEARS AGO" chip.
+  if (generatedAt == null || generatedAt <= 0) return null;
   const ref = now ?? Date.now();
-  const days = Math.floor((ref - generatedAt) / MS_PER_DAY);
+  // Clock-skew clamp: a future `generatedAt` (e.g. user's clock is
+  // behind the server's) would otherwise produce "INDEXED -1d AGO".
+  // Floor the elapsed days at 0 so the chip degrades gracefully to
+  // "INDEXED TODAY" instead of negatives.
+  const days = Math.max(0, Math.floor((ref - generatedAt) / MS_PER_DAY));
   const label = days < 1 ? 'INDEXED TODAY' : `INDEXED ${days}d AGO`;
   const isStale = days > STALE_DAYS_THRESHOLD;
   const iso = new Date(generatedAt).toISOString();
