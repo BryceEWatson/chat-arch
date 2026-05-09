@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SessionManifest, UnifiedSessionEntry, SessionSource } from '@chat-arch/schema';
+import type {
+  AppliedImprovementsFile,
+  SessionManifest,
+  UnifiedSessionEntry,
+  SessionSource,
+} from '@chat-arch/schema';
 import type {
   AnalysisState,
   ConversationCache,
@@ -35,6 +40,7 @@ import { PracticeMode } from './components/modes/PracticeMode.js';
 import { CorrectionsPanel } from './components/CorrectionsPanel.js';
 import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
+import { loadAppliedImprovementsFile } from './data/correctionsLoader.js';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
 import { computeV2Entities } from './data/computeV2Entities.js';
@@ -98,6 +104,7 @@ const HASH_PRACTICE = '#practice';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
+const ANALYTICS_COLLAPSED_KEY = 'chat-arch-analytics-collapsed';
 
 /**
  * Read the stored SORT preference; fall back to `recent` when missing
@@ -281,6 +288,15 @@ export function ChatArchViewer({
     v2Narratives: null,
   });
 
+  // Phase 2a: lift the applied-improvements ledger to the viewer level
+  // so the default-mode reroute decision can consult it before the user
+  // has touched the corrections panel. CorrectionsPanel keeps its own
+  // load (cheap; decoupling it is a follow-up) so the panel stays
+  // self-contained when embedded in isolation.
+  const [appliedImprovements, setAppliedImprovements] =
+    useState<AppliedImprovementsFile | null>(null);
+  const [appliedHydrated, setAppliedHydrated] = useState(false);
+
   // --- Phase 3 semantic-classification state ---
   //
   // Sidecar enrichment layer: BGE-small-en-v1.5 embeddings + cosine-
@@ -312,6 +328,26 @@ export function ChatArchViewer({
   // DATA panel, not the TopBar. Open state is hoisted here so the
   // sidebar's DATA item and the panel itself share the toggle.
   const [dataPanelOpen, setDataPanelOpen] = useState<boolean>(false);
+  // Phase 2a: ANALYTICS group collapse state. Default-collapsed so the
+  // workshop surfaces are above the fold; persisted to localStorage so
+  // the user's preference survives reloads.
+  const [analyticsCollapsed, setAnalyticsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const v = window.localStorage.getItem(ANALYTICS_COLLAPSED_KEY);
+      return v === null ? true : v === 'true';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(ANALYTICS_COLLAPSED_KEY, String(analyticsCollapsed));
+    } catch {
+      // localStorage unavailable — preference is session-scoped.
+    }
+  }, [analyticsCollapsed]);
   // Log mount once — gives the user a "system online" anchor so an
   // empty log during early interactions doesn't look broken. The ref
   // guard prevents StrictMode's intentional double-invoke from
@@ -532,6 +568,38 @@ export function ChatArchViewer({
     const id = window.requestAnimationFrame(() => window.scrollTo(0, y));
     return () => window.cancelAnimationFrame(id);
   }, [isInDetail]);
+
+  // --- Phase 2a: load applied-improvements ledger once ---
+  // Used to drive the default-mode reroute below. Failures resolve to
+  // null (the loader swallows 404 / network / parse errors) so this
+  // never blocks viewer startup.
+  useEffect(() => {
+    let cancelled = false;
+    loadAppliedImprovementsFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setAppliedImprovements(f);
+      setAppliedHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataRoot]);
+
+  // --- Phase 2a: default-mode reroute ---
+  // When the user has at least one applied improvement, jump them to
+  // CORRECTIONS on first paint so the workshop loop is the landing
+  // surface. Defers to URL hash and any prior user navigation so we
+  // never yank an in-progress session.
+  const defaultRerouteAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!appliedHydrated || defaultRerouteAppliedRef.current) return;
+    defaultRerouteAppliedRef.current = true;
+    if (typeof window !== 'undefined' && window.location.hash) return;
+    if (mode !== 'command') return;
+    if ((appliedImprovements?.entries.length ?? 0) > 0) {
+      setMode('corrections');
+    }
+  }, [appliedHydrated, appliedImprovements, mode]);
 
   // --- fetch manifest ---
   useEffect(() => {
@@ -2124,6 +2192,7 @@ export function ChatArchViewer({
           disabled={showDetailOverlay}
           tierIndicator={tierIndicator}
           locationLabel={LOCATION_LABEL[activeMode]}
+          lastIndexed={manifest?.generatedAt ?? null}
           {...(rescanDelta ? { rescanDelta } : {})}
           onDismissRescanDelta={() => setRescanDelta(null)}
         />
@@ -2133,6 +2202,8 @@ export function ChatArchViewer({
             variant={sidebarVariant}
             onOpenDataPanel={() => setDataPanelOpen(true)}
             dataPanelOpen={dataPanelOpen}
+            analyticsCollapsed={analyticsCollapsed}
+            onToggleAnalyticsCollapsed={() => setAnalyticsCollapsed((c) => !c)}
             onSelectMode={(m) => {
               if (m !== 'detail') {
                 clearHash();
@@ -2443,6 +2514,7 @@ export function ChatArchViewer({
             </main>
           </div>
         </div>
+        <TrustStrip variant="footer" />
       </div>
       <ActivityLogPanel
         entries={logEntries}

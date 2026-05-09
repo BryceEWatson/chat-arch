@@ -1,5 +1,6 @@
 import type { ViewportTier } from '../util/viewport.js';
 import { InfoPopover } from './InfoPopover.js';
+import { LastIndexedChip } from './LastIndexedChip.js';
 
 export type RescanStatus = 'idle' | 'running' | 'error' | 'ok';
 export type UploadStatus = 'idle' | 'running' | 'error' | 'ok';
@@ -52,6 +53,12 @@ export interface TopBarProps {
   };
   /** Click handler for the chip's ✕ dismiss button. */
   onDismissRescanDelta?: () => void;
+  /**
+   * Phase 2a: ms-since-epoch from `manifest.generatedAt`. Drives the
+   * INDEXED chip — null hides it. Optional so embeddings without a
+   * manifest still render the bar.
+   */
+  lastIndexed?: number | null;
 }
 
 function defaultEarthdate(): string {
@@ -78,6 +85,7 @@ export function TopBar({
   disabled = false,
   rescanDelta,
   onDismissRescanDelta,
+  lastIndexed,
 }: TopBarProps) {
   const placeholder = disabled
     ? 'exit detail view to search'
@@ -122,6 +130,7 @@ export function TopBar({
         <div className="lcars-top-bar__earthdate" aria-label={`earthdate ${dateText}`}>
           <span className="lcars-top-bar__earthdate-value">{dateText}</span>
         </div>
+        <LastIndexedChip generatedAt={lastIndexed ?? null} />
         {rescanDelta && (
           <div
             className="lcars-top-bar__rescan-chip"
