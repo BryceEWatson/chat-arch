@@ -7219,3 +7219,80 @@
   font-size: 11.5px;
   color: color-mix(in srgb, var(--lcars-text) 78%, transparent);
 }
+.lcars-correction-pattern__btn--ghost {
+  border-color: color-mix(in srgb, var(--lcars-text) 30%, transparent);
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+}
+.lcars-correction-pattern__instance-pill {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.lcars-correction-pattern__instance-pill:hover,
+.lcars-correction-pattern__instance-pill:focus-visible {
+  border-color: color-mix(in srgb, var(--lcars-peach) 50%, transparent);
+  outline: none;
+}
+.lcars-correction-pattern__applied {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lcars-peach) 20%, transparent);
+  color: var(--lcars-peach);
+}
+.lcars-correction-pattern__applied-time {
+  margin-left: 6px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+.lcars-correction-pattern__confirm,
+.lcars-correction-pattern__apply-error {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.lcars-correction-pattern__confirm-blurb {
+  margin: 0;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--lcars-text) 88%, transparent);
+}
+.lcars-correction-pattern__confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+}
+.lcars-correction-pattern__confirm-textarea {
+  font-family: var(--lcars-font-mono, monospace);
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--lcars-text) 25%, transparent);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--lcars-text);
+  resize: vertical;
+}
+.lcars-correction-pattern__confirm-actions {
+  display: flex;
+  gap: 8px;
+}

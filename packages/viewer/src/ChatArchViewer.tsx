@@ -2332,7 +2332,10 @@ export function ChatArchViewer({
                         }}
                       />
                     ) : baseMode === 'corrections' ? (
-                      <CorrectionsPanel dataDirBaseUrl={dataRoot} />
+                      <CorrectionsPanel
+                        dataDirBaseUrl={dataRoot}
+                        onSelectSession={onSelect}
+                      />
                     ) : baseMode === 'topics' ? (
                       <TopicsMode
                         topics={effectiveV2Entities.topics ?? []}

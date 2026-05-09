@@ -124,7 +124,9 @@ describe('CorrectionPatternCard', () => {
       });
     });
 
-    it('renders APPLY as disabled with an explanatory tooltip', () => {
+    it('renders APPLY as disabled when no onApply handler is provided', () => {
+      // Production static-build fallback: APPLY stays disabled with a
+      // copy-and-edit tooltip so users can still apply manually.
       const p = pattern();
       render(
         <CorrectionPatternCard pattern={p} instancesById={buildInstancesById(p.instanceIds)} />,
@@ -132,7 +134,7 @@ describe('CorrectionPatternCard', () => {
       fireEvent.click(screen.getByRole('button', { name: /SHOW DETAILS/i }));
       const apply = screen.getByRole('button', { name: /^APPLY$/ });
       expect((apply as HTMLButtonElement).disabled).toBe(true);
-      expect(apply.getAttribute('title')).toMatch(/not yet implemented/i);
+      expect(apply.getAttribute('title')).toMatch(/copy/i);
     });
   });
 });

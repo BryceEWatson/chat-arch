@@ -22,10 +22,22 @@ import {
   type MineEvent,
 } from '../data/mineCorrectionsClient.js';
 import { CorrectionPatternCard } from './CorrectionPatternCard.js';
+import {
+  applyCorrection,
+  probeApplyCorrection,
+  type ApplyCorrectionRequest,
+} from '../data/applyCorrectionClient.js';
+import type { ProposedUpgrade } from '@chat-arch/schema';
 
 export interface CorrectionsPanelProps {
   /** Same base URL the manifest was fetched from (e.g. "/chat-arch-data"). */
   dataDirBaseUrl: string;
+  /**
+   * Callback for opening a session in detail view. Plumbed from
+   * ChatArchViewer; when omitted, instance pills render as static
+   * (non-clickable) cards.
+   */
+  onSelectSession?: (sessionId: string) => void;
 }
 
 type LoadState =
@@ -115,13 +127,17 @@ type ClearState =
   | { status: 'busy' }
   | { status: 'error'; message: string };
 
-export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
+export function CorrectionsPanel({
+  dataDirBaseUrl,
+  onSelectSession,
+}: CorrectionsPanelProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [mining, setMining] = useState<MiningState>({ status: 'idle' });
   const [autoWindow, setAutoWindow] = useState<AutoWindowResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [clearAvailable, setClearAvailable] = useState<boolean>(false);
   const [clearState, setClearState] = useState<ClearState>({ status: 'idle' });
+  const [applyAvailable, setApplyAvailable] = useState<boolean>(false);
 
   // Cancel in-flight loads cleanly on unmount.
   const aliveRef = useRef(true);
@@ -206,6 +222,47 @@ export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
       cancelled = true;
     };
   }, []);
+
+  // Probe the apply-correction endpoint once on mount. Same posture as
+  // the clear probe: APPLY hides on production static builds where the
+  // dev server isn't running, falling back to copy-and-edit-by-hand.
+  useEffect(() => {
+    let cancelled = false;
+    void probeApplyCorrection().then((available) => {
+      if (cancelled || !aliveRef.current) return;
+      setApplyAvailable(available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleApply = useCallback(
+    async (
+      pattern: CorrectionPattern,
+      upgrade: ProposedUpgrade,
+      extras: { targetFiles?: string[]; notes?: string },
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const req: ApplyCorrectionRequest = {
+        patternId: pattern.id,
+        proposedUpgrade: upgrade,
+        ruleSummary: pattern.canonicalRule,
+        ...extras,
+      };
+      const result = await applyCorrection(req);
+      // On success, reload the merged file so the bucket re-categorizes
+      // the pattern (RECURRING vs ENCODED vs NEW shifts when applied
+      // flips). The card itself already swapped to APPLIED ✓
+      // optimistically; the reload only affects bucket placement.
+      if (result.ok && aliveRef.current) {
+        await refresh();
+      }
+      return result.ok
+        ? { ok: true }
+        : { ok: false, ...(result.error ? { error: result.error } : {}) };
+    },
+    [refresh],
+  );
 
   const runClear = useCallback(async () => {
     setClearState({ status: 'busy' });
@@ -515,7 +572,11 @@ export function CorrectionsPanel({ dataDirBaseUrl }: CorrectionsPanelProps) {
           </p>
         )
       ) : (
-        <BucketsView corrections={corrections!} />
+        <BucketsView
+          corrections={corrections!}
+          {...(applyAvailable ? { onApply: handleApply } : {})}
+          {...(onSelectSession ? { onSelectSession } : {})}
+        />
       )}
 
       {clearAvailable && mining.status !== 'running' && (
@@ -1193,9 +1254,15 @@ function RunningBanner({ state, nowMs, onAbort }: RunningBannerProps) {
 
 interface BucketsViewProps {
   corrections: CorrectionsFile;
+  onApply?: (
+    pattern: CorrectionPattern,
+    upgrade: ProposedUpgrade,
+    extras: { targetFiles?: string[]; notes?: string },
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onSelectSession?: (sessionId: string) => void;
 }
 
-function BucketsView({ corrections }: BucketsViewProps) {
+function BucketsView({ corrections, onApply, onSelectSession }: BucketsViewProps) {
   const instancesById = useMemo(() => {
     const m = new Map<string, Correction>();
     for (const c of corrections.corrections) m.set(c.id, c);
@@ -1243,7 +1310,16 @@ function BucketsView({ corrections }: BucketsViewProps) {
               <ul className="lcars-corrections__pattern-list" role="list">
                 {items.map((p) => (
                   <li key={p.id}>
-                    <CorrectionPatternCard pattern={p} instancesById={instancesById} />
+                    <CorrectionPatternCard
+                      pattern={p}
+                      instancesById={instancesById}
+                      {...(onApply
+                        ? {
+                            onApply: (upgrade, extras) => onApply(p, upgrade, extras),
+                          }
+                        : {})}
+                      {...(onSelectSession ? { onSelectSession } : {})}
+                    />
                   </li>
                 ))}
               </ul>
