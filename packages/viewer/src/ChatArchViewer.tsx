@@ -353,6 +353,16 @@ export function ChatArchViewer({
     kind: 'ok' | 'error';
     message: string;
   } | null>(null);
+  // Persistent per-source delta chip in the TopBar. Survives banner
+  // dismiss / auto-vanish so the user has a long-lived signal of the
+  // last rescan's effect; cleared on next rescan or by the chip's own
+  // ✕ dismiss button.
+  const [rescanDelta, setRescanDelta] = useState<{
+    totalLocal: number;
+    cowork: number;
+    cli: number;
+    desktop: number;
+  } | null>(null);
   // Demo-mode detection: the standalone's `pnpm dev` seed-script writes a
   // sibling `.demo` file alongside the demo manifest. Real exporter output
   // never writes this file, so its presence reliably means "what's loaded
@@ -1630,6 +1640,9 @@ export function ChatArchViewer({
         const newLocal =
           fresh.counts.cowork + fresh.counts['cli-direct'] + fresh.counts['cli-desktop'];
         const deltaLocal = newLocal - priorLocal;
+        const deltaCowork = fresh.counts.cowork - priorCounts.cowork;
+        const deltaCli = fresh.counts['cli-direct'] - priorCounts['cli-direct'];
+        const deltaDesktop = fresh.counts['cli-desktop'] - priorCounts['cli-desktop'];
         const elapsedS = Math.round((result.durationMs ?? 0) / 100) / 10;
         // Describe the delta in plain language. Negative is rare (a
         // session was deleted on disk) — reporting it honestly beats
@@ -1643,6 +1656,19 @@ export function ChatArchViewer({
         const msg = `Rescan complete in ${elapsedS}s · ${deltaPhrase} (${newLocal} total local)`;
         setRescanToast(msg);
         setRescanBanner({ kind: 'ok', message: msg });
+        setRescanDelta({
+          totalLocal: deltaLocal,
+          cowork: deltaCowork,
+          cli: deltaCli,
+          desktop: deltaDesktop,
+        });
+        // Per-source breakdown into the activity log so the detail
+        // survives the banner / chip dismiss.
+        log(
+          'info',
+          'rescan',
+          `+${deltaLocal} sessions: +${deltaCowork}/${deltaCli >= 0 ? '+' : ''}${deltaCli}/${deltaDesktop >= 0 ? '+' : ''}${deltaDesktop} (cowork/cli/desktop)`,
+        );
       } catch (err) {
         const msg =
           'Rescan wrote the manifest but the refetch failed: ' +
@@ -1680,14 +1706,11 @@ export function ChatArchViewer({
     window.setTimeout(() => setRescanToast(null), 6000);
   };
 
-  // Auto-dismiss success banners after 6s. Error banners stay until
-  // the user clicks the ✕ — a failure reason shouldn't disappear
-  // while the user is still reading it.
-  useEffect(() => {
-    if (!rescanBanner || rescanBanner.kind !== 'ok') return;
-    const id = window.setTimeout(() => setRescanBanner(null), 6000);
-    return () => window.clearTimeout(id);
-  }, [rescanBanner]);
+  // Both success and error banners now stay until the user clicks ✕.
+  // The 6s auto-dismiss for `ok` was removed in Phase 1: the user
+  // wanted a persistent signal that the last rescan added N new
+  // sessions, with the breakdown also threaded into the activity log
+  // and a TopBar `RESCAN: +N` chip.
 
   // ZOMBIE chip click → CONSTELLATION filtered to zombie projects.
   const onZombieChipClick = () => {
@@ -2080,6 +2103,8 @@ export function ChatArchViewer({
           disabled={showDetailOverlay}
           tierIndicator={tierIndicator}
           locationLabel={LOCATION_LABEL[activeMode]}
+          {...(rescanDelta ? { rescanDelta } : {})}
+          onDismissRescanDelta={() => setRescanDelta(null)}
         />
         <div className="lcars-body">
           <Sidebar

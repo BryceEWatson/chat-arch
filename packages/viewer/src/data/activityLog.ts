@@ -33,7 +33,11 @@ export type LogSource =
   | 'discover'
   // Manifest fetch / merge composition. Populated by ChatArchViewer as
   // it resolves which sessions end up in the active view.
-  | 'manifest';
+  | 'manifest'
+  // Rescan deltas. Populated by ChatArchViewer.onRescan after a
+  // successful scan so the activity log keeps a record of the
+  // per-source breakdown beyond the lifetime of the success banner.
+  | 'rescan';
 
 export interface LogEntry {
   /** Monotonic id assigned at log time; stable across the entry's lifetime in the ring. */
