@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import type {
   CorrectionPattern,
   CorrectionsFile,
@@ -196,6 +196,107 @@ describe('CorrectionsPanel', () => {
     const encoded = screen.getByLabelText('ALREADY ENCODED BUT FAILING');
     expect(within(recurring).getByText('Nothing here — good.')).toBeDefined();
     expect(within(encoded).getByText('Nothing here — good.')).toBeDefined();
+  });
+
+  describe('AppliedImprovementsSummary mount (Phase 2b)', () => {
+    it('does not render the summary when there are no applied entries', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([pattern({ id: 'n1', canonicalRule: 'a new rule' })]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      mockedLoadApplied.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
+      });
+      expect(screen.queryByLabelText('since you patched')).toBeNull();
+    });
+
+    it('mounts the summary above the buckets when applied entries exist', async () => {
+      const u: ProposedUpgrade = {
+        target: 'global-claude-md',
+        targetPath: '~/.claude/CLAUDE.md',
+        patch: '- rule X',
+        rationale: 'r',
+        applied: false,
+        appliedAt: null,
+      };
+      const p = pattern({
+        id: 'p-summary',
+        canonicalRule: 'rule-for-summary',
+        proposedUpgrades: [u],
+      });
+      mockedLoadCorrections.mockResolvedValue(file([p]));
+      mockedLoadCandidates.mockResolvedValue(null);
+      mockedLoadApplied.mockResolvedValue({
+        schemaVersion: 1,
+        generatedAt: 1_700_200_000_000,
+        entries: [
+          {
+            id: 'a-1',
+            patternId: 'p-summary',
+            appliedAt: 1_700_120_000_000,
+            ruleSummary: 'rule-for-summary',
+            proposedUpgrade: { ...u, applied: true, appliedAt: 1_700_120_000_000 },
+          },
+        ],
+      });
+      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('since you patched')).toBeDefined();
+      });
+      // Stats row renders all three labels.
+      expect(screen.getByText('APPLIED')).toBeDefined();
+      expect(screen.getByText('HOLDING')).toBeDefined();
+      expect(screen.getByText('RECURRING')).toBeDefined();
+    });
+
+    it('plumbs onSelectPattern → data-highlighted on the matching card', async () => {
+      const u: ProposedUpgrade = {
+        target: 'global-claude-md',
+        targetPath: '~/.claude/CLAUDE.md',
+        patch: '- rule X',
+        rationale: 'r',
+        applied: false,
+        appliedAt: null,
+      };
+      const p = pattern({
+        id: 'highlight-me',
+        canonicalRule: 'rule-to-highlight',
+        proposedUpgrades: [u],
+      });
+      mockedLoadCorrections.mockResolvedValue(file([p]));
+      mockedLoadCandidates.mockResolvedValue(null);
+      mockedLoadApplied.mockResolvedValue({
+        schemaVersion: 1,
+        generatedAt: 1_700_200_000_000,
+        entries: [
+          {
+            id: 'a-1',
+            patternId: 'highlight-me',
+            appliedAt: 1_700_120_000_000,
+            ruleSummary: 'rule-to-highlight',
+            proposedUpgrade: { ...u, applied: true, appliedAt: 1_700_120_000_000 },
+          },
+        ],
+      });
+      const { container } = render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('since you patched')).toBeDefined();
+      });
+      // Expand the timeline, click the row, assert data-highlighted lights up.
+      const expand = screen.getByRole('button', { name: /VIEW PATCH LEDGER/i });
+      fireEvent.click(expand);
+      const rowBtn = await screen.findByTitle("Jump to this pattern's card");
+      fireEvent.click(rowBtn);
+      await waitFor(() => {
+        const highlighted = container.querySelector(
+          '[data-highlighted="true"]',
+        );
+        expect(highlighted).not.toBeNull();
+        expect(highlighted!.getAttribute('data-pattern-id')).toBe('highlight-me');
+      });
+    });
   });
 
   describe('applied-improvements merge', () => {

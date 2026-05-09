@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AppliedImprovementsFile,
   Correction,
   CorrectionPattern,
   CorrectionsFile,
@@ -11,6 +12,7 @@ import {
   loadCorrectionsFile,
   mergeAppliedImprovements,
 } from '../data/correctionsLoader.js';
+import { AppliedImprovementsSummary } from './AppliedImprovementsSummary.js';
 import {
   clearCorrections,
   fetchCorrectionRunStatus,
@@ -38,6 +40,13 @@ export interface CorrectionsPanelProps {
    * (non-clickable) cards.
    */
   onSelectSession?: (sessionId: string) => void;
+  /**
+   * `manifest.generatedAt` from the host. Drives the
+   * AppliedImprovementsSummary's stale-index warning. Optional — when
+   * omitted (e.g. embedded panel without a host manifest), the chip
+   * is silently skipped.
+   */
+  manifestGeneratedAt?: number | null;
 }
 
 type LoadState =
@@ -47,6 +56,7 @@ type LoadState =
       status: 'ready';
       corrections: CorrectionsFile | null;
       candidates: CorrectionsFile | null;
+      applied: AppliedImprovementsFile | null;
     };
 
 type MiningState =
@@ -130,8 +140,13 @@ type ClearState =
 export function CorrectionsPanel({
   dataDirBaseUrl,
   onSelectSession,
+  manifestGeneratedAt = null,
 }: CorrectionsPanelProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
+  // Phase 2b: which pattern (if any) the AppliedImprovementsSummary
+  // most recently asked us to scroll to. Cleared after the highlight
+  // animation completes so a second click on the same row re-fires.
+  const [highlightedPatternId, setHighlightedPatternId] = useState<string | null>(null);
   const [mining, setMining] = useState<MiningState>({ status: 'idle' });
   const [autoWindow, setAutoWindow] = useState<AutoWindowResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -195,7 +210,7 @@ export function CorrectionsPanel({
       const corrections = rawCorrections
         ? mergeAppliedImprovements(rawCorrections, applied)
         : null;
-      setLoad({ status: 'ready', corrections, candidates });
+      setLoad({ status: 'ready', corrections, candidates, applied });
       void refreshAutoWindow();
     } catch (err) {
       if (!aliveRef.current) return;
@@ -456,7 +471,7 @@ export function CorrectionsPanel({
     );
   }
 
-  const { corrections, candidates } = load;
+  const { corrections, candidates, applied } = load;
   const candidateCount = candidates?.corrections.length ?? 0;
   const hasCorrections = !!corrections && corrections.patterns.length > 0;
 
@@ -495,6 +510,55 @@ export function CorrectionsPanel({
         {...(typeof corrections?.generatedAt === 'number'
           ? { generatedAt: corrections.generatedAt }
           : {})}
+      />
+
+      <AppliedImprovementsSummary
+        applied={applied}
+        corrections={corrections}
+        manifestGeneratedAt={manifestGeneratedAt}
+        onSelectPattern={(patternId) => {
+          // Two-phase highlight: set the id (the matching card picks
+          // it up via data-highlighted on the next render), then clear
+          // after a short delay so a second click on the same row
+          // re-triggers the animation.
+          setHighlightedPatternId(patternId);
+          if (typeof window !== 'undefined') {
+            window.requestAnimationFrame(() => {
+              // CSS.escape is missing on older jsdom + some legacy
+              // browsers; fall back to attribute-iteration so we still
+              // scroll the right card without throwing. Pattern ids are
+              // already safe-ish (hash-derived in the schema) but the
+              // fallback path is cheap and removes a runtime dependency.
+              const escapeFn =
+                typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+                  ? CSS.escape
+                  : null;
+              let el: Element | null = null;
+              if (escapeFn) {
+                el = document.querySelector(
+                  `[data-pattern-id="${escapeFn(patternId)}"]`,
+                );
+              } else {
+                const all = document.querySelectorAll('[data-pattern-id]');
+                for (const node of Array.from(all)) {
+                  if (node.getAttribute('data-pattern-id') === patternId) {
+                    el = node;
+                    break;
+                  }
+                }
+              }
+              if (el && 'scrollIntoView' in el) {
+                (el as HTMLElement).scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'center',
+                });
+              }
+            });
+            window.setTimeout(() => {
+              setHighlightedPatternId((prev) => (prev === patternId ? null : prev));
+            }, 2000);
+          }
+        }}
       />
 
       {coverage !== null && <CoverageMeter coverage={coverage} />}
@@ -574,6 +638,7 @@ export function CorrectionsPanel({
       ) : (
         <BucketsView
           corrections={corrections!}
+          highlightedPatternId={highlightedPatternId}
           {...(applyAvailable ? { onApply: handleApply } : {})}
           {...(onSelectSession ? { onSelectSession } : {})}
         />
@@ -1262,9 +1327,20 @@ interface BucketsViewProps {
     extras: { targetFiles?: string[]; notes?: string },
   ) => Promise<{ ok: boolean; error?: string }>;
   onSelectSession?: (sessionId: string) => void;
+  /**
+   * Phase 2b: when set, the matching CorrectionPatternCard renders
+   * with `data-highlighted` so a CSS rule can flash it after the
+   * AppliedImprovementsSummary scrolls it into view.
+   */
+  highlightedPatternId?: string | null;
 }
 
-function BucketsView({ corrections, onApply, onSelectSession }: BucketsViewProps) {
+function BucketsView({
+  corrections,
+  onApply,
+  onSelectSession,
+  highlightedPatternId,
+}: BucketsViewProps) {
   const instancesById = useMemo(() => {
     const m = new Map<string, Correction>();
     for (const c of corrections.corrections) m.set(c.id, c);
@@ -1310,20 +1386,28 @@ function BucketsView({ corrections, onApply, onSelectSession }: BucketsViewProps
               <p className="lcars-corrections__bucket-empty">Nothing here — good.</p>
             ) : (
               <ul className="lcars-corrections__pattern-list" role="list">
-                {items.map((p) => (
-                  <li key={p.id}>
-                    <CorrectionPatternCard
-                      pattern={p}
-                      instancesById={instancesById}
-                      {...(onApply
-                        ? {
-                            onApply: (upgrade, extras) => onApply(p, upgrade, extras),
-                          }
-                        : {})}
-                      {...(onSelectSession ? { onSelectSession } : {})}
-                    />
-                  </li>
-                ))}
+                {items.map((p) => {
+                  const isHighlighted = highlightedPatternId === p.id;
+                  return (
+                    <li
+                      key={p.id}
+                      data-pattern-id={p.id}
+                      {...(isHighlighted ? { 'data-highlighted': 'true' } : {})}
+                      className="lcars-corrections__pattern-item"
+                    >
+                      <CorrectionPatternCard
+                        pattern={p}
+                        instancesById={instancesById}
+                        {...(onApply
+                          ? {
+                              onApply: (upgrade, extras) => onApply(p, upgrade, extras),
+                            }
+                          : {})}
+                        {...(onSelectSession ? { onSelectSession } : {})}
+                      />
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
