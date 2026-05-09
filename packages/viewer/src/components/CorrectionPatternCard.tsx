@@ -5,6 +5,7 @@ import type {
   ProposedUpgrade,
   UpgradeTarget,
 } from '@chat-arch/schema';
+import { formatRelative } from '../util/time.js';
 
 export interface CorrectionPatternCardProps {
   pattern: CorrectionPattern;
@@ -79,7 +80,18 @@ function formatConfidence(c: number): string {
   return `${pct}%`;
 }
 
+/**
+ * Render APPLIED ✓ timestamps as relative ("64d ago", "3h ago"). The
+ * raw ISO is kept in a `title=` attribute so the precise time is one
+ * hover away — relative numbers help "is this recent?" pattern-recall;
+ * the ISO is the audit trail.
+ */
 function formatAppliedAt(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  return formatRelative(ms);
+}
+
+function formatAppliedAtIso(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '';
   try {
     return new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -320,7 +332,10 @@ function UpgradeRow({
       ? { kind: 'applied', appliedAt: upgrade.appliedAt }
       : { kind: 'idle' },
   );
-  const [targetFilesInput, setTargetFilesInput] = useState('');
+  // Pre-fill with the upgrade's targetPath so the default CONFIRM click
+  // captures the obvious answer instead of an empty audit trail. Users
+  // can append other files (`CLAUDE.md, .claude/skills/foo/SKILL.md`).
+  const [targetFilesInput, setTargetFilesInput] = useState(upgrade.targetPath);
   const [notesInput, setNotesInput] = useState('');
 
   const submit = async () => {
@@ -390,7 +405,8 @@ function UpgradeRow({
         {state.kind === 'applied' && (
           <span
             className="lcars-correction-pattern__applied"
-            aria-label={`applied at ${formatAppliedAt(state.appliedAt)}`}
+            aria-label={`applied ${formatAppliedAt(state.appliedAt)} (${formatAppliedAtIso(state.appliedAt)})`}
+            title={formatAppliedAtIso(state.appliedAt)}
           >
             APPLIED ✓
             {formatAppliedAt(state.appliedAt) && (
@@ -460,10 +476,23 @@ function UpgradeRow({
             />
           </label>
           <div className="lcars-correction-pattern__confirm-actions">
+            {/*
+              Disable CONFIRM APPLY when a sibling row is mid-write
+              (busy && !isMe). Without this lock, the second click would
+              fly past the IDLE→CONFIRMING gate (we're already in
+              CONFIRMING) and trip the server's 409 race response —
+              cosmetic, but confusing.
+            */}
             <button
               type="button"
               className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
               onClick={() => void submit()}
+              disabled={busy && !isMe}
+              title={
+                busy && !isMe
+                  ? 'Another upgrade is being applied. Try again in a moment.'
+                  : undefined
+              }
               autoFocus
             >
               CONFIRM APPLY

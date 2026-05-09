@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -70,8 +70,15 @@ function badRequest(message: string): Response {
  * race the `read → splice → write` cycle and one would silently
  * clobber the other. Concurrent callers get 409, matching the
  * `inFlight` posture in `/api/mine-corrections.ts`.
+ *
+ * IMPORTANT (TOCTOU): `inFlight` is set SYNCHRONOUSLY at handler entry,
+ * before any `await` (including `request.json()`), so two POSTs that
+ * arrive in the same microtask cannot both pass the gate. Earlier
+ * versions of this handler set `inFlight` after parsing the body; both
+ * concurrent calls saw `null`, parsed in parallel, and raced the
+ * read-modify-write of the ledger.
  */
-let inFlight: Promise<void> | null = null;
+let inFlight: Promise<Response> | null = null;
 
 function repoRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -197,26 +204,87 @@ export function isSameApplyKey(
   );
 }
 
-async function loadLedger(path: string): Promise<AppliedImprovementsFile> {
-  try {
-    const raw = await readFile(path, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<AppliedImprovementsFile>;
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      Array.isArray(parsed.entries)
-    ) {
-      return {
-        schemaVersion: 1,
-        generatedAt:
-          typeof parsed.generatedAt === 'number' ? parsed.generatedAt : Date.now(),
-        entries: parsed.entries as AppliedImprovement[],
-      };
-    }
-  } catch {
-    // Missing or malformed — fall through to fresh envelope.
+/**
+ * Sentinel error thrown when the ledger file exists but is unreadable
+ * (parse failure, wrong shape, …). The POST handler converts this to
+ * a 500 with a recovery hint rather than silently overwriting the file
+ * — silently producing a fresh empty envelope on parse failure is how
+ * apply history would get erased by a single write following a crash
+ * or partial save.
+ */
+export class LedgerCorruptError extends Error {
+  constructor(public readonly path: string, cause?: unknown) {
+    super(
+      `ledger appears corrupted at ${path}; refusing to overwrite. ` +
+        `Inspect manually${cause instanceof Error ? `: ${cause.message}` : ''}.`,
+    );
+    this.name = 'LedgerCorruptError';
   }
-  return { schemaVersion: 1, generatedAt: Date.now(), entries: [] };
+}
+
+interface NodeFsError extends Error {
+  code?: string;
+}
+
+function isMissingFile(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as NodeFsError).code === 'ENOENT'
+  );
+}
+
+export async function loadLedger(path: string): Promise<AppliedImprovementsFile> {
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch (err) {
+    if (isMissingFile(err)) {
+      // First-ever apply for this repo — fresh envelope is correct.
+      return { schemaVersion: 1, generatedAt: Date.now(), entries: [] };
+    }
+    // Permission errors etc. — surface, don't silently overwrite.
+    throw new LedgerCorruptError(path, err);
+  }
+  let parsed: Partial<AppliedImprovementsFile> | null = null;
+  try {
+    parsed = JSON.parse(raw) as Partial<AppliedImprovementsFile>;
+  } catch (err) {
+    throw new LedgerCorruptError(path, err);
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !Array.isArray(parsed.entries)
+  ) {
+    throw new LedgerCorruptError(path);
+  }
+  return {
+    schemaVersion: 1,
+    generatedAt:
+      typeof parsed.generatedAt === 'number' ? parsed.generatedAt : Date.now(),
+    entries: parsed.entries as AppliedImprovement[],
+  };
+}
+
+/**
+ * Atomic ledger write. Writes to a sibling `.tmp` file and renames
+ * over the destination — `fs.promises.rename` is atomic on both POSIX
+ * and Windows (NTFS rename overwrites the target in a single syscall).
+ * A kill mid-write leaves the original ledger intact rather than
+ * truncating it to zero bytes, which (combined with the strict
+ * `loadLedger` parse) would erase apply history on next read.
+ */
+export async function atomicWriteLedger(
+  ledgerPath: string,
+  next: AppliedImprovementsFile,
+): Promise<void> {
+  const tmpPath = join(
+    dirname(ledgerPath),
+    '.applied-improvements.json.tmp',
+  );
+  await writeFile(tmpPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+  await rename(tmpPath, ledgerPath);
 }
 
 /**
@@ -273,6 +341,13 @@ export function applyToLedger(
   return { next, entry };
 }
 
+function jsonResponse(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 export const POST: APIRoute = async ({ request }) => {
   if (!isLocalOrigin(request.headers.get('origin'))) {
     return csrfReject('cross-origin or missing Origin');
@@ -281,64 +356,88 @@ export const POST: APIRoute = async ({ request }) => {
     return csrfReject('missing X-Requested-With token');
   }
 
+  // Fast-fail concurrent callers BEFORE we touch the body. Two POSTs
+  // arriving in the same microtask must not both observe `inFlight ===
+  // null`; see the TOCTOU note above the `inFlight` declaration.
   if (inFlight) {
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      {
         ok: false,
         error:
           'Another apply is already writing the ledger. Retry in a moment.',
-      }),
-      { status: 409, headers: { 'content-type': 'application/json' } },
+      },
+      409,
     );
   }
 
-  let parsed: unknown;
-  try {
-    parsed = await request.json();
-  } catch {
-    return badRequest('invalid JSON body');
-  }
-  const validation = validateApplyBody(parsed);
-  if (!validation.ok) return badRequest(validation.error);
-
-  const sidecarDir = join(standaloneDataDir(), 'analysis');
-  const ledgerPath = join(sidecarDir, 'applied-improvements.json');
-
-  let release: () => void = () => {};
-  inFlight = new Promise<void>((res) => {
-    release = res;
+  // Claim the slot synchronously (no `await` between this assignment
+  // and the gate above). The deferred-promise pattern lets us resolve
+  // the slot with the actual response when the body finishes — same
+  // shape as `mine-corrections.ts`'s `completed` promise but inlined
+  // because this handler is request/response, not streaming.
+  let resolveInFlight!: (r: Response) => void;
+  let rejectInFlight!: (e: unknown) => void;
+  const slot = new Promise<Response>((res, rej) => {
+    resolveInFlight = res;
+    rejectInFlight = rej;
   });
+  inFlight = slot;
 
   try {
-    await mkdir(sidecarDir, { recursive: true });
-    const prev = await loadLedger(ledgerPath);
-    const { next, entry } = applyToLedger(
-      prev,
-      validation.payload,
-      Date.now(),
-      randomUUID(),
-    );
-    await writeFile(ledgerPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        appliedImprovementId: entry.id,
-        ledgerPath,
-        entriesCount: next.entries.length,
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    );
+    let parsed: unknown;
+    try {
+      parsed = await request.json();
+    } catch {
+      const r = badRequest('invalid JSON body');
+      resolveInFlight(r);
+      return r;
+    }
+    const validation = validateApplyBody(parsed);
+    if (!validation.ok) {
+      const r = badRequest(validation.error);
+      resolveInFlight(r);
+      return r;
+    }
+
+    const sidecarDir = join(standaloneDataDir(), 'analysis');
+    const ledgerPath = join(sidecarDir, 'applied-improvements.json');
+
+    try {
+      await mkdir(sidecarDir, { recursive: true });
+      const prev = await loadLedger(ledgerPath);
+      const { next, entry } = applyToLedger(
+        prev,
+        validation.payload,
+        Date.now(),
+        randomUUID(),
+      );
+      await atomicWriteLedger(ledgerPath, next);
+      const r = jsonResponse(
+        {
+          ok: true,
+          appliedImprovementId: entry.id,
+          ledgerPath,
+          entriesCount: next.entries.length,
+        },
+        200,
+      );
+      resolveInFlight(r);
+      return r;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const r = jsonResponse({ ok: false, error: message }, 500);
+      resolveInFlight(r);
+      return r;
+    }
   } catch (err) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      }),
-      { status: 500, headers: { 'content-type': 'application/json' } },
-    );
+    rejectInFlight(err);
+    throw err;
   } finally {
-    inFlight = null;
-    release();
+    // Clear the slot only AFTER the response is resolved/rejected so
+    // any second POST that observed the slot (and got 409) gets that
+    // 409 immediately rather than blocking on `slot`. The slot promise
+    // itself is GC'd once nothing references it.
+    if (inFlight === slot) inFlight = null;
   }
 };
 

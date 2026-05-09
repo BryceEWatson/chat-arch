@@ -940,8 +940,10 @@ function Header({ generatedAt }: HeaderProps) {
       <h2 className="lcars-corrections__title">CORRECTIONS</h2>
       <p className="lcars-corrections__lead">
         Recurring instructions you keep giving the model — clustered, ranked, and paired with
-        proposed CLAUDE.md upgrades. Apply manually for now; the apply-to-disk flow ships in a
-        follow-up.
+        proposed CLAUDE.md upgrades. Click APPLY to log a CLAUDE.md edit you&apos;ve made; the
+        loop closes when the next mining pass shows the rule is no longer recurring. Apply
+        history is recorded in <code>applied-improvements.json</code> next to{' '}
+        <code>corrections.json</code>.
       </p>
       {typeof generatedAt === 'number' && (
         <p className="lcars-corrections__meta">

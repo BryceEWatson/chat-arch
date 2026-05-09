@@ -74,6 +74,15 @@ export async function applyCorrection(
     parsed = null;
   }
   if (!res.ok) {
+    // 409 is the "another apply is in flight" gate from the server.
+    // Surface a friendly message rather than the raw status string —
+    // UpgradeRow renders this verbatim in its error state.
+    if (res.status === 409) {
+      return {
+        ok: false,
+        error: 'Another apply is in flight. Try again in a moment.',
+      };
+    }
     const errMsg =
       parsed && typeof parsed === 'object' && 'error' in parsed
         ? String((parsed as { error?: unknown }).error)

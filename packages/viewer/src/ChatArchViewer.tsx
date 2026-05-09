@@ -234,6 +234,15 @@ export function ChatArchViewer({
     () => readTopicsHash().selectedTopicId,
   );
   const [selectedId, setSelectedId] = useState<string | null>(() => readSessionHash());
+  // Phase 1 corrections-loop: a CORRECTIONS instance-pill clickthrough
+  // opens session detail. Hitting BACK should land back in CORRECTIONS,
+  // not the default `command` mode — otherwise the loop is broken on
+  // backtrack. We stash the mode at click time and `onBack` restores
+  // it. Only set when a non-default restoration is wanted; cleared
+  // after restoration so a subsequent `onSelect` from an unrelated
+  // surface doesn't accidentally inherit it.
+  const [priorModeBeforeDetail, setPriorModeBeforeDetail] =
+    useState<Mode | null>(null);
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<FilterState>(new Set<SessionSource>());
@@ -1575,6 +1584,13 @@ export function ChatArchViewer({
       return;
     }
     setSelectedId(null);
+    // Restore the surface the user came from (e.g. CORRECTIONS) so the
+    // backtrack lands in the loop instead of dumping them on SESSIONS.
+    if (priorModeBeforeDetail) {
+      setMode(priorModeBeforeDetail);
+      setPriorModeBeforeDetail(null);
+      return;
+    }
     setMode('command');
   };
   const onPrev = () => {
@@ -1663,11 +1679,16 @@ export function ChatArchViewer({
           desktop: deltaDesktop,
         });
         // Per-source breakdown into the activity log so the detail
-        // survives the banner / chip dismiss.
+        // survives the banner / chip dismiss. Format as
+        // `+12 total · +8 cowork · +3 CLI · +1 desktop` — easier to
+        // read than the slash-separated tuple it replaced (a reader
+        // had to mentally zip the numbers to the labels).
+        const fmtDelta = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
         log(
           'info',
           'rescan',
-          `+${deltaLocal} sessions: +${deltaCowork}/${deltaCli >= 0 ? '+' : ''}${deltaCli}/${deltaDesktop >= 0 ? '+' : ''}${deltaDesktop} (cowork/cli/desktop)`,
+          `${fmtDelta(deltaLocal)} total · ${fmtDelta(deltaCowork)} cowork · ` +
+            `${fmtDelta(deltaCli)} CLI · ${fmtDelta(deltaDesktop)} desktop`,
         );
       } catch (err) {
         const msg =
@@ -2359,7 +2380,14 @@ export function ChatArchViewer({
                     ) : baseMode === 'corrections' ? (
                       <CorrectionsPanel
                         dataDirBaseUrl={dataRoot}
-                        onSelectSession={onSelect}
+                        onSelectSession={(id) => {
+                          // Stash the source mode so BACK restores
+                          // CORRECTIONS instead of falling to SESSIONS
+                          // (`command`). Cleared by `onBack` after
+                          // restoration.
+                          setPriorModeBeforeDetail('corrections');
+                          onSelect(id);
+                        }}
                       />
                     ) : baseMode === 'topics' ? (
                       <TopicsMode

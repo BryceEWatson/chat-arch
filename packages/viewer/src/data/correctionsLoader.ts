@@ -108,6 +108,22 @@ function matchesUpgrade(u: ProposedUpgrade, applied: AppliedImprovement): boolea
  * Pure / non-mutating — returns a new `CorrectionsFile`. The input is
  * not modified, so the caller can keep the raw `corrections.json`
  * around for diff / debugging.
+ *
+ * KNOWN FRAGILITY (`pattern.lastSeen > maxAppliedAt`):
+ *   This compares the pattern's last-seen timestamp (an attribute of
+ *   the underlying corpus, set during the most recent mining pass)
+ *   against the max APPLY timestamp. If the user APPLYs and then
+ *   immediately re-mines on a STALE window — i.e. a window that still
+ *   ends in correction instances older than the apply but newer than
+ *   the previous pattern.lastSeen — the pattern can flip to RECURRING
+ *   even though the user hasn't pushed back since the apply. The
+ *   long-term fix is to carry per-correction `detectedAtMs` and
+ *   compare apply vs the latest *correction-instance* time, not
+ *   pattern.lastSeen. Short-term this is acceptable because re-mines
+ *   are infrequent and the false-positive direction (a "still
+ *   recurring" badge that disappears on the next clean mine) is the
+ *   safer side of the error budget — it asks the user to look again,
+ *   it doesn't hide a regression.
  */
 export function mergeAppliedImprovements(
   corrections: CorrectionsFile,
