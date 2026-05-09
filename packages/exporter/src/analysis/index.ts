@@ -66,7 +66,7 @@ export interface RunAnalysisResult {
   };
 }
 
-const EXPORTER_VERSION = '0.7.0';
+const EXPORTER_VERSION = '0.8.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
