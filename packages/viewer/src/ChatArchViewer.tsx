@@ -1854,16 +1854,22 @@ export function ChatArchViewer({
         const deltaCli = fresh.counts['cli-direct'] - priorCounts['cli-direct'];
         const deltaDesktop = fresh.counts['cli-desktop'] - priorCounts['cli-desktop'];
         const elapsedS = Math.round((result.durationMs ?? 0) / 100) / 10;
-        // Describe the delta in plain language. Negative is rare (a
-        // session was deleted on disk) — reporting it honestly beats
-        // silently showing the remaining total.
-        const deltaPhrase =
-          deltaLocal > 0
-            ? `${deltaLocal} new local session${deltaLocal === 1 ? '' : 's'}`
+        // First-scan vs re-scan wording: on the very first scan
+        // (`priorLocal === 0`) the corpus didn't exist yet, so "455
+        // new" reads strangely — the user didn't have an old set of
+        // 0 sessions; they just scanned for the first time. Reword
+        // the verb + phrase so the message matches the user's mental
+        // model. Re-scans keep the delta framing.
+        const isFirstScan = priorLocal === 0;
+        const deltaPhrase = isFirstScan
+          ? `${newLocal} local session${newLocal === 1 ? '' : 's'} indexed`
+          : deltaLocal > 0
+            ? `${deltaLocal} new local session${deltaLocal === 1 ? '' : 's'} (${newLocal} total local)`
             : deltaLocal < 0
-              ? `${-deltaLocal} local session${deltaLocal === -1 ? '' : 's'} removed`
-              : 'no new local sessions';
-        const msg = `Rescan complete in ${elapsedS}s · ${deltaPhrase} (${newLocal} total local)`;
+              ? `${-deltaLocal} local session${deltaLocal === -1 ? '' : 's'} removed (${newLocal} total local)`
+              : `no new local sessions (${newLocal} total local)`;
+        const verb = isFirstScan ? 'Scan complete' : 'Rescan complete';
+        const msg = `${verb} in ${elapsedS}s · ${deltaPhrase}`;
         setRescanToast(msg);
         setRescanBanner({ kind: 'ok', message: msg });
         setRescanDelta({
@@ -1917,15 +1923,23 @@ export function ChatArchViewer({
       setRescanBanner({ kind: 'error', message: msg });
     }
     // Auto-clear the hover tooltip after a few seconds (the banner is
-    // persistent for errors, see `useEffect` below for success).
+    // persistent for errors, see effect below for success auto-fade).
     window.setTimeout(() => setRescanToast(null), 6000);
   };
 
-  // Both success and error banners now stay until the user clicks ✕.
-  // The 6s auto-dismiss for `ok` was removed in Phase 1: the user
-  // wanted a persistent signal that the last rescan added N new
-  // sessions, with the breakdown also threaded into the activity log
-  // and a TopBar `RESCAN: +N` chip.
+  // Auto-fade the OK rescan banner after 8s. Errors stay until the
+  // user clicks ✕. The long-lived signal that "the last scan added N
+  // sessions" lives in the TopBar `RESCAN: +N` chip + the ActivityLog
+  // entry; the toast banner is just immediate visual confirmation.
+  // Keeping it persistent overlapped the TopBar chrome and felt like
+  // a UI fault. Errors stay because the user must read them.
+  useEffect(() => {
+    if (rescanBanner?.kind !== 'ok') return;
+    const id = window.setTimeout(() => {
+      setRescanBanner((prev) => (prev?.kind === 'ok' ? null : prev));
+    }, 8000);
+    return () => window.clearTimeout(id);
+  }, [rescanBanner]);
 
   // --- Upper-panel ANALYSIS tab navigation handlers (redesign Phase 2) ---
   //
