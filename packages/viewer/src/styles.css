@@ -3910,6 +3910,81 @@
   color: var(--lcars-ice);
   margin: 0;
 }
+/* Phase 3 opt-in disable link — small inline button next to the
+   TOPICS title that clears the local opt-in flag. Sits at a quieter
+   weight than the surrounding LCARS chrome so it reads as a
+   secondary affordance, not a primary nav target. */
+.lcars-topics-index__disable {
+  font-family: var(--lcars-font-prose);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--lcars-butterscotch);
+  background: transparent;
+  border: none;
+  padding: 0 6px;
+  margin-left: 6px;
+  cursor: pointer;
+  vertical-align: baseline;
+  opacity: 0.75;
+}
+.lcars-topics-index__disable:hover,
+.lcars-topics-index__disable:focus-visible {
+  color: var(--lcars-peach);
+  opacity: 1;
+  outline: none;
+  text-decoration: underline;
+}
+
+/* Phase 3 opt-in gate — disclosure card shown until the user clicks
+   ENABLE TOPICS. Mirrors the LocalAnalyzerEmpty visual weight (dashed
+   violet border on a faint violet wash) so the user reads it as
+   "feature is here, not yet active". */
+.lcars-topics-opt-in {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  margin: 16px;
+  border: 1px dashed var(--lcars-violet);
+  border-radius: 8px;
+  background: rgba(204, 153, 204, 0.04);
+  max-width: 640px;
+}
+.lcars-topics-opt-in__title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  color: var(--lcars-violet);
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+.lcars-topics-opt-in__body {
+  margin: 0;
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lcars-topics-opt-in__cta {
+  align-self: flex-start;
+  padding: 8px 16px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-bg);
+  background: var(--lcars-ice);
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+}
+.lcars-topics-opt-in__cta:hover,
+.lcars-topics-opt-in__cta:focus-visible {
+  background: var(--lcars-sunflower);
+  outline: none;
+}
 .lcars-topics-index__filter {
   display: inline-flex;
   align-items: center;
