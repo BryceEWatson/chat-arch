@@ -56,6 +56,13 @@
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 
+  /* TopBar min-height + matching desktop sidebar elbow height. The
+     desktop layout puts the sidebar and the TopBar in the same grid
+     row (the LCARS L-corner), so the elbow's height must match the
+     TopBar's min-height exactly or the L breaks visually. Sharing
+     one variable prevents future drift. */
+  --lcars-top-bar-min-height: 44px;
+
   --lcars-sunflower: #ffcc99;
   /* Pre-composited sunflower × 0.85 over black. Used as a solid background
      color for inactive sidebar items so contrast (10.25:1 vs black text)
@@ -1004,8 +1011,11 @@
      classic LCARS half-pill cap. */
   .lcars-top-bar {
     /* See min-height note at the tablet breakpoint — same reason
-       here: wrap-on-overflow must extend the bar, not clip it. */
-    min-height: 44px;
+       here: wrap-on-overflow must extend the bar, not clip it. The
+       value lives in `--lcars-top-bar-min-height` because the
+       sidebar's top elbow must match exactly (see
+       `.lcars-sidebar__elbow` below). */
+    min-height: var(--lcars-top-bar-min-height);
     padding: 6px 18px;
     background: var(--lcars-butterscotch);
     border-bottom: 0;
@@ -1221,10 +1231,13 @@
     overflow: visible;
   }
   .lcars-sidebar__elbow {
-    height: 40px;
+    /* Must match `.lcars-top-bar { min-height }` exactly — the elbow
+       sits in the same grid row as the TopBar (the L-corner), so any
+       drift between the two heights leaves a visible gap or overlap. */
+    height: var(--lcars-top-bar-min-height);
   }
   .lcars-sidebar__elbow--top {
-    border-radius: 40px 0 0 0;
+    border-radius: var(--lcars-top-bar-min-height) 0 0 0;
   }
   .lcars-sidebar__item {
     gap: 10px;
