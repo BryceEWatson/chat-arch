@@ -1868,6 +1868,9 @@ export function ChatArchViewer({
   if (!uploadedData && (manifestState.status === 'error' || manifestIsEmpty)) {
     const fetchErrorSuffix =
       manifestState.status === 'error' ? ` (fetch: ${manifestState.message})` : '';
+    const emptyDetail = rescanCtl.available
+      ? `Drop a claude.ai Privacy-Export ZIP, scan your local Claude Code / Desktop / Cowork transcripts, or load demo data to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`
+      : `Drop a claude.ai Privacy-Export ZIP, or load demo data to populate the viewer with a generated sample corpus. To index local Claude Code / Desktop / Cowork transcripts, run the dev server (pnpm --filter @chat-arch/standalone dev). See the README for the full walkthrough.${fetchErrorSuffix}`;
     return (
       <div className="lcars-root" data-tier={tier}>
         <div className="lcars-frame lcars-frame--empty">
@@ -1876,19 +1879,36 @@ export function ChatArchViewer({
             onQueryChange={() => {}}
             tier={tier}
             disabled
-            // v2 spec §6 / D4: data-source actions (UPLOAD CLOUD,
-            // SCAN LOCAL, DELETE) live in the DATA panel triggered
-            // from the empty-state UploadPanel below — the TopBar
-            // stays informational even on the no-data landing.
-            locationLabel="WELCOME"
+            // v2 spec §6 / D4: TopBar stays informational on the
+            // empty-state landing — no location pill (the previous
+            // "WELCOME" chip read as a button but had no action).
           />
           <main className="lcars-empty-main">
             <TrustStrip />
-            <ErrorState
-              title="NO DATA YET"
-              detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`}
+            <section className="lcars-empty-pitch" aria-label="what chat-arch does">
+              <h2 className="lcars-empty-pitch__headline">
+                FIND THE RULES CLAUDE KEEPS BREAKING.
+                <br />
+                PATCH YOUR CLAUDE.MD. PROVE THE LOOP CLOSED.
+              </h2>
+              <p className="lcars-empty-pitch__sub">
+                A local-first workshop for turning your Claude conversation history into
+                reusable improvements. Mines your transcripts for correction patterns —
+                places where you pushed back on Claude — clusters them into recurring
+                rules, and helps you encode fixes into CLAUDE.md, skills, and agent
+                configs.
+              </p>
+            </section>
+            <ErrorState title="NO DATA YET" detail={emptyDetail} />
+            <UploadPanel
+              onLoaded={onUpload}
+              variant="prominent"
+              onLoadDemo={onLoadDemo}
+              onScanLocal={onRescan}
+              scanAvailable={rescanCtl.available}
+              scanStatus={rescanCtl.status}
+              scanProgress={rescanCtl.progress}
             />
-            <UploadPanel onLoaded={onUpload} variant="prominent" onLoadDemo={onLoadDemo} />
           </main>
         </div>
       </div>

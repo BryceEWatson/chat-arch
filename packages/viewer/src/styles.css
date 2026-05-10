@@ -2778,6 +2778,20 @@
   background: var(--lcars-violet);
   color: var(--lcars-bg);
 }
+/* CHOOSE ZIP demoted to outlined when SCAN LOCAL is the primary
+   action (i.e. running locally). Keeps cloud-export branded as
+   butterscotch — this is the same palette as the primary, just
+   outlined to read as the secondary path. */
+.lcars-upload-panel__button--cloud-secondary {
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  border: 1.5px solid var(--lcars-butterscotch);
+}
+.lcars-upload-panel__button--cloud-secondary:hover:not(:disabled),
+.lcars-upload-panel__button--cloud-secondary:focus-visible:not(:disabled) {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+}
 .lcars-upload-panel__hint--demo {
   font-size: 11px;
   color: var(--lcars-text);
@@ -6283,6 +6297,43 @@
 .lcars-empty-main .lcars-trust-strip {
   align-self: center;
   max-width: 640px;
+}
+/* The "what chat-arch does" pitch on the empty-state landing.
+   Sits between the TrustStrip (privacy framing) and the
+   "NO DATA YET" ErrorState. Priya complained the landing showed
+   chrome and an empty-state error but never said what the product
+   does — this is the answer. */
+.lcars-empty-pitch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: center;
+  padding: 0 8px;
+  text-align: center;
+}
+.lcars-empty-pitch__headline {
+  margin: 0;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  color: var(--lcars-sunflower);
+}
+.lcars-empty-pitch__sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lcars-text);
+  opacity: 0.85;
+}
+@media (min-width: 600px) {
+  .lcars-empty-pitch__headline {
+    font-size: 26px;
+  }
+  .lcars-empty-pitch__sub {
+    font-size: 14px;
+  }
 }
 
 /* ---------------------------------------------------------------- *
