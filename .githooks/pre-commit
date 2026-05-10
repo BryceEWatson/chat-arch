@@ -1,0 +1,69 @@
+#!/bin/sh
+# chat-arch pre-commit hook — last line of defense against PII leaks
+# via apps/standalone/public/chat-arch-data/manifest.json.
+#
+# The file is tracked by git in its empty/baseline state (schemaVersion +
+# zeroed counts + empty sessions array), but it's populated on disk by
+# `pnpm exporter run start` / the in-app SCAN LOCAL action. That
+# populated content includes session titles, previews, costs, and
+# workflow metadata — PII for the developer running the tool.
+#
+# A staging mistake (`git add -A` / `git add .` / IDE auto-stage of all
+# modified files) can sweep the populated manifest into a commit. This
+# hook fails the commit if the staged manifest contains real session
+# entries.
+#
+# To bypass legitimately (e.g., the baseline shape itself changes):
+#   git commit --no-verify
+# but think hard before doing that.
+#
+# This hook is opt-in: enable it once per clone with
+#   git config core.hooksPath .githooks
+# (or copy it to .git/hooks/pre-commit). The README quickstart sets
+# this up.
+
+set -e
+
+MANIFEST="apps/standalone/public/chat-arch-data/manifest.json"
+
+# Is the manifest in the staged diff?
+if ! git diff --cached --name-only | grep -q -F "$MANIFEST"; then
+  exit 0
+fi
+
+# It's staged. Check whether the staged version has real session
+# entries. The baseline shape has `"sessions": []` (empty array) and
+# all-zero counts. A populated version has session objects with `"id":`
+# inside the sessions array.
+STAGED="$(git show ":$MANIFEST" 2>/dev/null || echo '')"
+
+# Heuristic 1: any session entry has an `"id":` field — populated.
+if echo "$STAGED" | grep -q '"id":'; then
+  echo "" >&2
+  echo "❌ pre-commit refusing: $MANIFEST contains real session entries." >&2
+  echo "" >&2
+  echo "   This file is the local-scan output and includes session titles," >&2
+  echo "   previews, costs, and workflow metadata that constitute PII for" >&2
+  echo "   the developer running the tool. It is tracked in its EMPTY" >&2
+  echo "   baseline form only; populated content must never reach a commit." >&2
+  echo "" >&2
+  echo "   To recover:" >&2
+  echo "     git restore --staged \"$MANIFEST\"" >&2
+  echo "" >&2
+  echo "   If you genuinely need to update the baseline shape (e.g., a" >&2
+  echo "   schemaVersion bump that adds a new empty top-level field):" >&2
+  echo "     git commit --no-verify" >&2
+  echo "" >&2
+  exit 1
+fi
+
+# Heuristic 2: any non-zero count in the counts object — populated.
+if echo "$STAGED" | grep -E -q '"(cowork|cli-direct|cli-desktop|cloud)":\s*[1-9]'; then
+  echo "" >&2
+  echo "❌ pre-commit refusing: $MANIFEST has non-zero session counts." >&2
+  echo "   Same reason as above — populated manifest must not be committed." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

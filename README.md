@@ -67,8 +67,16 @@ a viewer that treats your conversation history as the corpus it actually is.
 
 ```sh
 pnpm install
+git config core.hooksPath .githooks   # enable PII-leak guard
 pnpm dev
 ```
+
+The `core.hooksPath` line activates `.githooks/pre-commit`, which
+rejects any commit that stages a populated
+`apps/standalone/public/chat-arch-data/manifest.json`. That file is
+tracked in its empty baseline form, but it gets *populated on disk*
+by SCAN LOCAL — populated content (session titles, previews, costs)
+is PII and must never be committed. One-time setup per clone.
 
 Open http://localhost:4321. The viewer lands on a **NO DATA YET** screen
 with three ways in:
