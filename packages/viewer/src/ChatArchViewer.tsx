@@ -2188,21 +2188,6 @@ export function ChatArchViewer({
     />
   );
 
-  // v2 spec §6: location chip in the TopBar mirrors the active surface.
-  // This is the same naming that `Sidebar` uses, kept in sync by hand.
-  const LOCATION_LABEL: Record<Mode, string> = {
-    command: 'SESSIONS',
-    // v2 D6a: TIMELINE is an in-surface view toggle now; this entry is
-    // kept so the legacy mode id keeps a label, but in practice the
-    // sidebar can't navigate here anymore.
-    timeline: 'SESSIONS · TIMELINE',
-    detail: 'DETAIL',
-    projects: 'PROJECTS',
-    topics: 'TOPICS',
-    practice: 'PRACTICE',
-    corrections: 'CORRECTIONS',
-  };
-
   // Has-data flags drive the "Scan Local" → "Update Local" and
   // "Upload Cloud" → "Update Cloud" label swaps. Computed from the
   // effective manifest (fetched + uploaded merged), so a user who
@@ -2377,15 +2362,13 @@ export function ChatArchViewer({
           </button>
         </div>
       )}
-      <div className="lcars-frame">
+      <div className="lcars-frame" data-active-mode={activeMode}>
         <TopBar
           query={rawQuery}
           onQueryChange={setRawQuery}
           tier={tier}
           disabled={showDetailOverlay}
           tierIndicator={tierIndicator}
-          locationLabel={LOCATION_LABEL[activeMode]}
-          lastIndexed={manifest?.generatedAt ?? null}
           {...(rescanDelta ? { rescanDelta } : {})}
           onDismissRescanDelta={() => setRescanDelta(null)}
         />

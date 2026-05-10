@@ -131,10 +131,10 @@ describe('ChatArchViewer — Phase 4 demo-path workshop loop', () => {
 
     // Once the demo data is loaded, the default-mode reroute should
     // fire (corrections has patterns; ledger has entries) — the
-    // location chip flips to CORRECTIONS.
+    // active sidebar item flips to CORRECTIONS.
     await waitFor(() => {
-      const locationLabel = document.querySelector('.lcars-top-bar__location-label');
-      expect(locationLabel?.textContent).toBe('CORRECTIONS');
+      const active = document.querySelector('[aria-current="page"]');
+      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
     });
 
     // And the corrections panel renders the demo patterns. Look for

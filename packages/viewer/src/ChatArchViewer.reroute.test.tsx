@@ -132,8 +132,8 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     // the reroute effect has applied. Use waitFor because the load is
     // async.
     await waitFor(() => {
-      const locationLabel = document.querySelector('.lcars-top-bar__location-label');
-      expect(locationLabel?.textContent).toBe('CORRECTIONS');
+      const active = document.querySelector('[aria-current="page"]');
+      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
     });
   });
 
@@ -147,8 +147,8 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     });
     // Give the post-load effect a tick to settle and re-render.
     await new Promise((r) => setTimeout(r, 0));
-    const locationLabel = document.querySelector('.lcars-top-bar__location-label');
-    expect(locationLabel?.textContent).toBe('SESSIONS');
+    const active = document.querySelector('[aria-current="page"]');
+    expect(active?.getAttribute('aria-label')).toBe('mode SESSIONS');
   });
 
   it('stays in URL-hash-encoded mode when a hash is present (URL wins)', async () => {
@@ -162,8 +162,8 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     // PROJECTS surface stays active despite the ledger having entries —
     // the URL hash takes precedence over the reroute heuristic so deep
     // links aren't yanked.
-    const locationLabel = document.querySelector('.lcars-top-bar__location-label');
-    expect(locationLabel?.textContent).toBe('PROJECTS');
+    const active = document.querySelector('[aria-current="page"]');
+    expect(active?.getAttribute('aria-label')).toBe('mode PROJECTS');
   });
 
   it('scrubs stale Phase-3-cut hashes (#cost / #constellation) and lets the reroute fire', async () => {
@@ -176,8 +176,8 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     window.history.replaceState(null, '', '#cost');
     render(<ChatArchViewer manifest={sampleManifest} />);
     await waitFor(() => {
-      const locationLabel = document.querySelector('.lcars-top-bar__location-label');
-      expect(locationLabel?.textContent).toBe('CORRECTIONS');
+      const active = document.querySelector('[aria-current="page"]');
+      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
     });
     // And the stale hash is gone — no ghost `#cost` left in the URL.
     expect(window.location.hash).toBe('');
@@ -216,8 +216,8 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     mockedLoadCorrections.mockResolvedValueOnce(correctionsWithPattern);
     render(<ChatArchViewer manifest={sampleManifest} />);
     await waitFor(() => {
-      const locationLabel = document.querySelector('.lcars-top-bar__location-label');
-      expect(locationLabel?.textContent).toBe('CORRECTIONS');
+      const active = document.querySelector('[aria-current="page"]');
+      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
     });
   });
 });

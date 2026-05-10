@@ -115,7 +115,16 @@ function correctionsWithClickablePill(): CorrectionsFile {
 }
 
 function locationLabel(): string | null {
-  return document.querySelector('.lcars-top-bar__location-label')?.textContent ?? null;
+  // Probe the active surface. Prefer the sidebar's `aria-current="page"`
+  // aria-label (e.g. `mode SESSIONS`) since that's the user-facing label
+  // string. Detail mode has no sidebar entry (it's an overlay) — fall
+  // back to the frame's `data-active-mode='detail'` for that case.
+  const active = document.querySelector('[aria-current="page"]');
+  const ariaLabel = active?.getAttribute('aria-label');
+  if (ariaLabel?.startsWith('mode ')) return ariaLabel.replace(/^mode /, '');
+  const frame = document.querySelector('.lcars-frame');
+  const mode = frame?.getAttribute('data-active-mode');
+  return mode === 'detail' ? 'DETAIL' : null;
 }
 
 beforeEach(() => {

@@ -5905,15 +5905,14 @@
 }
 
 /* ---------------------------------------------------------------- *
- * v2 Phase 4 chrome — TopBar informational chips + DATA panel       *
- *   - .lcars-top-bar__tier-slot wraps the TierIndicator + sibling   *
+ * TopBar informational chips                                        *
+ *   - .lcars-top-bar__tier-slot wraps the TierIndicator + siblings  *
  *     so they render as a single inline cluster between the title   *
- *     and the location chip.                                         *
- *   - .lcars-top-bar__location is the current-surface chip          *
- *     (PROJECTS / SESSIONS / ANALYSIS / etc.) per spec §6.          *
+ *     and the EARTHDATE chip.                                       *
  *   - .lcars-top-bar__earthdate is the EARTHDATE chip.              *
- *   - .lcars-data-panel is the slide-in sheet hosting UPLOAD CLOUD, *
- *     SCAN LOCAL, and DELETE actions per decision D4.               *
+ *   - .lcars-top-bar__rescan-chip is the persistent +N delta from   *
+ *     the most recent rescan (dismissed via its ✕ button or by      *
+ *     starting another scan).                                       *
  * ---------------------------------------------------------------- */
 
 .lcars-top-bar__tier-slot {
@@ -5923,7 +5922,6 @@
   flex: 0 0 auto;
 }
 
-.lcars-top-bar__location,
 .lcars-top-bar__earthdate {
   display: inline-flex;
   align-items: center;
@@ -5941,44 +5939,9 @@
   flex: 0 0 auto;
   line-height: 1;
 }
-.lcars-top-bar__location-prefix {
-  color: var(--lcars-sunflower);
-  font-size: 12px;
-  line-height: 1;
-}
-.lcars-top-bar__location-label,
-.lcars-top-bar__earthdate-value,
-.lcars-top-bar__indexed-value {
+.lcars-top-bar__earthdate-value {
   padding-bottom: 2px;
   line-height: 1;
-}
-/* INDEXED chip — mirrors the EARTHDATE chip's chrome treatment but
-   slightly muted so the date stays the dominant time-anchor. The
-   stale variant flips to the peach warning palette so a >30-day-old
-   manifest reads as "needs attention" without being alarmist. */
-.lcars-top-bar__indexed {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 14px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1.5px solid rgba(0, 0, 0, 0.4);
-  color: var(--lcars-bg);
-  font-family: var(--lcars-font-chrome);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  flex: 0 0 auto;
-  line-height: 1;
-  opacity: 0.85;
-}
-.lcars-top-bar__indexed[data-stale] {
-  background: var(--lcars-peach);
-  border-color: rgba(0, 0, 0, 0.4);
-  color: var(--lcars-bg);
-  opacity: 1;
 }
 .lcars-top-bar__rescan-chip {
   display: inline-flex;
@@ -6026,7 +5989,6 @@
 @media (max-width: 899px) {
   /* Mirror the source-btn mobile inversion — dark title bar needs
      light-on-dark chips. */
-  .lcars-top-bar__location,
   .lcars-top-bar__earthdate {
     background: rgba(255, 204, 153, 0.12);
     border-color: var(--lcars-butterscotch);
