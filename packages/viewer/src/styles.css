@@ -3270,11 +3270,18 @@
   border: 1px solid var(--lcars-divider);
   border-top: 3px solid var(--lcars-butterscotch);
   border-radius: 8px;
-  cursor: pointer;
   transition: background 120ms ease-out;
 }
-.lcars-kpi:hover,
-.lcars-kpi:focus-visible {
+/* Phase 3 cut COST drill-in, so KPI tiles render as informational
+   `<div>`s without `role="button"`. Gate the cursor + hover affordance
+   behind the role attribute so any future interactive caller still
+   gets the lift, mirroring `.lcars-chip--narrative-*[role='button']`
+   below. */
+.lcars-kpi[role='button'] {
+  cursor: pointer;
+}
+.lcars-kpi[role='button']:hover,
+.lcars-kpi[role='button']:focus-visible {
   background: color-mix(in srgb, var(--lcars-sunflower) 5%, var(--lcars-bg-1));
   outline: none;
 }
@@ -3504,15 +3511,22 @@
   font-size: 9px;
   letter-spacing: 0.06em;
   font-weight: 600;
-  cursor: pointer;
   border: 1px solid currentColor;
+}
+/* Phase 3 cut the CONSTELLATION drill-in, so DUP / ZOMBIE chips are
+   informational `<span>`s when no click handler is supplied. Gate the
+   cursor + hover affordance behind `[role='button']` to match the
+   NARR pattern below — the `SessionCard.tsx` interactive branch sets
+   the role, the inert branch leaves it off and gets no hover lift. */
+.lcars-chip[role='button'] {
+  cursor: pointer;
 }
 .lcars-chip--dup {
   color: var(--lcars-violet);
   background: rgba(204, 153, 204, 0.12);
 }
-.lcars-chip--dup:hover,
-.lcars-chip--dup:focus-visible {
+.lcars-chip--dup[role='button']:hover,
+.lcars-chip--dup[role='button']:focus-visible {
   background: rgba(204, 153, 204, 0.28);
   outline: none;
 }
@@ -3520,8 +3534,8 @@
   color: var(--lcars-peach);
   background: rgba(255, 153, 51, 0.1);
 }
-.lcars-chip--zombie:hover,
-.lcars-chip--zombie:focus-visible {
+.lcars-chip--zombie[role='button']:hover,
+.lcars-chip--zombie[role='button']:focus-visible {
   background: rgba(255, 153, 51, 0.25);
   outline: none;
 }

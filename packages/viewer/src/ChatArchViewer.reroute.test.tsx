@@ -166,6 +166,23 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     expect(locationLabel?.textContent).toBe('PROJECTS');
   });
 
+  it('scrubs stale Phase-3-cut hashes (#cost / #constellation) and lets the reroute fire', async () => {
+    // Phase 3 cut COST and CONSTELLATION; an old bookmark with
+    // `#cost` would otherwise sit in the URL bar AND block the
+    // default-mode reroute (which short-circuits when the hash is
+    // non-empty so URL deep links can win). The hash listener now
+    // strips unrecognized hashes before the reroute runs.
+    mockedLoadApplied.mockResolvedValueOnce(ledgerWithEntry);
+    window.history.replaceState(null, '', '#cost');
+    render(<ChatArchViewer manifest={sampleManifest} />);
+    await waitFor(() => {
+      const locationLabel = document.querySelector('.lcars-top-bar__location-label');
+      expect(locationLabel?.textContent).toBe('CORRECTIONS');
+    });
+    // And the stale hash is gone — no ghost `#cost` left in the URL.
+    expect(window.location.hash).toBe('');
+  });
+
   it('reroutes to CORRECTIONS when corrections.json has patterns but the ledger is empty (P1.2)', async () => {
     // Demo / first-mine users have classified patterns to inspect but
     // haven't clicked APPLY yet — the reroute should still fire so they

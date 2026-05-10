@@ -575,6 +575,22 @@ export function ChatArchViewer({
       } else if (onPractice) {
         setMode('practice');
       } else {
+        // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
+        // `#constellation` bookmark would otherwise sit in the URL
+        // bar and (more importantly) block the Phase 2a default-mode
+        // reroute below — that effect short-circuits when
+        // `window.location.hash` is non-empty so URL deep links can
+        // still win. Strip the unrecognized hash here so the reroute
+        // sees a clean URL and routes the user to CORRECTIONS / etc.
+        // Skip the rewrite when the hash is already empty so we don't
+        // pile no-op history entries on first mount.
+        if (typeof window !== 'undefined' && window.location.hash) {
+          window.history.replaceState(
+            null,
+            '',
+            window.location.pathname + window.location.search,
+          );
+        }
         // Hash cleared — reset surface modes back to SESSIONS, OR to
         // the prior surface the user came from when a session-detail
         // pill kicked them into `detail` (e.g. CORRECTIONS / PRACTICE
@@ -2049,8 +2065,9 @@ export function ChatArchViewer({
   // reads from the filtered-session list and is therefore noise on
   // these surfaces — toggling CLOUD/CLI-DIRECT pills does nothing
   // because the v2 surfaces don't consume `filteredSorted`. Hide it.
-  // CONSTELLATION / COST keep the chrome since they're roll-ups over
-  // the same filtered session list as SESSIONS.
+  // (Pre-Phase-3 CONSTELLATION / COST kept the chrome too since they
+  // were roll-ups over the same filtered session list as SESSIONS;
+  // both surfaces have since been cut.)
   const isV2Surface =
     baseMode === 'projects' ||
     baseMode === 'topics' ||
