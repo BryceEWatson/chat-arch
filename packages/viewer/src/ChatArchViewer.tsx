@@ -31,13 +31,11 @@ import {
   CommandMode,
   TimelineMode,
   DetailMode,
-  CostMode,
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
 import { PracticeMode } from './components/modes/PracticeMode.js';
 import { CorrectionsPanel } from './components/CorrectionsPanel.js';
-import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
 import {
   loadAppliedImprovementsFile,
@@ -420,12 +418,6 @@ export function ChatArchViewer({
     systemReadyLoggedRef.current = true;
     log('info', 'system', 'Chat Archaeologist viewer ready.');
   }, [log]);
-
-  // COST mode KPI-entry state. Set by onKpiClick; CostMode reads it to
-  // drive the 2s highlight ring. Cleared when the user leaves COST
-  // (direct-nav + re-enter shows no highlight per `[R-D19]`).
-  const [costKpiEntry, setCostKpiEntry] = useState<CostKpiSection | null>(null);
-  const [costToolFilter, setCostToolFilter] = useState<string | undefined>(undefined);
 
   const listScrollY = useRef(0);
   const tier = useViewportTier();
@@ -1759,17 +1751,6 @@ export function ChatArchViewer({
     setSelectedId(nextId);
   };
 
-  // KPI click → COST mode with section highlight ring (`[R-D19]`).
-  const onKpiClick = (section: CostKpiSection, toolFilter?: string) => {
-    clearHash();
-    setSelectedId(null);
-    setCostKpiEntry(section);
-    setCostToolFilter(toolFilter);
-    setMode('cost');
-    // Clear the highlight after 2s so direct-nav re-entry isn't decorated.
-    window.setTimeout(() => setCostKpiEntry(null), 2000);
-  };
-
   // Kick off a rescan. On success we bust the manifest cache with a
   // `?t=` query param so the viewer re-fetches the freshly-written
   // `manifest.json` (and analysis sidecars) rather than using whatever
@@ -2095,7 +2076,6 @@ export function ChatArchViewer({
     // sidebar can't navigate here anymore.
     timeline: 'SESSIONS · TIMELINE',
     detail: 'DETAIL',
-    cost: 'COST',
     projects: 'PROJECTS',
     topics: 'TOPICS',
     practice: 'PRACTICE',
@@ -2253,11 +2233,6 @@ export function ChatArchViewer({
                 clearHash();
                 setSelectedId(null);
               }
-              // Direct-nav to COST from sidebar clears KPI state (no highlight).
-              if (m === 'cost') {
-                setCostKpiEntry(null);
-                setCostToolFilter(undefined);
-              }
               // v2 §5.1: PROJECTS uses its own hash so deep-links round
               // trip cleanly. Sidebar click → push #projects (index).
               if (m === 'projects') {
@@ -2295,7 +2270,6 @@ export function ChatArchViewer({
               uploadActive={uploadedData !== null}
               {...(uploadedData ? { uploadLabel: uploadedData.sourceLabel, onUnload } : {})}
               onUpload={onUpload}
-              onKpiClick={onKpiClick}
               projectFilter={projectFilter}
               onToggleProject={toggleProject}
               unknownProjectActive={unknownProjectActive}
@@ -2423,16 +2397,6 @@ export function ChatArchViewer({
                       )
                     ) : baseMode === 'timeline' ? (
                       <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
-                    ) : baseMode === 'cost' ? (
-                      <CostMode
-                        sessions={filteredSorted}
-                        kpiEntry={costKpiEntry}
-                        {...(costToolFilter !== undefined ? { toolFilter: costToolFilter } : {})}
-                        onSelect={onSelect}
-                        costDiagnosedPresent={
-                          !!analysisState.tierFiles['cost-diagnoses.json']?.present
-                        }
-                      />
                     ) : baseMode === 'projects' ? (
                       <ProjectsMode
                         projects={effectiveV2Entities.projects ?? []}

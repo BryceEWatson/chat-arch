@@ -6,7 +6,6 @@ import { Sparkline } from './Sparkline.js';
 import { SourceAttribution } from './SourceAttribution.js';
 import { formatIsoDate, minTimestamp, maxTimestamp } from '../util/time.js';
 import { onActivate } from '../util/a11y.js';
-import type { CostKpiSection } from './modes/CostMode.js';
 import type { ClassifyProgress, SemanticLabelsBundle } from '../data/semanticClassify.js';
 import { AnalysisLauncher } from './AnalysisLauncher.js';
 
@@ -67,8 +66,6 @@ export interface UpperPanelProps {
   /** Fired after a successful upload parse. */
   onUpload?: (data: UploadedCloudData) => void;
 
-  /** KPI click -> COST mode with section highlight (`[R-D9]` / `[R-D19]`). */
-  onKpiClick: (section: CostKpiSection, toolFilter?: string) => void;
   /** Currently selected projects (multi-select). Empty = show all. */
   projectFilter: ReadonlySet<string>;
   /** Toggle a single project in/out of the filter set. */
@@ -117,10 +114,6 @@ export interface UpperPanelProps {
    * urgency badge, which matches the "analysis never ran" state.
    */
   analysisCounts?: AnalysisCounts;
-  /** Click handler for the RE-ASKED card → constellation with dup scroll. */
-  onOpenDupAnalysis?: () => void;
-  /** Click handler for the ZOMBIES card → constellation w/ zombie filter. */
-  onOpenZombieAnalysis?: () => void;
   /** Click handler for the TOPICS card → command mode (topics pill row). */
   onOpenTopicAnalysis?: () => void;
   /** Click handler for the LABELS card → command mode (project + topic pills). */
@@ -289,7 +282,6 @@ export function UpperPanel({
   uploadActive = false,
   uploadLabel,
   onUnload,
-  onKpiClick,
   sourceFilter,
   projectFilter,
   unknownProjectActive,
@@ -303,8 +295,6 @@ export function UpperPanel({
   semanticError = null,
   onAnalyzeSemantic,
   analysisCounts,
-  onOpenDupAnalysis,
-  onOpenZombieAnalysis,
   onOpenTopicAnalysis,
   onOpenLabelsAnalysis,
 }: UpperPanelProps) {
@@ -485,20 +475,23 @@ export function UpperPanel({
           {/* KPI strip (Decision 9 / `[R-D9]`) — four teasers that drill into
               COST mode. All four are clickable; each lands on the matching
               section with a 2s highlight ring (COST mode side). */}
+          {/*
+            KPI strip is informational only post-Phase-3 — the COST mode
+            that previously hosted the drill-in is gone, so the tiles
+            display data without click handlers. They still flash on
+            filter/sort changes via the data-flash hook so the values
+            visibly track the current filter set.
+          */}
           <div
             className="lcars-kpi-strip"
-            role="toolbar"
+            role="group"
             aria-label="cost KPIs"
             data-flash={flashKey}
             key={flashKey}
           >
             <div
               className="lcars-kpi"
-              role="button"
-              tabIndex={0}
-              aria-label={`total cost $${kpis.exactCostUsd.toFixed(2)} exact plus $${kpis.estimateCostUsd.toFixed(2)} estimate; click to open cost per month`}
-              onClick={() => onKpiClick('stacked-bar')}
-              onKeyDown={(e) => onActivate(e, () => onKpiClick('stacked-bar'))}
+              aria-label={`total cost $${kpis.exactCostUsd.toFixed(2)} exact plus $${kpis.estimateCostUsd.toFixed(2)} estimate`}
             >
               <span className="lcars-kpi__label">COST</span>
               <span className="lcars-kpi__value">
@@ -508,33 +501,21 @@ export function UpperPanel({
             </div>
             <div
               className="lcars-kpi"
-              role="button"
-              tabIndex={0}
-              aria-label={`output tokens ${formatTokens(kpis.outputTokens)}; click to open by model`}
-              onClick={() => onKpiClick('by-model')}
-              onKeyDown={(e) => onActivate(e, () => onKpiClick('by-model'))}
+              aria-label={`output tokens ${formatTokens(kpis.outputTokens)}`}
             >
               <span className="lcars-kpi__label">TOKENS</span>
               <span className="lcars-kpi__value">{formatTokens(kpis.outputTokens)}</span>
             </div>
             <div
               className="lcars-kpi"
-              role="button"
-              tabIndex={0}
-              aria-label={`top tool ${kpis.topTool?.name ?? 'none'}; click to filter top-20 by this tool`}
-              onClick={() => onKpiClick('top-20', kpis.topTool?.name)}
-              onKeyDown={(e) => onActivate(e, () => onKpiClick('top-20', kpis.topTool?.name))}
+              aria-label={`top tool ${kpis.topTool?.name ?? 'none'}`}
             >
               <span className="lcars-kpi__label">TOP TOOL</span>
               <span className="lcars-kpi__value">{kpis.topTool ? kpis.topTool.name : '—'}</span>
             </div>
             <div
               className="lcars-kpi"
-              role="button"
-              tabIndex={0}
-              aria-label={`top project ${kpis.topProject?.name ?? 'none'}; click to open by project`}
-              onClick={() => onKpiClick('by-project')}
-              onKeyDown={(e) => onActivate(e, () => onKpiClick('by-project'))}
+              aria-label={`top project ${kpis.topProject?.name ?? 'none'}`}
             >
               <span className="lcars-kpi__label">TOP PROJECT</span>
               {/*
@@ -607,14 +588,12 @@ export function UpperPanel({
               title="RE-ASKED"
               count={analysisCounts?.dupClusterCount ?? 0}
               description="prompts asked more than once — likely lost answers"
-              onOpen={onOpenDupAnalysis}
             />
             <AnalysisSummaryCard
               variant="zombie"
               title="ZOMBIES"
               count={analysisCounts?.zombieProjectCount ?? 0}
               description="projects that died after a burst — archive or revive"
-              onOpen={onOpenZombieAnalysis}
             />
             {/*
               LABELS + TOPICS both surface as pill rows in the

@@ -12,7 +12,7 @@ function files(
   if (preset === 'three') {
     out['duplicates.semantic.json'] = { present: true, generatedAt: 1 };
     out['reloops.json'] = { present: true, generatedAt: 2 };
-    out['cost-diagnoses.json'] = { present: true, generatedAt: 3 };
+    out['skill-seeds.json'] = { present: true, generatedAt: 3 };
   }
   if (preset === 'all') {
     for (const name of PHASE_7_RESERVED_FILES) out[name] = { present: true, generatedAt: 1 };
@@ -27,30 +27,30 @@ describe('TierIndicator', () => {
     expect(screen.getByText('CORE ANALYSIS')).toBeDefined();
   });
 
-  it('does NOT render "(0/6)" in the CORE state (count only appears in CORE+EXTENDED)', () => {
+  it('does NOT render "(0/5)" in the CORE state (count only appears in CORE+EXTENDED)', () => {
     render(<TierIndicator tierStatus="browser" tierPresentCount={0} tierFiles={files('none')} />);
-    expect(screen.queryByText(/\(\d\/6\)/)).toBeNull();
+    expect(screen.queryByText(/\(\d\/\d\)/)).toBeNull();
   });
 
-  it('renders "CORE + EXTENDED ANALYSIS (1/6)" with one file present', () => {
+  it('renders "CORE + EXTENDED ANALYSIS (1/5)" with one file present', () => {
     render(
       <TierIndicator tierStatus="browser+local" tierPresentCount={1} tierFiles={files('one')} />,
     );
-    expect(screen.getByText('CORE + EXTENDED ANALYSIS (1/6)')).toBeDefined();
+    expect(screen.getByText('CORE + EXTENDED ANALYSIS (1/5)')).toBeDefined();
   });
 
-  it('renders "CORE + EXTENDED ANALYSIS (3/6)" with three files present', () => {
+  it('renders "CORE + EXTENDED ANALYSIS (3/5)" with three files present', () => {
     render(
       <TierIndicator tierStatus="browser+local" tierPresentCount={3} tierFiles={files('three')} />,
     );
-    expect(screen.getByText('CORE + EXTENDED ANALYSIS (3/6)')).toBeDefined();
+    expect(screen.getByText('CORE + EXTENDED ANALYSIS (3/5)')).toBeDefined();
   });
 
-  it('renders "CORE + EXTENDED ANALYSIS (6/6)" with all files present', () => {
+  it('renders "CORE + EXTENDED ANALYSIS (5/5)" with all files present', () => {
     render(
-      <TierIndicator tierStatus="browser+local" tierPresentCount={6} tierFiles={files('all')} />,
+      <TierIndicator tierStatus="browser+local" tierPresentCount={5} tierFiles={files('all')} />,
     );
-    expect(screen.getByText('CORE + EXTENDED ANALYSIS (6/6)')).toBeDefined();
+    expect(screen.getByText('CORE + EXTENDED ANALYSIS (5/5)')).toBeDefined();
   });
 
   it('applies the --browser class in browser state (drives #665544 full-opacity palette)', () => {
@@ -88,7 +88,7 @@ describe('TierIndicator', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('TierSheet enumerates all six reserved filenames when open (AC14)', () => {
+  it('TierSheet enumerates all reserved filenames when open (AC14)', () => {
     render(<TierIndicator tierStatus="browser" tierPresentCount={0} tierFiles={files('none')} />);
     fireEvent.click(screen.getByRole('button', { name: /analysis tier/i }));
     for (const filename of PHASE_7_RESERVED_FILES) {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { onActivate } from '../util/a11y.js';
 import { TierSheet } from './TierSheet.js';
-import type { TierFileState } from '../data/analysisFetch.js';
+import { PHASE_7_RESERVED_FILES, type TierFileState } from '../data/analysisFetch.js';
 
 /**
  * TopBar tier indicator pill.
@@ -10,15 +10,17 @@ import type { TierFileState } from '../data/analysisFetch.js';
  *   - `CORE ANALYSIS` — `#665544` (dim brown). First tier. Runs entirely
  *     in the browser against the manifest: search, filters, sparklines,
  *     exact-duplicate clusters, zombie heuristics.
- *   - `CORE + EXTENDED ANALYSIS (N/6)` — `#CC99CC` (violet). Second tier
+ *   - `CORE + EXTENDED ANALYSIS (N/M)` — `#CC99CC` (violet). Second tier
  *     is populated by a local analyzer pass (Phase 7, not yet shipped);
- *     `N/6` is how many of the reserved outputs exist on disk.
+ *     `N/M` is how many of the reserved outputs exist on disk, with M
+ *     pulled from `PHASE_7_RESERVED_FILES.length` so the denominator
+ *     stays in sync as the reserved set shifts (Phase 3 dropped one).
  *
  * The word `ANALYSIS` is load-bearing: without it, a bare `CORE` reads
  * as a header label, not as a tier indicator. Keep it.
  *
- * The `N/6` count renders ONLY when any tier-2 file is present. In the
- * CORE-only state the pill is deliberately clean — no `(0/6)` — so it
+ * The `N/M` count renders ONLY when any tier-2 file is present. In the
+ * CORE-only state the pill is deliberately clean — no `(0/M)` — so it
  * reads as "state" not as a progress meter.
  *
  * Clicking opens `TierSheet` — one source of truth for per-file
@@ -39,8 +41,11 @@ export interface TierIndicatorProps {
 export function TierIndicator({ tierStatus, tierPresentCount, tierFiles }: TierIndicatorProps) {
   const [open, setOpen] = useState(false);
 
+  const totalReserved = PHASE_7_RESERVED_FILES.length;
   const label =
-    tierStatus === 'browser' ? 'CORE ANALYSIS' : `CORE + EXTENDED ANALYSIS (${tierPresentCount}/6)`;
+    tierStatus === 'browser'
+      ? 'CORE ANALYSIS'
+      : `CORE + EXTENDED ANALYSIS (${tierPresentCount}/${totalReserved})`;
 
   const className =
     'lcars-tier-indicator ' +

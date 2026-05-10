@@ -5,7 +5,7 @@ import { Sidebar } from './Sidebar.js';
 afterEach(() => cleanup());
 
 describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
-  it('renders FIX RULES (CORRECTIONS+PRACTICE), BROWSE (SESSIONS), ANALYTICS (PROJECTS+TOPICS+COST)', () => {
+  it('renders FIX RULES (CORRECTIONS+PRACTICE), BROWSE (SESSIONS), ANALYTICS (PROJECTS+TOPICS)', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
     // FIX RULES — primary refocus surfaces lead.
     expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
@@ -15,9 +15,9 @@ describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
     // ANALYTICS — descriptive surfaces.
     expect(screen.getByRole('button', { name: /mode PROJECTS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode TOPICS/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /mode COST/i })).toBeDefined();
-    // Absent — Phase 3 cut ANALYSIS/constellation entirely.
+    // Absent — Phase 3 cut ANALYSIS/constellation and COST entirely.
     expect(screen.queryByRole('button', { name: /mode ANALYSIS/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /mode COST/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /mode TIMELINE/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /mode DETAIL/i })).toBeNull();
   });
@@ -36,13 +36,13 @@ describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
     const active = screen.getByRole('button', { name: /mode SESSIONS/i });
     expect(active.getAttribute('aria-current')).toBe('page');
-    const inactive = screen.getByRole('button', { name: /mode COST/i });
+    const inactive = screen.getByRole('button', { name: /mode TOPICS/i });
     expect(inactive.getAttribute('aria-current')).toBeNull();
   });
 
   it('applies the --active class only to the active item', () => {
-    render(<Sidebar mode="cost" onSelectMode={() => {}} />);
-    const active = screen.getByRole('button', { name: /mode COST/i });
+    render(<Sidebar mode="topics" onSelectMode={() => {}} />);
+    const active = screen.getByRole('button', { name: /mode TOPICS/i });
     const inactive = screen.getByRole('button', { name: /mode SESSIONS/i });
     expect(active.className).toContain('lcars-sidebar__item--active');
     expect(inactive.className).not.toContain('lcars-sidebar__item--active');
@@ -51,15 +51,15 @@ describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
   it('invokes onSelectMode on click', () => {
     const onSelectMode = vi.fn();
     render(<Sidebar mode="command" onSelectMode={onSelectMode} />);
-    fireEvent.click(screen.getByRole('button', { name: /mode COST/i }));
-    expect(onSelectMode).toHaveBeenCalledWith('cost');
+    fireEvent.click(screen.getByRole('button', { name: /mode TOPICS/i }));
+    expect(onSelectMode).toHaveBeenCalledWith('topics');
   });
 
   it('invokes onSelectMode on Enter key', () => {
     const onSelectMode = vi.fn();
     render(<Sidebar mode="command" onSelectMode={onSelectMode} />);
-    fireEvent.keyDown(screen.getByRole('button', { name: /mode COST/i }), { key: 'Enter' });
-    expect(onSelectMode).toHaveBeenCalledWith('cost');
+    fireEvent.keyDown(screen.getByRole('button', { name: /mode TOPICS/i }), { key: 'Enter' });
+    expect(onSelectMode).toHaveBeenCalledWith('topics');
   });
 
   it('renders only the top elbow (left-edge-only frame, no bottom elbow)', () => {
@@ -209,8 +209,9 @@ describe('Sidebar (horizontal variant)', () => {
     );
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
-    // 6 mode pills (Phase 3 cut ANL/constellation): COR, PRC, SES, PRJ, TOP, CST.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
+    // 5 mode pills (Phase 3 cut ANL/constellation and CST/cost):
+    // COR, PRC, SES, PRJ, TOP.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
   });
 
   it('shows only the short label in horizontal pills, in the new order', () => {
@@ -218,9 +219,9 @@ describe('Sidebar (horizontal variant)', () => {
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(6);
+    expect(pillShorts.length).toBe(5);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['COR', 'PRC', 'SES', 'PRJ', 'TOP', 'CST']);
+    expect(texts).toEqual(['COR', 'PRC', 'SES', 'PRJ', 'TOP']);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -240,7 +241,6 @@ describe('Sidebar (horizontal variant)', () => {
       'SES',
       'PRJ',
       'TOP',
-      'CST',
       'DAT',
     ]);
     fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
@@ -248,8 +248,8 @@ describe('Sidebar (horizontal variant)', () => {
   });
 
   it('marks the active pill', () => {
-    render(<Sidebar mode="cost" onSelectMode={() => {}} variant="horizontal" />);
-    const active = screen.getByRole('button', { name: /mode COST/i });
+    render(<Sidebar mode="topics" onSelectMode={() => {}} variant="horizontal" />);
+    const active = screen.getByRole('button', { name: /mode TOPICS/i });
     expect(active.className).toContain('lcars-sidebar__pill--active');
     const inactive = screen.getByRole('button', { name: /mode SESSIONS/i });
     expect(inactive.className).not.toContain('lcars-sidebar__pill--active');
@@ -258,11 +258,11 @@ describe('Sidebar (horizontal variant)', () => {
   it('invokes onSelectMode on click in horizontal variant', () => {
     const onSelectMode = vi.fn();
     render(<Sidebar mode="command" onSelectMode={onSelectMode} variant="horizontal" />);
-    fireEvent.click(screen.getByRole('button', { name: /mode COST/i }));
-    expect(onSelectMode).toHaveBeenCalledWith('cost');
+    fireEvent.click(screen.getByRole('button', { name: /mode TOPICS/i }));
+    expect(onSelectMode).toHaveBeenCalledWith('topics');
   });
 
-  it('keeps all 6 pills visible regardless of analyticsCollapsed (collapse is vertical-only)', () => {
+  it('keeps all 5 pills visible regardless of analyticsCollapsed (collapse is vertical-only)', () => {
     const { container } = render(
       <Sidebar
         mode="command"
@@ -272,6 +272,6 @@ describe('Sidebar (horizontal variant)', () => {
         onToggleAnalyticsCollapsed={() => {}}
       />,
     );
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
   });
 });

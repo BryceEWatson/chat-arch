@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
 import { UpperPanel } from './UpperPanel.js';
 
@@ -66,7 +66,7 @@ describe('UpperPanel KPI strip (AC7)', () => {
       }),
     ];
     const m = manifest(entries);
-    render(<UpperPanel manifest={m} filtered={entries} onKpiClick={() => {}} {...base} />);
+    render(<UpperPanel manifest={m} filtered={entries} {...base} />);
     expect(screen.getByText('COST')).toBeDefined();
     expect(screen.getByText('TOKENS')).toBeDefined();
     expect(screen.getByText('TOP TOOL')).toBeDefined();
@@ -94,7 +94,6 @@ describe('UpperPanel KPI strip (AC7)', () => {
       <UpperPanel
         manifest={manifest(entries)}
         filtered={entries}
-        onKpiClick={() => {}}
         {...base}
       />,
     );
@@ -111,32 +110,28 @@ describe('UpperPanel KPI strip (AC7)', () => {
       <UpperPanel
         manifest={manifest(entries)}
         filtered={entries}
-        onKpiClick={() => {}}
         {...base}
       />,
     );
     expect(screen.queryByText(/tagged\)/)).toBeNull();
   });
 
-  it('KPI click calls onKpiClick with the correct section + toolFilter', () => {
-    const onKpiClick = vi.fn();
+  it('KPI tiles render as informational (no role="button") after Phase 3 cut', () => {
+    // Phase 3 cut CostMode, so KPI tiles no longer drill in. They keep
+    // displaying the same data values but are not interactive.
     const entries = [entry('a', { totalCostUsd: 10, topTools: { Read: 5 } })];
-    render(
+    const { container } = render(
       <UpperPanel
         manifest={manifest(entries)}
         filtered={entries}
-        onKpiClick={onKpiClick}
         {...base}
       />,
     );
-    fireEvent.click(screen.getByText('COST').closest('[role="button"]')!);
-    expect(onKpiClick).toHaveBeenCalledWith('stacked-bar');
-    fireEvent.click(screen.getByText('TOKENS').closest('[role="button"]')!);
-    expect(onKpiClick).toHaveBeenCalledWith('by-model');
-    fireEvent.click(screen.getByText('TOP TOOL').closest('[role="button"]')!);
-    expect(onKpiClick).toHaveBeenCalledWith('top-20', 'Read');
-    fireEvent.click(screen.getByText('TOP PROJECT').closest('[role="button"]')!);
-    expect(onKpiClick).toHaveBeenCalledWith('by-project');
+    const kpiTiles = container.querySelectorAll('.lcars-kpi');
+    expect(kpiTiles.length).toBe(4);
+    for (const tile of Array.from(kpiTiles)) {
+      expect(tile.getAttribute('role')).toBeNull();
+    }
   });
 });
 

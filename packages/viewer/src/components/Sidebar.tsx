@@ -52,11 +52,13 @@ interface NavGroup {
 //                first-time users — "FIX RULES" announces the loop's
 //                outcome verb-first.)
 //   BROWSE     → Sessions — the v1 grid surface, kept lightweight.
-//   ANALYTICS  → Projects, Topics, Cost — descriptive surfaces that
-//                answer "what's in my corpus", collapsed by default so
-//                they don't crowd the workshop. (Phase 3 cut the
+//   ANALYTICS  → Projects, Topics — descriptive surfaces that answer
+//                "what's in my corpus", collapsed by default so they
+//                don't crowd the workshop. (Phase 3 cut the
 //                ANALYSIS / constellation entry — duplicates and zombie
-//                projects didn't earn their slot in the rail.)
+//                projects didn't earn their slot in the rail — and the
+//                COST entry — cost analytics doesn't drive a patch
+//                decision so it didn't earn one either.)
 //
 // `detail` is intentionally missing — it's a drill-in surface reached by
 // clicking a session card, not a top-level mode.
@@ -77,7 +79,6 @@ const NAV: readonly NavGroup[] = [
     items: [
       { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
       { mode: 'topics', label: 'TOPICS', short: 'TOP' },
-      { mode: 'cost', label: 'COST', short: 'CST' },
     ],
   },
 ];
@@ -92,7 +93,6 @@ const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
   { mode: 'command', label: 'SESSIONS', short: 'SES' },
   { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
   { mode: 'topics', label: 'TOPICS', short: 'TOP' },
-  { mode: 'cost', label: 'COST', short: 'CST' },
 ];
 
 // DATA item is rendered separately from the mode-driven nav: it's a
