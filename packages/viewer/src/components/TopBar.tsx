@@ -1,5 +1,6 @@
 import type { ViewportTier } from '../util/viewport.js';
 import { InfoPopover } from './InfoPopover.js';
+import { LastIndexedChip } from './LastIndexedChip.js';
 
 export type RescanStatus = 'idle' | 'running' | 'error' | 'ok';
 export type UploadStatus = 'idle' | 'running' | 'error' | 'ok';
@@ -39,6 +40,25 @@ export interface TopBarProps {
    * underlying list the user returns to.
    */
   disabled?: boolean;
+  /**
+   * Rescan-delta breakdown chip. Persists between rescans (no auto-
+   * dismiss timer) so a user who walks away can see how many new
+   * sessions the latest scan picked up. Omit to hide the chip.
+   */
+  rescanDelta?: {
+    totalLocal: number;
+    cowork: number;
+    cli: number;
+    desktop: number;
+  };
+  /** Click handler for the chip's ✕ dismiss button. */
+  onDismissRescanDelta?: () => void;
+  /**
+   * Phase 2a: ms-since-epoch from `manifest.generatedAt`. Drives the
+   * INDEXED chip — null hides it. Optional so embeddings without a
+   * manifest still render the bar.
+   */
+  lastIndexed?: number | null;
 }
 
 function defaultEarthdate(): string {
@@ -49,6 +69,12 @@ function defaultEarthdate(): string {
   return `${yyyy}.${mm}.${dd}`;
 }
 
+function formatDelta(n: number): string {
+  if (n > 0) return `+${n}`;
+  if (n < 0) return `${n}`;
+  return '0';
+}
+
 export function TopBar({
   query,
   onQueryChange,
@@ -57,6 +83,9 @@ export function TopBar({
   earthdate,
   tier = 'desktop',
   disabled = false,
+  rescanDelta,
+  onDismissRescanDelta,
+  lastIndexed,
 }: TopBarProps) {
   const placeholder = disabled
     ? 'exit detail view to search'
@@ -98,9 +127,39 @@ export function TopBar({
             <span className="lcars-top-bar__location-label">{locationLabel}</span>
           </div>
         )}
+        {/*
+          INDEXED renders BEFORE EARTHDATE so the eye lands on the
+          data-freshness signal first. Earlier ordering had the
+          misleading "today" date leading and the corrective
+          INDEXED-N-days-ago chip trailing — readers anchored on
+          "today" and treated the trailing chip as supplementary.
+        */}
+        <LastIndexedChip generatedAt={lastIndexed ?? null} />
         <div className="lcars-top-bar__earthdate" aria-label={`earthdate ${dateText}`}>
           <span className="lcars-top-bar__earthdate-value">{dateText}</span>
         </div>
+        {rescanDelta && (
+          <div
+            className="lcars-top-bar__rescan-chip"
+            aria-label={`last rescan added ${formatDelta(rescanDelta.totalLocal)} local sessions`}
+            title={`+${rescanDelta.cowork} cowork · +${rescanDelta.cli} CLI · +${rescanDelta.desktop} desktop`}
+          >
+            <span className="lcars-top-bar__rescan-chip-label">RESCAN</span>
+            <span className="lcars-top-bar__rescan-chip-value">
+              {formatDelta(rescanDelta.totalLocal)}
+            </span>
+            {onDismissRescanDelta && (
+              <button
+                type="button"
+                className="lcars-top-bar__rescan-chip-dismiss"
+                aria-label="dismiss rescan delta"
+                onClick={onDismissRescanDelta}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="lcars-top-bar__right">
         <label

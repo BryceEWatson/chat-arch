@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   Correction,
   CorrectionPattern,
   ProposedUpgrade,
   UpgradeTarget,
 } from '@chat-arch/schema';
+import { formatRelative } from '../util/time.js';
 
 export interface CorrectionPatternCardProps {
   pattern: CorrectionPattern;
@@ -14,6 +15,31 @@ export interface CorrectionPatternCardProps {
    * array. The caller (CorrectionsPanel) builds it once.
    */
   instancesById: Map<string, Correction>;
+  /**
+   * APPLY click handler. When omitted (production static build, or
+   * the dev endpoint hasn't been probed yet), APPLY renders disabled
+   * with the legacy "not yet implemented" tooltip — same fallback
+   * the v0.7 panel showed.
+   */
+  onApply?: (
+    upgrade: ProposedUpgrade,
+    extras: { targetFiles?: string[]; notes?: string },
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Session-selection handler for the instance-pill clickthrough.
+   * Plumbed from CorrectionsPanel → BucketsView → here. When omitted
+   * (e.g. host that doesn't support detail view), the instance row
+   * renders as static text rather than as a button.
+   */
+  onSelectSession?: (sessionId: string) => void;
+  /**
+   * Phase 2b: when the parent flips this true (e.g. the
+   * AppliedImprovementsSummary asked us to highlight this card), the
+   * card auto-expands so the proposed upgrades are visible without a
+   * second click. Manual collapses are preserved — flipping back to
+   * false does NOT auto-collapse.
+   */
+  defaultExpanded?: boolean;
 }
 
 const CATEGORY: Array<{
@@ -62,12 +88,46 @@ function formatConfidence(c: number): string {
   return `${pct}%`;
 }
 
+/**
+ * Render APPLIED ✓ timestamps as relative ("64d ago", "3h ago"). The
+ * raw ISO is kept in a `title=` attribute so the precise time is one
+ * hover away — relative numbers help "is this recent?" pattern-recall;
+ * the ISO is the audit trail.
+ */
+function formatAppliedAt(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  return formatRelative(ms);
+}
+
+function formatAppliedAtIso(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  try {
+    return new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+  } catch {
+    return '';
+  }
+}
+
 const INITIAL_INSTANCE_COUNT = 3;
 
-export function CorrectionPatternCard({ pattern, instancesById }: CorrectionPatternCardProps) {
-  const [expanded, setExpanded] = useState(false);
+export function CorrectionPatternCard({
+  pattern,
+  instancesById,
+  onApply,
+  onSelectSession,
+  defaultExpanded = false,
+}: CorrectionPatternCardProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  // Re-sync only when the parent flips defaultExpanded → true (e.g. a
+  // newly-clicked timeline row in the summary). False flips are
+  // ignored so a manually-collapsed card stays collapsed even if the
+  // highlight clears.
+  useEffect(() => {
+    if (defaultExpanded) setExpanded(true);
+  }, [defaultExpanded]);
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [copiedIx, setCopiedIx] = useState<number | null>(null);
+  const [busyIx, setBusyIx] = useState<number | null>(null);
 
   const category = categoryFor(pattern);
   const categoryLabel =
@@ -161,22 +221,47 @@ export function CorrectionPatternCard({ pattern, instancesById }: CorrectionPatt
               </p>
             ) : (
               <ul className="lcars-correction-pattern__instance-list" role="list">
-                {visibleInstances.map((inst) => (
-                  <li key={inst.id} className="lcars-correction-pattern__instance">
-                    {inst.precedingAssistantExcerpt && (
-                      <p className="lcars-correction-pattern__instance-context">
-                        <span className="lcars-correction-pattern__instance-tag">
-                          ASSISTANT
-                        </span>
-                        <span>{inst.precedingAssistantExcerpt}</span>
+                {visibleInstances.map((inst) => {
+                  const body = (
+                    <>
+                      {inst.precedingAssistantExcerpt && (
+                        <p className="lcars-correction-pattern__instance-context">
+                          <span className="lcars-correction-pattern__instance-tag">
+                            ASSISTANT
+                          </span>
+                          <span>{inst.precedingAssistantExcerpt}</span>
+                        </p>
+                      )}
+                      <p className="lcars-correction-pattern__instance-body">
+                        <span className="lcars-correction-pattern__instance-tag">USER</span>
+                        <span>{inst.excerpt}</span>
                       </p>
-                    )}
-                    <p className="lcars-correction-pattern__instance-body">
-                      <span className="lcars-correction-pattern__instance-tag">USER</span>
-                      <span>{inst.excerpt}</span>
-                    </p>
-                  </li>
-                ))}
+                    </>
+                  );
+                  if (onSelectSession) {
+                    return (
+                      <li
+                        key={inst.id}
+                        className="lcars-correction-pattern__instance"
+                      >
+                        <button
+                          type="button"
+                          className="lcars-correction-pattern__instance-pill"
+                          onClick={() => onSelectSession(inst.sessionId)}
+                          aria-label={`open session ${inst.sessionId}`}
+                          title={`Open session ${inst.sessionId}`}
+                        >
+                          {body}
+                        </button>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={inst.id} className="lcars-correction-pattern__instance">
+                      {body}
+                    </li>
+                  );
+                })}
               </ul>
             )}
             {hiddenInstanceCount > 0 && (
@@ -204,6 +289,14 @@ export function CorrectionPatternCard({ pattern, instancesById }: CorrectionPatt
                     upgrade={u}
                     copied={copiedIx === ix}
                     onCopy={() => void copyPatch(u.patch, ix)}
+                    {...(onApply
+                      ? {
+                          onApply: async (extras) => onApply(u, extras),
+                        }
+                      : {})}
+                    busy={busyIx !== null}
+                    isMe={busyIx === ix}
+                    onBusyChange={(busy) => setBusyIx(busy ? ix : null)}
                   />
                 ))}
               </ul>
@@ -219,10 +312,81 @@ interface UpgradeRowProps {
   upgrade: ProposedUpgrade;
   copied: boolean;
   onCopy: () => void;
+  /** Omit to render APPLY as the legacy disabled placeholder. */
+  onApply?: (
+    extras: { targetFiles?: string[]; notes?: string },
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /** True while any sibling upgrade in the same card is mid-write. */
+  busy: boolean;
+  /** True when this row is the one writing — drives the APPLYING… label. */
+  isMe: boolean;
+  /** Toggle the card-level busy lock. Called on submit start / settle. */
+  onBusyChange: (busy: boolean) => void;
 }
 
-function UpgradeRow({ upgrade, copied, onCopy }: UpgradeRowProps) {
+type ApplyState =
+  | { kind: 'idle' }
+  | { kind: 'confirming' }
+  | { kind: 'submitting' }
+  | { kind: 'applied'; appliedAt: number }
+  | { kind: 'error'; message: string };
+
+function UpgradeRow({
+  upgrade,
+  copied,
+  onCopy,
+  onApply,
+  busy,
+  isMe,
+  onBusyChange,
+}: UpgradeRowProps) {
   const targetLabel = TARGET_LABEL[upgrade.target];
+  // Seed from the upgrade's persisted state so a reload after APPLY
+  // shows APPLIED ✓ without waiting for a re-click.
+  const [state, setState] = useState<ApplyState>(() =>
+    upgrade.applied && typeof upgrade.appliedAt === 'number'
+      ? { kind: 'applied', appliedAt: upgrade.appliedAt }
+      : { kind: 'idle' },
+  );
+  // Pre-fill with the upgrade's targetPath so the default CONFIRM click
+  // captures the obvious answer instead of an empty audit trail. Users
+  // can append other files (`CLAUDE.md, .claude/skills/foo/SKILL.md`).
+  const [targetFilesInput, setTargetFilesInput] = useState(upgrade.targetPath);
+  const [notesInput, setNotesInput] = useState('');
+
+  const submit = async () => {
+    if (!onApply) return;
+    setState({ kind: 'submitting' });
+    onBusyChange(true);
+    const targetFiles = targetFilesInput
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const notes = notesInput.trim();
+    let result: { ok: boolean; error?: string };
+    try {
+      result = await onApply({
+        ...(targetFiles.length > 0 ? { targetFiles } : {}),
+        ...(notes.length > 0 ? { notes } : {}),
+      });
+    } catch (err) {
+      result = {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    } finally {
+      onBusyChange(false);
+    }
+    if (result.ok) {
+      setState({ kind: 'applied', appliedAt: Date.now() });
+    } else {
+      setState({
+        kind: 'error',
+        message: result.error ?? 'apply failed',
+      });
+    }
+  };
+
   return (
     <li className="lcars-correction-pattern__upgrade">
       <header className="lcars-correction-pattern__upgrade-header">
@@ -243,16 +407,153 @@ function UpgradeRow({ upgrade, copied, onCopy }: UpgradeRowProps) {
         >
           {copied ? 'COPIED' : 'COPY PATCH'}
         </button>
-        <button
-          type="button"
-          className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
-          disabled
-          aria-disabled="true"
-          title="Apply flow not yet implemented — copy the patch and apply manually."
-        >
-          APPLY
-        </button>
+        {!onApply && state.kind !== 'applied' && (
+          <button
+            type="button"
+            className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
+            disabled
+            aria-disabled="true"
+            title="Apply flow not available — copy the patch and apply manually."
+          >
+            APPLY
+          </button>
+        )}
+        {state.kind === 'applied' && (
+          <span
+            className="lcars-correction-pattern__applied"
+            aria-label={`applied ${formatAppliedAt(state.appliedAt)} (${formatAppliedAtIso(state.appliedAt)})`}
+            title={formatAppliedAtIso(state.appliedAt)}
+          >
+            APPLIED ✓
+            {formatAppliedAt(state.appliedAt) && (
+              <span className="lcars-correction-pattern__applied-time">
+                {' '}
+                {formatAppliedAt(state.appliedAt)}
+              </span>
+            )}
+          </span>
+        )}
+        {onApply && state.kind === 'idle' && (
+          <button
+            type="button"
+            className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
+            onClick={() => setState({ kind: 'confirming' })}
+            disabled={busy}
+          >
+            APPLY
+          </button>
+        )}
+        {onApply && state.kind === 'submitting' && (
+          <button
+            type="button"
+            className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
+            disabled
+            aria-busy="true"
+          >
+            {isMe ? 'APPLYING…' : 'APPLY'}
+          </button>
+        )}
       </div>
+      {!onApply && state.kind !== 'applied' && (
+        // Phase 4 P0.8: APPLY is disabled when no `onApply` is wired
+        // (hosted static build with no apply ledger endpoint). The
+        // tooltip alone is invisible on touch devices, so render an
+        // inline informational hint under the button row. Keep it
+        // small and italic — informational, not error.
+        <p className="lcars-correction-pattern__apply-hint" role="note">
+          <em>APPLY records to a local ledger — install chat-arch to enable.</em>
+        </p>
+      )}
+      {onApply && state.kind === 'confirming' && (
+        <div
+          className="lcars-correction-pattern__confirm"
+          role="dialog"
+          aria-label="confirm apply correction"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setState({ kind: 'idle' });
+            }
+          }}
+        >
+          <p className="lcars-correction-pattern__confirm-blurb">
+            Record this upgrade as applied. The patch isn&apos;t written to
+            disk for you — copy it above, edit the target file, then confirm
+            so the loop closes.
+          </p>
+          <label className="lcars-correction-pattern__confirm-field">
+            <span>Files you edited (one per line, optional)</span>
+            <textarea
+              className="lcars-correction-pattern__confirm-textarea"
+              rows={2}
+              value={targetFilesInput}
+              onChange={(e) => setTargetFilesInput(e.target.value)}
+              placeholder={upgrade.targetPath}
+            />
+          </label>
+          <label className="lcars-correction-pattern__confirm-field">
+            <span>Notes (optional)</span>
+            <textarea
+              className="lcars-correction-pattern__confirm-textarea"
+              rows={2}
+              value={notesInput}
+              onChange={(e) => setNotesInput(e.target.value)}
+              placeholder="e.g. moved to PostToolUse hook"
+            />
+          </label>
+          <div className="lcars-correction-pattern__confirm-actions">
+            {/*
+              Disable CONFIRM APPLY when a sibling row is mid-write
+              (busy && !isMe). Without this lock, the second click would
+              fly past the IDLE→CONFIRMING gate (we're already in
+              CONFIRMING) and trip the server's 409 race response —
+              cosmetic, but confusing.
+            */}
+            <button
+              type="button"
+              className="lcars-correction-pattern__btn lcars-correction-pattern__btn--primary"
+              onClick={() => void submit()}
+              disabled={busy && !isMe}
+              title={
+                busy && !isMe
+                  ? 'Another upgrade is being applied. Try again in a moment.'
+                  : undefined
+              }
+              autoFocus
+            >
+              CONFIRM APPLY
+            </button>
+            <button
+              type="button"
+              className="lcars-correction-pattern__btn lcars-correction-pattern__btn--ghost"
+              onClick={() => setState({ kind: 'idle' })}
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+      {onApply && state.kind === 'error' && (
+        <div className="lcars-correction-pattern__apply-error" role="alert">
+          <p>Apply failed: {state.message}</p>
+          <div className="lcars-correction-pattern__confirm-actions">
+            <button
+              type="button"
+              className="lcars-correction-pattern__btn lcars-correction-pattern__btn--secondary"
+              onClick={() => setState({ kind: 'confirming' })}
+            >
+              RETRY
+            </button>
+            <button
+              type="button"
+              className="lcars-correction-pattern__btn lcars-correction-pattern__btn--ghost"
+              onClick={() => setState({ kind: 'idle' })}
+            >
+              DISMISS
+            </button>
+          </div>
+        </div>
+      )}
     </li>
   );
 }

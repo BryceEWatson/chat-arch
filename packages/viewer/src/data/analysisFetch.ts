@@ -30,7 +30,11 @@ export const PHASE_7_RESERVED_FILES = [
   'zombies.diagnosed.json',
   'reloops.json',
   'handoffs.json',
-  'cost-diagnoses.json',
+  // `cost-diagnoses.json` was here pre-Phase-3 — Phase 3 cut CostMode,
+  // so the viewer no longer consumes it. The exporter side still emits
+  // the file (intentional — the user opted to leave that for a follow-
+  // up); removing it from the viewer's reserved list just stops the
+  // TierIndicator from advertising a sidecar the viewer can't surface.
   'skill-seeds.json',
 ] as const;
 

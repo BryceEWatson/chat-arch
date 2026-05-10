@@ -4,42 +4,45 @@ import { Sidebar } from './Sidebar.js';
 
 afterEach(() => cleanup());
 
-describe('Sidebar (vertical variant, default)', () => {
-  it('renders PROJECTS + TOPICS + SESSIONS in BROWSE; PRACTICE + CORRECTIONS + ANALYSIS + COST in INSIGHTS', () => {
+describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
+  it('renders FIX RULES (CORRECTIONS+PRACTICE), BROWSE (SESSIONS), ANALYTICS (PROJECTS+TOPICS)', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
-    // BROWSE
+    // FIX RULES — primary refocus surfaces lead.
+    expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
+    // BROWSE — sessions only.
+    expect(screen.getByRole('button', { name: /mode SESSIONS/i })).toBeDefined();
+    // ANALYTICS — descriptive surfaces.
     expect(screen.getByRole('button', { name: /mode PROJECTS/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /mode TOPICS/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /mode SESSIONS/i })).toBeDefined();
-    // INSIGHTS — PRACTICE leads (D6b/D6c); CORRECTIONS sits between PRACTICE
-    // and ANALYSIS so the "audit → suggest upgrades → deep-dive" flow reads
-    // top-down.
-    expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /mode ANALYSIS/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /mode COST/i })).toBeDefined();
-    // Absent.
+    // Absent — Phase 3 cut ANALYSIS/constellation and COST entirely.
+    expect(screen.queryByRole('button', { name: /mode ANALYSIS/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /mode COST/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /mode TIMELINE/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /mode DETAIL/i })).toBeNull();
   });
 
-  it('groups the nav into BROWSE and INSIGHTS sections (no DATA without onOpenDataPanel)', () => {
+  it('groups the nav into FIX RULES, BROWSE, ANALYTICS sections', () => {
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
     const labels = container.querySelectorAll('.lcars-sidebar__group-label');
-    expect(Array.from(labels).map((el) => el.textContent)).toEqual(['BROWSE', 'INSIGHTS']);
+    expect(Array.from(labels).map((el) => el.textContent)).toEqual([
+      'FIX RULES',
+      'BROWSE',
+      'ANALYTICS',
+    ]);
   });
 
   it('marks the active mode with aria-current=page', () => {
     render(<Sidebar mode="command" onSelectMode={() => {}} />);
     const active = screen.getByRole('button', { name: /mode SESSIONS/i });
     expect(active.getAttribute('aria-current')).toBe('page');
-    const inactive = screen.getByRole('button', { name: /mode COST/i });
+    const inactive = screen.getByRole('button', { name: /mode TOPICS/i });
     expect(inactive.getAttribute('aria-current')).toBeNull();
   });
 
   it('applies the --active class only to the active item', () => {
-    render(<Sidebar mode="constellation" onSelectMode={() => {}} />);
-    const active = screen.getByRole('button', { name: /mode ANALYSIS/i });
+    render(<Sidebar mode="topics" onSelectMode={() => {}} />);
+    const active = screen.getByRole('button', { name: /mode TOPICS/i });
     const inactive = screen.getByRole('button', { name: /mode SESSIONS/i });
     expect(active.className).toContain('lcars-sidebar__item--active');
     expect(inactive.className).not.toContain('lcars-sidebar__item--active');
@@ -48,28 +51,105 @@ describe('Sidebar (vertical variant, default)', () => {
   it('invokes onSelectMode on click', () => {
     const onSelectMode = vi.fn();
     render(<Sidebar mode="command" onSelectMode={onSelectMode} />);
-    fireEvent.click(screen.getByRole('button', { name: /mode COST/i }));
-    expect(onSelectMode).toHaveBeenCalledWith('cost');
+    fireEvent.click(screen.getByRole('button', { name: /mode TOPICS/i }));
+    expect(onSelectMode).toHaveBeenCalledWith('topics');
   });
 
   it('invokes onSelectMode on Enter key', () => {
     const onSelectMode = vi.fn();
     render(<Sidebar mode="command" onSelectMode={onSelectMode} />);
-    fireEvent.keyDown(screen.getByRole('button', { name: /mode COST/i }), { key: 'Enter' });
-    expect(onSelectMode).toHaveBeenCalledWith('cost');
+    fireEvent.keyDown(screen.getByRole('button', { name: /mode TOPICS/i }), { key: 'Enter' });
+    expect(onSelectMode).toHaveBeenCalledWith('topics');
   });
 
   it('renders only the top elbow (left-edge-only frame, no bottom elbow)', () => {
-    // Spec §10 (amended 2026-05-07): the canonical design-system shape
-    // is the asymmetric one-corner-rounded rectangle (radius.elbow-lg);
-    // v2 keeps only the top elbow — bottom elbow is retired so the
-    // sidebar's lower edge stays bare. The earlier single-SVG concave-
-    // arc Elbow component diverged from the design system and has been
-    // removed.
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
     expect(container.querySelectorAll('.lcars-sidebar__elbow--top').length).toBe(1);
     expect(container.querySelectorAll('.lcars-sidebar__elbow--bottom').length).toBe(0);
     expect(container.querySelectorAll('.lcars-sidebar__l-frame').length).toBe(0);
+  });
+});
+
+describe('Sidebar — ANALYTICS collapse (Phase 2a)', () => {
+  it('hides the analytics list when analyticsCollapsed=true', () => {
+    const { container } = render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        analyticsCollapsed
+        onToggleAnalyticsCollapsed={() => {}}
+      />,
+    );
+    const groups = container.querySelectorAll('.lcars-sidebar__group');
+    // ANALYTICS is the third group (FIX RULES, BROWSE, ANALYTICS).
+    const analytics = groups[2];
+    expect(analytics.classList.contains('lcars-sidebar__group--collapsed')).toBe(true);
+  });
+
+  it('marks the toggle label with aria-expanded=false when collapsed', () => {
+    render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        analyticsCollapsed
+        onToggleAnalyticsCollapsed={() => {}}
+      />,
+    );
+    const toggle = screen.getByRole('button', { name: /expand ANALYTICS/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('marks the toggle label with aria-expanded=true when expanded', () => {
+    render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        analyticsCollapsed={false}
+        onToggleAnalyticsCollapsed={() => {}}
+      />,
+    );
+    const toggle = screen.getByRole('button', { name: /collapse ANALYTICS/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('invokes onToggleAnalyticsCollapsed on click', () => {
+    const onToggle = vi.fn();
+    render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        analyticsCollapsed
+        onToggleAnalyticsCollapsed={onToggle}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /expand ANALYTICS/i }));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes onToggleAnalyticsCollapsed on Enter key', () => {
+    const onToggle = vi.fn();
+    render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        analyticsCollapsed
+        onToggleAnalyticsCollapsed={onToggle}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole('button', { name: /expand ANALYTICS/i }), {
+      key: 'Enter',
+    });
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders ANALYTICS label as static (non-button) when no toggle handler is provided', () => {
+    // Falls back to plain label when host doesn't supply a toggle —
+    // safety for embeddings that don't manage collapse state.
+    const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
+    const labels = container.querySelectorAll('.lcars-sidebar__group-label');
+    const analyticsLabel = labels[2];
+    expect(analyticsLabel.getAttribute('role')).toBeNull();
+    expect(analyticsLabel.textContent).toBe('ANALYTICS');
   });
 });
 
@@ -80,8 +160,9 @@ describe('Sidebar — DATA panel trigger (v2 spec §6 / D4)', () => {
     );
     const labels = container.querySelectorAll('.lcars-sidebar__group-label');
     expect(Array.from(labels).map((el) => el.textContent)).toEqual([
+      'FIX RULES',
       'BROWSE',
-      'INSIGHTS',
+      'ANALYTICS',
       'ACTIONS',
     ]);
     expect(screen.getByRole('button', { name: /open DATA panel/i })).toBeDefined();
@@ -121,25 +202,73 @@ describe('Sidebar — DATA panel trigger (v2 spec §6 / D4)', () => {
   });
 });
 
+describe('Sidebar — Phase 4 hosted refocus (correctionsAvailable=false)', () => {
+  it('hides the CORRECTIONS entry from the vertical FIX RULES group', () => {
+    render(
+      <Sidebar mode="command" onSelectMode={() => {}} correctionsAvailable={false} />,
+    );
+    expect(screen.queryByRole('button', { name: /mode CORRECTIONS/i })).toBeNull();
+    // PRACTICE remains so the FIX RULES group still has a member —
+    // hiding both would leave the group label hanging without a list.
+    expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
+  });
+
+  it('keeps FIX RULES, BROWSE, ANALYTICS section labels visible', () => {
+    const { container } = render(
+      <Sidebar mode="command" onSelectMode={() => {}} correctionsAvailable={false} />,
+    );
+    const labels = container.querySelectorAll('.lcars-sidebar__group-label');
+    expect(Array.from(labels).map((el) => el.textContent)).toEqual([
+      'FIX RULES',
+      'BROWSE',
+      'ANALYTICS',
+    ]);
+  });
+
+  it('drops the COR pill from the horizontal pill bar too', () => {
+    const { container } = render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        variant="horizontal"
+        correctionsAvailable={false}
+      />,
+    );
+    const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
+    expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'PRC',
+      'SES',
+      'PRJ',
+      'TOP',
+    ]);
+  });
+
+  it('renders CORRECTIONS by default (correctionsAvailable defaults to true)', () => {
+    render(<Sidebar mode="command" onSelectMode={() => {}} />);
+    expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
+  });
+});
+
 describe('Sidebar (horizontal variant)', () => {
-  it('renders a pill bar without chrome frame, DETAIL + TIMELINE dropped', () => {
+  it('renders a pill bar without chrome frame, in the Phase 2a refocus order', () => {
     const { container } = render(
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
-    // 7 mode pills now: PRJ, TOP, SES, PRC, COR, ANL, CST.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(7);
+    // 5 mode pills (Phase 3 cut ANL/constellation and CST/cost):
+    // COR, PRC, SES, PRJ, TOP.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
   });
 
-  it('shows only the short label in horizontal pills', () => {
+  it('shows only the short label in horizontal pills, in the new order', () => {
     const { container } = render(
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(7);
+    expect(pillShorts.length).toBe(5);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['PRJ', 'TOP', 'SES', 'PRC', 'COR', 'ANL', 'CST']);
+    expect(texts).toEqual(['COR', 'PRC', 'SES', 'PRJ', 'TOP']);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -154,13 +283,11 @@ describe('Sidebar (horizontal variant)', () => {
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
     expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'COR',
+      'PRC',
+      'SES',
       'PRJ',
       'TOP',
-      'SES',
-      'PRC',
-      'COR',
-      'ANL',
-      'CST',
       'DAT',
     ]);
     fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
@@ -168,8 +295,8 @@ describe('Sidebar (horizontal variant)', () => {
   });
 
   it('marks the active pill', () => {
-    render(<Sidebar mode="cost" onSelectMode={() => {}} variant="horizontal" />);
-    const active = screen.getByRole('button', { name: /mode COST/i });
+    render(<Sidebar mode="topics" onSelectMode={() => {}} variant="horizontal" />);
+    const active = screen.getByRole('button', { name: /mode TOPICS/i });
     expect(active.className).toContain('lcars-sidebar__pill--active');
     const inactive = screen.getByRole('button', { name: /mode SESSIONS/i });
     expect(inactive.className).not.toContain('lcars-sidebar__pill--active');
@@ -178,7 +305,20 @@ describe('Sidebar (horizontal variant)', () => {
   it('invokes onSelectMode on click in horizontal variant', () => {
     const onSelectMode = vi.fn();
     render(<Sidebar mode="command" onSelectMode={onSelectMode} variant="horizontal" />);
-    fireEvent.click(screen.getByRole('button', { name: /mode ANALYSIS/i }));
-    expect(onSelectMode).toHaveBeenCalledWith('constellation');
+    fireEvent.click(screen.getByRole('button', { name: /mode TOPICS/i }));
+    expect(onSelectMode).toHaveBeenCalledWith('topics');
+  });
+
+  it('keeps all 5 pills visible regardless of analyticsCollapsed (collapse is vertical-only)', () => {
+    const { container } = render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        variant="horizontal"
+        analyticsCollapsed
+        onToggleAnalyticsCollapsed={() => {}}
+      />,
+    );
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
   });
 });

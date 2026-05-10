@@ -1,7 +1,9 @@
 import type { SessionManifest, SessionSource, UnifiedSessionEntry } from '@chat-arch/schema';
 import type {
+  AppliedImprovementsFile,
   CloudConversation,
   CloudProject,
+  CorrectionsFile,
   Project,
   Topic,
   Narrative,
@@ -32,6 +34,30 @@ export interface UploadedCloudData {
   projects?: readonly CloudProject[];
   /** Human-readable label (original filename + size) for the unload UI. */
   sourceLabel: string;
+  /**
+   * Phase 4 — demo path only. When the viewer is loaded with a
+   * generated demo fixture, the demo populates corrections + applied-
+   * improvements + a synthesized rescan delta inline so the workshop
+   * loop is visible on the hosted demo without requiring a back-end
+   * mining pass. Real cloud-zip uploads (`parseCloudZip`) never
+   * provide these fields — the corresponding signals come from
+   * `corrections.json` / `applied-improvements.json` on disk instead.
+   */
+  corrections?: CorrectionsFile;
+  appliedImprovements?: AppliedImprovementsFile;
+  /**
+   * Synthesized "what just rescanned" payload for the persistent
+   * rescan-delta chip. The chip's normal source is the `/api/rescan`
+   * success branch in onRescan; demo loads have no such pass to feed
+   * it, so we hand-author the delta and the chip's existing dismiss
+   * flow handles the rest.
+   */
+  synthesizedRescanDelta?: {
+    totalLocal: number;
+    cowork: number;
+    cli: number;
+    desktop: number;
+  };
 }
 
 /** UI mode — which main-content surface is active. */
@@ -39,8 +65,6 @@ export type Mode =
   | 'command'
   | 'timeline'
   | 'detail'
-  | 'constellation'
-  | 'cost'
   /** v2 spec §5.1: PROJECTS surface (index + detail in one mode, driven by hash). */
   | 'projects'
   /** v2 spec §5.2: TOPICS surface (index + detail in one mode, driven by hash). */
@@ -113,8 +137,6 @@ export const MODE_COLOR: Record<Mode, string> = {
   command: 'var(--lcars-butterscotch)',
   timeline: 'var(--lcars-ice)',
   detail: 'var(--lcars-sunflower)',
-  constellation: 'var(--lcars-violet)',
-  cost: 'var(--lcars-peach)',
   projects: 'var(--lcars-sunflower)',
   topics: 'var(--lcars-ice)',
   practice: 'var(--lcars-violet)',

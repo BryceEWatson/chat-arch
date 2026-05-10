@@ -159,6 +159,58 @@ describe('UploadPanel', () => {
     expect(onLoaded).not.toHaveBeenCalled();
   });
 
+  // Phase 4 — hosted refocus. When `showCloudUpload=false` the panel
+  // becomes a sales / install-locally storefront. CHOOSE ZIP is hidden
+  // entirely (the cloud-zip flow is local-Astro-only context, since
+  // the workshop loop requires patching CLAUDE.md on a real machine);
+  // an INSTALL LOCALLY link replaces it. LOAD DEMO DATA stays so the
+  // visitor can still see the UI.
+  describe('Phase 4 — hosted refocus (showCloudUpload=false)', () => {
+    it('hides CHOOSE ZIP and the cloud-export hint copy', () => {
+      render(<UploadPanel onLoaded={() => {}} showCloudUpload={false} />);
+      expect(screen.queryByRole('button', { name: /choose cloud export zip/i })).toBeNull();
+      expect(screen.queryByText(/LOAD CLOUD EXPORT/i)).toBeNull();
+      expect(screen.queryByText(/Drop a Settings → Privacy/i)).toBeNull();
+    });
+
+    it('renders an INSTALL LOCALLY link with the default README quickstart href', () => {
+      render(<UploadPanel onLoaded={() => {}} showCloudUpload={false} />);
+      const link = screen.getByRole('button', { name: /install chat-arch locally/i });
+      expect(link).toBeDefined();
+      expect(link.tagName).toBe('A');
+      expect(link.getAttribute('href')).toMatch(
+        /github\.com\/BryceEWatson\/chat-arch#quickstart/,
+      );
+    });
+
+    it('honors a custom installLocallyHref', () => {
+      render(
+        <UploadPanel
+          onLoaded={() => {}}
+          showCloudUpload={false}
+          installLocallyHref="https://example.com/install"
+        />,
+      );
+      const link = screen.getByRole('button', { name: /install chat-arch locally/i });
+      expect(link.getAttribute('href')).toBe('https://example.com/install');
+    });
+
+    it('keeps LOAD DEMO DATA visible when onLoadDemo is provided', () => {
+      const onLoadDemo = vi.fn();
+      render(
+        <UploadPanel onLoaded={() => {}} showCloudUpload={false} onLoadDemo={onLoadDemo} />,
+      );
+      const demo = screen.getByRole('button', { name: /load demo data/i });
+      fireEvent.click(demo);
+      expect(onLoadDemo).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not render the hidden file input when CHOOSE ZIP is hidden', () => {
+      const { container } = render(<UploadPanel onLoaded={() => {}} showCloudUpload={false} />);
+      expect(container.querySelector('input[type=file]')).toBeNull();
+    });
+  });
+
   it('surfaces an error when conversations.json is missing', async () => {
     const onLoaded = vi.fn();
     const { container } = render(<UploadPanel onLoaded={onLoaded} />);
