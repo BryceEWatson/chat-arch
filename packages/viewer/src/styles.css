@@ -177,7 +177,7 @@
 @media (min-width: 900px) {
   .lcars-frame.lcars-frame--empty {
     grid-template-columns: 1fr;
-    grid-template-rows: 40px 1fr;
+    grid-template-rows: minmax(40px, auto) 1fr;
   }
   .lcars-frame.lcars-frame--empty .lcars-top-bar {
     grid-column: 1 / -1;
@@ -423,7 +423,10 @@
 @media (min-width: 600px) {
   .lcars-frame {
     grid-template-columns: 1fr;
-    grid-template-rows: 56px 1fr auto;
+    /* `minmax(56px, auto)` lets the TopBar's row grow when its inner
+       chips wrap to a second line. A fixed `56px` row clipped the
+       wrapped content (title + date pill rendered half-visible). */
+    grid-template-rows: minmax(56px, auto) 1fr auto;
     gap: 8px;
     /* No forced min-height — frame sizes to content. Populated layouts
        grow naturally from their session grid; empty state stays short
@@ -452,7 +455,10 @@
      the sidebar itself. */
   .lcars-frame {
     grid-template-columns: 160px 1fr;
-    grid-template-rows: 40px 1fr auto;
+    /* `minmax(40px, auto)` — see tablet note. Desktop has more
+       chips (location + indexed + earthdate + tier + rescan-chip)
+       and is the breakpoint where wrap-clipping was most visible. */
+    grid-template-rows: minmax(40px, auto) 1fr auto;
     column-gap: 8px;
     row-gap: 0;
   }
@@ -962,8 +968,14 @@
 
 @media (min-width: 600px) {
   .lcars-top-bar {
-    height: 56px;
-    padding: 0 14px;
+    /* `min-height` instead of `height` — the inner `__left` cluster has
+       `flex-wrap: wrap`, so when its chips can't fit horizontally they
+       wrap to a second row. A fixed outer height clips the wrapped row
+       (manifests as the title and date pill rendering half-visible).
+       `min-height` keeps the empty-bar tall enough to look balanced
+       while letting the bar grow if wrap kicks in. */
+    min-height: 56px;
+    padding: 6px 14px;
     flex-wrap: nowrap;
     justify-content: space-between;
   }
@@ -991,8 +1003,10 @@
      left edge butts against the 8px column-gap; right end keeps the
      classic LCARS half-pill cap. */
   .lcars-top-bar {
-    height: 44px;
-    padding: 0 18px;
+    /* See min-height note at the tablet breakpoint — same reason
+       here: wrap-on-overflow must extend the bar, not clip it. */
+    min-height: 44px;
+    padding: 6px 18px;
     background: var(--lcars-butterscotch);
     border-bottom: 0;
     border-radius: 0 22px 22px 0;
