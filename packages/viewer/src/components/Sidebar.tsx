@@ -31,6 +31,16 @@ export interface SidebarProps {
    */
   analyticsCollapsed?: boolean;
   onToggleAnalyticsCollapsed?: () => void;
+  /**
+   * Phase 4 hosted refocus. Drives whether the CORRECTIONS entry is
+   * rendered at all. The corrections panel is a dead end on a hosted
+   * static build with no corrections.json, no applied-improvements
+   * ledger, and no `/api/mine-corrections` endpoint — surfacing the
+   * sidebar item would route a first-time visitor into an empty
+   * surface with no path forward. Hide it. Defaults to `true` so
+   * existing local-dev callers + tests keep the previous behavior.
+   */
+  correctionsAvailable?: boolean;
 }
 
 interface NavItem {
@@ -112,12 +122,27 @@ export function Sidebar({
   variant = 'vertical',
   analyticsCollapsed = false,
   onToggleAnalyticsCollapsed,
+  correctionsAvailable = true,
 }: SidebarProps) {
+  // Phase 4 — filter the CORRECTIONS entry out of the nav model when
+  // there's nothing to show. PRACTICE remains under FIX RULES so the
+  // group still has a member; if the host wants to hide it too, that
+  // belongs in a follow-up. Done at the model level so both vertical
+  // and horizontal variants see the same filtered set without per-
+  // variant branching at the render site.
+  const filterCorrections = (item: NavItem): boolean =>
+    correctionsAvailable || item.mode !== 'corrections';
+  const navGroups: readonly NavGroup[] = NAV.map((g) => ({
+    group: g.group,
+    items: g.items.filter(filterCorrections),
+  }));
+  const horizontalPills: readonly NavItem[] =
+    HORIZONTAL_PILL_ORDER.filter(filterCorrections);
   if (variant === 'horizontal') {
     return (
       <nav className="lcars-sidebar lcars-sidebar--horizontal" aria-label="primary">
         <ul className="lcars-sidebar__pill-bar" role="tablist">
-          {HORIZONTAL_PILL_ORDER.map((item) => {
+          {horizontalPills.map((item) => {
             const active = item.mode === mode;
             const style = {
               ['--mode-color' as string]: MODE_COLOR[item.mode],
@@ -184,7 +209,7 @@ export function Sidebar({
         divergence from the design system and has been retired.
       */}
       <div className="lcars-sidebar__elbow lcars-sidebar__elbow--top" aria-hidden="true" />
-      {NAV.map((g) => {
+      {navGroups.map((g) => {
         const isAnalytics = g.group === 'ANALYTICS';
         const collapsed = isAnalytics && analyticsCollapsed;
         const groupClass =

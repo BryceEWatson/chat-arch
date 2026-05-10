@@ -202,6 +202,53 @@ describe('Sidebar — DATA panel trigger (v2 spec §6 / D4)', () => {
   });
 });
 
+describe('Sidebar — Phase 4 hosted refocus (correctionsAvailable=false)', () => {
+  it('hides the CORRECTIONS entry from the vertical FIX RULES group', () => {
+    render(
+      <Sidebar mode="command" onSelectMode={() => {}} correctionsAvailable={false} />,
+    );
+    expect(screen.queryByRole('button', { name: /mode CORRECTIONS/i })).toBeNull();
+    // PRACTICE remains so the FIX RULES group still has a member —
+    // hiding both would leave the group label hanging without a list.
+    expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
+  });
+
+  it('keeps FIX RULES, BROWSE, ANALYTICS section labels visible', () => {
+    const { container } = render(
+      <Sidebar mode="command" onSelectMode={() => {}} correctionsAvailable={false} />,
+    );
+    const labels = container.querySelectorAll('.lcars-sidebar__group-label');
+    expect(Array.from(labels).map((el) => el.textContent)).toEqual([
+      'FIX RULES',
+      'BROWSE',
+      'ANALYTICS',
+    ]);
+  });
+
+  it('drops the COR pill from the horizontal pill bar too', () => {
+    const { container } = render(
+      <Sidebar
+        mode="command"
+        onSelectMode={() => {}}
+        variant="horizontal"
+        correctionsAvailable={false}
+      />,
+    );
+    const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
+    expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'PRC',
+      'SES',
+      'PRJ',
+      'TOP',
+    ]);
+  });
+
+  it('renders CORRECTIONS by default (correctionsAvailable defaults to true)', () => {
+    render(<Sidebar mode="command" onSelectMode={() => {}} />);
+    expect(screen.getByRole('button', { name: /mode CORRECTIONS/i })).toBeDefined();
+  });
+});
+
 describe('Sidebar (horizontal variant)', () => {
   it('renders a pill bar without chrome frame, in the Phase 2a refocus order', () => {
     const { container } = render(

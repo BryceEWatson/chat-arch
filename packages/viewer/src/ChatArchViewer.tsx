@@ -2125,6 +2125,25 @@ export function ChatArchViewer({
     0;
   const hasCloudData = (manifestCounts?.cloud ?? 0) > 0 || uploadedData !== null;
 
+  // Phase 4 — hosted refocus. CORRECTIONS is the workshop's primary
+  // surface, but on a hosted static build with no corrections.json,
+  // no applied-improvements ledger, and no `/api/mine-corrections`
+  // endpoint it's a dead-end. Hide the sidebar entry in that case so
+  // a first-time visitor can't navigate into an empty surface with no
+  // path forward. Demo data (Phase 4.3) ships its own corrections +
+  // applied fixtures so the loop is visible on hosted demo. Local-dev
+  // builds (rescanCtl.available === true) keep the entry regardless,
+  // since the user can mine to populate it.
+  // Phase 4.3 will add `uploadedData.corrections` for the demo
+  // fixture path so demo visitors get the workshop loop visibly. For
+  // now, this just covers the fetched corrections.json + the apply
+  // ledger; the demo branch lights up the same data via `setCorrectionsRoute`
+  // (see Phase 4.3 wiring in onUpload).
+  const hasCorrectionsData =
+    (correctionsRoute?.patterns?.length ?? 0) > 0 ||
+    (appliedImprovements?.entries?.length ?? 0) > 0;
+  const correctionsAvailable = hasCorrectionsData || rescanCtl.available;
+
   return (
     <div
       className="lcars-root"
@@ -2258,6 +2277,7 @@ export function ChatArchViewer({
             dataPanelOpen={dataPanelOpen}
             analyticsCollapsed={analyticsCollapsed}
             onToggleAnalyticsCollapsed={() => setAnalyticsCollapsed((c) => !c)}
+            correctionsAvailable={correctionsAvailable}
             onSelectMode={(m) => {
               if (m !== 'detail') {
                 clearHash();
