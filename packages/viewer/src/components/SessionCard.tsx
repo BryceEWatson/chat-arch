@@ -175,8 +175,9 @@ export function SessionCard({
   // content-only — no model identity, no token counts, no cost data. Rather
   // than render two permanently-empty cells on every cloud card, we omit
   // them and let the meta grid shrink to TURNS + TOOLS. The CLOUD source
-  // pill + the TierSheet blurb + the CostMode banner collectively document
-  // the limitation; duplicating "not exported" on every row is noise.
+  // pill + the TierSheet blurb collectively document the limitation;
+  // duplicating "not exported" on every row is noise. (The CostMode
+  // banner that used to share this responsibility was cut in Phase 3.)
   const isCloud = session.source === 'cloud';
 
   // v2 spec §5.3: deep-link anchor. The id lets `/sessions#session-{id}`

@@ -447,12 +447,10 @@ export function UpperPanel({
         </button>
         {/*
           Renamed from "ANALYSIS" → "FINDINGS" to disentangle from the
-          sidebar's ANL/ANALYSIS entry (which opens the constellation
-          workspace). Same component still drives a tab called
-          `analysis` internally — only the visible label moved — so
-          ChatArchViewer wiring and semantic state stay stable while
-          the UI stops having two differently-scoped surfaces both
-          shouting "ANALYSIS".
+          (since-cut) sidebar's ANL/ANALYSIS entry that opened the
+          constellation workspace. Same component still drives a tab
+          called `analysis` internally — only the visible label moved —
+          so the rest of the wiring and semantic state stayed stable.
         */}
         <button
           type="button"
@@ -472,16 +470,12 @@ export function UpperPanel({
 
       {tab === 'overview' ? (
         <div className="lcars-upper-panel__body lcars-upper-panel__body--overview">
-          {/* KPI strip (Decision 9 / `[R-D9]`) — four teasers that drill into
-              COST mode. All four are clickable; each lands on the matching
-              section with a 2s highlight ring (COST mode side). */}
-          {/*
-            KPI strip is informational only post-Phase-3 — the COST mode
-            that previously hosted the drill-in is gone, so the tiles
-            display data without click handlers. They still flash on
-            filter/sort changes via the data-flash hook so the values
-            visibly track the current filter set.
-          */}
+          {/* KPI strip (Decision 9 / `[R-D9]`).
+              Pre-Phase-3 the four tiles were buttons that drilled into
+              COST mode with a 2s section highlight; Phase 3 cut COST
+              entirely, so the tiles are now informational `<div>`s.
+              They still flash on filter/sort changes via the data-flash
+              hook so the values visibly track the current filter set. */}
           <div
             className="lcars-kpi-strip"
             role="group"
