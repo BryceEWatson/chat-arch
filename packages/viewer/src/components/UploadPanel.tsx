@@ -15,7 +15,27 @@ export interface UploadPanelProps {
    * `onUpload`.
    */
   onLoadDemo?: () => void;
+  /**
+   * Phase 4 — hosted refocus. When `false`, the CHOOSE ZIP cloud-upload
+   * affordance is omitted and replaced by a primary "INSTALL LOCALLY"
+   * link button. The cloud-export hint copy is also suppressed in that
+   * mode. Defaults to `true` so existing local-dev callers and tests
+   * keep the previous behavior. The host should pass
+   * `rescanCtl.available` here: hosted static builds (no `/api/rescan`)
+   * become the install-locally storefront; local Astro dev keeps the
+   * cloud-zip upload path.
+   */
+  showCloudUpload?: boolean;
+  /**
+   * Optional override for the INSTALL LOCALLY link target. Defaults to
+   * the README quickstart anchor on GitHub. Tests may pin this to a
+   * fixture URL.
+   */
+  installLocallyHref?: string;
 }
+
+const DEFAULT_INSTALL_LOCALLY_HREF =
+  'https://github.com/BryceEWatson/chat-arch#quickstart';
 
 /**
  * `label` is the MASKED filename (see `maskedUploadLabel`) — never the
@@ -37,7 +57,13 @@ type UploadState =
  * parses it in the browser via `parseCloudZip`, and calls `onLoaded` with the
  * resulting in-memory manifest. LCARS-styled, mobile-responsive.
  */
-export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: UploadPanelProps) {
+export function UploadPanel({
+  onLoaded,
+  variant = 'prominent',
+  onLoadDemo,
+  showCloudUpload = true,
+  installLocallyHref = DEFAULT_INSTALL_LOCALLY_HREF,
+}: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<UploadState>({ status: 'idle' });
 
@@ -77,7 +103,7 @@ export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: Upl
       className={`lcars-upload-panel lcars-upload-panel--${variant}`}
       aria-label="upload cloud export"
     >
-      {variant === 'prominent' && (
+      {variant === 'prominent' && showCloudUpload && (
         <>
           <h3 className="lcars-upload-panel__title">LOAD CLOUD EXPORT</h3>
           <p className="lcars-upload-panel__hint">
@@ -86,17 +112,48 @@ export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: Upl
           </p>
         </>
       )}
+      {variant === 'prominent' && !showCloudUpload && (
+        <>
+          {/*
+            Phase 4 hosted refocus: chat-arch.dev becomes a sales /
+            demo storefront. The workshop loop (mine → patch CLAUDE.md
+            → re-mine) requires a local Claude Code install, so a
+            cloud-only visitor can't actually finish the loop. Replace
+            the CHOOSE ZIP affordance with a clear pointer to the
+            README quickstart. LOAD DEMO DATA stays as the secondary
+            "see the UI without installing" path.
+          */}
+          <h3 className="lcars-upload-panel__title">INSTALL CHAT-ARCH LOCALLY</h3>
+          <p className="lcars-upload-panel__hint">
+            Chat-arch is open source. To audit your own corpus and patch your CLAUDE.md, install it
+            on your machine — the workshop loop runs against your local Claude Code transcripts.
+          </p>
+        </>
+      )}
 
       <div className="lcars-upload-panel__buttons">
-        <button
-          type="button"
-          className="lcars-upload-panel__button"
-          onClick={openPicker}
-          disabled={state.status === 'parsing'}
-          aria-label="choose cloud export zip"
-        >
-          {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
-        </button>
+        {showCloudUpload ? (
+          <button
+            type="button"
+            className="lcars-upload-panel__button"
+            onClick={openPicker}
+            disabled={state.status === 'parsing'}
+            aria-label="choose cloud export zip"
+          >
+            {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
+          </button>
+        ) : (
+          <a
+            className="lcars-upload-panel__button"
+            href={installLocallyHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            role="button"
+            aria-label="install chat-arch locally — opens the README quickstart on GitHub"
+          >
+            INSTALL LOCALLY
+          </a>
+        )}
         {onLoadDemo && (
           <button
             type="button"
@@ -117,15 +174,17 @@ export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: Upl
         </p>
       )}
 
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".zip,application/zip,application/x-zip-compressed"
-        onChange={onFileChange}
-        style={{ display: 'none' }}
-        aria-hidden="true"
-        tabIndex={-1}
-      />
+      {showCloudUpload && (
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".zip,application/zip,application/x-zip-compressed"
+          onChange={onFileChange}
+          style={{ display: 'none' }}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+      )}
 
       {state.status === 'parsing' && (
         <div className="lcars-upload-panel__status" role="status" aria-live="polite">

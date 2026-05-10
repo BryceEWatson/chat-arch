@@ -16,6 +16,13 @@ export interface EmptyStateProps {
    * empties (e.g., "NO SELECTION") don't need it.
    */
   onLoadDemo?: () => void;
+  /**
+   * Phase 4 hosted refocus. When `false`, the UploadPanel hides its
+   * CHOOSE ZIP affordance and renders an INSTALL LOCALLY link
+   * instead. Defaults to `true` so existing local-dev callers keep
+   * the cloud-zip path. The host should pass `rescanCtl.available`.
+   */
+  showCloudUpload?: boolean;
 }
 
 export function EmptyState({
@@ -23,6 +30,7 @@ export function EmptyState({
   message = 'Run pnpm --filter @chat-arch/exporter start to produce a manifest.',
   onUpload,
   onLoadDemo,
+  showCloudUpload = true,
 }: EmptyStateProps) {
   return (
     <section className="lcars-empty-state" role="status" aria-live="polite">
@@ -34,6 +42,7 @@ export function EmptyState({
           <UploadPanel
             onLoaded={onUpload}
             variant="prominent"
+            showCloudUpload={showCloudUpload}
             {...(onLoadDemo ? { onLoadDemo } : {})}
           />
         </>

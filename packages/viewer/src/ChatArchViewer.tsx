@@ -2045,7 +2045,20 @@ export function ChatArchViewer({
               title="NO DATA YET"
               detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`}
             />
-            <UploadPanel onLoaded={onUpload} variant="prominent" onLoadDemo={onLoadDemo} />
+            {/*
+              Phase 4 hosted refocus: hide CHOOSE ZIP on the hosted
+              static build (no `/api/rescan` reachable → no local
+              install → cloud-only visitors can't complete the
+              workshop loop). The panel swaps to an INSTALL LOCALLY
+              link instead. LOAD DEMO DATA stays in both modes so
+              the surface is never a dead end.
+            */}
+            <UploadPanel
+              onLoaded={onUpload}
+              variant="prominent"
+              onLoadDemo={onLoadDemo}
+              showCloudUpload={rescanCtl.available}
+            />
           </main>
         </div>
       </div>
@@ -2394,7 +2407,10 @@ export function ChatArchViewer({
               style={{ ['--mode-color' as string]: modeColor } as React.CSSProperties}
             >
               {activeManifest.sessions.length === 0 ? (
-                <EmptyState {...(uploadedData ? {} : { onUpload, onLoadDemo })} />
+                <EmptyState
+                  showCloudUpload={rescanCtl.available}
+                  {...(uploadedData ? {} : { onUpload, onLoadDemo })}
+                />
               ) : (
                 <>
                   <div className="lcars-mode-area__base" hidden={showDetailOverlay}>
