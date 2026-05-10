@@ -52,14 +52,14 @@ interface NavGroup {
 //                first-time users — "FIX RULES" announces the loop's
 //                outcome verb-first.)
 //   BROWSE     → Sessions — the v1 grid surface, kept lightweight.
-//   ANALYTICS  → Projects, Topics, Cost, Analysis — descriptive
-//                surfaces that answer "what's in my corpus", collapsed
-//                by default so they don't crowd the workshop.
+//   ANALYTICS  → Projects, Topics, Cost — descriptive surfaces that
+//                answer "what's in my corpus", collapsed by default so
+//                they don't crowd the workshop. (Phase 3 cut the
+//                ANALYSIS / constellation entry — duplicates and zombie
+//                projects didn't earn their slot in the rail.)
 //
 // `detail` is intentionally missing — it's a drill-in surface reached by
-// clicking a session card, not a top-level mode. `constellation` is the
-// deep-dive analysis workspace; we surface it under the "ANALYSIS" label
-// (keeping the internal mode id stable avoids a cross-codebase rename).
+// clicking a session card, not a top-level mode.
 const NAV: readonly NavGroup[] = [
   {
     group: 'FIX RULES',
@@ -78,7 +78,6 @@ const NAV: readonly NavGroup[] = [
       { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
       { mode: 'topics', label: 'TOPICS', short: 'TOP' },
       { mode: 'cost', label: 'COST', short: 'CST' },
-      { mode: 'constellation', label: 'ANALYSIS', short: 'ANL' },
     ],
   },
 ];
@@ -94,7 +93,6 @@ const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
   { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
   { mode: 'topics', label: 'TOPICS', short: 'TOP' },
   { mode: 'cost', label: 'COST', short: 'CST' },
-  { mode: 'constellation', label: 'ANALYSIS', short: 'ANL' },
 ];
 
 // DATA item is rendered separately from the mode-driven nav: it's a

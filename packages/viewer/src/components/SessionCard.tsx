@@ -259,42 +259,61 @@ export function SessionCard({
                   NARR ({narrativeChip.count})
                 </span>
               ))}
-            {duplicateInfo && (
-              <span
-                role="button"
-                tabIndex={0}
-                className="lcars-chip lcars-chip--dup"
-                aria-label={`duplicate cluster with ${duplicateInfo.memberCount} sessions, click to open constellation`}
-                onClick={(e) => {
-                  stop(e);
-                  onDuplicateChipClick?.(duplicateInfo.cluster.id, session.id);
-                }}
-                onKeyDown={(e) =>
-                  onActivate(e, () => {
-                    onDuplicateChipClick?.(duplicateInfo.cluster.id, session.id);
-                  })
-                }
-              >
-                DUP ({duplicateInfo.memberCount})
-                <SourceAttribution kind={duplicateInfo.cluster.kind} />
-              </span>
-            )}
-            {isZombieProject && (
-              <span
-                role="button"
-                tabIndex={0}
-                className="lcars-chip lcars-chip--zombie"
-                aria-label="project classified zombie, click to filter constellation"
-                onClick={(e) => {
-                  stop(e);
-                  onZombieChipClick?.(session.id);
-                }}
-                onKeyDown={(e) => onActivate(e, () => onZombieChipClick?.(session.id))}
-              >
-                ZOMBIE
-                <SourceAttribution kind="heuristic" />
-              </span>
-            )}
+            {duplicateInfo &&
+              (onDuplicateChipClick ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="lcars-chip lcars-chip--dup"
+                  aria-label={`duplicate cluster with ${duplicateInfo.memberCount} sessions`}
+                  onClick={(e) => {
+                    stop(e);
+                    onDuplicateChipClick(duplicateInfo.cluster.id, session.id);
+                  }}
+                  onKeyDown={(e) =>
+                    onActivate(e, () => {
+                      onDuplicateChipClick(duplicateInfo.cluster.id, session.id);
+                    })
+                  }
+                >
+                  DUP ({duplicateInfo.memberCount})
+                  <SourceAttribution kind={duplicateInfo.cluster.kind} />
+                </span>
+              ) : (
+                // Phase 3 cut the constellation drill-in target, so the
+                // chip is informational only when no click handler is
+                // supplied — keep the badge so the user still sees the
+                // duplicate-cluster signal at a glance.
+                <span
+                  className="lcars-chip lcars-chip--dup"
+                  aria-label={`duplicate cluster with ${duplicateInfo.memberCount} sessions`}
+                >
+                  DUP ({duplicateInfo.memberCount})
+                  <SourceAttribution kind={duplicateInfo.cluster.kind} />
+                </span>
+              ))}
+            {isZombieProject &&
+              (onZombieChipClick ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="lcars-chip lcars-chip--zombie"
+                  aria-label="project classified zombie"
+                  onClick={(e) => {
+                    stop(e);
+                    onZombieChipClick(session.id);
+                  }}
+                  onKeyDown={(e) => onActivate(e, () => onZombieChipClick(session.id))}
+                >
+                  ZOMBIE
+                  <SourceAttribution kind="heuristic" />
+                </span>
+              ) : (
+                <span className="lcars-chip lcars-chip--zombie" aria-label="project classified zombie">
+                  ZOMBIE
+                  <SourceAttribution kind="heuristic" />
+                </span>
+              ))}
           </div>
         )}
       </div>

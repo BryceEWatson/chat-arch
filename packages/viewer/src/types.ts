@@ -39,7 +39,6 @@ export type Mode =
   | 'command'
   | 'timeline'
   | 'detail'
-  | 'constellation'
   | 'cost'
   /** v2 spec §5.1: PROJECTS surface (index + detail in one mode, driven by hash). */
   | 'projects'
@@ -113,7 +112,6 @@ export const MODE_COLOR: Record<Mode, string> = {
   command: 'var(--lcars-butterscotch)',
   timeline: 'var(--lcars-ice)',
   detail: 'var(--lcars-sunflower)',
-  constellation: 'var(--lcars-violet)',
   cost: 'var(--lcars-peach)',
   projects: 'var(--lcars-sunflower)',
   topics: 'var(--lcars-ice)',

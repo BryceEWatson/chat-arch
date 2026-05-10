@@ -31,7 +31,6 @@ import {
   CommandMode,
   TimelineMode,
   DetailMode,
-  ConstellationMode,
   CostMode,
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
@@ -427,17 +426,6 @@ export function ChatArchViewer({
   // (direct-nav + re-enter shows no highlight per `[R-D19]`).
   const [costKpiEntry, setCostKpiEntry] = useState<CostKpiSection | null>(null);
   const [costToolFilter, setCostToolFilter] = useState<string | undefined>(undefined);
-
-  // CONSTELLATION navigation state — set by SessionCard chip clicks.
-  const [constellationHighlightClusterId, setConstellationHighlightClusterId] = useState<
-    string | null
-  >(null);
-  // AC20: the originating session's id, so the cluster card can mark
-  // which of its member <li>s was the one the user came from.
-  const [constellationOriginSessionId, setConstellationOriginSessionId] = useState<string | null>(
-    null,
-  );
-  const [zombieFilterActive, setZombieFilterActive] = useState(false);
 
   const listScrollY = useRef(0);
   const tier = useViewportTier();
@@ -1782,17 +1770,6 @@ export function ChatArchViewer({
     window.setTimeout(() => setCostKpiEntry(null), 2000);
   };
 
-  // DUP chip click → CONSTELLATION with cluster highlighted + auto-scroll
-  // to the originating session row (AC20).
-  const onDuplicateChipClick = (clusterId: string, sessionId: string) => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(clusterId);
-    setConstellationOriginSessionId(sessionId);
-    setZombieFilterActive(false);
-    setMode('constellation');
-  };
-
   // Kick off a rescan. On success we bust the manifest cache with a
   // `?t=` query param so the viewer re-fetches the freshly-written
   // `manifest.json` (and analysis sidecars) rather than using whatever
@@ -1900,40 +1877,12 @@ export function ChatArchViewer({
   // sessions, with the breakdown also threaded into the activity log
   // and a TopBar `RESCAN: +N` chip.
 
-  // ZOMBIE chip click → CONSTELLATION filtered to zombie projects.
-  const onZombieChipClick = () => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(null);
-    setConstellationOriginSessionId(null);
-    setZombieFilterActive(true);
-    setMode('constellation');
-  };
-
   // --- Upper-panel ANALYSIS tab navigation handlers (redesign Phase 2) ---
   //
-  // The card triplet on the ANALYSIS tab (RE-ASKED / ZOMBIES / TOPICS)
-  // deep-links to the constellation mode. Duplicates land the user at
-  // the merged-cluster grid; zombies land them with the zombie filter on;
-  // topics land them in command mode where the emergent-topic pills are
-  // the primary surface — there's no "topics mode", only the emergent
-  // pill row that promotes a topic into a filter.
-  const onOpenDupAnalysis = () => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(null);
-    setConstellationOriginSessionId(null);
-    setZombieFilterActive(false);
-    setMode('constellation');
-  };
-  const onOpenZombieAnalysis = () => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(null);
-    setConstellationOriginSessionId(null);
-    setZombieFilterActive(true);
-    setMode('constellation');
-  };
+  // Phase 3 cut the constellation surface, so the dup/zombie cards no
+  // longer have a deep-link target. The cards still render their counts
+  // (informational), but clicking is a no-op — those navigation paths
+  // were removed alongside ConstellationMode.
   // LABELS / TOPICS card clicks land the user in command mode, where
   // the FilterBar's project-pill and emergent-topic-pill rows live.
   // To make the navigation visually unmistakable (especially when the
@@ -2138,10 +2087,7 @@ export function ChatArchViewer({
   );
 
   // v2 spec §6: location chip in the TopBar mirrors the active surface.
-  // Mode → label mapping is intentionally local to the chrome — the
-  // mode ids (`constellation`, `cost`) carry historical names that
-  // don't match the user-facing surface labels (ANALYSIS, COST). This
-  // is the same naming that `Sidebar` uses, kept in sync by hand.
+  // This is the same naming that `Sidebar` uses, kept in sync by hand.
   const LOCATION_LABEL: Record<Mode, string> = {
     command: 'SESSIONS',
     // v2 D6a: TIMELINE is an in-surface view toggle now; this entry is
@@ -2149,7 +2095,6 @@ export function ChatArchViewer({
     // sidebar can't navigate here anymore.
     timeline: 'SESSIONS · TIMELINE',
     detail: 'DETAIL',
-    constellation: 'ANALYSIS',
     cost: 'COST',
     projects: 'PROJECTS',
     topics: 'TOPICS',
@@ -2313,12 +2258,6 @@ export function ChatArchViewer({
                 setCostKpiEntry(null);
                 setCostToolFilter(undefined);
               }
-              // Direct-nav to CONSTELLATION clears chip nav state.
-              if (m === 'constellation') {
-                setConstellationHighlightClusterId(null);
-                setConstellationOriginSessionId(null);
-                setZombieFilterActive(false);
-              }
               // v2 §5.1: PROJECTS uses its own hash so deep-links round
               // trip cleanly. Sidebar click → push #projects (index).
               if (m === 'projects') {
@@ -2380,8 +2319,6 @@ export function ChatArchViewer({
                 ? { onAnalyzeSemantic: () => void runSemanticAnalysis(uploadedData) }
                 : {})}
               analysisCounts={analysisCounts}
-              onOpenDupAnalysis={onOpenDupAnalysis}
-              onOpenZombieAnalysis={onOpenZombieAnalysis}
               onOpenTopicAnalysis={onOpenTopicAnalysis}
               onOpenLabelsAnalysis={onOpenLabelsAnalysis}
             />
@@ -2482,23 +2419,10 @@ export function ChatArchViewer({
                           semanticSessionIds={semanticSessionIds}
                           topicsBySession={sessionV2Index.topicsBySession}
                           narrativesBySession={sessionV2Index.narrativesBySession}
-                          onDuplicateChipClick={onDuplicateChipClick}
-                          onZombieChipClick={onZombieChipClick}
                         />
                       )
                     ) : baseMode === 'timeline' ? (
                       <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
-                    ) : baseMode === 'constellation' ? (
-                      <ConstellationMode
-                        sessions={activeManifest.sessions}
-                        mergedClusters={mergedClusters}
-                        zombieProjects={zombieProjects}
-                        tierFiles={analysisState.tierFiles}
-                        highlightClusterId={constellationHighlightClusterId}
-                        highlightOriginSessionId={constellationOriginSessionId}
-                        zombieFilterActive={zombieFilterActive}
-                        onSelect={onSelect}
-                      />
                     ) : baseMode === 'cost' ? (
                       <CostMode
                         sessions={filteredSorted}
