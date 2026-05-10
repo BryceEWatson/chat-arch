@@ -650,22 +650,39 @@ export function ChatArchViewer({
   // (the loaders swallow 404 / network / parse errors) so this never
   // blocks viewer startup. Loaded in parallel so the reroute decision
   // doesn't wait for two serial round trips.
+  //
+  // Phase 4 — when an uploadedData payload carries inline `corrections`
+  // / `appliedImprovements` (the demo path bundles them so the workshop
+  // loop is visible on the hosted demo without a back-end mining pass),
+  // those take precedence over the on-disk fetch. The `dataRoot` fetch
+  // still runs as a fallback so a re-mine on a local-dev install
+  // overwrites the demo data on next reload.
   useEffect(() => {
     let cancelled = false;
-    loadAppliedImprovementsFile(dataRoot).then((f) => {
-      if (cancelled) return;
-      setAppliedImprovements(f);
+    if (uploadedData?.appliedImprovements) {
+      setAppliedImprovements(uploadedData.appliedImprovements);
       setAppliedHydrated(true);
-    });
-    loadCorrectionsFile(dataRoot).then((f) => {
-      if (cancelled) return;
-      setCorrectionsRoute(f);
+    } else {
+      loadAppliedImprovementsFile(dataRoot).then((f) => {
+        if (cancelled) return;
+        setAppliedImprovements(f);
+        setAppliedHydrated(true);
+      });
+    }
+    if (uploadedData?.corrections) {
+      setCorrectionsRoute(uploadedData.corrections);
       setCorrectionsRouteHydrated(true);
-    });
+    } else {
+      loadCorrectionsFile(dataRoot).then((f) => {
+        if (cancelled) return;
+        setCorrectionsRoute(f);
+        setCorrectionsRouteHydrated(true);
+      });
+    }
     return () => {
       cancelled = true;
     };
-  }, [dataRoot]);
+  }, [dataRoot, uploadedData]);
 
   // --- Phase 2a: default-mode reroute ---
   // When the corpus has *anything* to act on (any APPLY ledger entry
@@ -1693,6 +1710,29 @@ export function ChatArchViewer({
   const onLoadDemo = () => {
     const data = generateDemoUpload();
     onUpload(data);
+    // Phase 4 — Priya's finding. The persistent rescan-delta chip
+    // never appears on the demo path because `setRescanDelta` only
+    // fires inside the `/api/rescan` success branch. The demo
+    // fixture pre-populates a synthesized delta; surface it so the
+    // chip lights up like a real rescan would.
+    if (data.synthesizedRescanDelta) {
+      setRescanDelta(data.synthesizedRescanDelta);
+    }
+    // Default-mode reroute — the regular reroute effect only fires
+    // once at mount, so a demo load that arrives later won't trip it
+    // even though we now have classified patterns. Set the mode
+    // explicitly so the user lands in the workshop loop. We don't
+    // override an active hash (deep-link wins) or a non-default mode
+    // (don't yank the user mid-task).
+    if (
+      mode === 'command' &&
+      typeof window !== 'undefined' &&
+      !window.location.hash &&
+      data.corrections &&
+      data.corrections.patterns.length > 0
+    ) {
+      setMode('corrections');
+    }
     // The empty-state layout is short; the populated layout is long
     // (sparkline + filter bar + 97-card grid). When the DOM swaps the
     // browser can preserve the user's vertical scroll position, which
@@ -2134,14 +2174,17 @@ export function ChatArchViewer({
   // applied fixtures so the loop is visible on hosted demo. Local-dev
   // builds (rescanCtl.available === true) keep the entry regardless,
   // since the user can mine to populate it.
-  // Phase 4.3 will add `uploadedData.corrections` for the demo
-  // fixture path so demo visitors get the workshop loop visibly. For
-  // now, this just covers the fetched corrections.json + the apply
-  // ledger; the demo branch lights up the same data via `setCorrectionsRoute`
-  // (see Phase 4.3 wiring in onUpload).
+  // The fetched / loaded route covers both the on-disk corrections.json
+  // and the demo fixture path (the hydration effect promotes
+  // `uploadedData.corrections` into `correctionsRoute` when the demo
+  // fixture is loaded). Including `uploadedData.corrections` directly
+  // here closes the brief window between upload and hydration so
+  // first paint already has a populated sidebar entry.
   const hasCorrectionsData =
     (correctionsRoute?.patterns?.length ?? 0) > 0 ||
-    (appliedImprovements?.entries?.length ?? 0) > 0;
+    (appliedImprovements?.entries?.length ?? 0) > 0 ||
+    (uploadedData?.corrections?.patterns?.length ?? 0) > 0 ||
+    (uploadedData?.appliedImprovements?.entries?.length ?? 0) > 0;
   const correctionsAvailable = hasCorrectionsData || rescanCtl.available;
 
   return (
@@ -2501,6 +2544,18 @@ export function ChatArchViewer({
                         manifestGeneratedAt={manifest?.generatedAt ?? null}
                         rescanAvailable={rescanCtl.available}
                         onRefreshIndex={() => void onRescan()}
+                        // Phase 4 — when the demo fixture bundles
+                        // corrections + applied inline, prefer them
+                        // over the network fetch so the workshop loop
+                        // is visible on the hosted demo path. Both
+                        // arrive together (or both undefined for the
+                        // real-upload / no-data paths).
+                        {...(uploadedData?.corrections
+                          ? { overrideCorrections: uploadedData.corrections }
+                          : {})}
+                        {...(uploadedData?.appliedImprovements
+                          ? { overrideApplied: uploadedData.appliedImprovements }
+                          : {})}
                         onSelectSession={(id) => {
                           // Stash the source mode so BACK restores
                           // CORRECTIONS instead of falling to SESSIONS

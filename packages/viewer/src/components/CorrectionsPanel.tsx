@@ -62,6 +62,18 @@ export interface CorrectionsPanelProps {
    * `onRefreshIndex` is somehow defined.
    */
   rescanAvailable?: boolean;
+  /**
+   * Phase 4 — when the host has loaded a demo fixture that ships its
+   * own corrections + applied-improvements inline (see
+   * `generateDemoUpload`), pass them here so the panel skips the
+   * disk-fetch path and renders the demo data directly. The merge
+   * over the apply ledger still runs so RECURRING vs ENCODED vs NEW
+   * bucket placement matches what the production fetch path would
+   * produce. Both default to `undefined`, in which case the panel
+   * fetches from `dataDirBaseUrl` as before.
+   */
+  overrideCorrections?: CorrectionsFile | null;
+  overrideApplied?: AppliedImprovementsFile | null;
 }
 
 type LoadState =
@@ -158,6 +170,8 @@ export function CorrectionsPanel({
   manifestGeneratedAt = null,
   onRefreshIndex,
   rescanAvailable = false,
+  overrideCorrections,
+  overrideApplied,
 }: CorrectionsPanelProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   // Phase 2b: which pattern (if any) the AppliedImprovementsSummary
@@ -221,10 +235,19 @@ export function CorrectionsPanel({
   const refresh = useCallback(async () => {
     setLoad({ status: 'loading' });
     try {
+      // Phase 4 — when an override is supplied (demo path) skip the
+      // network fetch for that slot. Candidates have no demo
+      // counterpart and aren't user-visible at the demo path, so the
+      // candidates loader just resolves to whatever's on disk (null
+      // on hosted = no recall surface, fine).
       const [rawCorrections, candidates, applied] = await Promise.all([
-        loadCorrectionsFile(dataDirBaseUrl),
+        overrideCorrections !== undefined
+          ? Promise.resolve(overrideCorrections)
+          : loadCorrectionsFile(dataDirBaseUrl),
         loadCorrectionCandidatesFile(dataDirBaseUrl),
-        loadAppliedImprovementsFile(dataDirBaseUrl),
+        overrideApplied !== undefined
+          ? Promise.resolve(overrideApplied)
+          : loadAppliedImprovementsFile(dataDirBaseUrl),
       ]);
       if (!aliveRef.current) return;
       // Merge the apply ledger over the canonical mining-pipeline
@@ -243,7 +266,7 @@ export function CorrectionsPanel({
         message: err instanceof Error ? err.message : String(err),
       });
     }
-  }, [dataDirBaseUrl, refreshAutoWindow]);
+  }, [dataDirBaseUrl, refreshAutoWindow, overrideCorrections, overrideApplied]);
 
   useEffect(() => {
     void refresh();

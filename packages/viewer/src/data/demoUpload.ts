@@ -1,4 +1,14 @@
-import type { CloudConversation, CloudMessage, CloudProject } from '@chat-arch/schema';
+import type {
+  AppliedImprovement,
+  AppliedImprovementsFile,
+  CloudConversation,
+  CloudMessage,
+  CloudProject,
+  Correction,
+  CorrectionPattern,
+  CorrectionsFile,
+  ProposedUpgrade,
+} from '@chat-arch/schema';
 import { buildCloudEntries } from '@chat-arch/analysis';
 import type { UploadedCloudData } from '../types.js';
 
@@ -281,6 +291,510 @@ const SUMMARY_TEMPLATES: readonly string[] = [
   '',
 ];
 
+// ---------- demo corrections + applied-improvements -----------------------
+//
+// Phase 4 — hosted refocus. The chat-arch.dev demo path needs to render
+// the workshop loop visibly: clustered correction patterns, a couple of
+// "you patched this" entries, and a "still failing after the patch" red
+// chip. Without this fixture, a hosted visitor on the LOAD DEMO DATA
+// path sees the SESSIONS grid and a CORRECTIONS surface that's a
+// blank panel — defeating the purpose of the demo. Persona finding
+// (Priya) was that the existing demo was a half-product on the most
+// important surface.
+//
+// Author rules:
+//   - Plausible but ESL-clean. No swearing, no real company names, no
+//     PII. Match the existing demo prompt voice (mid-skill SaaS dev).
+//   - Each pattern needs ≥3 instances pulled from real demo session
+//     IDs so instance-pill clickthrough lands in a coherent
+//     conversation. We use the deterministic session-id sequence
+//     produced by `generateDemoUpload` (`demo-conv-XXX`) — the
+//     duplicate clusters (5) then Bluefin (12) then Prism (10) etc.
+//   - Spread across the three buckets so the CorrectionsPanel
+//     `BUCKET_DEFS` matcher fires for each category.
+//
+// The demo session IDs referenced here are stable per
+// `generateDemoUpload`'s synthesis order. If the project seeds change,
+// these IDs need to be re-pinned (or the demo corrections won't
+// drill-in cleanly). Tests assert the linkage.
+
+/** Stable session ids matching the demoUpload synthesis order. */
+const DEMO_SESSION_IDS = {
+  // Bluefin Mobile starts at 005 (after 5 duplicate-cluster entries).
+  bluefin: ['demo-conv-005', 'demo-conv-006', 'demo-conv-007'] as const,
+  // Prism Highlight starts at 017.
+  prism: ['demo-conv-017', 'demo-conv-018', 'demo-conv-019'] as const,
+  // Ledger Dashboard starts at 027.
+  ledger: ['demo-conv-027', 'demo-conv-028', 'demo-conv-029'] as const,
+  // Relay Rebuild starts at 035.
+  relay: ['demo-conv-035', 'demo-conv-036', 'demo-conv-037'] as const,
+  // SingleHop Pipeline starts at 042.
+  singlehop: ['demo-conv-042', 'demo-conv-043', 'demo-conv-044'] as const,
+} as const;
+
+/** Build a stable Correction object for the demo fixture. */
+function demoCorrection(
+  id: string,
+  sessionId: string,
+  userTurnIndex: number,
+  excerpt: string,
+  precedingAssistantExcerpt: string | null,
+  distilledRule: string,
+): Correction {
+  return {
+    id,
+    sessionId,
+    userTurnIndex,
+    excerpt,
+    precedingAssistantExcerpt,
+    signals: [
+      { kind: 'imperative-override', phrase: excerpt.slice(0, 64) },
+    ],
+    classification: {
+      kind: 'behavior-rule',
+      distilledRule,
+      confidence: 0.86,
+      actionable: true,
+    },
+  };
+}
+
+/** Build the demo corrections + applied-improvements pair. */
+function buildDemoCorrections(now: number): {
+  corrections: CorrectionsFile;
+  applied: AppliedImprovementsFile;
+} {
+  const DAY_LOCAL = 86_400_000;
+
+  // ---- Pattern 1 (recurring-after-applied — RED) ------------------------
+  //
+  // 30-day-old apply that's still failing — proves the loop visually.
+  // Distilled rule: "use absolute paths in Bash tool calls."
+  const p1Instances: Correction[] = [
+    demoCorrection(
+      'demo-corr-001',
+      DEMO_SESSION_IDS.bluefin[0],
+      4,
+      'no, use absolute paths — never `cd <dir> && command`. We just talked about this last week.',
+      'I will run `cd packages/viewer && pnpm test`...',
+      'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
+    ),
+    demoCorrection(
+      'demo-corr-002',
+      DEMO_SESSION_IDS.bluefin[1],
+      6,
+      'absolute paths. ABSOLUTE PATHS. why is this so hard',
+      'Running `cd src && tsc --noEmit`...',
+      'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
+    ),
+    demoCorrection(
+      'demo-corr-003',
+      DEMO_SESSION_IDS.relay[0],
+      3,
+      'stop using cd. use the full path.',
+      'Let me cd into the project root and run the build...',
+      'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
+    ),
+    demoCorrection(
+      'demo-corr-004',
+      DEMO_SESSION_IDS.relay[1],
+      8,
+      'absolute paths only — last reminder before I add a hook.',
+      'I will `cd apps/standalone && pnpm dev`...',
+      'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
+    ),
+  ];
+
+  // ---- Pattern 2 (recurring-after-applied — RED, second instance) ------
+  // 7-day-old apply, also already failing.
+  const p2Instances: Correction[] = [
+    demoCorrection(
+      'demo-corr-010',
+      DEMO_SESSION_IDS.prism[0],
+      2,
+      'do not add docstrings unless I ask. you keep doing this.',
+      'I will add a comprehensive docstring explaining the function...',
+      'Do not add docstrings unless explicitly asked.',
+    ),
+    demoCorrection(
+      'demo-corr-011',
+      DEMO_SESSION_IDS.prism[1],
+      5,
+      'no docstrings. I told you.',
+      'Adding JSDoc for the helper...',
+      'Do not add docstrings unless explicitly asked.',
+    ),
+    demoCorrection(
+      'demo-corr-012',
+      DEMO_SESSION_IDS.ledger[0],
+      4,
+      'remove the docstring. docstring rule applies here too.',
+      'I added a brief JSDoc comment for clarity...',
+      'Do not add docstrings unless explicitly asked.',
+    ),
+  ];
+
+  // ---- Pattern 3 (already-encoded — YELLOW) ----------------------------
+  // Rule exists, model still violates it, but no formal apply log entry.
+  const p3Instances: Correction[] = [
+    demoCorrection(
+      'demo-corr-020',
+      DEMO_SESSION_IDS.ledger[1],
+      3,
+      'use ripgrep, not grep. the rule says so.',
+      'Running `grep -r "TODO" .`...',
+      'Use ripgrep (rg) instead of grep for content search.',
+    ),
+    demoCorrection(
+      'demo-corr-021',
+      DEMO_SESSION_IDS.ledger[2],
+      6,
+      'rg. always rg. CLAUDE.md is right there.',
+      'Let me grep for the import...',
+      'Use ripgrep (rg) instead of grep for content search.',
+    ),
+    demoCorrection(
+      'demo-corr-022',
+      DEMO_SESSION_IDS.singlehop[0],
+      2,
+      'why are you still using grep',
+      'I will grep through the source for that pattern...',
+      'Use ripgrep (rg) instead of grep for content search.',
+    ),
+  ];
+
+  // ---- Pattern 4 (already-encoded — YELLOW, second instance) -----------
+  const p4Instances: Correction[] = [
+    demoCorrection(
+      'demo-corr-030',
+      DEMO_SESSION_IDS.bluefin[2],
+      5,
+      'no console.log. you literally have a rule about this.',
+      'Adding a console.log to verify the value...',
+      'Do not add console.log / print statements; remove debug output before responding.',
+    ),
+    demoCorrection(
+      'demo-corr-031',
+      DEMO_SESSION_IDS.singlehop[1],
+      7,
+      'remove the print() — debug code stays out of the patch.',
+      'I added a print() to inspect the dictionary...',
+      'Do not add console.log / print statements; remove debug output before responding.',
+    ),
+    demoCorrection(
+      'demo-corr-032',
+      DEMO_SESSION_IDS.singlehop[2],
+      4,
+      'CLAUDE.md says no debug output. clean it up.',
+      'Quick `console.log(state)` to verify...',
+      'Do not add console.log / print statements; remove debug output before responding.',
+    ),
+  ];
+
+  // ---- Pattern 5 (new-pattern — neutral candidate) ---------------------
+  const p5Instances: Correction[] = [
+    demoCorrection(
+      'demo-corr-040',
+      DEMO_SESSION_IDS.relay[2],
+      3,
+      'tests first, then implementation. always.',
+      'Let me write the implementation, then add a test for it...',
+      'Test-first: write the failing test before the implementation.',
+    ),
+    demoCorrection(
+      'demo-corr-041',
+      DEMO_SESSION_IDS.prism[2],
+      6,
+      'I keep saying this — write the test first.',
+      'Implementing the feature now, will add a unit test after...',
+      'Test-first: write the failing test before the implementation.',
+    ),
+    demoCorrection(
+      'demo-corr-042',
+      DEMO_SESSION_IDS.ledger[0],
+      8,
+      'failing test first. that is the whole workflow.',
+      'Drafted the function — should I add tests next?',
+      'Test-first: write the failing test before the implementation.',
+    ),
+    demoCorrection(
+      'demo-corr-043',
+      DEMO_SESSION_IDS.bluefin[0],
+      9,
+      'red-green-refactor. we have talked about this.',
+      'I will implement the change and verify by running existing tests...',
+      'Test-first: write the failing test before the implementation.',
+    ),
+  ];
+
+  // ---- Pattern 6 (new-pattern — neutral candidate) ---------------------
+  const p6Instances: Correction[] = [
+    demoCorrection(
+      'demo-corr-050',
+      DEMO_SESSION_IDS.singlehop[0],
+      4,
+      'commit messages: lowercase verb-first, no period. we use conventional commits.',
+      'Suggesting commit message: "Updated the parser logic."',
+      'Commit messages: conventional-commits format, lowercase verb-first, no trailing period.',
+    ),
+    demoCorrection(
+      'demo-corr-051',
+      DEMO_SESSION_IDS.relay[0],
+      6,
+      'no period at the end of the commit subject',
+      'How about: "fix: corrected the off-by-one error."',
+      'Commit messages: conventional-commits format, lowercase verb-first, no trailing period.',
+    ),
+    demoCorrection(
+      'demo-corr-052',
+      DEMO_SESSION_IDS.bluefin[1],
+      11,
+      'subject line ≤72 chars and lowercase. you keep doing title case.',
+      'Suggested subject: "Fix Sync Conflict In CloudKit Schema"',
+      'Commit messages: conventional-commits format, lowercase verb-first, no trailing period.',
+    ),
+  ];
+
+  // ---- Proposed upgrades --------------------------------------------------
+  //
+  // ProposedUpgrade requires: target, targetPath, patch, rationale,
+  // applied, appliedAt. The `applied` flag and `appliedAt` are the
+  // ledger's job — corrections.json itself stores them as `false /
+  // null` (the merge layer flips them at read time).
+  const upgrade = (
+    target: ProposedUpgrade['target'],
+    targetPath: string,
+    patch: string,
+    rationale: string,
+  ): ProposedUpgrade => ({
+    target,
+    targetPath,
+    patch,
+    rationale,
+    applied: false,
+    appliedAt: null,
+  });
+
+  const p1Upgrades: readonly ProposedUpgrade[] = [
+    upgrade(
+      'global-claude-md',
+      '~/.claude/CLAUDE.md',
+      '## Bash Tool Use\n- Always pass absolute paths to the Bash tool. Never chain `cd <dir> && command` — the working directory resets between calls.',
+      'Recurs across 4 sessions, 3 projects. Path-prefix problem; canonical fix is a global rule under Bash usage.',
+    ),
+    upgrade(
+      'settings-hook',
+      'settings.json :: hooks.PreToolUse',
+      '{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "node scripts/reject-cd-chain.js" }] }',
+      'Soft rule was already shipped (see applied-improvements ledger) and the model still violates it. Promote to a hook so the violation is rejected before it executes.',
+    ),
+  ];
+
+  const p2Upgrades: readonly ProposedUpgrade[] = [
+    upgrade(
+      'global-claude-md',
+      '~/.claude/CLAUDE.md',
+      '## Documentation\n- Do not add docstrings, JSDoc, or inline comments unless the user explicitly asks for them. Removing unrequested documentation is part of the cleanup pass.',
+      'Recurs across 3 sessions; existing rule is too soft ("clean code") and the model defaults to documenting.',
+    ),
+  ];
+
+  const p3Upgrades: readonly ProposedUpgrade[] = [
+    upgrade(
+      'project-claude-md',
+      '<repo>/CLAUDE.md',
+      '## Search Conventions\n- Use `rg` (ripgrep), not `grep`, for content search. The repo is a pnpm monorepo — `rg` is configured to skip `node_modules`/`dist` automatically.',
+      'Already-encoded under "Tooling" but the model bypasses it. Move to a top-level Search Conventions section so it lands in the model\'s default attention.',
+    ),
+    upgrade(
+      'prompt-snippet',
+      '(reusable, no fixed path)',
+      'When searching: prefer `rg <pattern>` over `grep -r`. `rg` is faster, respects `.gitignore`, and is the project default.',
+      'Reusable snippet for direct paste into a fresh conversation when the rule is being violated mid-task.',
+    ),
+  ];
+
+  const p4Upgrades: readonly ProposedUpgrade[] = [
+    upgrade(
+      'global-claude-md',
+      '~/.claude/CLAUDE.md',
+      '## Quality Gates\n- Remove all debug output (`console.log`, `print`, `dbg!`) before presenting a patch. Debug statements are scaffolding, not deliverable code.',
+      'Encoded under Quality Gates; recurs because the rule is buried mid-list. Promote it or split Quality Gates into two sections (security + cleanup).',
+    ),
+  ];
+
+  const p5Upgrades: readonly ProposedUpgrade[] = [
+    upgrade(
+      'global-claude-md',
+      '~/.claude/CLAUDE.md',
+      '## Workflow\n- Test-first: when adding behavior, write the failing test before the implementation. Show the failing test output, then the implementation, then the passing test.',
+      'No matching rule found. Recurs across 4 sessions and projects — strong candidate for a new global directive.',
+    ),
+    upgrade(
+      'skill',
+      '~/.claude/skills/test-first/SKILL.md',
+      '# test-first\n\nWhen the user asks for a new function / endpoint / component, default to:\n1. Draft the failing test.\n2. Run it (show red).\n3. Implement minimal code to pass.\n4. Run tests (show green).\n5. Refactor if needed.',
+      'Workflow rule with a clear procedure — packageable as a skill so it triggers automatically on "add a function" requests.',
+    ),
+  ];
+
+  const p6Upgrades: readonly ProposedUpgrade[] = [
+    upgrade(
+      'project-claude-md',
+      '<repo>/CLAUDE.md',
+      '## Git Conventions\n- Commit messages: conventional-commits format. Subject line is ≤72 chars, lowercase verb-first, no trailing period. Example: `fix: drop trailing period from commit subjects`.',
+      'No matching rule in the project file; format expectations live only in PR descriptions. Encode as a Git Conventions section so the model picks it up at commit-suggestion time.',
+    ),
+  ];
+
+  // ---- Patterns -----------------------------------------------------------
+  const sevenDaysAgo = now - 7 * DAY_LOCAL;
+  const thirtyDaysAgo = now - 30 * DAY_LOCAL;
+
+  const pattern = (
+    id: string,
+    canonicalRule: string,
+    instances: Correction[],
+    upgrades: readonly ProposedUpgrade[],
+    confidence: number,
+    recurringPostApplication: boolean,
+    alreadyEncoded: boolean,
+    scopeKind: 'global' | 'project' | 'tool' | 'request-shape' = 'global',
+  ): CorrectionPattern => ({
+    id,
+    canonicalRule,
+    instanceIds: instances.map((c) => c.id),
+    occurrenceCount: instances.length,
+    firstSeen: now - 60 * DAY_LOCAL,
+    lastSeen: now - 1 * DAY_LOCAL,
+    scope: { kind: scopeKind },
+    proposedUpgrades: upgrades,
+    confidence,
+    recurringPostApplication,
+    alreadyEncoded,
+  });
+
+  const patterns: CorrectionPattern[] = [
+    // RED — recurring after applied
+    pattern(
+      'demo-pat-1',
+      'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
+      p1Instances,
+      p1Upgrades,
+      0.92,
+      true,
+      true,
+    ),
+    pattern(
+      'demo-pat-2',
+      'Do not add docstrings unless explicitly asked.',
+      p2Instances,
+      p2Upgrades,
+      0.81,
+      true,
+      false,
+    ),
+    // YELLOW — already encoded but failing
+    pattern(
+      'demo-pat-3',
+      'Use ripgrep (rg) instead of grep for content search.',
+      p3Instances,
+      p3Upgrades,
+      0.78,
+      false,
+      true,
+      'tool',
+    ),
+    pattern(
+      'demo-pat-4',
+      'Do not add console.log / print statements; remove debug output before responding.',
+      p4Instances,
+      p4Upgrades,
+      0.74,
+      false,
+      true,
+    ),
+    // NEW — candidates to encode
+    pattern(
+      'demo-pat-5',
+      'Test-first: write the failing test before the implementation.',
+      p5Instances,
+      p5Upgrades,
+      0.69,
+      false,
+      false,
+      'request-shape',
+    ),
+    pattern(
+      'demo-pat-6',
+      'Commit messages: conventional-commits format, lowercase verb-first, no trailing period.',
+      p6Instances,
+      p6Upgrades,
+      0.66,
+      false,
+      false,
+      'project',
+    ),
+  ];
+
+  const allCorrections: Correction[] = [
+    ...p1Instances,
+    ...p2Instances,
+    ...p3Instances,
+    ...p4Instances,
+    ...p5Instances,
+    ...p6Instances,
+  ];
+
+  const corrections: CorrectionsFile = {
+    generatedAt: now,
+    corrections: allCorrections,
+    patterns,
+    pipeline: {
+      heuristicRecall: true,
+      llmClassification: true,
+      embeddingClustering: true,
+      claudeMdCrossCheck: true,
+    },
+  };
+
+  // ---- Applied-improvements ledger ---------------------------------------
+  //
+  // Two entries: the 30-day-old apply lines up with pattern 1 (which is
+  // currently in the recurring-after-applied bucket — proves the
+  // loop's "you patched but it's still failing" signal). The 7-day-old
+  // apply matches pattern 2 (also recurring after a more recent
+  // attempt). Both use the canonical (target, targetPath) tuple from
+  // the matching pattern's first ProposedUpgrade so the merge layer
+  // flips `applied / appliedAt` correctly.
+  const applied: AppliedImprovementsFile = {
+    schemaVersion: 1,
+    generatedAt: now,
+    entries: [
+      {
+        id: 'demo-applied-1',
+        patternId: 'demo-pat-1',
+        appliedAt: thirtyDaysAgo,
+        ruleSummary: patterns[0]!.canonicalRule,
+        proposedUpgrade: { ...p1Upgrades[0]!, applied: true, appliedAt: thirtyDaysAgo },
+        targetFiles: ['~/.claude/CLAUDE.md'],
+        notes: 'Added Bash Tool Use section; soft rule.',
+      },
+      {
+        id: 'demo-applied-2',
+        patternId: 'demo-pat-2',
+        appliedAt: sevenDaysAgo,
+        ruleSummary: patterns[1]!.canonicalRule,
+        proposedUpgrade: { ...p2Upgrades[0]!, applied: true, appliedAt: sevenDaysAgo },
+        targetFiles: ['~/.claude/CLAUDE.md'],
+        notes: 'Tightened Documentation section to forbid unrequested docstrings.',
+      },
+    ],
+  };
+
+  return { corrections, applied };
+}
+
 // ---------- synthesis ------------------------------------------------------
 
 function isoFromMs(ms: number): string {
@@ -473,6 +987,12 @@ export function generateDemoUpload(): UploadedCloudData {
     return entry;
   });
 
+  // Phase 4 — demo corrections + applied-improvements + synthesized
+  // rescan delta. Bundled inline so the workshop loop is visible on
+  // the hosted demo path without requiring a back-end mining pass.
+  // See `buildDemoCorrections` for shape rationale.
+  const { corrections, applied } = buildDemoCorrections(now);
+
   return {
     manifest: {
       schemaVersion: 3,
@@ -493,5 +1013,17 @@ export function generateDemoUpload(): UploadedCloudData {
     // shift per load so the sparkline tracks "today"; everything else
     // is literal strings from source.
     sourceLabel: `DEMO DATA · ${enriched.length} fake conversations (bundled fixture)`,
+    corrections,
+    appliedImprovements: applied,
+    // Synthesized so the persistent rescan-delta chip lights up on
+    // demo load (Priya's finding: the chip never appears on the demo
+    // path because `setRescanDelta` only fires inside the /api/rescan
+    // success branch). Numbers are plausible for a small corpus.
+    synthesizedRescanDelta: {
+      totalLocal: 12,
+      cowork: 4,
+      cli: 6,
+      desktop: 2,
+    },
   };
 }
