@@ -104,9 +104,9 @@ describe('ChatArchViewer — Phase 4 demo-path workshop loop', () => {
     };
     render(<ChatArchViewer manifest={truly} />);
 
-    // The empty-state landing renders LOAD DEMO DATA (showCloudUpload
-    // is false on hosted, so CHOOSE ZIP is hidden but the demo button
-    // remains).
+    // The empty-state landing renders LOAD DEMO DATA. On hosted
+    // (showInstallLocally=true) CHOOSE ZIP is demoted to secondary
+    // styling but still functional; the demo button remains.
     const demoBtn = await screen.findByRole('button', { name: /load demo data/i });
     fireEvent.click(demoBtn);
 

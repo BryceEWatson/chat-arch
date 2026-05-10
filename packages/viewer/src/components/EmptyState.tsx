@@ -17,12 +17,12 @@ export interface EmptyStateProps {
    */
   onLoadDemo?: () => void;
   /**
-   * Phase 4 hosted refocus. When `false`, the UploadPanel hides its
-   * CHOOSE ZIP affordance and renders an INSTALL LOCALLY link
-   * instead. Defaults to `true` so existing local-dev callers keep
-   * the cloud-zip path. The host should pass `rescanCtl.available`.
+   * Hosted-build affordance — when `true`, the UploadPanel surfaces an
+   * INSTALL LOCALLY link as the primary action and demotes CHOOSE ZIP
+   * to a secondary outlined button. Defaults to `false` (CHOOSE ZIP
+   * primary, no install link). The host passes `!rescanLikelyLocal`.
    */
-  showCloudUpload?: boolean;
+  showInstallLocally?: boolean;
 }
 
 export function EmptyState({
@@ -30,7 +30,7 @@ export function EmptyState({
   message = 'Run pnpm --filter @chat-arch/exporter start to produce a manifest.',
   onUpload,
   onLoadDemo,
-  showCloudUpload = true,
+  showInstallLocally = false,
 }: EmptyStateProps) {
   return (
     <section className="lcars-empty-state" role="status" aria-live="polite">
@@ -42,7 +42,7 @@ export function EmptyState({
           <UploadPanel
             onLoaded={onUpload}
             variant="prominent"
-            showCloudUpload={showCloudUpload}
+            showInstallLocally={showInstallLocally}
             {...(onLoadDemo ? { onLoadDemo } : {})}
           />
         </>

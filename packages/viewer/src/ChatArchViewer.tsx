@@ -2128,17 +2128,17 @@ export function ChatArchViewer({
             </section>
             <ErrorState title="NO DATA YET" detail={emptyDetail} />
             {/*
-              UploadPanel receives both the Phase 0 scan-local props
-              (so a returning local-dev user with empty manifest can
-              click SCAN LOCAL inline) AND the Phase 4 hosted-refocus
-              `showCloudUpload` flag (so hosted static builds swap
-              CHOOSE ZIP for an INSTALL LOCALLY link). The two flags
-              are not mutually exclusive: on local dev with rescan
-              available, SCAN LOCAL is primary, CHOOSE ZIP is the
-              demoted secondary, LOAD DEMO is tertiary; on hosted,
-              INSTALL LOCALLY replaces CHOOSE ZIP and SCAN LOCAL is
-              suppressed (gated by `scanAvailable` which is `false`
-              when no /api/rescan is reachable).
+              UploadPanel primary-action selection:
+                - Local dev with /api/rescan: SCAN LOCAL primary
+                  (workshop entry point), CHOOSE ZIP demoted, LOAD
+                  DEMO secondary.
+                - Hosted static build: INSTALL LOCALLY primary
+                  (workshop pitch), CHOOSE ZIP demoted, LOAD DEMO
+                  secondary. CHOOSE ZIP stays visible because the
+                  in-browser cloud-zip parse works regardless of
+                  install — only the workshop loop requires local.
+                - Local dev without scan: CHOOSE ZIP primary (only
+                  data-loading path), LOAD DEMO secondary.
             */}
             <UploadPanel
               onLoaded={onUpload}
@@ -2148,7 +2148,7 @@ export function ChatArchViewer({
               scanAvailable={rescanCtl.available === true}
               scanStatus={rescanCtl.status}
               scanProgress={rescanCtl.progress}
-              showCloudUpload={rescanLikelyLocal}
+              showInstallLocally={!rescanLikelyLocal}
             />
           </main>
         </div>
@@ -2531,7 +2531,7 @@ export function ChatArchViewer({
             >
               {activeManifest.sessions.length === 0 ? (
                 <EmptyState
-                  showCloudUpload={rescanLikelyLocal}
+                  showInstallLocally={!rescanLikelyLocal}
                   {...(uploadedData ? {} : { onUpload, onLoadDemo })}
                 />
               ) : (

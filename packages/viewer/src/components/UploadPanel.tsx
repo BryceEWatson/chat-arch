@@ -30,16 +30,16 @@ export interface UploadPanelProps {
   scanStatus?: RescanStatus;
   scanProgress?: RescanProgress;
   /**
-   * Phase 4 — hosted refocus. When `false`, the CHOOSE ZIP cloud-upload
-   * affordance is omitted and replaced by a primary "INSTALL LOCALLY"
-   * link button. The cloud-export hint copy is also suppressed in that
-   * mode. Defaults to `true` so existing local-dev callers and tests
-   * keep the previous behavior. The host should pass
-   * `rescanCtl.available` here: hosted static builds (no `/api/rescan`)
-   * become the install-locally storefront; local Astro dev keeps the
-   * cloud-zip upload path.
+   * Hosted-build affordance — when `true`, render an INSTALL LOCALLY
+   * link as the primary action and demote CHOOSE ZIP to a secondary
+   * outlined button. Cloud-only visitors can still load their ZIP
+   * (it's a fully in-browser parse), but the headline pitch is the
+   * workshop loop which requires a local install.
+   *
+   * Defaults to `false`: in local-dev `pnpm dev` the workshop is
+   * already reachable via SCAN LOCAL, so the install link is noise.
    */
-  showCloudUpload?: boolean;
+  showInstallLocally?: boolean;
   /**
    * Optional override for the INSTALL LOCALLY link target. Defaults to
    * the README quickstart anchor on GitHub. Tests may pin this to a
@@ -79,7 +79,7 @@ export function UploadPanel({
   scanAvailable,
   scanStatus = 'idle',
   scanProgress,
-  showCloudUpload = true,
+  showInstallLocally = false,
   installLocallyHref = DEFAULT_INSTALL_LOCALLY_HREF,
 }: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -138,7 +138,7 @@ export function UploadPanel({
       className={`lcars-upload-panel lcars-upload-panel--${variant}`}
       aria-label="upload cloud export"
     >
-      {variant === 'prominent' && showCloudUpload && (
+      {variant === 'prominent' && !showInstallLocally && (
         <>
           <h3 className="lcars-upload-panel__title">LOAD CLOUD EXPORT</h3>
           <p className="lcars-upload-panel__hint">
@@ -147,27 +147,46 @@ export function UploadPanel({
           </p>
         </>
       )}
-      {variant === 'prominent' && !showCloudUpload && (
+      {variant === 'prominent' && showInstallLocally && (
         <>
           {/*
-            Phase 4 hosted refocus: chat-arch.dev becomes a sales /
-            demo storefront. The workshop loop (mine → patch CLAUDE.md
-            → re-mine) requires a local Claude Code install, so a
-            cloud-only visitor can't actually finish the loop. Replace
-            the CHOOSE ZIP affordance with a clear pointer to the
-            README quickstart. LOAD DEMO DATA stays as the secondary
-            "see the UI without installing" path.
+            Hosted-build framing: chat-arch.dev demonstrates the UI on
+            sample data; the workshop loop (mine → patch CLAUDE.md →
+            re-mine) runs locally because it touches your CLAUDE.md
+            files. CHOOSE ZIP remains as a secondary path so cloud-only
+            users can still browse their archive without installing.
           */}
           <h3 className="lcars-upload-panel__title">INSTALL CHAT-ARCH LOCALLY</h3>
           <p className="lcars-upload-panel__hint">
-            Chat-arch is open source. To audit your own corpus and patch your CLAUDE.md, install it
-            on your machine — the workshop loop runs against your local Claude Code transcripts.
+            The workshop loop runs against your local Claude Code transcripts. Install chat-arch on
+            your machine to audit your own corpus and patch your CLAUDE.md — or use CHOOSE ZIP
+            below to browse a claude.ai export in your browser.
           </p>
         </>
       )}
 
       <div className="lcars-upload-panel__buttons">
-        {showCloudUpload && scanShown && (
+        {/*
+          Primary-action priority:
+            1. INSTALL LOCALLY when host signals hosted build
+            2. SCAN LOCAL when /api/rescan is reachable (local dev)
+            3. CHOOSE ZIP as the only-data-path fallback
+          The non-primary buttons render in the demoted (outlined)
+          form so the eye lands on the single recommended action.
+        */}
+        {showInstallLocally && (
+          <a
+            className="lcars-upload-panel__button"
+            href={installLocallyHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            role="button"
+            aria-label="install chat-arch locally — opens the README quickstart on GitHub"
+          >
+            INSTALL LOCALLY
+          </a>
+        )}
+        {!showInstallLocally && scanShown && (
           <button
             type="button"
             className="lcars-upload-panel__button"
@@ -180,32 +199,19 @@ export function UploadPanel({
             {scanLabel}
           </button>
         )}
-        {showCloudUpload ? (
-          <button
-            type="button"
-            className={
-              scanShown
-                ? 'lcars-upload-panel__button lcars-upload-panel__button--cloud-secondary'
-                : 'lcars-upload-panel__button'
-            }
-            onClick={openPicker}
-            disabled={state.status === 'parsing'}
-            aria-label="choose cloud export zip"
-          >
-            {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
-          </button>
-        ) : (
-          <a
-            className="lcars-upload-panel__button"
-            href={installLocallyHref}
-            target="_blank"
-            rel="noreferrer noopener"
-            role="button"
-            aria-label="install chat-arch locally — opens the README quickstart on GitHub"
-          >
-            INSTALL LOCALLY
-          </a>
-        )}
+        <button
+          type="button"
+          className={
+            showInstallLocally || scanShown
+              ? 'lcars-upload-panel__button lcars-upload-panel__button--cloud-secondary'
+              : 'lcars-upload-panel__button'
+          }
+          onClick={openPicker}
+          disabled={state.status === 'parsing'}
+          aria-label="choose cloud export zip"
+        >
+          {state.status === 'parsing' ? 'PARSING…' : 'CHOOSE ZIP'}
+        </button>
         {onLoadDemo && (
           <button
             type="button"
@@ -219,7 +225,7 @@ export function UploadPanel({
           </button>
         )}
       </div>
-      {showCloudUpload && scanShown && scanCaption && (
+      {!showInstallLocally && scanShown && scanCaption && (
         <div className="lcars-upload-panel__status" role="status" aria-live="polite">
           {scanCaption}
         </div>
@@ -231,17 +237,15 @@ export function UploadPanel({
         </p>
       )}
 
-      {showCloudUpload && (
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".zip,application/zip,application/x-zip-compressed"
-          onChange={onFileChange}
-          style={{ display: 'none' }}
-          aria-hidden="true"
-          tabIndex={-1}
-        />
-      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        onChange={onFileChange}
+        style={{ display: 'none' }}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
 
       {state.status === 'parsing' && (
         <div className="lcars-upload-panel__status" role="status" aria-live="polite">

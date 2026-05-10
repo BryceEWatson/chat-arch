@@ -159,24 +159,23 @@ describe('UploadPanel', () => {
     expect(onLoaded).not.toHaveBeenCalled();
   });
 
-  // Phase 4 — hosted refocus. When `showCloudUpload=false` the panel
-  // becomes a sales / install-locally storefront. CHOOSE ZIP is hidden
-  // entirely (the cloud-zip flow is local-Astro-only context, since
-  // the workshop loop requires patching CLAUDE.md on a real machine);
-  // an INSTALL LOCALLY link replaces it. LOAD DEMO DATA stays so the
-  // visitor can still see the UI.
-  describe('Phase 4 — hosted refocus (showCloudUpload=false)', () => {
-    it('hides CHOOSE ZIP and the cloud-export hint copy', () => {
-      render(<UploadPanel onLoaded={() => {}} showCloudUpload={false} />);
-      expect(screen.queryByRole('button', { name: /choose cloud export zip/i })).toBeNull();
-      expect(screen.queryByText(/LOAD CLOUD EXPORT/i)).toBeNull();
-      expect(screen.queryByText(/Drop a Settings → Privacy/i)).toBeNull();
+  // Hosted-build affordance: `showInstallLocally={true}` adds an
+  // INSTALL LOCALLY link as the primary action and demotes CHOOSE ZIP
+  // to a secondary outlined button. CHOOSE ZIP still works (the parse
+  // is pure-browser, so cloud-only visitors can browse their archive
+  // without installing) — the workshop loop is what requires local.
+  describe('hosted refocus (showInstallLocally=true)', () => {
+    it('keeps CHOOSE ZIP visible but renders it demoted (secondary)', () => {
+      render(<UploadPanel onLoaded={() => {}} showInstallLocally />);
+      const zip = screen.getByRole('button', { name: /choose cloud export zip/i });
+      expect(zip).toBeDefined();
+      expect(zip.className).toMatch(/--cloud-secondary/);
     });
 
-    it('renders an INSTALL LOCALLY link with the default README quickstart href', () => {
-      render(<UploadPanel onLoaded={() => {}} showCloudUpload={false} />);
+    it('renders the install-locally headline + INSTALL LOCALLY link with the default README quickstart href', () => {
+      render(<UploadPanel onLoaded={() => {}} showInstallLocally />);
+      expect(screen.getByText(/INSTALL CHAT-ARCH LOCALLY/i)).toBeDefined();
       const link = screen.getByRole('button', { name: /install chat-arch locally/i });
-      expect(link).toBeDefined();
       expect(link.tagName).toBe('A');
       expect(link.getAttribute('href')).toMatch(
         /github\.com\/BryceEWatson\/chat-arch#quickstart/,
@@ -187,7 +186,7 @@ describe('UploadPanel', () => {
       render(
         <UploadPanel
           onLoaded={() => {}}
-          showCloudUpload={false}
+          showInstallLocally
           installLocallyHref="https://example.com/install"
         />,
       );
@@ -198,16 +197,16 @@ describe('UploadPanel', () => {
     it('keeps LOAD DEMO DATA visible when onLoadDemo is provided', () => {
       const onLoadDemo = vi.fn();
       render(
-        <UploadPanel onLoaded={() => {}} showCloudUpload={false} onLoadDemo={onLoadDemo} />,
+        <UploadPanel onLoaded={() => {}} showInstallLocally onLoadDemo={onLoadDemo} />,
       );
       const demo = screen.getByRole('button', { name: /load demo data/i });
       fireEvent.click(demo);
       expect(onLoadDemo).toHaveBeenCalledTimes(1);
     });
 
-    it('does not render the hidden file input when CHOOSE ZIP is hidden', () => {
-      const { container } = render(<UploadPanel onLoaded={() => {}} showCloudUpload={false} />);
-      expect(container.querySelector('input[type=file]')).toBeNull();
+    it('keeps the hidden file input wired so CHOOSE ZIP still parses on click', () => {
+      const { container } = render(<UploadPanel onLoaded={() => {}} showInstallLocally />);
+      expect(container.querySelector('input[type=file]')).not.toBeNull();
     });
   });
 
