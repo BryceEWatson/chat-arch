@@ -99,7 +99,7 @@ describe('CorrectionsPanel', () => {
   it('renders the empty state when both fetches return null', async () => {
     mockedLoadCorrections.mockResolvedValue(null);
     mockedLoadCandidates.mockResolvedValue(null);
-    render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
       expect(screen.getByText(/No correction candidates yet/i)).toBeDefined();
     });
@@ -121,7 +121,7 @@ describe('CorrectionsPanel', () => {
         { id: 'd' } as any,
       ],
     });
-    render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
       expect(screen.getByText(/4 candidates ready to mine/i)).toBeDefined();
     });
@@ -143,7 +143,7 @@ describe('CorrectionsPanel', () => {
     ];
     mockedLoadCorrections.mockResolvedValue(file(patterns));
     mockedLoadCandidates.mockResolvedValue(null);
-    render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
       expect(screen.getByLabelText('RECURRING AFTER APPLIED')).toBeDefined();
     });
@@ -171,7 +171,7 @@ describe('CorrectionsPanel', () => {
     ];
     mockedLoadCorrections.mockResolvedValue(file(patterns));
     mockedLoadCandidates.mockResolvedValue(null);
-    render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
       expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
     });
@@ -188,7 +188,7 @@ describe('CorrectionsPanel', () => {
       file([pattern({ id: 'n1', canonicalRule: 'only a new pattern' })]),
     );
     mockedLoadCandidates.mockResolvedValue(null);
-    render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
       expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
     });
@@ -205,7 +205,7 @@ describe('CorrectionsPanel', () => {
       );
       mockedLoadCandidates.mockResolvedValue(null);
       mockedLoadApplied.mockResolvedValue(null);
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
       await waitFor(() => {
         expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
       });
@@ -241,7 +241,7 @@ describe('CorrectionsPanel', () => {
           },
         ],
       });
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
       await waitFor(() => {
         expect(screen.getByLabelText('since you patched')).toBeDefined();
       });
@@ -334,7 +334,7 @@ describe('CorrectionsPanel', () => {
           },
         ],
       });
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
       await waitFor(() => {
         const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
         expect(within(recurring).getByText('flips into recurring')).toBeDefined();
@@ -373,7 +373,7 @@ describe('CorrectionsPanel', () => {
           },
         ],
       });
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
       await waitFor(() => {
         expect(screen.getByText('already applied via ledger')).toBeDefined();
       });
@@ -387,6 +387,64 @@ describe('CorrectionsPanel', () => {
       await waitFor(() => {
         expect(screen.getByText(/APPLIED ✓/)).toBeDefined();
       });
+    });
+  });
+
+  // Phase 4 — when CorrectionsPanel renders on a hosted static build
+  // (rescanAvailable=false), the bucket header copy explicitly
+  // referencing CLAUDE.md / "ship it" is meaningless to a non-developer
+  // visitor on chat-arch.dev. Verify the reframed labels + blurbs land.
+  describe('Phase 4 — hosted demo blurbs (rescanAvailable=false)', () => {
+    it('reframes the encoded bucket label + blurb to avoid CLAUDE.md jargon', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({ id: 'e1', canonicalRule: 'demo encoded', alreadyEncoded: true }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      // No rescanAvailable → defaults to false → hosted-demo blurbs.
+      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('TOLD NOT TO, STILL DOES IT')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('TOLD NOT TO, STILL DOES IT');
+      // Multiple elements may match (the title + the blurb both
+      // contain the phrase); presence of any is enough.
+      expect(within(bucket).getAllByText(/told not to/i).length).toBeGreaterThan(0);
+      // Canonical CLAUDE.md jargon must not leak into the demo copy.
+      expect(within(bucket).queryByText(/already exists in CLAUDE\.md/i)).toBeNull();
+    });
+
+    it('reframes the recurring bucket label to "STILL FAILING AFTER A FIX"', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'r1',
+            canonicalRule: 'demo recurring',
+            recurringPostApplication: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('STILL FAILING AFTER A FIX')).toBeDefined();
+      });
+    });
+
+    it('keeps the canonical labels when rescanAvailable=true (local dev)', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({ id: 'e1', canonicalRule: 'local encoded', alreadyEncoded: true }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('ALREADY ENCODED BUT FAILING')).toBeDefined();
+      });
+      // Hosted-only label must not be present.
+      expect(screen.queryByLabelText('TOLD NOT TO, STILL DOES IT')).toBeNull();
     });
   });
 });

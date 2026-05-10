@@ -108,12 +108,14 @@ const RUNNING_LINE_TAIL = 8;
 const STATUS_POLL_MS = 1500;
 const STATUS_LOG_TAIL = 6;
 
-const BUCKET_DEFS: ReadonlyArray<{
+type BucketDef = {
   key: 'recurring' | 'encoded' | 'new';
   label: string;
   blurb: string;
   match: (p: CorrectionPattern) => boolean;
-}> = [
+};
+
+const BUCKET_DEFS: ReadonlyArray<BucketDef> = [
   {
     key: 'recurring',
     label: 'RECURRING AFTER APPLIED',
@@ -133,6 +135,34 @@ const BUCKET_DEFS: ReadonlyArray<{
     label: 'NEW PATTERNS TO ENCODE',
     blurb:
       'Recurring corrections that aren’t encoded anywhere. Pick a target file, paste the patch, and ship it.',
+    match: () => true,
+  },
+];
+
+// Phase 4 — hosted demo blurbs avoid CLAUDE.md / "ship it" language
+// that doesn't apply to a non-developer visitor on chat-arch.dev.
+// Same key ordering and matchers as BUCKET_DEFS so bucketFor() and
+// the bucket grid stay in sync.
+const BUCKET_DEFS_HOSTED_DEMO: ReadonlyArray<BucketDef> = [
+  {
+    key: 'recurring',
+    label: 'STILL FAILING AFTER A FIX',
+    blurb:
+      'You patched this — the timestamp shows when — and the model is still making the same mistake. The rule is too soft, too buried, or the wrong shape.',
+    match: (p) => p.recurringPostApplication,
+  },
+  {
+    key: 'encoded',
+    label: 'TOLD NOT TO, STILL DOES IT',
+    blurb:
+      'The model keeps making this mistake even though it has been told not to. The rule exists somewhere in your config but is being ignored in practice.',
+    match: (p) => p.alreadyEncoded && !p.recurringPostApplication,
+  },
+  {
+    key: 'new',
+    label: 'NEW PATTERNS TO ENCODE',
+    blurb:
+      'Recurring corrections that aren’t written down anywhere. These are good candidates for the next round of rules.',
     match: () => true,
   },
 ];
@@ -687,6 +717,7 @@ export function CorrectionsPanel({
             setSelection('recent');
             void refreshAutoWindow('recent');
           }}
+          rescanAvailable={rescanAvailable}
         />
       )}
 
@@ -709,6 +740,10 @@ export function CorrectionsPanel({
         <BucketsView
           corrections={corrections!}
           highlightedPatternId={highlightedPatternId}
+          // Phase 4 — when corrections are showing on a host with no
+          // local server (the hosted demo path), reframe the bucket
+          // header copy to avoid CLAUDE.md / "paste the patch" jargon.
+          hostedDemo={!rescanAvailable}
           {...(applyAvailable ? { onApply: handleApply } : {})}
           {...(onSelectSession ? { onSelectSession } : {})}
         />
@@ -1098,6 +1133,13 @@ interface MiningTriggerProps {
   onRefreshAutoWindow: () => void;
   onSwitchToBackfill: () => void;
   onSwitchToRecent: () => void;
+  /**
+   * Phase 4 — when `false`, the host is the hosted static build with
+   * no `/api/mine-corrections` endpoint. Mining can never run there;
+   * the trigger explains that and points the user at INSTALL LOCALLY
+   * instead of leaving them staring at "computing…" forever.
+   */
+  rescanAvailable?: boolean;
 }
 
 function MiningTrigger({
@@ -1109,12 +1151,18 @@ function MiningTrigger({
   onRefreshAutoWindow,
   onSwitchToBackfill,
   onSwitchToRecent,
+  rescanAvailable = true,
 }: MiningTriggerProps) {
   const ctaLabel = hasCorrections ? 'RE-MINE CORRECTIONS' : 'MINE CORRECTIONS';
   const isIdle = autoWindow?.mode === 'idle';
   const isUnavailable = autoWindow?.mode === 'unavailable';
+  // Phase 4 — when the local server is unreachable AND the auto-window
+  // probe never resolved, the "computing…" caption would otherwise
+  // stay forever. Treat this as the hosted-static dead end and swap
+  // the trigger for an install-locally hint.
+  const localOnly = !rescanAvailable && autoWindow === null;
   const disabled =
-    isIdle || isUnavailable || (candidateCount === 0 && !hasCorrections);
+    isIdle || isUnavailable || localOnly || (candidateCount === 0 && !hasCorrections);
   const modeLabel = selection === 'backfill' ? 'BACKFILL' : 'AUTO WINDOW';
   const backfill = autoWindow?.backfillAvailable ?? null;
 
@@ -1123,13 +1171,15 @@ function MiningTrigger({
       <div className="lcars-corrections__auto">
         <span className="lcars-corrections__auto-label">{modeLabel}</span>
         <span className="lcars-corrections__auto-value">
-          {autoWindow === null
-            ? 'computing…'
-            : autoWindow.mode === 'idle'
-              ? 'no new candidates'
-              : autoWindow.mode === 'unavailable'
-                ? 'no data'
-                : `${autoWindow.windowDays}d · ${autoWindow.candidateCount} candidate${autoWindow.candidateCount === 1 ? '' : 's'}`}
+          {localOnly
+            ? 'mining is local-only'
+            : autoWindow === null
+              ? 'computing…'
+              : autoWindow.mode === 'idle'
+                ? 'no new candidates'
+                : autoWindow.mode === 'unavailable'
+                  ? 'no data'
+                  : `${autoWindow.windowDays}d · ${autoWindow.candidateCount} candidate${autoWindow.candidateCount === 1 ? '' : 's'}`}
         </span>
         <button
           type="button"
@@ -1147,15 +1197,30 @@ function MiningTrigger({
         onClick={onArm}
         disabled={disabled}
         title={
-          isIdle
-            ? 'No new candidates since the last mining run.'
-            : isUnavailable
-              ? 'Run the chat-arch exporter first to produce candidates.'
-              : undefined
+          localOnly
+            ? 'Mining is local-only — install chat-arch on your machine to mine your own corpus.'
+            : isIdle
+              ? 'No new candidates since the last mining run.'
+              : isUnavailable
+                ? 'Run the chat-arch exporter first to produce candidates.'
+                : undefined
         }
       >
         ▶ {ctaLabel}
       </button>
+      {localOnly && (
+        <p className="lcars-corrections__auto-hint">
+          Mining is local-only — these demo patterns ship with the bundled fixture.{' '}
+          <a
+            href="https://github.com/BryceEWatson/chat-arch#quickstart"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Install chat-arch
+          </a>{' '}
+          to mine your own corpus.
+        </p>
+      )}
       {selection === 'recent' && backfill !== null && (
         <button
           type="button"
@@ -1403,6 +1468,17 @@ interface BucketsViewProps {
    * AppliedImprovementsSummary scrolls it into view.
    */
   highlightedPatternId?: string | null;
+  /**
+   * Phase 4 — when true, the panel is rendering demo corrections on
+   * the hosted static build (no `/api/rescan` reachable, no
+   * mining endpoint, no actual CLAUDE.md the user owns). The default
+   * blurb copy explicitly references "the rule already exists in
+   * CLAUDE.md", which is meaningless on a hosted demo. Reframe it
+   * to "the model keeps making this mistake even though it's been
+   * told not to" so the demo reads cleanly to a non-developer
+   * visitor.
+   */
+  hostedDemo?: boolean;
 }
 
 function BucketsView({
@@ -1410,7 +1486,9 @@ function BucketsView({
   onApply,
   onSelectSession,
   highlightedPatternId,
+  hostedDemo = false,
 }: BucketsViewProps) {
+  const bucketDefs = hostedDemo ? BUCKET_DEFS_HOSTED_DEMO : BUCKET_DEFS;
   const instancesById = useMemo(() => {
     const m = new Map<string, Correction>();
     for (const c of corrections.corrections) m.set(c.id, c);
@@ -1437,7 +1515,7 @@ function BucketsView({
 
   return (
     <div className="lcars-corrections__buckets">
-      {BUCKET_DEFS.map((def) => {
+      {bucketDefs.map((def) => {
         const items = buckets[def.key];
         return (
           <section

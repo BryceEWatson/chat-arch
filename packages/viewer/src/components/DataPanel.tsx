@@ -298,13 +298,20 @@ export function DataPanel({
                   {scanDisabled ? (
                     <>
                       <p>
-                        <strong>Available when running locally.</strong> The hosted web build has
-                        no way to spawn the scanner.
+                        <strong>SCAN LOCAL works only when chat-arch is running on your
+                        machine.</strong> The hosted web build has no way to read your local
+                        Claude Code transcripts.
                       </p>
                       <p>
-                        To enable, clone the repo and run{' '}
-                        <code>pnpm --filter @chat-arch/standalone dev</code>, then reload this
-                        page.
+                        Visit the{' '}
+                        <a
+                          href="https://github.com/BryceEWatson/chat-arch#quickstart"
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          README quickstart
+                        </a>{' '}
+                        to install it locally, then reload this page.
                       </p>
                     </>
                   ) : (

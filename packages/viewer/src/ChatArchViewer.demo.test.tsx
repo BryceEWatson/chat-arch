@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
+import type * as CorrectionsLoaderModule from './data/correctionsLoader.js';
 
 // Phase 4 — when LOAD DEMO DATA is clicked on the empty-state landing,
 // the demo fixture ships its own corrections + applied-improvements +
@@ -13,7 +14,7 @@ import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
 //      surface.
 
 vi.mock('./data/correctionsLoader.js', async () => {
-  const actual = await vi.importActual<typeof import('./data/correctionsLoader.js')>(
+  const actual = await vi.importActual<typeof CorrectionsLoaderModule>(
     './data/correctionsLoader.js',
   );
   return {

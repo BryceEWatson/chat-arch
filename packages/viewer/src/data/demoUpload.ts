@@ -1,5 +1,4 @@
 import type {
-  AppliedImprovement,
   AppliedImprovementsFile,
   CloudConversation,
   CloudMessage,
