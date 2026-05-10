@@ -308,8 +308,10 @@ describe('AppliedImprovementsSummary', () => {
             onSelectPattern={() => {}}
           />,
         );
+        // Phase 4 P0.5: with no `onRefreshIndex` callback wired here,
+        // the chip falls back to the install-locally hosted copy.
         expect(
-          screen.getByText(/INDEX IS STALE — RUN UPDATE LOCAL/i),
+          screen.getByText(/INDEX IS STALE — INSTALL CHAT-ARCH LOCALLY/i),
         ).toBeDefined();
       } finally {
         vi.useRealTimers();
@@ -410,7 +412,10 @@ describe('AppliedImprovementsSummary', () => {
       }
     });
 
-    it('renders chip as non-interactive span when onRefreshIndex omitted', () => {
+    it('renders chip as non-interactive span with install-locally copy when onRefreshIndex omitted', () => {
+      // Phase 4 P0.5: hosted static build has no UPDATE LOCAL button to
+      // point at. The chip's copy on the no-callback branch should
+      // tell the visitor to install chat-arch locally instead.
       vi.useFakeTimers();
       try {
         const apply = 1_700_000_000_000;
@@ -425,12 +430,15 @@ describe('AppliedImprovementsSummary', () => {
             onSelectPattern={() => {}}
           />,
         );
-        const chip = screen.getByText(/INDEX IS STALE — RUN UPDATE LOCAL/i);
+        const chip = screen.getByText(/INDEX IS STALE — INSTALL CHAT-ARCH LOCALLY/i);
         expect(chip.tagName).toBe('SPAN');
         // Non-interactive — no click handler attached as a button.
         expect(
           screen.queryByRole('button', { name: /index is stale/i }),
         ).toBeNull();
+        // The "RUN UPDATE LOCAL" wording must NOT appear here — this is
+        // the hosted-mode copy path.
+        expect(screen.queryByText(/RUN UPDATE LOCAL/i)).toBeNull();
       } finally {
         vi.useRealTimers();
       }

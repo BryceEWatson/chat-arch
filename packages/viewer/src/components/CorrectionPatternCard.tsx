@@ -454,6 +454,16 @@ function UpgradeRow({
           </button>
         )}
       </div>
+      {!onApply && state.kind !== 'applied' && (
+        // Phase 4 P0.8: APPLY is disabled when no `onApply` is wired
+        // (hosted static build with no apply ledger endpoint). The
+        // tooltip alone is invisible on touch devices, so render an
+        // inline informational hint under the button row. Keep it
+        // small and italic — informational, not error.
+        <p className="lcars-correction-pattern__apply-hint" role="note">
+          <em>APPLY records to a local ledger — install chat-arch to enable.</em>
+        </p>
+      )}
       {onApply && state.kind === 'confirming' && (
         <div
           className="lcars-correction-pattern__confirm"

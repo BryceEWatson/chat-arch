@@ -419,7 +419,7 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
   // by the SCAN LOCAL chip's tooltip.
   const disabledHint =
     available === false
-      ? 'Available when running locally. Clone the repo and run `pnpm --filter @chat-arch/standalone dev`, then reload.'
+      ? 'Available when running locally — install chat-arch (see README quickstart) and reload.'
       : undefined;
 
   return (

@@ -243,13 +243,19 @@ export function AppliedImprovementsSummary({
             <span className="lcars-applied-summary__stale-arrow" aria-hidden="true"> →</span>
           </button>
         ) : (
+          // Phase 4 P0.5: when no `onRefreshIndex` is wired, the host is
+          // either the hosted static build (no `/api/rescan`) or a
+          // caller that simply hasn't plumbed the callback. UPDATE
+          // LOCAL doesn't exist on hosted, so the copy must point the
+          // visitor at the install path instead of a non-existent
+          // button.
           <span
             className="lcars-applied-summary__stale"
             role="status"
             aria-label="index is stale"
-            title="Run UPDATE LOCAL to refresh the corpus before trusting recurring counts."
+            title="Install chat-arch locally to refresh the corpus before trusting recurring counts."
           >
-            INDEX IS STALE — RUN UPDATE LOCAL TO CHECK FOR NEW VIOLATIONS
+            INDEX IS STALE — INSTALL CHAT-ARCH LOCALLY TO REFRESH
           </span>
         ))}
       </header>

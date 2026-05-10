@@ -43,8 +43,21 @@ export interface RescanResponse {
 export type RescanStatus = 'idle' | 'running' | 'error' | 'ok';
 
 export interface UseRescanResult {
-  /** True when the `/api/rescan` endpoint was reachable on mount. */
-  available: boolean;
+  /**
+   * Whether the `/api/rescan` endpoint was reachable on mount.
+   *
+   * Phase 4 P1.1: tri-state to fix mount-flicker. The initial probe takes
+   * ~50–200ms; if consumers gate on `=== true`, local-dev viewers briefly
+   * hide CHOOSE ZIP / CORRECTIONS sidebar / etc. on first paint, and
+   * hosted demo briefly flashes the local-only labels. Treat 'probing'
+   * as "optimistically local-dev" — i.e. render the local-dev affordances
+   * until the probe resolves to a definitive false.
+   *
+   * Helper for consumers: `available !== false` means "treat as local
+   * dev" (true OR probing), `available === false` means "definitively
+   * hosted static — probe failed".
+   */
+  available: boolean | 'probing';
   status: RescanStatus;
   progress: RescanProgress;
   /** Response payload from the most recent attempt; cleared on next run. */
@@ -84,7 +97,10 @@ function prettyLine(raw: string): string {
 }
 
 export function useRescan(): UseRescanResult {
-  const [available, setAvailable] = useState(false);
+  // P1.1: start in 'probing' so consumers render the local-dev
+  // affordances optimistically until the probe definitively resolves.
+  // Avoids the ~50–200ms mount flicker that gating on `=== true` caused.
+  const [available, setAvailable] = useState<boolean | 'probing'>('probing');
   const [status, setStatus] = useState<RescanStatus>('idle');
   const [progress, setProgress] = useState<RescanProgress>(INITIAL_PROGRESS);
   const [last, setLast] = useState<RescanResponse | null>(null);

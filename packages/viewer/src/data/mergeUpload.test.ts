@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { CloudConversation, SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
+import type {
+  AppliedImprovementsFile,
+  CloudConversation,
+  CorrectionsFile,
+  SessionManifest,
+  UnifiedSessionEntry,
+} from '@chat-arch/schema';
 import type { UploadedCloudData } from '../types.js';
 import { mergeUploads, effectiveManifest } from './mergeUpload.js';
 
@@ -159,6 +165,130 @@ describe('mergeUploads', () => {
     );
     const out = mergeUploads(first, second);
     expect(out.manifest.sessions.map((s) => s.id)).toEqual(['d', 'b', 'c', 'a']);
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 4 P0.1 — preservation of optional fields across a merge.
+  //
+  // The literal-return shape of `mergeUploads` previously dropped
+  // `corrections`, `appliedImprovements`, `synthesizedRescanDelta`, and
+  // `projects` whenever a prior upload existed. That made the workshop
+  // surface (corrections + applied-improvements panel + persistent
+  // rescan-delta chip) silently disappear after a second LOAD DEMO DATA
+  // click, or after a real ZIP upload following a demo.
+  // -------------------------------------------------------------------------
+  describe('Phase 4 — optional field preservation', () => {
+    function demoCorrections(): CorrectionsFile {
+      return {
+        generatedAt: 1_700_000_000_000,
+        corrections: [],
+        patterns: [],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: true,
+          embeddingClustering: true,
+          claudeMdCrossCheck: true,
+        },
+      };
+    }
+    function demoApplied(): AppliedImprovementsFile {
+      return {
+        schemaVersion: 1,
+        generatedAt: 1_700_000_000_000,
+        entries: [],
+      };
+    }
+    function demoUpload(
+      sessionId: string,
+      label: string,
+      withDemoFields: boolean,
+    ): UploadedCloudData {
+      const base = upload([cloudEntry(sessionId)], label);
+      if (!withDemoFields) return base;
+      return {
+        ...base,
+        corrections: demoCorrections(),
+        appliedImprovements: demoApplied(),
+        synthesizedRescanDelta: { totalLocal: 12, cowork: 4, cli: 6, desktop: 2 },
+      };
+    }
+
+    it('preserves Phase 4 fields from the existing upload when the incoming upload omits them', () => {
+      // Simulates "click LOAD DEMO DATA, then upload a real ZIP that
+      // doesn't carry corrections/applied" — the demo's workshop data
+      // should survive (sourceLabel-side change is normal).
+      const existing = demoUpload('a', 'demo.zip', true);
+      const incoming = demoUpload('b', 'real.zip', false);
+      const out = mergeUploads(existing, incoming);
+      expect(out.corrections).toBe(existing.corrections);
+      expect(out.appliedImprovements).toBe(existing.appliedImprovements);
+      // Both sessions present.
+      expect(out.manifest.sessions.map((s) => s.id).sort()).toEqual(['a', 'b']);
+    });
+
+    it('prefers incoming Phase 4 fields when both sides carry them (demo-twice scenario)', () => {
+      // Simulates clicking LOAD DEMO DATA twice — the second click
+      // should produce a coherent merged state (corrections from the
+      // newer call, sessions union'd, etc).
+      const existing = demoUpload('a', 'demo.zip', true);
+      const incoming = demoUpload('a', 'demo.zip', true);
+      const out = mergeUploads(existing, incoming);
+      // The preference rule means out.corrections === incoming.corrections,
+      // not the older one.
+      expect(out.corrections).toBe(incoming.corrections);
+      expect(out.appliedImprovements).toBe(incoming.appliedImprovements);
+      expect(out.synthesizedRescanDelta).toEqual(incoming.synthesizedRescanDelta);
+    });
+
+    it('drops synthesizedRescanDelta when a real ZIP is uploaded after a demo', () => {
+      // The synthesized delta is demo-only. A real cloud-zip upload
+      // (parseCloudZip never sets the field) must wipe it so the chip
+      // doesn't lie about a real upload's local-source counts.
+      const existing = demoUpload('a', 'demo.zip', true);
+      const incoming = demoUpload('b', 'real.zip', false);
+      const out = mergeUploads(existing, incoming);
+      expect(out.synthesizedRescanDelta).toBeUndefined();
+      // But corrections + applied stay (real ZIPs don't carry them
+      // either, but their loss isn't load-bearing — the on-disk
+      // corrections.json fetch will fill them).
+      expect(out.corrections).toBe(existing.corrections);
+    });
+
+    it('preserves projects when only the existing upload carries them', () => {
+      // `projects` ships inside cloud export ZIPs (parseCloudZip),
+      // so a hypothetical incoming upload missing projects shouldn't
+      // erase the existing list.
+      const projectList = [
+        {
+          uuid: 'p-1',
+          name: 'demo project',
+          description: 'd',
+          is_private: false,
+          is_starter_project: false,
+          prompt_template: '',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+          creator: { uuid: 'u', full_name: 'Demo User' },
+          docs: [],
+        },
+      ] as const;
+      const existing: UploadedCloudData = {
+        ...upload([cloudEntry('a')], 'a.zip'),
+        projects: projectList,
+      };
+      const incoming = upload([cloudEntry('b')], 'b.zip');
+      const out = mergeUploads(existing, incoming);
+      expect(out.projects).toBe(projectList);
+    });
+
+    it('first-upload short-circuit still returns the incoming reference verbatim', () => {
+      // The `existing === null` branch sits before the merge logic and
+      // must not change. (Defends against a regression where the spread
+      // path runs even when there's nothing to spread over.)
+      const incoming = demoUpload('a', 'demo.zip', true);
+      const out = mergeUploads(null, incoming);
+      expect(out).toBe(incoming);
+    });
   });
 });
 

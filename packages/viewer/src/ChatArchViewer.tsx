@@ -426,6 +426,14 @@ export function ChatArchViewer({
   // The hook probes on mount; `available === false` hides the button
   // without error noise.
   const rescanCtl = useRescan();
+  // Phase 4 P1.1: tri-state probe ('probing' | true | false). Treat
+  // 'probing' as optimistic-local-dev to avoid mount flicker — the
+  // initial probe takes 50–200ms, and gating UI on `=== true` would
+  // briefly flash hosted-mode chrome on local-dev mounts. Consumers
+  // that need a strict "rescan succeeded" signal still gate on
+  // `=== true` (e.g. the actual rescan-button enable state); UI that
+  // *hides* on hosted should gate on `!== false` instead.
+  const rescanLikelyLocal = rescanCtl.available !== false;
   const [rescanToast, setRescanToast] = useState<string | null>(null);
   // Cloud-upload progress state for the top-bar Upload Cloud button.
   // Unlike rescan (which has a streaming endpoint), upload parsing is
@@ -1715,7 +1723,12 @@ export function ChatArchViewer({
     // fires inside the `/api/rescan` success branch. The demo
     // fixture pre-populates a synthesized delta; surface it so the
     // chip lights up like a real rescan would.
-    if (data.synthesizedRescanDelta) {
+    //
+    // P1.2: only surface the synthesized delta when no real delta is
+    // currently displayed. Maya may have just finished a real rescan
+    // (the chip is showing actual numbers) and a curiosity click on
+    // LOAD DEMO DATA shouldn't overwrite it with fake counts.
+    if (data.synthesizedRescanDelta && rescanDelta === null) {
       setRescanDelta(data.synthesizedRescanDelta);
     }
     // Default-mode reroute — the regular reroute effect only fires
@@ -2083,7 +2096,15 @@ export function ChatArchViewer({
             <TrustStrip />
             <ErrorState
               title="NO DATA YET"
-              detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`}
+              detail={
+                rescanLikelyLocal
+                  ? `Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`
+                  : // Phase 4 P0.6: hosted static has neither SCAN LOCAL
+                    // nor UPLOAD CLOUD wired (the rescan probe came back
+                    // false). Point the visitor at the demo + install
+                    // paths instead of dead-end CTAs.
+                    `Click LOAD DEMO DATA below to explore the viewer with a generated sample corpus, or install chat-arch locally to audit your own Claude transcripts.${fetchErrorSuffix}`
+              }
             />
             {/*
               Phase 4 hosted refocus: hide CHOOSE ZIP on the hosted
@@ -2097,7 +2118,7 @@ export function ChatArchViewer({
               onLoaded={onUpload}
               variant="prominent"
               onLoadDemo={onLoadDemo}
-              showCloudUpload={rescanCtl.available}
+              showCloudUpload={rescanLikelyLocal}
             />
           </main>
         </div>
@@ -2185,7 +2206,10 @@ export function ChatArchViewer({
     (appliedImprovements?.entries?.length ?? 0) > 0 ||
     (uploadedData?.corrections?.patterns?.length ?? 0) > 0 ||
     (uploadedData?.appliedImprovements?.entries?.length ?? 0) > 0;
-  const correctionsAvailable = hasCorrectionsData || rescanCtl.available;
+  // P1.1: `rescanLikelyLocal` covers the 'probing' window so the
+  // CORRECTIONS sidebar entry doesn't briefly disappear on local-dev
+  // mount (re-mining will populate it).
+  const correctionsAvailable = hasCorrectionsData || rescanLikelyLocal;
 
   return (
     <div
@@ -2203,17 +2227,40 @@ export function ChatArchViewer({
         >
           <span className="lcars-rescan-banner__tag">DEMO DATA</span>
           <span className="lcars-rescan-banner__message">
-            This is a fictional corpus so the viewer doesn&apos;t render empty. To see your own
-            Claude transcripts: click <strong>SCAN LOCAL</strong> (top bar) for Claude Code /
-            Desktop / Cowork, or <strong>UPLOAD CLOUD</strong> for a claude.ai Privacy-Export ZIP.{' '}
-            <a
-              href="https://github.com/BryceEWatson/chat-arch#getting-your-own-data"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="lcars-rescan-banner__link"
-            >
-              Step-by-step →
-            </a>
+            {rescanLikelyLocal ? (
+              <>
+                This is a fictional corpus so the viewer doesn&apos;t render empty. To see your own
+                Claude transcripts: click <strong>SCAN LOCAL</strong> (top bar) for Claude Code /
+                Desktop / Cowork, or <strong>UPLOAD CLOUD</strong> for a claude.ai Privacy-Export
+                ZIP.{' '}
+                <a
+                  href="https://github.com/BryceEWatson/chat-arch#getting-your-own-data"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="lcars-rescan-banner__link"
+                >
+                  Step-by-step →
+                </a>
+              </>
+            ) : (
+              // Phase 4 P0.2: hosted static build has no SCAN LOCAL or
+              // UPLOAD CLOUD affordance — both require `/api/rescan` /
+              // `/api/mine-corrections` endpoints that ship only with
+              // the local Astro dev server. Point the visitor at the
+              // README quickstart instead of dead-end CTAs.
+              <>
+                Demo data only — to audit your own corpus, install chat-arch locally and re-open
+                the viewer.{' '}
+                <a
+                  href="https://github.com/BryceEWatson/chat-arch#quickstart"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="lcars-rescan-banner__link"
+                >
+                  Install locally →
+                </a>
+              </>
+            )}
           </span>
           <button
             type="button"
@@ -2471,7 +2518,7 @@ export function ChatArchViewer({
             >
               {activeManifest.sessions.length === 0 ? (
                 <EmptyState
-                  showCloudUpload={rescanCtl.available}
+                  showCloudUpload={rescanLikelyLocal}
                   {...(uploadedData ? {} : { onUpload, onLoadDemo })}
                 />
               ) : (
@@ -2542,7 +2589,7 @@ export function ChatArchViewer({
                       <CorrectionsPanel
                         dataDirBaseUrl={dataRoot}
                         manifestGeneratedAt={manifest?.generatedAt ?? null}
-                        rescanAvailable={rescanCtl.available}
+                        rescanAvailable={rescanLikelyLocal}
                         onRefreshIndex={() => void onRescan()}
                         // Phase 4 — when the demo fixture bundles
                         // corrections + applied inline, prefer them
@@ -2645,10 +2692,10 @@ export function ChatArchViewer({
         onRescan={onRescan}
         rescanStatus={rescanCtl.status}
         rescanProgress={rescanCtl.progress}
-        scanAvailable={rescanCtl.available}
+        scanAvailable={rescanLikelyLocal}
         hasLocalData={hasLocalData}
         {...(rescanToast ? { rescanHint: rescanToast } : {})}
-        deleteAvailable={rescanCtl.available}
+        deleteAvailable={rescanLikelyLocal}
         onDeleteUnload={onUnload}
         deleteCounts={{
           cloud: manifestCounts?.cloud ?? 0,

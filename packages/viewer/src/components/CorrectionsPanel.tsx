@@ -524,7 +524,7 @@ export function CorrectionsPanel({
   if (load.status === 'loading') {
     return (
       <section className="lcars-corrections" aria-label="corrections">
-        <Header />
+        <Header hostedDemo={!rescanAvailable} />
         <p className="lcars-corrections__lead">Loading corrections…</p>
       </section>
     );
@@ -533,7 +533,7 @@ export function CorrectionsPanel({
   if (load.status === 'error') {
     return (
       <section className="lcars-corrections" aria-label="corrections">
-        <Header />
+        <Header hostedDemo={!rescanAvailable} />
         <div className="lcars-corrections__error" role="alert">
           <p>Could not load corrections: {load.message}</p>
           <button
@@ -584,6 +584,7 @@ export function CorrectionsPanel({
   return (
     <section className="lcars-corrections" aria-label="corrections">
       <Header
+        hostedDemo={!rescanAvailable}
         {...(typeof corrections?.generatedAt === 'number'
           ? { generatedAt: corrections.generatedAt }
           : {})}
@@ -1102,18 +1103,37 @@ function DangerZone({
 
 interface HeaderProps {
   generatedAt?: number;
+  /**
+   * Phase 4 P0.3: when true, the panel is showing demo data on a
+   * hosted static build (no `/api/mine-corrections`, no apply ledger
+   * back end). Swap the developer-y lead copy ("log a CLAUDE.md edit",
+   * "next mining pass", "applied-improvements.json") for plain
+   * language that explains what corrections ARE — matching the
+   * hosted-demo bucket blurbs above.
+   */
+  hostedDemo?: boolean;
 }
 
-function Header({ generatedAt }: HeaderProps) {
+function Header({ generatedAt, hostedDemo = false }: HeaderProps) {
   return (
     <header className="lcars-corrections__header">
       <h2 className="lcars-corrections__title">CORRECTIONS</h2>
       <p className="lcars-corrections__lead">
-        Recurring instructions you keep giving the model — clustered, ranked, and paired with
-        proposed CLAUDE.md upgrades. Click APPLY to log a CLAUDE.md edit you&apos;ve made; the
-        loop closes when the next mining pass shows the rule is no longer recurring. Apply
-        history is recorded in <code>applied-improvements.json</code> next to{' '}
-        <code>corrections.json</code>.
+        {hostedDemo ? (
+          <>
+            These are corrections — moments where Claude broke a rule you set, clustered into
+            patterns. Patterns marked <strong>RECURRING</strong> came back even after you patched
+            them; those are the strongest signal that the rule needs reshaping.
+          </>
+        ) : (
+          <>
+            Recurring instructions you keep giving the model — clustered, ranked, and paired with
+            proposed CLAUDE.md upgrades. Click APPLY to log a CLAUDE.md edit you&apos;ve made; the
+            loop closes when the next mining pass shows the rule is no longer recurring. Apply
+            history is recorded in <code>applied-improvements.json</code> next to{' '}
+            <code>corrections.json</code>.
+          </>
+        )}
       </p>
       {typeof generatedAt === 'number' && (
         <p className="lcars-corrections__meta">
