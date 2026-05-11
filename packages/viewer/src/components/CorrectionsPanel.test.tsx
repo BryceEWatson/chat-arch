@@ -71,6 +71,7 @@ function pattern(overrides: Partial<CorrectionPattern> & { id: string }): Correc
     confidence: overrides.confidence ?? 0.5,
     recurringPostApplication: overrides.recurringPostApplication ?? false,
     alreadyEncoded: overrides.alreadyEncoded ?? false,
+    ...(overrides.topic !== undefined ? { topic: overrides.topic } : {}),
   };
 }
 
@@ -134,74 +135,135 @@ describe('CorrectionsPanel', () => {
     });
   });
 
-  it('sorts patterns into the three buckets correctly', async () => {
+  it('groups patterns into buckets by topic, label uppercased', async () => {
     const patterns = [
-      pattern({ id: 'r1', canonicalRule: 'recurring rule', recurringPostApplication: true }),
-      pattern({ id: 'e1', canonicalRule: 'encoded rule', alreadyEncoded: true }),
-      pattern({ id: 'n1', canonicalRule: 'new rule' }),
-      // recurring + alreadyEncoded → still RECURRING (it's the stronger signal).
+      pattern({ id: 'g1', canonicalRule: 'git rule a', topic: 'Git Workflow' }),
+      pattern({ id: 't1', canonicalRule: 'test rule a', topic: 'Test Discipline' }),
+      pattern({ id: 'g2', canonicalRule: 'git rule b', topic: 'Git Workflow' }),
+    ];
+    mockedLoadCorrections.mockResolvedValue(file(patterns));
+    mockedLoadCandidates.mockResolvedValue(null);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('GIT WORKFLOW')).toBeDefined();
+    });
+    const git = screen.getByLabelText('GIT WORKFLOW');
+    const test = screen.getByLabelText('TEST DISCIPLINE');
+
+    expect(within(git).getByText('git rule a')).toBeDefined();
+    expect(within(git).getByText('git rule b')).toBeDefined();
+    expect(within(test).getByText('test rule a')).toBeDefined();
+    // No leakage across topics.
+    expect(within(git).queryByText('test rule a')).toBeNull();
+    expect(within(test).queryByText('git rule a')).toBeNull();
+  });
+
+  it('falls back to an UNTAGGED bucket for patterns without a topic field', async () => {
+    const patterns = [
+      pattern({ id: 'a', canonicalRule: 'pre-topic-stage rule' }),
+      pattern({ id: 'b', canonicalRule: 'another untagged', topic: '' }),
+      pattern({ id: 'c', canonicalRule: 'tagged rule', topic: 'Tool Usage' }),
+    ];
+    mockedLoadCorrections.mockResolvedValue(file(patterns));
+    mockedLoadCandidates.mockResolvedValue(null);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('UNTAGGED')).toBeDefined();
+    });
+    const untagged = screen.getByLabelText('UNTAGGED');
+    const tool = screen.getByLabelText('TOOL USAGE');
+    expect(within(untagged).getByText('pre-topic-stage rule')).toBeDefined();
+    expect(within(untagged).getByText('another untagged')).toBeDefined();
+    expect(within(tool).getByText('tagged rule')).toBeDefined();
+  });
+
+  it('orders buckets: topics with recurring patterns first, then by total weight desc', async () => {
+    const patterns = [
+      // Heavy non-recurring bucket — would win on weight alone.
+      pattern({ id: 'h1', topic: 'Heavy', canonicalRule: 'heavy 1', occurrenceCount: 20 }),
+      pattern({ id: 'h2', topic: 'Heavy', canonicalRule: 'heavy 2', occurrenceCount: 20 }),
+      // Light bucket with a single RECURRING pattern — must hoist above Heavy.
       pattern({
-        id: 'r2',
-        canonicalRule: 'recurring and encoded',
+        id: 'r1',
+        topic: 'Recurring Topic',
+        canonicalRule: 'recurring',
         recurringPostApplication: true,
-        alreadyEncoded: true,
+        occurrenceCount: 3,
+      }),
+      // Medium-weight bucket between them.
+      pattern({ id: 'm1', topic: 'Medium', canonicalRule: 'medium', occurrenceCount: 10 }),
+    ];
+    mockedLoadCorrections.mockResolvedValue(file(patterns));
+    mockedLoadCandidates.mockResolvedValue(null);
+    const { container } = render(
+      <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText('RECURRING TOPIC')).toBeDefined();
+    });
+    const sections = Array.from(
+      container.querySelectorAll('.lcars-corrections__buckets > section'),
+    ).map((s) => s.getAttribute('aria-label'));
+    expect(sections).toEqual(['RECURRING TOPIC', 'HEAVY', 'MEDIUM']);
+  });
+
+  it('within a bucket: recurring sorts first, then by confidence desc', async () => {
+    const patterns = [
+      pattern({
+        id: 'low',
+        topic: 'T',
+        canonicalRule: 'low confidence',
+        confidence: 0.2,
+        occurrenceCount: 9,
+      }),
+      pattern({
+        id: 'hi',
+        topic: 'T',
+        canonicalRule: 'high confidence',
+        confidence: 0.95,
+        occurrenceCount: 3,
+      }),
+      pattern({
+        id: 'rec',
+        topic: 'T',
+        canonicalRule: 'recurring even with low confidence',
+        confidence: 0.3,
+        occurrenceCount: 4,
+        recurringPostApplication: true,
       }),
     ];
     mockedLoadCorrections.mockResolvedValue(file(patterns));
     mockedLoadCandidates.mockResolvedValue(null);
     render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
-      expect(screen.getByLabelText('RECURRING AFTER APPLIED')).toBeDefined();
+      expect(screen.getByLabelText('T')).toBeDefined();
     });
-    const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
-    const encoded = screen.getByLabelText('ALREADY ENCODED BUT FAILING');
-    const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
-
-    expect(within(recurring).getByText('recurring rule')).toBeDefined();
-    expect(within(recurring).getByText('recurring and encoded')).toBeDefined();
-    expect(within(encoded).getByText('encoded rule')).toBeDefined();
-    expect(within(fresh).getByText('new rule')).toBeDefined();
-
-    // No leakage between buckets.
-    expect(within(recurring).queryByText('encoded rule')).toBeNull();
-    expect(within(encoded).queryByText('recurring rule')).toBeNull();
-    expect(within(fresh).queryByText('encoded rule')).toBeNull();
-  });
-
-  it('sorts patterns within a bucket by confidence desc, then occurrenceCount desc', async () => {
-    const patterns = [
-      pattern({ id: 'low', canonicalRule: 'low confidence', confidence: 0.2, occurrenceCount: 9 }),
-      pattern({ id: 'hi', canonicalRule: 'high confidence', confidence: 0.95, occurrenceCount: 3 }),
-      pattern({ id: 'mid-a', canonicalRule: 'mid a', confidence: 0.5, occurrenceCount: 5 }),
-      pattern({ id: 'mid-b', canonicalRule: 'mid b', confidence: 0.5, occurrenceCount: 8 }),
-    ];
-    mockedLoadCorrections.mockResolvedValue(file(patterns));
-    mockedLoadCandidates.mockResolvedValue(null);
-    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
-    await waitFor(() => {
-      expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
-    });
-    const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
+    const bucket = screen.getByLabelText('T');
     const titles = Array.from(
-      fresh.querySelectorAll('.lcars-correction-pattern__rule'),
+      bucket.querySelectorAll('.lcars-correction-pattern__rule'),
     ).map((el) => el.textContent);
-    // confidence: 0.95, 0.5 (count 8), 0.5 (count 5), 0.2.
-    expect(titles).toEqual(['high confidence', 'mid b', 'mid a', 'low confidence']);
+    // recurring → first; rest by confidence desc.
+    expect(titles).toEqual([
+      'recurring even with low confidence',
+      'high confidence',
+      'low confidence',
+    ]);
   });
 
-  it('renders the "Nothing here — good." placeholder for empty buckets', async () => {
+  it('does not render empty-bucket placeholders (no Nothing here — good.)', async () => {
     mockedLoadCorrections.mockResolvedValue(
-      file([pattern({ id: 'n1', canonicalRule: 'only a new pattern' })]),
+      file([pattern({ id: 'n1', canonicalRule: 'only one', topic: 'Solo' })]),
     );
     mockedLoadCandidates.mockResolvedValue(null);
     render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
-      expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
+      expect(screen.getByLabelText('SOLO')).toBeDefined();
     });
-    const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
-    const encoded = screen.getByLabelText('ALREADY ENCODED BUT FAILING');
-    expect(within(recurring).getByText('Nothing here — good.')).toBeDefined();
-    expect(within(encoded).getByText('Nothing here — good.')).toBeDefined();
+    // Only one section renders; the old empty-bucket placeholder is gone.
+    expect(screen.queryByText(/Nothing here/i)).toBeNull();
+    expect(screen.queryByLabelText('RECURRING AFTER APPLIED')).toBeNull();
+    expect(screen.queryByLabelText('ALREADY ENCODED BUT FAILING')).toBeNull();
+    expect(screen.queryByLabelText('NEW PATTERNS TO ENCODE')).toBeNull();
   });
 
   describe('AppliedImprovementsSummary mount (Phase 2b)', () => {
@@ -212,8 +274,9 @@ describe('CorrectionsPanel', () => {
       mockedLoadCandidates.mockResolvedValue(null);
       mockedLoadApplied.mockResolvedValue(null);
       render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      // Untagged bucket renders (pattern has no topic field); summary does not.
       await waitFor(() => {
-        expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
+        expect(screen.getByLabelText('UNTAGGED')).toBeDefined();
       });
       expect(screen.queryByLabelText('since you patched')).toBeNull();
     });
@@ -341,12 +404,15 @@ describe('CorrectionsPanel', () => {
         ],
       });
       render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      // The pattern lands in the UNTAGGED bucket (no topic) but should now
+      // bear the recurring signal — the merge layer flipped
+      // recurringPostApplication=true based on the ledger entry. Verify the
+      // bucket sort puts it first (recurring sorts to top within a bucket).
       await waitFor(() => {
-        const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
-        expect(within(recurring).getByText('flips into recurring')).toBeDefined();
+        expect(screen.getByLabelText('UNTAGGED')).toBeDefined();
       });
-      const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
-      expect(within(fresh).queryByText('flips into recurring')).toBeNull();
+      const bucket = screen.getByLabelText('UNTAGGED');
+      expect(within(bucket).getByText('flips into recurring')).toBeDefined();
     });
 
     it('treats applied: true on the merged upgrade as initial APPLIED state', async () => {
@@ -396,63 +462,11 @@ describe('CorrectionsPanel', () => {
     });
   });
 
-  // Phase 4 — when CorrectionsPanel renders on a hosted static build
-  // (rescanAvailable=false), the bucket header copy explicitly
-  // referencing CLAUDE.md / "ship it" is meaningless to a non-developer
-  // visitor on chat-arch.dev. Verify the reframed labels + blurbs land.
-  describe('Phase 4 — hosted demo blurbs (rescanAvailable=false)', () => {
-    it('reframes the encoded bucket label + blurb to avoid CLAUDE.md jargon', async () => {
-      mockedLoadCorrections.mockResolvedValue(
-        file([
-          pattern({ id: 'e1', canonicalRule: 'demo encoded', alreadyEncoded: true }),
-        ]),
-      );
-      mockedLoadCandidates.mockResolvedValue(null);
-      // No rescanAvailable → defaults to false → hosted-demo blurbs.
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
-      await waitFor(() => {
-        expect(screen.getByLabelText('TOLD NOT TO, STILL DOES IT')).toBeDefined();
-      });
-      const bucket = screen.getByLabelText('TOLD NOT TO, STILL DOES IT');
-      // Multiple elements may match (the title + the blurb both
-      // contain the phrase); presence of any is enough.
-      expect(within(bucket).getAllByText(/told not to/i).length).toBeGreaterThan(0);
-      // Canonical CLAUDE.md jargon must not leak into the demo copy.
-      expect(within(bucket).queryByText(/already exists in CLAUDE\.md/i)).toBeNull();
-    });
-
-    it('reframes the recurring bucket label to "STILL FAILING AFTER A FIX"', async () => {
-      mockedLoadCorrections.mockResolvedValue(
-        file([
-          pattern({
-            id: 'r1',
-            canonicalRule: 'demo recurring',
-            recurringPostApplication: true,
-          }),
-        ]),
-      );
-      mockedLoadCandidates.mockResolvedValue(null);
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
-      await waitFor(() => {
-        expect(screen.getByLabelText('STILL FAILING AFTER A FIX')).toBeDefined();
-      });
-    });
-
-    it('keeps the canonical labels when rescanAvailable=true (local dev)', async () => {
-      mockedLoadCorrections.mockResolvedValue(
-        file([
-          pattern({ id: 'e1', canonicalRule: 'local encoded', alreadyEncoded: true }),
-        ]),
-      );
-      mockedLoadCandidates.mockResolvedValue(null);
-      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
-      await waitFor(() => {
-        expect(screen.getByLabelText('ALREADY ENCODED BUT FAILING')).toBeDefined();
-      });
-      // Hosted-only label must not be present.
-      expect(screen.queryByLabelText('TOLD NOT TO, STILL DOES IT')).toBeNull();
-    });
-  });
+  // The Phase 4 hosted-demo blurb relabeling is gone — fixed taxonomy
+  // (RECURRING / ENCODED / NEW) was replaced with LLM-derived dynamic
+  // topic buckets, so there's no per-host bucket copy to reframe.
+  // The hosted demo fixture in `demoUpload.ts` now ships its own
+  // topic assignments and renders identically to local mining output.
 
   // Header-row redesign: "Generated <iso>" was demoted from a row of
   // its own to a "Last mined …" chip in the title row. Verify the chip

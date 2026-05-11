@@ -180,6 +180,18 @@ export interface CorrectionPattern {
    * finding, surfaced separately in the viewer.
    */
   alreadyEncoded: boolean;
+  /**
+   * Short LLM-derived topic label (1-3 words, Title Case) shared
+   * across all patterns in the same theme — drives dynamic bucketing
+   * in the viewer instead of the predefined RECURRING/ENCODED/NEW
+   * taxonomy. Set by the mine-corrections skill's `tag-topics` stage,
+   * which sees ALL patterns in one LLM call so labels stay coherent
+   * across the corpus (no fragmentation between "Git Workflow" and
+   * "Git Practices"). Optional for back-compat: patterns from prior
+   * mining runs without this field render in an "Untagged" bucket
+   * until re-mined.
+   */
+  topic?: string;
 }
 
 export interface CorrectionsFile {
