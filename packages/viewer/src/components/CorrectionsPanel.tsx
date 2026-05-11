@@ -30,6 +30,7 @@ import {
   type ApplyCorrectionRequest,
 } from '../data/applyCorrectionClient.js';
 import type { ProposedUpgrade } from '@chat-arch/schema';
+import { formatRelative } from '../util/time.js';
 
 export interface CorrectionsPanelProps {
   /** Same base URL the manifest was fetched from (e.g. "/chat-arch-data"). */
@@ -188,6 +189,16 @@ function formatGenerated(ms: number): string {
   }
 }
 
+/**
+ * Header timestamp formatter. Uses the shared relative-time util so
+ * the chip reads "2d ago" instead of an ISO blob; the absolute ISO
+ * survives in the surrounding `title=` tooltip for debug use.
+ */
+function relativeGenerated(ms: number): string {
+  if (!Number.isFinite(ms)) return 'unknown';
+  return formatRelative(ms);
+}
+
 type ClearState =
   | { status: 'idle' }
   | { status: 'armed' }
@@ -231,10 +242,13 @@ export function CorrectionsPanel({
     };
   }, []);
 
-  const [selection, setSelection] = useState<'recent' | 'backfill'>('recent');
+  // Single-CTA mining (per the "MINE ALL" UX): selection is always 'all'.
+  // The backend's recent/backfill split still exists for future power-user
+  // surfaces but is no longer driven by this panel.
+  const [selection] = useState<'recent' | 'backfill' | 'all'>('all');
 
   const refreshAutoWindow = useCallback(
-    async (sel: 'recent' | 'backfill' = selection) => {
+    async (sel: 'recent' | 'backfill' | 'all' = selection) => {
       const probe = await probeMineCorrections(undefined, sel);
       if (!aliveRef.current) return;
       setAutoWindow(probe?.autoWindow ?? null);
@@ -517,14 +531,13 @@ export function CorrectionsPanel({
       return;
     }
     setMining({ status: 'idle' });
-    setSelection('recent');
     await refresh();
   }, [refresh, selection]);
 
   if (load.status === 'loading') {
     return (
       <section className="lcars-corrections" aria-label="corrections">
-        <Header hostedDemo={!rescanAvailable} />
+        <Header />
         <p className="lcars-corrections__lead">Loading corrections…</p>
       </section>
     );
@@ -533,7 +546,7 @@ export function CorrectionsPanel({
   if (load.status === 'error') {
     return (
       <section className="lcars-corrections" aria-label="corrections">
-        <Header hostedDemo={!rescanAvailable} />
+        <Header />
         <div className="lcars-corrections__error" role="alert">
           <p>Could not load corrections: {load.message}</p>
           <button
@@ -584,7 +597,6 @@ export function CorrectionsPanel({
   return (
     <section className="lcars-corrections" aria-label="corrections">
       <Header
-        hostedDemo={!rescanAvailable}
         {...(typeof corrections?.generatedAt === 'number'
           ? { generatedAt: corrections.generatedAt }
           : {})}
@@ -707,17 +719,8 @@ export function CorrectionsPanel({
           hasCorrections={hasCorrections}
           candidateCount={candidateCount}
           autoWindow={autoWindow}
-          selection={selection}
           onArm={() => setMining({ status: 'armed' })}
           onRefreshAutoWindow={() => void refreshAutoWindow()}
-          onSwitchToBackfill={() => {
-            setSelection('backfill');
-            void refreshAutoWindow('backfill');
-          }}
-          onSwitchToRecent={() => {
-            setSelection('recent');
-            void refreshAutoWindow('recent');
-          }}
           rescanAvailable={rescanAvailable}
         />
       )}
@@ -801,53 +804,31 @@ function CoverageMeter({ coverage }: CoverageMeterProps) {
   const { total, classified, actionable, patterns, scanStats } = coverage;
   const [expanded, setExpanded] = useState(false);
   const pct = total === 0 ? 0 : Math.round((classified / total) * 100);
-  const remaining = Math.max(0, total - classified);
-  const actionablePct =
-    classified === 0 ? 0 : Math.round((actionable / classified) * 100);
 
   return (
     <div
       className="lcars-corrections__coverage"
       role="group"
-      aria-label="analysis coverage"
+      aria-label="mining progress"
     >
-      <div className="lcars-corrections__coverage-row">
-        <span className="lcars-corrections__coverage-label">
-          ANALYSIS COVERAGE
-        </span>
-        <span className="lcars-corrections__coverage-figure">
-          <strong>{fmt(classified)}</strong> / {fmt(total)} candidates
-          classified · {pct}%
-        </span>
-      </div>
       <div
         className="lcars-corrections__coverage-bar"
         role="progressbar"
         aria-valuenow={pct}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuetext={`${classified} of ${total} candidates classified`}
+        aria-valuetext={`${classified} of ${total} candidates mined`}
       >
         <span
           className="lcars-corrections__coverage-fill"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <p className="lcars-corrections__coverage-funnel">
-        {classified > 0 ? (
-          <>
-            <strong>{fmt(actionable)}</strong> actionable ({actionablePct}% of
-            classified) · <strong>{fmt(patterns)}</strong>{' '}
-            {patterns === 1 ? 'pattern' : 'patterns'} surfaced ·{' '}
-            <strong>{fmt(remaining)}</strong> unmined
-          </>
-        ) : (
-          <>
-            <strong>{fmt(remaining)}</strong> candidate
-            {remaining === 1 ? '' : 's'} unmined — no LLM pass run yet.
-          </>
-        )}
-      </p>
+      <div className="lcars-corrections__coverage-row">
+        <span className="lcars-corrections__coverage-figure">
+          <strong>{fmt(classified)}</strong> / {fmt(total)} mined
+        </span>
+      </div>
       {scanStats !== null && (
         <button
           type="button"
@@ -855,18 +836,9 @@ function CoverageMeter({ coverage }: CoverageMeterProps) {
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           aria-controls="lcars-corrections-pipeline-detail"
-          aria-label={`pipeline funnel: ${fmt(scanStats.sessionsScanned)} transcripts produced ${fmt(scanStats.survivingTurns)} prompts producing ${fmt(total)} candidates. ${expanded ? 'Hide' : 'Show'} details.`}
+          aria-label={`${expanded ? 'Hide' : 'Show'} mining details`}
         >
-          <span aria-hidden="true">
-            {fmt(scanStats.sessionsScanned)} transcripts →{' '}
-            {fmt(scanStats.survivingTurns)} prompts → {fmt(total)} candidates
-          </span>
-          <span
-            className="lcars-corrections__coverage-chevron"
-            aria-hidden="true"
-          >
-            {expanded ? '▾' : '▸'}
-          </span>
+          <span aria-hidden="true">{expanded ? '▾' : '▸'} details</span>
         </button>
       )}
       {scanStats !== null && expanded && (
@@ -902,40 +874,48 @@ function CoverageDetail({
     'cowork',
     'cloud',
   ];
-  const absent: string[] = [];
-  for (const s of knownSources) {
-    if ((scanStats.sessionsBySource[s] ?? 0) === 0) absent.push(s);
-  }
 
   return (
     <div
       id="lcars-corrections-pipeline-detail"
       className="lcars-corrections__coverage-detail"
     >
-      {(scanStats.sessionsMissing > 0 || absent.length > 0) && (
-        <div className="lcars-corrections__pipeline">
-          <span className="lcars-corrections__pipeline-label">NOT SCANNED</span>
-          <ul className="lcars-corrections__pipeline-list">
-            {Object.entries(scanStats.sessionsMissingBySource).map(
-              ([source, n]) => (
-                <li key={`miss-${source}`}>
-                  <strong>{fmt(n)}</strong> {SOURCE_LABEL[source] ?? source}{' '}
-                  sessions — no transcript file on disk (stub entries from
-                  aborted/deleted sessions)
-                </li>
-              ),
-            )}
-            {absent.map((source) => (
-              <li key={`absent-${source}`}>
-                <strong>0</strong> {SOURCE_LABEL[source] ?? source} sessions —
-                {source === 'cloud'
-                  ? ' no claude.ai export loaded'
-                  : ' source not present in this corpus'}
+      <div className="lcars-corrections__pipeline">
+        <span className="lcars-corrections__pipeline-label">SCANNED</span>
+        <span className="lcars-corrections__pipeline-sublabel">
+          transcripts read · indexed in manifest
+        </span>
+        <ul className="lcars-corrections__pipeline-list">
+          {knownSources.map((source) => {
+            const total = scanStats.sessionsBySource[source] ?? 0;
+            const missing = scanStats.sessionsMissingBySource[source] ?? 0;
+            const scanned = Math.max(0, total - missing);
+            const note =
+              total === 0
+                ? source === 'cloud'
+                  ? 'no claude.ai export loaded'
+                  : 'not present in this corpus'
+                : missing > 0
+                  ? `${fmt(missing)} indexed but transcript file not on disk — usually deleted or aborted sessions`
+                  : null;
+            return (
+              <li key={`scan-${source}`}>
+                <span className="lcars-corrections__pipeline-source">
+                  {SOURCE_LABEL[source] ?? source}
+                </span>{' '}
+                <strong>
+                  {fmt(scanned)} / {fmt(total)}
+                </strong>
+                {note && (
+                  <span className="lcars-corrections__pipeline-note">
+                    {note}
+                  </span>
+                )}
               </li>
-            ))}
-          </ul>
-        </div>
-      )}
+            );
+          })}
+        </ul>
+      </div>
       <div className="lcars-corrections__pipeline">
         <span className="lcars-corrections__pipeline-label">PIPELINE</span>
         <ul className="lcars-corrections__pipeline-list">
@@ -1103,43 +1083,23 @@ function DangerZone({
 
 interface HeaderProps {
   generatedAt?: number;
-  /**
-   * Phase 4 P0.3: when true, the panel is showing demo data on a
-   * hosted static build (no `/api/mine-corrections`, no apply ledger
-   * back end). Swap the developer-y lead copy ("log a CLAUDE.md edit",
-   * "next mining pass", "applied-improvements.json") for plain
-   * language that explains what corrections ARE — matching the
-   * hosted-demo bucket blurbs above.
-   */
-  hostedDemo?: boolean;
 }
 
-function Header({ generatedAt, hostedDemo = false }: HeaderProps) {
+function Header({ generatedAt }: HeaderProps) {
+  const hasTime = typeof generatedAt === 'number';
   return (
     <header className="lcars-corrections__header">
-      <h2 className="lcars-corrections__title">CORRECTIONS</h2>
-      <p className="lcars-corrections__lead">
-        {hostedDemo ? (
-          <>
-            These are corrections — moments where Claude broke a rule you set, clustered into
-            patterns. Patterns marked <strong>RECURRING</strong> came back even after you patched
-            them; those are the strongest signal that the rule needs reshaping.
-          </>
-        ) : (
-          <>
-            Recurring instructions you keep giving the model — clustered, ranked, and paired with
-            proposed CLAUDE.md upgrades. Click APPLY to log a CLAUDE.md edit you&apos;ve made; the
-            loop closes when the next mining pass shows the rule is no longer recurring. Apply
-            history is recorded in <code>applied-improvements.json</code> next to{' '}
-            <code>corrections.json</code>.
-          </>
+      <div className="lcars-corrections__title-row">
+        <h2 className="lcars-corrections__title">CORRECTIONS</h2>
+        {hasTime && (
+          <span
+            className="lcars-corrections__time"
+            title={`Generated ${formatGenerated(generatedAt!)}`}
+          >
+            Last mined {relativeGenerated(generatedAt!)}
+          </span>
         )}
-      </p>
-      {typeof generatedAt === 'number' && (
-        <p className="lcars-corrections__meta">
-          Generated {formatGenerated(generatedAt)}
-        </p>
-      )}
+      </div>
     </header>
   );
 }
@@ -1148,11 +1108,8 @@ interface MiningTriggerProps {
   hasCorrections: boolean;
   candidateCount: number;
   autoWindow: AutoWindowResult | null;
-  selection: 'recent' | 'backfill';
   onArm: () => void;
   onRefreshAutoWindow: () => void;
-  onSwitchToBackfill: () => void;
-  onSwitchToRecent: () => void;
   /**
    * Phase 4 — when `false`, the host is the hosted static build with
    * no `/api/mine-corrections` endpoint. Mining can never run there;
@@ -1166,14 +1123,10 @@ function MiningTrigger({
   hasCorrections,
   candidateCount,
   autoWindow,
-  selection,
   onArm,
   onRefreshAutoWindow,
-  onSwitchToBackfill,
-  onSwitchToRecent,
   rescanAvailable = true,
 }: MiningTriggerProps) {
-  const ctaLabel = hasCorrections ? 'RE-MINE CORRECTIONS' : 'MINE CORRECTIONS';
   const isIdle = autoWindow?.mode === 'idle';
   const isUnavailable = autoWindow?.mode === 'unavailable';
   // Phase 4 — when the local server is unreachable AND the auto-window
@@ -1183,51 +1136,68 @@ function MiningTrigger({
   const localOnly = !rescanAvailable && autoWindow === null;
   const disabled =
     isIdle || isUnavailable || localOnly || (candidateCount === 0 && !hasCorrections);
-  const modeLabel = selection === 'backfill' ? 'BACKFILL' : 'AUTO WINDOW';
-  const backfill = autoWindow?.backfillAvailable ?? null;
+
+  // With selection='all' the autoWindow result already carries the
+  // entire unprocessed set — no separate "older" count to add.
+  const totalReady = autoWindow?.candidateCount ?? 0;
+  const windowDays = autoWindow?.windowDays ?? null;
+  const hasReady = totalReady > 0 && !isIdle && !isUnavailable;
+
+  const ctaLabel = isIdle
+    ? 'NO NEW CANDIDATES'
+    : isUnavailable
+      ? 'NO DATA'
+      : hasReady
+        ? `MINE ALL ${totalReady}`
+        : hasCorrections
+          ? 'RE-MINE CORRECTIONS'
+          : 'MINE CORRECTIONS';
+
+  const ctaTitle = localOnly
+    ? 'Mining is local-only — install chat-arch on your machine to mine your own corpus.'
+    : isIdle
+      ? 'No new candidates since the last mining run.'
+      : isUnavailable
+        ? 'Run the chat-arch exporter first to produce candidates.'
+        : hasReady && windowDays !== null
+          ? `Mine all ${totalReady} unprocessed candidates (~${windowDays} day span).`
+          : undefined;
+
+  const status = localOnly
+    ? 'Mining is local-only.'
+    : autoWindow === null
+      ? 'Computing…'
+      : isUnavailable
+        ? 'No candidates yet.'
+        : isIdle
+          ? 'Nothing new to mine.'
+          : `${totalReady} ready to mine`;
 
   return (
     <div className="lcars-corrections__trigger">
-      <div className="lcars-corrections__auto">
-        <span className="lcars-corrections__auto-label">{modeLabel}</span>
-        <span className="lcars-corrections__auto-value">
-          {localOnly
-            ? 'mining is local-only'
-            : autoWindow === null
-              ? 'computing…'
-              : autoWindow.mode === 'idle'
-                ? 'no new candidates'
-                : autoWindow.mode === 'unavailable'
-                  ? 'no data'
-                  : `${autoWindow.windowDays}d · ${autoWindow.candidateCount} candidate${autoWindow.candidateCount === 1 ? '' : 's'}`}
-        </span>
+      <div className="lcars-corrections__trigger-status-row">
+        <span className="lcars-corrections__trigger-status">{status}</span>
         <button
           type="button"
-          className="lcars-corrections__btn lcars-corrections__btn--ghost"
+          className="lcars-corrections__btn lcars-corrections__btn--ghost lcars-corrections__btn--icon"
           onClick={onRefreshAutoWindow}
-          aria-label="refresh auto window"
-          title="Recompute auto-window"
+          aria-label="refresh"
+          title="Recompute the candidate count"
         >
           ↻
         </button>
       </div>
-      <button
-        type="button"
-        className="lcars-corrections__btn lcars-corrections__btn--primary"
-        onClick={onArm}
-        disabled={disabled}
-        title={
-          localOnly
-            ? 'Mining is local-only — install chat-arch on your machine to mine your own corpus.'
-            : isIdle
-              ? 'No new candidates since the last mining run.'
-              : isUnavailable
-                ? 'Run the chat-arch exporter first to produce candidates.'
-                : undefined
-        }
-      >
-        ▶ {ctaLabel}
-      </button>
+      <div className="lcars-corrections__trigger-row">
+        <button
+          type="button"
+          className="lcars-corrections__btn lcars-corrections__btn--primary"
+          onClick={onArm}
+          disabled={disabled}
+          {...(ctaTitle ? { title: ctaTitle } : {})}
+        >
+          ▶ {ctaLabel}
+        </button>
+      </div>
       {localOnly && (
         <p className="lcars-corrections__auto-hint">
           Mining is local-only — these demo patterns ship with the bundled fixture.{' '}
@@ -1240,25 +1210,6 @@ function MiningTrigger({
           </a>{' '}
           to mine your own corpus.
         </p>
-      )}
-      {selection === 'recent' && backfill !== null && (
-        <button
-          type="button"
-          className="lcars-corrections__btn lcars-corrections__btn--secondary"
-          onClick={onSwitchToBackfill}
-          title={`${backfill.count} unprocessed older than the recent set, oldest from ${backfill.oldestDate}`}
-        >
-          BACKFILL OLDER ({backfill.count})
-        </button>
-      )}
-      {selection === 'backfill' && (
-        <button
-          type="button"
-          className="lcars-corrections__btn lcars-corrections__btn--ghost"
-          onClick={onSwitchToRecent}
-        >
-          ← RECENT
-        </button>
       )}
     </div>
   );
@@ -1292,8 +1243,11 @@ function ArmedPreview({ autoWindow, onRun, onCancel }: ArmedPreviewProps) {
         {windowDays === 1 ? 'day' : 'days'}. Estimated work:{' '}
         ~{Math.max(1, Math.ceil(candidateCount / 20))} classification batch
         {Math.ceil(candidateCount / 20) === 1 ? '' : 'es'} plus
-        one proposal call per cluster, ~3-8 min wall-clock. Counts against your
-        Claude Code plan usage; no separate billing.
+        one proposal call per cluster,{' '}
+        ~{Math.max(3, Math.ceil(Math.ceil(candidateCount / 20) * 0.75))}-
+        {Math.max(8, Math.ceil(Math.ceil(candidateCount / 20) * 2))} min
+        wall-clock. Counts against your Claude Code plan usage; no separate
+        billing.
       </p>
       <p className="lcars-corrections__armed-reasoning">{reasoning}</p>
       <div className="lcars-corrections__armed-actions">

@@ -164,8 +164,9 @@ export interface AutoWindowResult {
   /** 'first-run' on cold start; 'incremental' when prior corrections exist;
    *  'idle' when nothing new since last run; 'unavailable' when the data
    *  files aren't readable yet; 'backfill' when explicitly running an
-   *  oldest-first selection. */
-  mode: 'first-run' | 'incremental' | 'idle' | 'unavailable' | 'backfill';
+   *  oldest-first selection; 'all' when the caller asked to mine every
+   *  unprocessed candidate in one pass (no cost cap). */
+  mode: 'first-run' | 'incremental' | 'idle' | 'unavailable' | 'backfill' | 'all';
   /** Diagnostic for outcome-aware sizing. Null on first run. */
   patternYield: { patterns: number; classified: number; ratio: number } | null;
   /** Present when there are unprocessed candidates older than the picked
@@ -283,7 +284,7 @@ function outcomeAwareTarget(
 export async function computeAutoWindow(
   rootAbs: string,
   dataDir: string,
-  selection: 'recent' | 'backfill' = 'recent',
+  selection: 'recent' | 'backfill' | 'all' = 'recent',
 ): Promise<{ result: AutoWindowResult; targetIds: string[] }> {
   const empty = (result: AutoWindowResult): { result: AutoWindowResult; targetIds: string[] } => ({
     result,
@@ -393,10 +394,12 @@ export async function computeAutoWindow(
     });
   }
 
-  // Order: composite score desc for 'recent' selection. For 'backfill',
-  // re-score with INVERTED recency so older high-signal candidates win.
+  // Order: composite score desc for 'recent' AND 'all' (the user picks
+  // everything; ranking just controls which items the skill processes
+  // first within the batch). For 'backfill', re-score with INVERTED
+  // recency so older high-signal candidates win.
   const ordered = [...fresh].sort((a, b) => {
-    if (selection === 'recent') return b.composite - a.composite;
+    if (selection === 'recent' || selection === 'all') return b.composite - a.composite;
     const invA = a.signalScore + (a.updatedAt > 0 ? 0 : 0); // pure signal weight
     const invB = b.signalScore + (b.updatedAt > 0 ? 0 : 0);
     if (invB !== invA) return invB - invA;
@@ -404,11 +407,14 @@ export async function computeAutoWindow(
   });
 
   // Outcome-aware sizing — falls back to FIRST_RUN_TARGET_CANDIDATES on
-  // first run or zero-yield runs.
+  // first run or zero-yield runs. 'all' bypasses the cap entirely:
+  // the user explicitly opted into mining every unprocessed candidate
+  // in one pass and accepted the cost in the ArmedPreview confirmation.
   const baseTarget = hasPriorRun
     ? outcomeAwareTarget(priorPatterns, priorClassified)
     : FIRST_RUN_TARGET_CANDIDATES;
-  const target = Math.min(baseTarget, ordered.length);
+  const target =
+    selection === 'all' ? ordered.length : Math.min(baseTarget, ordered.length);
   const picked = ordered.slice(0, target);
   const targetIds = picked.map((p) => p.id);
 
@@ -459,7 +465,10 @@ export async function computeAutoWindow(
 
   let mode: AutoWindowResult['mode'];
   let reasoning: string;
-  if (selection === 'backfill') {
+  if (selection === 'all') {
+    mode = 'all';
+    reasoning = `All: targeting every unprocessed candidate (${target} of ${ranked.length} total). Composite-ranked so high-signal items run first within the batch. Covers ~${windowDays} day${windowDays === 1 ? '' : 's'}.`;
+  } else if (selection === 'backfill') {
     mode = 'backfill';
     reasoning = `Backfill: targeting ${target} oldest unprocessed candidate${target === 1 ? '' : 's'} of ${fresh.length} total (~${windowDays} day${windowDays === 1 ? '' : 's'} span). High-signal items prioritized.`;
   } else if (hasPriorRun) {
@@ -692,7 +701,8 @@ async function streamMineCorrections(
 interface MineRequestBody {
   windowDays?: unknown;
   dataDir?: unknown;
-  /** 'recent' (default) or 'backfill' to flip auto-window selection. */
+  /** 'recent' (default), 'backfill', or 'all' (mine every unprocessed
+   *  candidate in one pass — bypasses the cost cap). */
   selection?: unknown;
 }
 
@@ -720,8 +730,12 @@ async function parseParams(body: MineRequestBody): Promise<MineParams> {
     };
   }
 
-  const selection: 'recent' | 'backfill' =
-    body.selection === 'backfill' ? 'backfill' : 'recent';
+  const selection: 'recent' | 'backfill' | 'all' =
+    body.selection === 'all'
+      ? 'all'
+      : body.selection === 'backfill'
+        ? 'backfill'
+        : 'recent';
   const { result: auto, targetIds } = await computeAutoWindow(
     repoRoot(),
     dataDir,
@@ -885,8 +899,13 @@ export const GET: APIRoute = async ({ url }) => {
     typeof dirParam === 'string' && dirParam.trim().length > 0
       ? dirParam
       : DEFAULT_DATA_DIR;
-  const selection: 'recent' | 'backfill' =
-    url.searchParams.get('selection') === 'backfill' ? 'backfill' : 'recent';
+  const selParam = url.searchParams.get('selection');
+  const selection: 'recent' | 'backfill' | 'all' =
+    selParam === 'all'
+      ? 'all'
+      : selParam === 'backfill'
+        ? 'backfill'
+        : 'recent';
   let autoWindow: AutoWindowResult | null = null;
   try {
     const out = await computeAutoWindow(repoRoot(), dataDir, selection);

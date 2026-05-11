@@ -25,7 +25,7 @@ export interface AutoWindowResult {
   windowDays: number;
   candidateCount: number;
   reasoning: string;
-  mode: 'first-run' | 'incremental' | 'idle' | 'unavailable' | 'backfill';
+  mode: 'first-run' | 'incremental' | 'idle' | 'unavailable' | 'backfill' | 'all';
   patternYield: { patterns: number; classified: number; ratio: number } | null;
   backfillAvailable: BackfillInfo | null;
 }
@@ -96,9 +96,9 @@ export interface MineCorrectionsOptions {
   /** Omit to use server-side auto-window selection. */
   windowDays?: number;
   dataDir?: string;
-  /** 'recent' (default) or 'backfill' — flips auto-window selection
-   *  to oldest-unprocessed-first so historical patterns surface. */
-  selection?: 'recent' | 'backfill';
+  /** 'recent' (default), 'backfill', or 'all' — 'all' bypasses the
+   *  cost cap and processes every unprocessed candidate in one pass. */
+  selection?: 'recent' | 'backfill' | 'all';
 }
 
 /**
@@ -108,11 +108,13 @@ export interface MineCorrectionsOptions {
  */
 export async function probeMineCorrections(
   dataDir?: string,
-  selection?: 'recent' | 'backfill',
+  selection?: 'recent' | 'backfill' | 'all',
 ): Promise<MineProbe | null> {
   const params = new URLSearchParams();
   if (dataDir !== undefined && dataDir.length > 0) params.set('dataDir', dataDir);
-  if (selection === 'backfill') params.set('selection', 'backfill');
+  if (selection === 'backfill' || selection === 'all') {
+    params.set('selection', selection);
+  }
   const qs = params.toString();
   const url = qs.length > 0 ? `${MINE_CORRECTIONS_PATH}?${qs}` : MINE_CORRECTIONS_PATH;
   try {
