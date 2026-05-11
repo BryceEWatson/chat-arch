@@ -260,8 +260,22 @@ export interface ScanStats {
    *  `cli-desktop`, `cloud`). */
   sessionsBySource: Record<string, number>;
   /** Missing-transcript sessions broken out by source. Useful for
-   *  diagnosing whether all the gaps are concentrated in one ingester. */
+   *  diagnosing whether all the gaps are concentrated in one ingester.
+   *
+   *  Includes BOTH `transcriptStatus: 'missing'` (file gone from disk)
+   *  AND `transcriptStatus: 'crashed'` (upstream tool crashed before a
+   *  transcript was written). The `sessionsCrashedBySource` sub-count
+   *  below splits out the crashed sub-share so the SCANNED panel can
+   *  show them separately. */
   sessionsMissingBySource: Record<string, number>;
+  /** Crashed-session sub-count by source — a subset of
+   *  `sessionsMissingBySource`. Populated by `transcriptStatus: 'crashed'`
+   *  entries; in practice today only cowork emits these (CLI handoff
+   *  failures where `cliSessionId` is missing and an `error` field is
+   *  set on the source manifest). Optional for back-compat: older
+   *  candidate files predating this field render the legacy single-
+   *  number "missing" note. */
+  sessionsCrashedBySource?: Record<string, number>;
   /** Total user-role turns across all scanned transcripts, BEFORE the
    *  wrapper / length filter. */
   rawUserTurns: number;

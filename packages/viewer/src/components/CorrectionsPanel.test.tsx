@@ -789,4 +789,199 @@ describe('CorrectionsPanel', () => {
       expect(screen.queryByText(/RE-MINE CORRECTIONS/i)).toBeNull();
     });
   });
+
+  // SCANNED panel: the per-source missing note now splits "transcript
+  // file missing on disk" from "CLI crashed before writing one"
+  // (Cowork's case). The split makes it explicit that the user's data
+  // *is* there in audit.jsonl for the crashed cases — different
+  // remediation path than the genuinely-gone files.
+  describe('SCANNED panel — crashed vs missing split', () => {
+    function fileWithScanStats(args: {
+      sessionsBySource: Record<string, number>;
+      sessionsMissingBySource: Record<string, number>;
+      sessionsCrashedBySource?: Record<string, number>;
+    }): CorrectionsFile {
+      return {
+        generatedAt: 1_700_000_000_000,
+        // At least one candidate is required for the CoverageMeter to
+        // mount (it gates on total > 0). The bucketing logic only cares
+        // about the `id` field for the headline; classification stays
+        // null so notRun=true in the LLM MINE stage.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        corrections: [{ id: 'cand-1' }, { id: 'cand-2' }] as any,
+        patterns: [],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: false,
+          embeddingClustering: false,
+          claudeMdCrossCheck: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scanStats: {
+          sessionsInManifest: 0,
+          sessionsScanned: 0,
+          sessionsMissing: 0,
+          sessionsBySource: args.sessionsBySource,
+          sessionsMissingBySource: args.sessionsMissingBySource,
+          ...(args.sessionsCrashedBySource
+            ? { sessionsCrashedBySource: args.sessionsCrashedBySource }
+            : {}),
+          rawUserTurns: 0,
+          wrapperFiltered: 0,
+          tooLongFiltered: 0,
+          survivingTurns: 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      };
+    }
+
+    it('renders split note when both crashed and true-missing exist', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue(
+        fileWithScanStats({
+          sessionsBySource: { cowork: 323 },
+          sessionsMissingBySource: { cowork: 51 },
+          sessionsCrashedBySource: { cowork: 14 },
+        }),
+      );
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      // Open the details disclosure so CoverageDetail renders.
+      const detailsBtn = await screen.findByRole('button', {
+        name: /details/i,
+      });
+      fireEvent.click(detailsBtn);
+      await waitFor(() => {
+        expect(
+          container.querySelector(
+            '[aria-label="EXPORTER SCAN stage"]',
+          ),
+        ).not.toBeNull();
+      });
+      // 51 missing total - 14 crashed = 37 true-missing. The note
+      // should mention both numbers explicitly.
+      const cowork = container.querySelector(
+        '[aria-label="EXPORTER SCAN stage"] li:nth-child(3)',
+      );
+      expect(cowork?.textContent ?? '').toMatch(/272\s*\/\s*323/);
+      expect(cowork?.textContent ?? '').toMatch(/37 transcript file missing on disk/);
+      expect(cowork?.textContent ?? '').toMatch(/14 CLI crashed/);
+    });
+
+    it('renders crashed-only note when all missing are crashes', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue(
+        fileWithScanStats({
+          sessionsBySource: { cowork: 20 },
+          sessionsMissingBySource: { cowork: 5 },
+          sessionsCrashedBySource: { cowork: 5 },
+        }),
+      );
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: /details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label="EXPORTER SCAN stage"]'),
+        ).not.toBeNull();
+      });
+      const cowork = container.querySelector(
+        '[aria-label="EXPORTER SCAN stage"] li:nth-child(3)',
+      );
+      expect(cowork?.textContent ?? '').toMatch(/5 CLI crashed/);
+      expect(cowork?.textContent ?? '').not.toMatch(/missing on disk/);
+    });
+
+    it('falls back to legacy "missing on disk" note when no crashed sub-count is reported', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue(
+        fileWithScanStats({
+          sessionsBySource: { cowork: 100 },
+          sessionsMissingBySource: { cowork: 10 },
+          // No sessionsCrashedBySource — older candidates file shape.
+        }),
+      );
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: /details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label="EXPORTER SCAN stage"]'),
+        ).not.toBeNull();
+      });
+      const cowork = container.querySelector(
+        '[aria-label="EXPORTER SCAN stage"] li:nth-child(3)',
+      );
+      expect(cowork?.textContent ?? '').toMatch(/10 transcript file missing on disk/);
+      expect(cowork?.textContent ?? '').not.toMatch(/CLI crashed/);
+    });
+  });
+
+  // Pipeline-stage markers: the EXPORTER SCAN vs LLM MINE boundary
+  // resolves the user's "the headline says 0 mined but the detail
+  // shows non-zero counts" confusion. Verify both stages render with
+  // the right done/pending status badges and copy.
+  describe('pipeline-stage markers', () => {
+    function emptyScanStats() {
+      return {
+        sessionsInManifest: 0,
+        sessionsScanned: 0,
+        sessionsMissing: 0,
+        sessionsBySource: {},
+        sessionsMissingBySource: {},
+        rawUserTurns: 0,
+        wrapperFiltered: 0,
+        tooLongFiltered: 0,
+        survivingTurns: 0,
+      };
+    }
+
+    it('marks EXPORTER SCAN as done and LLM MINE as pending when no classifications run yet', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue({
+        generatedAt: 1_700_000_000_000,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        corrections: [{ id: 'cand-1' }] as any,
+        patterns: [],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: false,
+          embeddingClustering: false,
+          claudeMdCrossCheck: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scanStats: emptyScanStats() as any,
+      });
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: /details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label="EXPORTER SCAN stage"]'),
+        ).not.toBeNull();
+      });
+      const scanStage = container.querySelector(
+        '[aria-label="EXPORTER SCAN stage"]',
+      );
+      const mineStage = container.querySelector(
+        '[aria-label="LLM MINE stage"]',
+      );
+      expect(scanStage?.getAttribute('data-stage-status')).toBe('done');
+      expect(mineStage?.getAttribute('data-stage-status')).toBe('pending');
+      expect(scanStage?.textContent ?? '').toMatch(/EXPORTER SCAN/);
+      expect(scanStage?.textContent ?? '').toMatch(/done · re-runs on SCAN LOCAL/);
+      expect(mineStage?.textContent ?? '').toMatch(/LLM MINE/);
+      expect(mineStage?.textContent ?? '').toMatch(/pending · click RE-MINE CORRECTIONS/);
+    });
+  });
 });

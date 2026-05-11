@@ -213,6 +213,12 @@ export async function buildCorrectionsCandidatesFile(
   const scanStatsBySession: Record<string, readonly [number, number, number]> = {};
   const sessionsBySource: Record<string, number> = {};
   const sessionsMissingBySource: Record<string, number> = {};
+  // Sub-count of `sessionsMissingBySource`: missing entries whose
+  // `transcriptStatus === 'crashed'` (upstream tool crashed before a
+  // transcript was written — Cowork CLI handoff failures today). The
+  // viewer renders these as a separate sub-note so the user can tell
+  // apart "transcript file deleted" from "session never produced one".
+  const sessionsCrashedBySource: Record<string, number> = {};
   let scanned = 0;
   let reused = 0;
   let missing = 0;
@@ -229,6 +235,12 @@ export async function buildCorrectionsCandidatesFile(
     if (r.kind === 'missing') {
       missing += 1;
       sessionsMissingBySource[src] = (sessionsMissingBySource[src] ?? 0) + 1;
+      // Sub-count crashed entries (CLI handoff failures, etc.). Older
+      // entries without the field fall through and count as plain
+      // missing — same as today's behavior.
+      if (entry.transcriptStatus === 'crashed') {
+        sessionsCrashedBySource[src] = (sessionsCrashedBySource[src] ?? 0) + 1;
+      }
       continue;
     }
     allCorrections.push(...r.corrections);
@@ -267,6 +279,13 @@ export async function buildCorrectionsCandidatesFile(
     sessionsMissing: missing,
     sessionsBySource,
     sessionsMissingBySource,
+    // Omit the field entirely when no crashes were detected so older
+    // tooling reading the file doesn't see an empty object and assume
+    // the writer was newer than it is. Present-and-non-empty is the
+    // viewer's signal to render the split note.
+    ...(Object.keys(sessionsCrashedBySource).length > 0
+      ? { sessionsCrashedBySource }
+      : {}),
     rawUserTurns: aggRaw,
     wrapperFiltered: aggWrapper,
     tooLongFiltered: aggTooLong,
