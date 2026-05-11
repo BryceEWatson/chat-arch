@@ -38,7 +38,9 @@ You orchestrate six stages. Update the status file at every transition.
    curl -s -m 1 http://localhost:11434/api/tags > /dev/null && echo OK || echo MISSING
    ```
    If MISSING, tell the user: "Ollama is not running. Install from https://ollama.com, then `ollama pull mxbai-embed-large`." Stop.
-5. Estimate sub-agent count: `ceil(numCandidates / 20) + estimatedClusters` (estimate clusters as ~numCandidates/8 for a first pass; tighten on subsequent runs once you know the real cluster ratio). If estimate exceeds `--max-sub-agents`, tell the user the count and ask whether to proceed or narrow the window. All sub-agent calls run inside the parent Claude Code session — no separate billing, but each call counts against the user's plan usage.
+5. Estimate sub-agent count: `ceil(numCandidates / 20) + estimatedClusters` (estimate clusters as ~numCandidates/8 for a first pass; tighten on subsequent runs once you know the real cluster ratio). Log the estimate to status either way. All sub-agent calls run inside the parent Claude Code session — no separate billing, but each call counts against the user's plan usage.
+   - **When `--candidate-ids-file` is set**: skip the interactive cap-and-ask entirely. The viewer's `/api/mine-corrections` endpoint only writes that file *after* the user confirmed the count + window in the ArmedPreview dialog, so re-asking here is a) redundant and b) silently fatal in headless `claude -p` mode where there is no one to answer. Proceed regardless of `--max-sub-agents` and log "user pre-approved via API (NN candidates)".
+   - **Else** (direct CLI invocation, no id file): if the estimate exceeds `--max-sub-agents`, ask the user before proceeding. This path has a human at the terminal who can answer.
 6. Write the initial status file.
 
 ### Stage 1 — Classification
@@ -301,7 +303,7 @@ Update on every stage transition. The viewer polls this for live progress.
 - Ollama down → stop, tell the user how to start.
 - Manifest missing → stop, tell the user to run the exporter first.
 - Sub-agent malformed JSON → retry once, then drop those candidates and continue.
-- Sub-agent count over `--max-sub-agents` → ask, don't proceed silently.
+- Sub-agent count over `--max-sub-agents` → ask, don't proceed silently. **Exception**: when `--candidate-ids-file` is set (API-driven run), the user already confirmed in the ArmedPreview UI; proceed regardless of the cap. Asking would silently abort the run.
 - Any unrecoverable error → write `status: error` with message, exit.
 
 ## What you must NOT do
