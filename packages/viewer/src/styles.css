@@ -6851,18 +6851,27 @@ button.lcars-applied-summary__stale--button:focus-visible {
   gap: 8px;
   padding: 12px 14px;
   border-radius: 0 8px 8px 0;
+  /* Default neutral treatment — applies to every bucket; the
+   * urgency-attribute selectors below override for buckets containing
+   * recurring / already-encoded patterns. Same visual that the
+   * dropped `--new` modifier class used to render. */
+  border-left: 3px solid color-mix(in srgb, var(--lcars-text) 30%, transparent);
+  background: rgba(0, 0, 0, 0.18);
 }
-.lcars-corrections__bucket--recurring {
-  border-left: 3px solid var(--lcars-peach);
-  background: rgba(255, 153, 51, 0.05);
-}
-.lcars-corrections__bucket--encoded {
+/* Encoded-but-failing signal (weaker urgency, sunflower accent) —
+ * applied when a bucket contains ≥1 alreadyEncoded pattern AND
+ * no recurring patterns. */
+.lcars-corrections__bucket[data-has-encoded='true'] {
   border-left: 3px solid var(--lcars-sunflower);
   background: rgba(255, 204, 102, 0.05);
 }
-.lcars-corrections__bucket--new {
-  border-left: 3px solid color-mix(in srgb, var(--lcars-text) 30%, transparent);
-  background: rgba(0, 0, 0, 0.18);
+/* Recurring-after-applied signal (highest urgency, peach accent) —
+ * declared last so it wins over the encoded rule when a bucket
+ * carries both signals. Same intent as the dropped `--recurring`
+ * modifier class: scan the page for these first. */
+.lcars-corrections__bucket[data-has-recurring='true'] {
+  border-left: 3px solid var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.05);
 }
 .lcars-corrections__bucket-header {
   display: flex;
@@ -6876,10 +6885,17 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-size: 12.5px;
   letter-spacing: 0.18em;
   font-weight: 700;
+  /* Default neutral title color — matches the dropped `--new` modifier.
+   * Urgency selectors below override per signal. */
+  color: color-mix(in srgb, var(--lcars-text) 92%, transparent);
 }
-.lcars-corrections__bucket--recurring .lcars-corrections__bucket-title { color: var(--lcars-peach); }
-.lcars-corrections__bucket--encoded   .lcars-corrections__bucket-title { color: var(--lcars-sunflower); }
-.lcars-corrections__bucket--new       .lcars-corrections__bucket-title { color: color-mix(in srgb, var(--lcars-text) 92%, transparent); }
+.lcars-corrections__bucket[data-has-encoded='true'] .lcars-corrections__bucket-title {
+  color: var(--lcars-sunflower);
+}
+/* Recurring last so it wins when both signals are present. */
+.lcars-corrections__bucket[data-has-recurring='true'] .lcars-corrections__bucket-title {
+  color: var(--lcars-peach);
+}
 .lcars-corrections__bucket-count {
   font-family: var(--lcars-font-chrome);
   font-size: 10.5px;

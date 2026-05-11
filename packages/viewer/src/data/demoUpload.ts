@@ -658,6 +658,7 @@ function buildDemoCorrections(now: number): {
     confidence: number,
     recurringPostApplication: boolean,
     alreadyEncoded: boolean,
+    topic: string,
     scopeKind: 'global' | 'project' | 'tool' | 'request-shape' = 'global',
   ): CorrectionPattern => ({
     id,
@@ -671,10 +672,10 @@ function buildDemoCorrections(now: number): {
     confidence,
     recurringPostApplication,
     alreadyEncoded,
+    topic,
   });
 
   const patterns: CorrectionPattern[] = [
-    // RED — recurring after applied
     pattern(
       'demo-pat-1',
       'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
@@ -683,6 +684,7 @@ function buildDemoCorrections(now: number): {
       0.92,
       true,
       true,
+      'Tool Usage',
     ),
     pattern(
       'demo-pat-2',
@@ -692,8 +694,8 @@ function buildDemoCorrections(now: number): {
       0.81,
       true,
       false,
+      'Output Discipline',
     ),
-    // YELLOW — already encoded but failing
     pattern(
       'demo-pat-3',
       'Use ripgrep (rg) instead of grep for content search.',
@@ -702,6 +704,7 @@ function buildDemoCorrections(now: number): {
       0.78,
       false,
       true,
+      'Tool Usage',
       'tool',
     ),
     pattern(
@@ -712,8 +715,8 @@ function buildDemoCorrections(now: number): {
       0.74,
       false,
       true,
+      'Output Discipline',
     ),
-    // NEW — candidates to encode
     pattern(
       'demo-pat-5',
       'Test-first: write the failing test before the implementation.',
@@ -722,6 +725,7 @@ function buildDemoCorrections(now: number): {
       0.69,
       false,
       false,
+      'Test Discipline',
       'request-shape',
     ),
     pattern(
@@ -732,6 +736,7 @@ function buildDemoCorrections(now: number): {
       0.66,
       false,
       false,
+      'Git Workflow',
       'project',
     ),
   ];
