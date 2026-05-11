@@ -250,6 +250,102 @@ describe('CorrectionsPanel', () => {
     ]);
   });
 
+  // Codex review feedback on PR #32: the dropped `--recurring|encoded|new`
+  // modifier classes used to drive bucket border + background + title
+  // color (signal-based urgency). With dynamic topics those hardcodes
+  // don't fit, but the urgency signal still lives on every pattern as
+  // `recurringPostApplication` / `alreadyEncoded`. The replacement is
+  // `data-has-recurring` / `data-has-encoded` attribute hooks that the
+  // stylesheet now keys off. These tests lock the contract.
+  describe('bucket urgency attributes', () => {
+    it('flags data-has-recurring=true when the bucket contains a recurring pattern', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'r1',
+            topic: 'Git Workflow',
+            canonicalRule: 'a recurring rule',
+            recurringPostApplication: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('GIT WORKFLOW')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('GIT WORKFLOW');
+      expect(bucket.getAttribute('data-has-recurring')).toBe('true');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('false');
+    });
+
+    it('flags data-has-encoded=true when the bucket has an encoded-but-not-recurring pattern', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'e1',
+            topic: 'Tool Usage',
+            canonicalRule: 'encoded',
+            alreadyEncoded: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('TOOL USAGE')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('TOOL USAGE');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('true');
+      expect(bucket.getAttribute('data-has-recurring')).toBe('false');
+    });
+
+    it('prefers data-has-recurring when a bucket has both signals (recurring wins)', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'r-and-e',
+            topic: 'Mixed',
+            canonicalRule: 'recurring + encoded',
+            recurringPostApplication: true,
+            alreadyEncoded: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('MIXED')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('MIXED');
+      // Builder records `recurring` and skips the `encoded` branch
+      // (else-if). CSS rule order also ensures the recurring style
+      // wins when both attributes are 'true' on the same element.
+      expect(bucket.getAttribute('data-has-recurring')).toBe('true');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('false');
+    });
+
+    it('flags both attributes as false for plain non-urgent buckets', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'plain',
+            topic: 'New Stuff',
+            canonicalRule: 'just a new pattern',
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('NEW STUFF')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('NEW STUFF');
+      expect(bucket.getAttribute('data-has-recurring')).toBe('false');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('false');
+    });
+  });
+
   it('does not render empty-bucket placeholders (no Nothing here — good.)', async () => {
     mockedLoadCorrections.mockResolvedValue(
       file([pattern({ id: 'n1', canonicalRule: 'only one', topic: 'Solo' })]),

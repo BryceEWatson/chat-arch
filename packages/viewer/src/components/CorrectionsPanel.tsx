@@ -131,8 +131,14 @@ interface TopicBucket {
   weight: number;
   /** True when ≥1 pattern is recurring after applied. Hoists the bucket
    *  toward the top regardless of weight (recurring is the highest-
-   *  signal finding the user can act on). */
+   *  signal finding the user can act on), AND drives the bucket's
+   *  visual urgency via the `data-has-recurring` style hook so the
+   *  user can scan the page for hot spots at a glance. */
   hasRecurring: boolean;
+  /** True when ≥1 pattern is alreadyEncoded but not recurring — a
+   *  weaker urgency signal than `hasRecurring`. Drives the bucket's
+   *  visual treatment when `hasRecurring` is false. */
+  hasEncoded: boolean;
 }
 
 /**
@@ -161,9 +167,11 @@ function buildTopicBuckets(
     group.sort(sortPatterns);
     let weight = 0;
     let hasRecurring = false;
+    let hasEncoded = false;
     for (const p of group) {
       weight += p.occurrenceCount;
       if (p.recurringPostApplication) hasRecurring = true;
+      else if (p.alreadyEncoded) hasEncoded = true;
     }
     buckets.push({
       key: topic,
@@ -171,6 +179,7 @@ function buildTopicBuckets(
       patterns: group,
       weight,
       hasRecurring,
+      hasEncoded,
     });
   }
   buckets.sort((a, b) => {
@@ -1478,6 +1487,13 @@ function BucketsView({
           className="lcars-corrections__bucket"
           aria-label={bucket.label}
           data-topic={bucket.key}
+          // Signal-based urgency hooks — restore the visual
+          // differentiation the dropped --recurring/--encoded/--new
+          // modifier classes used to provide. Recurring wins over
+          // encoded (the CSS uses attribute selectors, last rule
+          // wins) so a bucket with both signals reads as urgent.
+          data-has-recurring={bucket.hasRecurring ? 'true' : 'false'}
+          data-has-encoded={bucket.hasEncoded ? 'true' : 'false'}
         >
           <header className="lcars-corrections__bucket-header">
             <h3 className="lcars-corrections__bucket-title">{bucket.label}</h3>
