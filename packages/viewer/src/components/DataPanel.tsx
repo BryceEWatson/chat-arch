@@ -27,9 +27,9 @@ const CLOUD_EXPORT_INSTRUCTIONS =
   'Uploading again merges new conversations without duplicating old ones.';
 
 const SCAN_LOCAL_WEB_ONLY_HINT =
-  'Scanning local chat data requires running Chat Archaeologist locally ' +
-  '(pnpm --filter @chat-arch/standalone dev). The hosted web build has ' +
-  'no way to spawn the scanner.';
+  'Scanning local chat data requires running Chat Archaeologist locally — ' +
+  'see the README quickstart to install. The hosted web build has no way ' +
+  'to spawn the scanner.';
 
 const SCAN_LOCAL_DEFAULT_HINT =
   'Scan local chat sources: ~/.claude and %APPDATA%\\Claude. ' +
@@ -298,13 +298,20 @@ export function DataPanel({
                   {scanDisabled ? (
                     <>
                       <p>
-                        <strong>Available when running locally.</strong> The hosted web build has
-                        no way to spawn the scanner.
+                        <strong>SCAN LOCAL works only when chat-arch is running on your
+                        machine.</strong> The hosted web build has no way to read your local
+                        Claude Code transcripts.
                       </p>
                       <p>
-                        To enable, clone the repo and run{' '}
-                        <code>pnpm --filter @chat-arch/standalone dev</code>, then reload this
-                        page.
+                        Visit the{' '}
+                        <a
+                          href="https://github.com/BryceEWatson/chat-arch#quickstart"
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          README quickstart
+                        </a>{' '}
+                        to install it locally, then reload this page.
                       </p>
                     </>
                   ) : (

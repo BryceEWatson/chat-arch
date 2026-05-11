@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SessionManifest, UnifiedSessionEntry, SessionSource } from '@chat-arch/schema';
+import type {
+  AppliedImprovementsFile,
+  SessionManifest,
+  UnifiedSessionEntry,
+  SessionSource,
+} from '@chat-arch/schema';
 import type {
   AnalysisState,
   ConversationCache,
@@ -26,15 +31,17 @@ import {
   CommandMode,
   TimelineMode,
   DetailMode,
-  ConstellationMode,
-  CostMode,
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
 import { PracticeMode } from './components/modes/PracticeMode.js';
 import { CorrectionsPanel } from './components/CorrectionsPanel.js';
-import type { CostKpiSection } from './components/modes/CostMode.js';
 import { fetchManifest } from './data/fetch.js';
+import {
+  loadAppliedImprovementsFile,
+  loadCorrectionsFile,
+} from './data/correctionsLoader.js';
+import type { CorrectionsFile } from '@chat-arch/schema';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
 import { computeV2Entities } from './data/computeV2Entities.js';
@@ -98,6 +105,33 @@ const HASH_PRACTICE = '#practice';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
+const ANALYTICS_COLLAPSED_KEY = 'chat-arch:analytics-collapsed';
+// Legacy unprefixed key from the Phase 2a ship — read on first mount
+// for existing users so their preference survives the rename.
+const LEGACY_ANALYTICS_COLLAPSED_KEY = 'chat-arch-analytics-collapsed';
+
+/**
+ * Detect whether this browser has any prior chat-arch state — i.e. is
+ * this a returning user, not a fresh install. We probe the `chat-arch:`
+ * prefix used by every persisted preference (boot-seen, sort-by,
+ * demo-banner-dismissed, embed-device-pref-v1) so the heuristic stays
+ * accurate even as new keys are added. Returning true here flips the
+ * ANALYTICS-collapsed default from "collapsed" to "expanded" so the
+ * Phase 2a IA refocus doesn't quietly hide a surface a returning user
+ * might have been using yesterday.
+ */
+function hasExistingChatArchState(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith('chat-arch:')) return true;
+    }
+  } catch {
+    // localStorage policy-locked / private mode — treat as fresh install.
+  }
+  return false;
+}
 
 /**
  * Read the stored SORT preference; fall back to `recent` when missing
@@ -234,6 +268,26 @@ export function ChatArchViewer({
     () => readTopicsHash().selectedTopicId,
   );
   const [selectedId, setSelectedId] = useState<string | null>(() => readSessionHash());
+  // Phase 1 corrections-loop: a CORRECTIONS instance-pill clickthrough
+  // opens session detail. Hitting BACK should land back in CORRECTIONS,
+  // not the default `command` mode — otherwise the loop is broken on
+  // backtrack. We stash the mode at click time and the hashchange
+  // listener restores it when the session hash is popped. Only set
+  // when a non-default restoration is wanted; cleared after restoration
+  // so a subsequent `onSelect` from an unrelated surface doesn't
+  // accidentally inherit it.
+  //
+  // The companion ref mirrors state for the hashchange listener: that
+  // listener is registered once on mount (so it doesn't re-subscribe
+  // on every state change) but needs fresh access to the prior mode
+  // when the user hits BACK. State alone would freeze the closure to
+  // its initial null; the ref bridges the gap.
+  const [priorModeBeforeDetail, setPriorModeBeforeDetail] =
+    useState<Mode | null>(null);
+  const priorModeBeforeDetailRef = useRef<Mode | null>(null);
+  useEffect(() => {
+    priorModeBeforeDetailRef.current = priorModeBeforeDetail;
+  }, [priorModeBeforeDetail]);
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<FilterState>(new Set<SessionSource>());
@@ -272,6 +326,26 @@ export function ChatArchViewer({
     v2Narratives: null,
   });
 
+  // Phase 2a: lift the applied-improvements ledger to the viewer level
+  // so the default-mode reroute decision can consult it before the user
+  // has touched the corrections panel. CorrectionsPanel keeps its own
+  // load (cheap; decoupling it is a follow-up) so the panel stays
+  // self-contained when embedded in isolation.
+  const [appliedImprovements, setAppliedImprovements] =
+    useState<AppliedImprovementsFile | null>(null);
+  const [appliedHydrated, setAppliedHydrated] = useState(false);
+  // Phase 2a: also load corrections.json at the viewer level so the
+  // default-mode reroute fires for demo / first-time users who have
+  // patterns to look at but no APPLY clicks yet. Mirrors the
+  // applied-improvements pattern — CorrectionsPanel still does its own
+  // load (so an embedded panel stays self-contained) and tolerates
+  // duplicate fetches; the small extra request is fine for the
+  // landing-routing benefit.
+  const [correctionsRoute, setCorrectionsRoute] =
+    useState<CorrectionsFile | null>(null);
+  const [correctionsRouteHydrated, setCorrectionsRouteHydrated] =
+    useState(false);
+
   // --- Phase 3 semantic-classification state ---
   //
   // Sidecar enrichment layer: BGE-small-en-v1.5 embeddings + cosine-
@@ -303,6 +377,37 @@ export function ChatArchViewer({
   // DATA panel, not the TopBar. Open state is hoisted here so the
   // sidebar's DATA item and the panel itself share the toggle.
   const [dataPanelOpen, setDataPanelOpen] = useState<boolean>(false);
+  // Phase 2a: ANALYTICS group collapse state. Default-collapsed so the
+  // workshop surfaces are above the fold; persisted to localStorage so
+  // the user's preference survives reloads.
+  const [analyticsCollapsed, setAnalyticsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      // Prefer the canonical (`chat-arch:`-prefixed) key. Fall back to
+      // the legacy unprefixed key written by the Phase 2a ship so
+      // existing users don't lose their preference across the rename.
+      const stored =
+        window.localStorage.getItem(ANALYTICS_COLLAPSED_KEY) ??
+        window.localStorage.getItem(LEGACY_ANALYTICS_COLLAPSED_KEY);
+      if (stored !== null) return stored === 'true';
+      // No persisted preference. New installs land collapsed (workshop
+      // surfaces above the fold, Phase 2a IA intent). Returning users
+      // who never saw this key — i.e. they have OTHER chat-arch state
+      // but no analytics-collapsed entry — land expanded so the
+      // refocus doesn't hide ANALYTICS surfaces they were using.
+      return !hasExistingChatArchState();
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(ANALYTICS_COLLAPSED_KEY, String(analyticsCollapsed));
+    } catch {
+      // localStorage unavailable — preference is session-scoped.
+    }
+  }, [analyticsCollapsed]);
   // Log mount once — gives the user a "system online" anchor so an
   // empty log during early interactions doesn't look broken. The ref
   // guard prevents StrictMode's intentional double-invoke from
@@ -314,23 +419,6 @@ export function ChatArchViewer({
     log('info', 'system', 'Chat Archaeologist viewer ready.');
   }, [log]);
 
-  // COST mode KPI-entry state. Set by onKpiClick; CostMode reads it to
-  // drive the 2s highlight ring. Cleared when the user leaves COST
-  // (direct-nav + re-enter shows no highlight per `[R-D19]`).
-  const [costKpiEntry, setCostKpiEntry] = useState<CostKpiSection | null>(null);
-  const [costToolFilter, setCostToolFilter] = useState<string | undefined>(undefined);
-
-  // CONSTELLATION navigation state — set by SessionCard chip clicks.
-  const [constellationHighlightClusterId, setConstellationHighlightClusterId] = useState<
-    string | null
-  >(null);
-  // AC20: the originating session's id, so the cluster card can mark
-  // which of its member <li>s was the one the user came from.
-  const [constellationOriginSessionId, setConstellationOriginSessionId] = useState<string | null>(
-    null,
-  );
-  const [zombieFilterActive, setZombieFilterActive] = useState(false);
-
   const listScrollY = useRef(0);
   const tier = useViewportTier();
   // `/api/rescan` is only present when the Astro dev server is
@@ -338,6 +426,14 @@ export function ChatArchViewer({
   // The hook probes on mount; `available === false` hides the button
   // without error noise.
   const rescanCtl = useRescan();
+  // Phase 4 P1.1: tri-state probe ('probing' | true | false). Treat
+  // 'probing' as optimistic-local-dev to avoid mount flicker — the
+  // initial probe takes 50–200ms, and gating UI on `=== true` would
+  // briefly flash hosted-mode chrome on local-dev mounts. Consumers
+  // that need a strict "rescan succeeded" signal still gate on
+  // `=== true` (e.g. the actual rescan-button enable state); UI that
+  // *hides* on hosted should gate on `!== false` instead.
+  const rescanLikelyLocal = rescanCtl.available !== false;
   const [rescanToast, setRescanToast] = useState<string | null>(null);
   // Cloud-upload progress state for the top-bar Upload Cloud button.
   // Unlike rescan (which has a streaming endpoint), upload parsing is
@@ -352,6 +448,16 @@ export function ChatArchViewer({
   const [rescanBanner, setRescanBanner] = useState<{
     kind: 'ok' | 'error';
     message: string;
+  } | null>(null);
+  // Persistent per-source delta chip in the TopBar. Survives banner
+  // dismiss / auto-vanish so the user has a long-lived signal of the
+  // last rescan's effect; cleared on next rescan or by the chip's own
+  // ✕ dismiss button.
+  const [rescanDelta, setRescanDelta] = useState<{
+    totalLocal: number;
+    cowork: number;
+    cli: number;
+    desktop: number;
   } | null>(null);
   // Demo-mode detection: the standalone's `pnpm dev` seed-script writes a
   // sibling `.demo` file alongside the demo manifest. Real exporter output
@@ -477,12 +583,45 @@ export function ChatArchViewer({
       } else if (onPractice) {
         setMode('practice');
       } else {
-        // Hash cleared — reset surface modes back to SESSIONS.
-        setMode((prev) =>
-          prev === 'detail' || prev === 'projects' || prev === 'topics' || prev === 'practice'
-            ? 'command'
-            : prev,
-        );
+        // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
+        // `#constellation` bookmark would otherwise sit in the URL
+        // bar and (more importantly) block the Phase 2a default-mode
+        // reroute below — that effect short-circuits when
+        // `window.location.hash` is non-empty so URL deep links can
+        // still win. Strip the unrecognized hash here so the reroute
+        // sees a clean URL and routes the user to CORRECTIONS / etc.
+        // Skip the rewrite when the hash is already empty so we don't
+        // pile no-op history entries on first mount.
+        if (typeof window !== 'undefined' && window.location.hash) {
+          window.history.replaceState(
+            null,
+            '',
+            window.location.pathname + window.location.search,
+          );
+        }
+        // Hash cleared — reset surface modes back to SESSIONS, OR to
+        // the prior surface the user came from when a session-detail
+        // pill kicked them into `detail` (e.g. CORRECTIONS / PRACTICE
+        // → DETAIL → BACK should return to CORRECTIONS / PRACTICE,
+        // not dump them on SESSIONS). The ref mirrors state so this
+        // closure (registered once) sees the freshest value.
+        setMode((prev) => {
+          if (
+            prev === 'detail' ||
+            prev === 'projects' ||
+            prev === 'topics' ||
+            prev === 'practice'
+          ) {
+            const stashed = priorModeBeforeDetailRef.current;
+            if (prev === 'detail' && stashed) {
+              priorModeBeforeDetailRef.current = null;
+              setPriorModeBeforeDetail(null);
+              return stashed;
+            }
+            return 'command';
+          }
+          return prev;
+        });
       }
     };
     sync();
@@ -513,6 +652,74 @@ export function ChatArchViewer({
     const id = window.requestAnimationFrame(() => window.scrollTo(0, y));
     return () => window.cancelAnimationFrame(id);
   }, [isInDetail]);
+
+  // --- Phase 2a: load applied-improvements ledger + corrections.json once ---
+  // Both feed the default-mode reroute below. Failures resolve to null
+  // (the loaders swallow 404 / network / parse errors) so this never
+  // blocks viewer startup. Loaded in parallel so the reroute decision
+  // doesn't wait for two serial round trips.
+  //
+  // Phase 4 — when an uploadedData payload carries inline `corrections`
+  // / `appliedImprovements` (the demo path bundles them so the workshop
+  // loop is visible on the hosted demo without a back-end mining pass),
+  // those take precedence over the on-disk fetch. The `dataRoot` fetch
+  // still runs as a fallback so a re-mine on a local-dev install
+  // overwrites the demo data on next reload.
+  useEffect(() => {
+    let cancelled = false;
+    if (uploadedData?.appliedImprovements) {
+      setAppliedImprovements(uploadedData.appliedImprovements);
+      setAppliedHydrated(true);
+    } else {
+      loadAppliedImprovementsFile(dataRoot).then((f) => {
+        if (cancelled) return;
+        setAppliedImprovements(f);
+        setAppliedHydrated(true);
+      });
+    }
+    if (uploadedData?.corrections) {
+      setCorrectionsRoute(uploadedData.corrections);
+      setCorrectionsRouteHydrated(true);
+    } else {
+      loadCorrectionsFile(dataRoot).then((f) => {
+        if (cancelled) return;
+        setCorrectionsRoute(f);
+        setCorrectionsRouteHydrated(true);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [dataRoot, uploadedData]);
+
+  // --- Phase 2a: default-mode reroute ---
+  // When the corpus has *anything* to act on (any APPLY ledger entry
+  // OR any classified correction pattern), jump the user to
+  // CORRECTIONS on first paint so the workshop loop is the landing
+  // surface. Demo / first-mine users have patterns but no APPLYs yet —
+  // requiring applied entries would silently leave them on SESSIONS,
+  // which is the wrong default for the Phase 2a refocus. Defers to
+  // URL hash and any prior user navigation so we never yank an
+  // in-progress session.
+  const defaultRerouteAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!appliedHydrated || !correctionsRouteHydrated) return;
+    if (defaultRerouteAppliedRef.current) return;
+    defaultRerouteAppliedRef.current = true;
+    if (typeof window !== 'undefined' && window.location.hash) return;
+    if (mode !== 'command') return;
+    const hasApplied = (appliedImprovements?.entries.length ?? 0) > 0;
+    const hasPatterns = (correctionsRoute?.patterns?.length ?? 0) > 0;
+    if (hasApplied || hasPatterns) {
+      setMode('corrections');
+    }
+  }, [
+    appliedHydrated,
+    correctionsRouteHydrated,
+    appliedImprovements,
+    correctionsRoute,
+    mode,
+  ]);
 
   // --- fetch manifest ---
   useEffect(() => {
@@ -1511,6 +1718,34 @@ export function ChatArchViewer({
   const onLoadDemo = () => {
     const data = generateDemoUpload();
     onUpload(data);
+    // Phase 4 — Priya's finding. The persistent rescan-delta chip
+    // never appears on the demo path because `setRescanDelta` only
+    // fires inside the `/api/rescan` success branch. The demo
+    // fixture pre-populates a synthesized delta; surface it so the
+    // chip lights up like a real rescan would.
+    //
+    // P1.2: only surface the synthesized delta when no real delta is
+    // currently displayed. Maya may have just finished a real rescan
+    // (the chip is showing actual numbers) and a curiosity click on
+    // LOAD DEMO DATA shouldn't overwrite it with fake counts.
+    if (data.synthesizedRescanDelta && rescanDelta === null) {
+      setRescanDelta(data.synthesizedRescanDelta);
+    }
+    // Default-mode reroute — the regular reroute effect only fires
+    // once at mount, so a demo load that arrives later won't trip it
+    // even though we now have classified patterns. Set the mode
+    // explicitly so the user lands in the workshop loop. We don't
+    // override an active hash (deep-link wins) or a non-default mode
+    // (don't yank the user mid-task).
+    if (
+      mode === 'command' &&
+      typeof window !== 'undefined' &&
+      !window.location.hash &&
+      data.corrections &&
+      data.corrections.patterns.length > 0
+    ) {
+      setMode('corrections');
+    }
     // The empty-state layout is short; the populated layout is long
     // (sparkline + filter bar + 97-card grid). When the DOM swaps the
     // browser can preserve the user's vertical scroll position, which
@@ -1565,6 +1800,13 @@ export function ChatArchViewer({
       return;
     }
     setSelectedId(null);
+    // Restore the surface the user came from (e.g. CORRECTIONS) so the
+    // backtrack lands in the loop instead of dumping them on SESSIONS.
+    if (priorModeBeforeDetail) {
+      setMode(priorModeBeforeDetail);
+      setPriorModeBeforeDetail(null);
+      return;
+    }
     setMode('command');
   };
   const onPrev = () => {
@@ -1576,28 +1818,6 @@ export function ChatArchViewer({
     if (!nextId) return;
     pushSessionHash(nextId);
     setSelectedId(nextId);
-  };
-
-  // KPI click → COST mode with section highlight ring (`[R-D19]`).
-  const onKpiClick = (section: CostKpiSection, toolFilter?: string) => {
-    clearHash();
-    setSelectedId(null);
-    setCostKpiEntry(section);
-    setCostToolFilter(toolFilter);
-    setMode('cost');
-    // Clear the highlight after 2s so direct-nav re-entry isn't decorated.
-    window.setTimeout(() => setCostKpiEntry(null), 2000);
-  };
-
-  // DUP chip click → CONSTELLATION with cluster highlighted + auto-scroll
-  // to the originating session row (AC20).
-  const onDuplicateChipClick = (clusterId: string, sessionId: string) => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(clusterId);
-    setConstellationOriginSessionId(sessionId);
-    setZombieFilterActive(false);
-    setMode('constellation');
   };
 
   // Kick off a rescan. On success we bust the manifest cache with a
@@ -1630,19 +1850,46 @@ export function ChatArchViewer({
         const newLocal =
           fresh.counts.cowork + fresh.counts['cli-direct'] + fresh.counts['cli-desktop'];
         const deltaLocal = newLocal - priorLocal;
+        const deltaCowork = fresh.counts.cowork - priorCounts.cowork;
+        const deltaCli = fresh.counts['cli-direct'] - priorCounts['cli-direct'];
+        const deltaDesktop = fresh.counts['cli-desktop'] - priorCounts['cli-desktop'];
         const elapsedS = Math.round((result.durationMs ?? 0) / 100) / 10;
-        // Describe the delta in plain language. Negative is rare (a
-        // session was deleted on disk) — reporting it honestly beats
-        // silently showing the remaining total.
-        const deltaPhrase =
-          deltaLocal > 0
-            ? `${deltaLocal} new local session${deltaLocal === 1 ? '' : 's'}`
+        // First-scan vs re-scan wording: on the very first scan
+        // (`priorLocal === 0`) the corpus didn't exist yet, so "455
+        // new" reads strangely — the user didn't have an old set of
+        // 0 sessions; they just scanned for the first time. Reword
+        // the verb + phrase so the message matches the user's mental
+        // model. Re-scans keep the delta framing.
+        const isFirstScan = priorLocal === 0;
+        const deltaPhrase = isFirstScan
+          ? `${newLocal} local session${newLocal === 1 ? '' : 's'} indexed`
+          : deltaLocal > 0
+            ? `${deltaLocal} new local session${deltaLocal === 1 ? '' : 's'} (${newLocal} total local)`
             : deltaLocal < 0
-              ? `${-deltaLocal} local session${deltaLocal === -1 ? '' : 's'} removed`
-              : 'no new local sessions';
-        const msg = `Rescan complete in ${elapsedS}s · ${deltaPhrase} (${newLocal} total local)`;
+              ? `${-deltaLocal} local session${deltaLocal === -1 ? '' : 's'} removed (${newLocal} total local)`
+              : `no new local sessions (${newLocal} total local)`;
+        const verb = isFirstScan ? 'Scan complete' : 'Rescan complete';
+        const msg = `${verb} in ${elapsedS}s · ${deltaPhrase}`;
         setRescanToast(msg);
         setRescanBanner({ kind: 'ok', message: msg });
+        setRescanDelta({
+          totalLocal: deltaLocal,
+          cowork: deltaCowork,
+          cli: deltaCli,
+          desktop: deltaDesktop,
+        });
+        // Per-source breakdown into the activity log so the detail
+        // survives the banner / chip dismiss. Format as
+        // `+12 total · +8 cowork · +3 CLI · +1 desktop` — easier to
+        // read than the slash-separated tuple it replaced (a reader
+        // had to mentally zip the numbers to the labels).
+        const fmtDelta = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+        log(
+          'info',
+          'rescan',
+          `${fmtDelta(deltaLocal)} total · ${fmtDelta(deltaCowork)} cowork · ` +
+            `${fmtDelta(deltaCli)} CLI · ${fmtDelta(deltaDesktop)} desktop`,
+        );
       } catch (err) {
         const msg =
           'Rescan wrote the manifest but the refetch failed: ' +
@@ -1676,53 +1923,30 @@ export function ChatArchViewer({
       setRescanBanner({ kind: 'error', message: msg });
     }
     // Auto-clear the hover tooltip after a few seconds (the banner is
-    // persistent for errors, see `useEffect` below for success).
+    // persistent for errors, see effect below for success auto-fade).
     window.setTimeout(() => setRescanToast(null), 6000);
   };
 
-  // Auto-dismiss success banners after 6s. Error banners stay until
-  // the user clicks the ✕ — a failure reason shouldn't disappear
-  // while the user is still reading it.
+  // Auto-fade the OK rescan banner after 8s. Errors stay until the
+  // user clicks ✕. The long-lived signal that "the last scan added N
+  // sessions" lives in the TopBar `RESCAN: +N` chip + the ActivityLog
+  // entry; the toast banner is just immediate visual confirmation.
+  // Keeping it persistent overlapped the TopBar chrome and felt like
+  // a UI fault. Errors stay because the user must read them.
   useEffect(() => {
-    if (!rescanBanner || rescanBanner.kind !== 'ok') return;
-    const id = window.setTimeout(() => setRescanBanner(null), 6000);
+    if (rescanBanner?.kind !== 'ok') return;
+    const id = window.setTimeout(() => {
+      setRescanBanner((prev) => (prev?.kind === 'ok' ? null : prev));
+    }, 8000);
     return () => window.clearTimeout(id);
   }, [rescanBanner]);
 
-  // ZOMBIE chip click → CONSTELLATION filtered to zombie projects.
-  const onZombieChipClick = () => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(null);
-    setConstellationOriginSessionId(null);
-    setZombieFilterActive(true);
-    setMode('constellation');
-  };
-
   // --- Upper-panel ANALYSIS tab navigation handlers (redesign Phase 2) ---
   //
-  // The card triplet on the ANALYSIS tab (RE-ASKED / ZOMBIES / TOPICS)
-  // deep-links to the constellation mode. Duplicates land the user at
-  // the merged-cluster grid; zombies land them with the zombie filter on;
-  // topics land them in command mode where the emergent-topic pills are
-  // the primary surface — there's no "topics mode", only the emergent
-  // pill row that promotes a topic into a filter.
-  const onOpenDupAnalysis = () => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(null);
-    setConstellationOriginSessionId(null);
-    setZombieFilterActive(false);
-    setMode('constellation');
-  };
-  const onOpenZombieAnalysis = () => {
-    clearHash();
-    setSelectedId(null);
-    setConstellationHighlightClusterId(null);
-    setConstellationOriginSessionId(null);
-    setZombieFilterActive(true);
-    setMode('constellation');
-  };
+  // Phase 3 cut the constellation surface, so the dup/zombie cards no
+  // longer have a deep-link target. The cards still render their counts
+  // (informational), but clicking is a no-op — those navigation paths
+  // were removed alongside ConstellationMode.
   // LABELS / TOPICS card clicks land the user in command mode, where
   // the FilterBar's project-pill and emergent-topic-pill rows live.
   // To make the navigation visually unmistakable (especially when the
@@ -1868,6 +2092,12 @@ export function ChatArchViewer({
   if (!uploadedData && (manifestState.status === 'error' || manifestIsEmpty)) {
     const fetchErrorSuffix =
       manifestState.status === 'error' ? ` (fetch: ${manifestState.message})` : '';
+    const emptyDetail = rescanLikelyLocal
+      ? `Drop a claude.ai Privacy-Export ZIP, scan your local Claude Code / Desktop / Cowork transcripts, or load demo data to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`
+      : // Phase 4 P0.6: hosted static has neither SCAN LOCAL nor CHOOSE
+        // ZIP wired (the rescan probe came back false). Point the
+        // visitor at the demo + install paths instead of dead-end CTAs.
+        `Click LOAD DEMO DATA below to explore the viewer with a generated sample corpus, or install chat-arch locally to audit your own Claude transcripts.${fetchErrorSuffix}`;
     return (
       <div className="lcars-root" data-tier={tier}>
         <div className="lcars-frame lcars-frame--empty">
@@ -1876,19 +2106,50 @@ export function ChatArchViewer({
             onQueryChange={() => {}}
             tier={tier}
             disabled
-            // v2 spec §6 / D4: data-source actions (UPLOAD CLOUD,
-            // SCAN LOCAL, DELETE) live in the DATA panel triggered
-            // from the empty-state UploadPanel below — the TopBar
-            // stays informational even on the no-data landing.
-            locationLabel="WELCOME"
+            // v2 spec §6 / D4: TopBar stays informational on the
+            // empty-state landing — no location pill (the previous
+            // "WELCOME" chip read as a button but had no action).
           />
           <main className="lcars-empty-main">
             <TrustStrip />
-            <ErrorState
-              title="NO DATA YET"
-              detail={`Click SCAN LOCAL above to index your Claude Code / Desktop / Cowork transcripts, or UPLOAD CLOUD for a claude.ai Privacy-Export ZIP. Or hit LOAD DEMO DATA below to populate the viewer with a generated sample corpus. See the README for the full walkthrough.${fetchErrorSuffix}`}
+            <section className="lcars-empty-pitch" aria-label="what chat-arch does">
+              <h2 className="lcars-empty-pitch__headline">
+                FIND THE RULES CLAUDE KEEPS BREAKING.
+                <br />
+                PATCH YOUR CLAUDE.MD. PROVE THE LOOP CLOSED.
+              </h2>
+              <p className="lcars-empty-pitch__sub">
+                A local-first workshop for turning your Claude conversation history into
+                reusable improvements. Mines your transcripts for correction patterns —
+                places where you pushed back on Claude — clusters them into recurring
+                rules, and helps you encode fixes into CLAUDE.md, skills, and agent
+                configs.
+              </p>
+            </section>
+            <ErrorState title="NO DATA YET" detail={emptyDetail} />
+            {/*
+              UploadPanel primary-action selection:
+                - Local dev with /api/rescan: SCAN LOCAL primary
+                  (workshop entry point), CHOOSE ZIP demoted, LOAD
+                  DEMO secondary.
+                - Hosted static build: INSTALL LOCALLY primary
+                  (workshop pitch), CHOOSE ZIP demoted, LOAD DEMO
+                  secondary. CHOOSE ZIP stays visible because the
+                  in-browser cloud-zip parse works regardless of
+                  install — only the workshop loop requires local.
+                - Local dev without scan: CHOOSE ZIP primary (only
+                  data-loading path), LOAD DEMO secondary.
+            */}
+            <UploadPanel
+              onLoaded={onUpload}
+              variant="prominent"
+              onLoadDemo={onLoadDemo}
+              onScanLocal={onRescan}
+              scanAvailable={rescanCtl.available === true}
+              scanStatus={rescanCtl.status}
+              scanProgress={rescanCtl.progress}
+              showInstallLocally={!rescanLikelyLocal}
             />
-            <UploadPanel onLoaded={onUpload} variant="prominent" onLoadDemo={onLoadDemo} />
           </main>
         </div>
       </div>
@@ -1908,8 +2169,9 @@ export function ChatArchViewer({
   // reads from the filtered-session list and is therefore noise on
   // these surfaces — toggling CLOUD/CLI-DIRECT pills does nothing
   // because the v2 surfaces don't consume `filteredSorted`. Hide it.
-  // CONSTELLATION / COST keep the chrome since they're roll-ups over
-  // the same filtered session list as SESSIONS.
+  // (Pre-Phase-3 CONSTELLATION / COST kept the chrome too since they
+  // were roll-ups over the same filtered session list as SESSIONS;
+  // both surfaces have since been cut.)
   const isV2Surface =
     baseMode === 'projects' ||
     baseMode === 'topics' ||
@@ -1926,26 +2188,6 @@ export function ChatArchViewer({
     />
   );
 
-  // v2 spec §6: location chip in the TopBar mirrors the active surface.
-  // Mode → label mapping is intentionally local to the chrome — the
-  // mode ids (`constellation`, `cost`) carry historical names that
-  // don't match the user-facing surface labels (ANALYSIS, COST). This
-  // is the same naming that `Sidebar` uses, kept in sync by hand.
-  const LOCATION_LABEL: Record<Mode, string> = {
-    command: 'SESSIONS',
-    // v2 D6a: TIMELINE is an in-surface view toggle now; this entry is
-    // kept so the legacy mode id keeps a label, but in practice the
-    // sidebar can't navigate here anymore.
-    timeline: 'SESSIONS · TIMELINE',
-    detail: 'DETAIL',
-    constellation: 'ANALYSIS',
-    cost: 'COST',
-    projects: 'PROJECTS',
-    topics: 'TOPICS',
-    practice: 'PRACTICE',
-    corrections: 'CORRECTIONS',
-  };
-
   // Has-data flags drive the "Scan Local" → "Update Local" and
   // "Upload Cloud" → "Update Cloud" label swaps. Computed from the
   // effective manifest (fetched + uploaded merged), so a user who
@@ -1958,6 +2200,31 @@ export function ChatArchViewer({
       (manifestCounts?.['cli-desktop'] ?? 0) >
     0;
   const hasCloudData = (manifestCounts?.cloud ?? 0) > 0 || uploadedData !== null;
+
+  // Phase 4 — hosted refocus. CORRECTIONS is the workshop's primary
+  // surface, but on a hosted static build with no corrections.json,
+  // no applied-improvements ledger, and no `/api/mine-corrections`
+  // endpoint it's a dead-end. Hide the sidebar entry in that case so
+  // a first-time visitor can't navigate into an empty surface with no
+  // path forward. Demo data (Phase 4.3) ships its own corrections +
+  // applied fixtures so the loop is visible on hosted demo. Local-dev
+  // builds (rescanCtl.available === true) keep the entry regardless,
+  // since the user can mine to populate it.
+  // The fetched / loaded route covers both the on-disk corrections.json
+  // and the demo fixture path (the hydration effect promotes
+  // `uploadedData.corrections` into `correctionsRoute` when the demo
+  // fixture is loaded). Including `uploadedData.corrections` directly
+  // here closes the brief window between upload and hydration so
+  // first paint already has a populated sidebar entry.
+  const hasCorrectionsData =
+    (correctionsRoute?.patterns?.length ?? 0) > 0 ||
+    (appliedImprovements?.entries?.length ?? 0) > 0 ||
+    (uploadedData?.corrections?.patterns?.length ?? 0) > 0 ||
+    (uploadedData?.appliedImprovements?.entries?.length ?? 0) > 0;
+  // P1.1: `rescanLikelyLocal` covers the 'probing' window so the
+  // CORRECTIONS sidebar entry doesn't briefly disappear on local-dev
+  // mount (re-mining will populate it).
+  const correctionsAvailable = hasCorrectionsData || rescanLikelyLocal;
 
   return (
     <div
@@ -1975,17 +2242,40 @@ export function ChatArchViewer({
         >
           <span className="lcars-rescan-banner__tag">DEMO DATA</span>
           <span className="lcars-rescan-banner__message">
-            This is a fictional corpus so the viewer doesn&apos;t render empty. To see your own
-            Claude transcripts: click <strong>SCAN LOCAL</strong> (top bar) for Claude Code /
-            Desktop / Cowork, or <strong>UPLOAD CLOUD</strong> for a claude.ai Privacy-Export ZIP.{' '}
-            <a
-              href="https://github.com/BryceEWatson/chat-arch#getting-your-own-data"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="lcars-rescan-banner__link"
-            >
-              Step-by-step →
-            </a>
+            {rescanLikelyLocal ? (
+              <>
+                This is a fictional corpus so the viewer doesn&apos;t render empty. To see your own
+                Claude transcripts: click <strong>SCAN LOCAL</strong> (top bar) for Claude Code /
+                Desktop / Cowork, or <strong>UPLOAD CLOUD</strong> for a claude.ai Privacy-Export
+                ZIP.{' '}
+                <a
+                  href="https://github.com/BryceEWatson/chat-arch#getting-your-own-data"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="lcars-rescan-banner__link"
+                >
+                  Step-by-step →
+                </a>
+              </>
+            ) : (
+              // Phase 4 P0.2: hosted static build has no SCAN LOCAL or
+              // UPLOAD CLOUD affordance — both require `/api/rescan` /
+              // `/api/mine-corrections` endpoints that ship only with
+              // the local Astro dev server. Point the visitor at the
+              // README quickstart instead of dead-end CTAs.
+              <>
+                Demo data only — to audit your own corpus, install chat-arch locally and re-open
+                the viewer.{' '}
+                <a
+                  href="https://github.com/BryceEWatson/chat-arch#quickstart"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="lcars-rescan-banner__link"
+                >
+                  Install locally →
+                </a>
+              </>
+            )}
           </span>
           <button
             type="button"
@@ -2072,14 +2362,15 @@ export function ChatArchViewer({
           </button>
         </div>
       )}
-      <div className="lcars-frame">
+      <div className="lcars-frame" data-active-mode={activeMode}>
         <TopBar
           query={rawQuery}
           onQueryChange={setRawQuery}
           tier={tier}
           disabled={showDetailOverlay}
           tierIndicator={tierIndicator}
-          locationLabel={LOCATION_LABEL[activeMode]}
+          {...(rescanDelta ? { rescanDelta } : {})}
+          onDismissRescanDelta={() => setRescanDelta(null)}
         />
         <div className="lcars-body">
           <Sidebar
@@ -2087,21 +2378,13 @@ export function ChatArchViewer({
             variant={sidebarVariant}
             onOpenDataPanel={() => setDataPanelOpen(true)}
             dataPanelOpen={dataPanelOpen}
+            analyticsCollapsed={analyticsCollapsed}
+            onToggleAnalyticsCollapsed={() => setAnalyticsCollapsed((c) => !c)}
+            correctionsAvailable={correctionsAvailable}
             onSelectMode={(m) => {
               if (m !== 'detail') {
                 clearHash();
                 setSelectedId(null);
-              }
-              // Direct-nav to COST from sidebar clears KPI state (no highlight).
-              if (m === 'cost') {
-                setCostKpiEntry(null);
-                setCostToolFilter(undefined);
-              }
-              // Direct-nav to CONSTELLATION clears chip nav state.
-              if (m === 'constellation') {
-                setConstellationHighlightClusterId(null);
-                setConstellationOriginSessionId(null);
-                setZombieFilterActive(false);
               }
               // v2 §5.1: PROJECTS uses its own hash so deep-links round
               // trip cleanly. Sidebar click → push #projects (index).
@@ -2140,7 +2423,6 @@ export function ChatArchViewer({
               uploadActive={uploadedData !== null}
               {...(uploadedData ? { uploadLabel: uploadedData.sourceLabel, onUnload } : {})}
               onUpload={onUpload}
-              onKpiClick={onKpiClick}
               projectFilter={projectFilter}
               onToggleProject={toggleProject}
               unknownProjectActive={unknownProjectActive}
@@ -2164,8 +2446,6 @@ export function ChatArchViewer({
                 ? { onAnalyzeSemantic: () => void runSemanticAnalysis(uploadedData) }
                 : {})}
               analysisCounts={analysisCounts}
-              onOpenDupAnalysis={onOpenDupAnalysis}
-              onOpenZombieAnalysis={onOpenZombieAnalysis}
               onOpenTopicAnalysis={onOpenTopicAnalysis}
               onOpenLabelsAnalysis={onOpenLabelsAnalysis}
             />
@@ -2250,7 +2530,10 @@ export function ChatArchViewer({
               style={{ ['--mode-color' as string]: modeColor } as React.CSSProperties}
             >
               {activeManifest.sessions.length === 0 ? (
-                <EmptyState {...(uploadedData ? {} : { onUpload, onLoadDemo })} />
+                <EmptyState
+                  showInstallLocally={!rescanLikelyLocal}
+                  {...(uploadedData ? {} : { onUpload, onLoadDemo })}
+                />
               ) : (
                 <>
                   <div className="lcars-mode-area__base" hidden={showDetailOverlay}>
@@ -2266,33 +2549,10 @@ export function ChatArchViewer({
                           semanticSessionIds={semanticSessionIds}
                           topicsBySession={sessionV2Index.topicsBySession}
                           narrativesBySession={sessionV2Index.narrativesBySession}
-                          onDuplicateChipClick={onDuplicateChipClick}
-                          onZombieChipClick={onZombieChipClick}
                         />
                       )
                     ) : baseMode === 'timeline' ? (
                       <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
-                    ) : baseMode === 'constellation' ? (
-                      <ConstellationMode
-                        sessions={activeManifest.sessions}
-                        mergedClusters={mergedClusters}
-                        zombieProjects={zombieProjects}
-                        tierFiles={analysisState.tierFiles}
-                        highlightClusterId={constellationHighlightClusterId}
-                        highlightOriginSessionId={constellationOriginSessionId}
-                        zombieFilterActive={zombieFilterActive}
-                        onSelect={onSelect}
-                      />
-                    ) : baseMode === 'cost' ? (
-                      <CostMode
-                        sessions={filteredSorted}
-                        kpiEntry={costKpiEntry}
-                        {...(costToolFilter !== undefined ? { toolFilter: costToolFilter } : {})}
-                        onSelect={onSelect}
-                        costDiagnosedPresent={
-                          !!analysisState.tierFiles['cost-diagnoses.json']?.present
-                        }
-                      />
                     ) : baseMode === 'projects' ? (
                       <ProjectsMode
                         projects={effectiveV2Entities.projects ?? []}
@@ -2318,7 +2578,14 @@ export function ChatArchViewer({
                         narratives={effectiveV2Entities.narratives ?? []}
                         duplicateClusters={mergedClusters}
                         zombieProjects={zombieProjects}
-                        onSelectSession={onSelect}
+                        onSelectSession={(id) => {
+                          // Stash the source mode so BACK restores
+                          // PRACTICE instead of dumping the user on
+                          // SESSIONS — same loop-preservation logic
+                          // CORRECTIONS uses for its instance pills.
+                          setPriorModeBeforeDetail('practice');
+                          onSelect(id);
+                        }}
                         onSelectProject={(id) => {
                           setSelectedProjectId(id);
                           setMode('projects');
@@ -2332,7 +2599,32 @@ export function ChatArchViewer({
                         }}
                       />
                     ) : baseMode === 'corrections' ? (
-                      <CorrectionsPanel dataDirBaseUrl={dataRoot} />
+                      <CorrectionsPanel
+                        dataDirBaseUrl={dataRoot}
+                        manifestGeneratedAt={manifest?.generatedAt ?? null}
+                        rescanAvailable={rescanLikelyLocal}
+                        onRefreshIndex={() => void onRescan()}
+                        // Phase 4 — when the demo fixture bundles
+                        // corrections + applied inline, prefer them
+                        // over the network fetch so the workshop loop
+                        // is visible on the hosted demo path. Both
+                        // arrive together (or both undefined for the
+                        // real-upload / no-data paths).
+                        {...(uploadedData?.corrections
+                          ? { overrideCorrections: uploadedData.corrections }
+                          : {})}
+                        {...(uploadedData?.appliedImprovements
+                          ? { overrideApplied: uploadedData.appliedImprovements }
+                          : {})}
+                        onSelectSession={(id) => {
+                          // Stash the source mode so BACK restores
+                          // CORRECTIONS instead of falling to SESSIONS
+                          // (`command`). Cleared by `onBack` after
+                          // restoration.
+                          setPriorModeBeforeDetail('corrections');
+                          onSelect(id);
+                        }}
+                      />
                     ) : baseMode === 'topics' ? (
                       <TopicsMode
                         topics={effectiveV2Entities.topics ?? []}
@@ -2387,6 +2679,14 @@ export function ChatArchViewer({
             </main>
           </div>
         </div>
+        {/*
+          Detail-mode hides the footer TrustStrip — the modal-style
+          overlay benefits from the full vertical real estate, and the
+          local-first pledge already had a hundred-row read on the way
+          in. Re-renders on close so the persistent reassurance is
+          back the moment the user returns to a content surface.
+        */}
+        {!showDetailOverlay && <TrustStrip variant="footer" />}
       </div>
       <ActivityLogPanel
         entries={logEntries}
@@ -2405,10 +2705,10 @@ export function ChatArchViewer({
         onRescan={onRescan}
         rescanStatus={rescanCtl.status}
         rescanProgress={rescanCtl.progress}
-        scanAvailable={rescanCtl.available}
+        scanAvailable={rescanLikelyLocal}
         hasLocalData={hasLocalData}
         {...(rescanToast ? { rescanHint: rescanToast } : {})}
-        deleteAvailable={rescanCtl.available}
+        deleteAvailable={rescanLikelyLocal}
         onDeleteUnload={onUnload}
         deleteCounts={{
           cloud: manifestCounts?.cloud ?? 0,

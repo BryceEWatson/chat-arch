@@ -141,7 +141,23 @@ describe('ChatArchViewer', () => {
   });
 
   it('shows empty state on manifest fetch failure', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 404 }) as unknown as Response);
+    // Phase 4 — UploadPanel hides CHOOSE ZIP unless `rescanCtl.available`
+    // is true. Stub fetch so `/api/rescan` (the local-Astro signal)
+    // resolves to {available: true} while every other request 404s
+    // (including the missing manifest under test).
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/rescan')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({ available: true }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      return { ok: false, status: 404 } as unknown as Response;
+    });
     render(<ChatArchViewer manifestUrl="/missing.json" />);
     // Title: "NO DATA YET" (was "TRANSMISSION ERROR" — renamed to be less
     // alarmist for what is really just a "no data yet" onboarding state).
@@ -156,16 +172,36 @@ describe('ChatArchViewer', () => {
     expect(screen.getByLabelText(/choose cloud export zip/i)).toBeDefined();
   });
 
-  it('routes a well-formed empty manifest to the NO DATA YET landing', () => {
+  it('routes a well-formed empty manifest to the NO DATA YET landing', async () => {
     // A shipped-empty manifest.json (schemaVersion + counts + `sessions: []`)
     // now takes the same minimal "no data yet" code path as a 404'd manifest.
     // Previously it rendered EmptyState inside the full viewer chrome (KPIs,
     // filter pills, projects list) — a distracting "nothing here but here's
     // all the chrome" state. See the empty-manifest-minimal-layout PR.
+    //
+    // Phase 4 — CHOOSE ZIP requires `/api/rescan` to be available
+    // (local Astro dev). Stub the probe so the cloud-zip CTA renders;
+    // hosted-static behavior is covered separately by UploadPanel
+    // tests.
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/rescan')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({ available: true }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      return { ok: false, status: 404 } as unknown as Response;
+    });
     render(<ChatArchViewer manifest={emptyManifest} />);
     expect(screen.getByRole('heading', { name: /NO DATA YET/i })).toBeDefined();
     // Upload + load-demo CTAs are the actionable path out.
-    expect(screen.getByLabelText(/choose cloud export zip/i)).toBeDefined();
+    await waitFor(() =>
+      expect(screen.getByLabelText(/choose cloud export zip/i)).toBeDefined(),
+    );
   });
 
   it('filters by search query (case-insensitive substring, debounced)', async () => {
@@ -380,8 +416,28 @@ describe('ChatArchViewer', () => {
   });
 
   it('persists a fresh upload to IndexedDB and a re-mount sees it', async () => {
+    // Phase 4 — empty-state CHOOSE ZIP requires the rescan probe to
+    // succeed. Mock fetch so the test exercises the local-Astro path
+    // (where the cloud-zip input is rendered).
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/rescan')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({ available: true }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      return { ok: false, status: 404 } as unknown as Response;
+    });
     const { unmount } = render(<ChatArchViewer manifest={emptyManifest} />);
-    const fileInput = document.body.querySelector('input[type=file]') as HTMLInputElement;
+    const fileInput = await waitFor(() => {
+      const el = document.body.querySelector('input[type=file]') as HTMLInputElement | null;
+      if (!el) throw new Error('file input not yet rendered');
+      return el;
+    });
     fireEvent.change(fileInput, { target: { files: [uploadFixtureFile()] } });
     await waitFor(() => expect(screen.getByText('Uploaded Alpha')).toBeDefined());
 

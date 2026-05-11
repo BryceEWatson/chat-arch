@@ -14,6 +14,38 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-08
+
+### Added
+
+- **Applied-improvement ledger** — a new sidecar
+  `analysis/applied-improvements.json` records every `ProposedUpgrade`
+  the user has clicked APPLY on. The viewer merges it over
+  `corrections.json` at read time so `applied`/`appliedAt`/
+  `recurringPostApplication` reflect the user's actions, while
+  `corrections.json` itself stays a pure mining-pipeline output (a
+  re-mine never clobbers the apply history).
+- **`POST /api/apply-correction` endpoint** writes the ledger.
+  Idempotency key: `(patternId, proposedUpgrade.target,
+  proposedUpgrade.targetPath)`. Re-applying replaces the prior entry.
+- **APPLY button** in the corrections panel — replaces the placeholder
+  disabled button. Inline confirm row → POST → "APPLIED ✓" pessimistic
+  swap. Concurrent applies in one card are blocked while a write is
+  in flight.
+- **Instance clickthrough** — each instance excerpt in a correction
+  pattern card is now a button that opens the source session in detail
+  view, matching the Practice-mode evidence-pill pattern.
+- **Persistent rescan-delta chip** — the rescan success banner gains an
+  explicit ✕ dismiss button (no more 6s auto-vanish), per-source
+  delta breakdown is logged to the activity log, and a `RESCAN: +N`
+  TopBar chip persists until dismiss or the next rescan.
+
+### Changed
+
+- `EXPORTER_VERSION` bump (0.7.0 → 0.8.0) signals the new
+  `applied-improvements.json` shape under `analysis/`. The file is
+  optional — viewers older than this release ignore it cleanly.
+
 ## [0.7.0] — 2026-05-08
 
 ### Added

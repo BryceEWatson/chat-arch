@@ -5,30 +5,26 @@ export type RescanStatus = 'idle' | 'running' | 'error' | 'ok';
 export type UploadStatus = 'idle' | 'running' | 'error' | 'ok';
 
 /**
- * v2 spec §6 / decision D4: TopBar is informational chrome only.
- * Hosts (in order, left → right):
+ * TopBar is informational chrome — critical info only. Hosts (left → right):
  *
  *   - Sunflower title chip (CHAT ARCHAEOLOGIST + design-system InfoPopover)
- *   - Tier indicator slot (TierIndicator — single chip; an earlier
- *     EXTENDED-COMING-SOON sibling was dropped in v2-visual-polish)
- *   - Location chip (current surface label, e.g. PROJECTS / SESSIONS)
- *   - EARTHDATE chip (today's date, value-only — the prefix label
- *     was dropped in v2-visual-polish to keep the row from wrapping
- *     at ~1280px desktop)
+ *   - Tier indicator slot (TierIndicator — single chip)
+ *   - EARTHDATE chip (today's date, value-only)
+ *   - Optional rescan-delta chip (persists until dismiss or next scan)
  *   - Search input (right-aligned)
  *
- * NO action buttons. UPLOAD CLOUD / SCAN LOCAL / DELETE actions live in
- * the DATA sidebar panel (see DataPanel.tsx). Status types are still
- * exported here because the host viewer wires the same status state
- * through the panel.
+ * NO action buttons. NO redundant signals — the active surface is
+ * shown in the sidebar (aria-current), so a duplicate location chip
+ * here was noise. Manifest freshness has its own dedicated affordance
+ * on the AppliedImprovementsSummary stale-chip when relevant; the
+ * TopBar was the wrong place for it. UPLOAD / SCAN / DELETE actions
+ * live in the DATA sidebar panel.
  */
 export interface TopBarProps {
   query: string;
   onQueryChange: (q: string) => void;
-  /** Tier indicator chip (and any siblings) — rendered between title and location. */
+  /** Tier indicator chip (and any siblings) — rendered between title and date. */
   tierIndicator?: React.ReactNode;
-  /** Current surface label for the location chip (e.g. "PROJECTS", "SESSIONS"). */
-  locationLabel?: string;
   /** Override for the EARTHDATE chip text — defaults to today in YYYY.MM.DD form. */
   earthdate?: string;
   /** Viewport tier; changes placeholder + label density on narrower screens. */
@@ -39,6 +35,19 @@ export interface TopBarProps {
    * underlying list the user returns to.
    */
   disabled?: boolean;
+  /**
+   * Rescan-delta breakdown chip. Persists between rescans (no auto-
+   * dismiss timer) so a user who walks away can see how many new
+   * sessions the latest scan picked up. Omit to hide the chip.
+   */
+  rescanDelta?: {
+    totalLocal: number;
+    cowork: number;
+    cli: number;
+    desktop: number;
+  };
+  /** Click handler for the chip's ✕ dismiss button. */
+  onDismissRescanDelta?: () => void;
 }
 
 function defaultEarthdate(): string {
@@ -49,14 +58,21 @@ function defaultEarthdate(): string {
   return `${yyyy}.${mm}.${dd}`;
 }
 
+function formatDelta(n: number): string {
+  if (n > 0) return `+${n}`;
+  if (n < 0) return `${n}`;
+  return '0';
+}
+
 export function TopBar({
   query,
   onQueryChange,
   tierIndicator,
-  locationLabel,
   earthdate,
   tier = 'desktop',
   disabled = false,
+  rescanDelta,
+  onDismissRescanDelta,
 }: TopBarProps) {
   const placeholder = disabled
     ? 'exit detail view to search'
@@ -87,20 +103,31 @@ export function TopBar({
           </p>
         </InfoPopover>
         {tierIndicator && <div className="lcars-top-bar__tier-slot">{tierIndicator}</div>}
-        {locationLabel && (
-          <div
-            className="lcars-top-bar__location"
-            aria-label={`current surface: ${locationLabel}`}
-          >
-            <span className="lcars-top-bar__location-prefix" aria-hidden="true">
-              ▸
-            </span>
-            <span className="lcars-top-bar__location-label">{locationLabel}</span>
-          </div>
-        )}
         <div className="lcars-top-bar__earthdate" aria-label={`earthdate ${dateText}`}>
           <span className="lcars-top-bar__earthdate-value">{dateText}</span>
         </div>
+        {rescanDelta && (
+          <div
+            className="lcars-top-bar__rescan-chip"
+            aria-label={`last rescan added ${formatDelta(rescanDelta.totalLocal)} local sessions`}
+            title={`+${rescanDelta.cowork} cowork · +${rescanDelta.cli} CLI · +${rescanDelta.desktop} desktop`}
+          >
+            <span className="lcars-top-bar__rescan-chip-label">RESCAN</span>
+            <span className="lcars-top-bar__rescan-chip-value">
+              {formatDelta(rescanDelta.totalLocal)}
+            </span>
+            {onDismissRescanDelta && (
+              <button
+                type="button"
+                className="lcars-top-bar__rescan-chip-dismiss"
+                aria-label="dismiss rescan delta"
+                onClick={onDismissRescanDelta}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="lcars-top-bar__right">
         <label

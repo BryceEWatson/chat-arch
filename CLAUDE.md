@@ -32,6 +32,41 @@ Therefore:
 If you think a change is too small to warrant a PR, ask the user
 before direct-pushing. The default answer is "no, still PR it."
 
+## Staging discipline — NEVER `git add -A` / `.` in this repo
+
+`apps/standalone/public/chat-arch-data/manifest.json` is tracked in
+its empty baseline form (schemaVersion + zeroed counts + empty
+sessions array) but gets *populated on disk* by `pnpm exporter run
+start` / the in-app SCAN LOCAL action. The populated content
+includes session titles, message previews, per-session USD costs,
+and workflow metadata — PII for the developer running the tool.
+
+A staging mistake (`git add -A`, `git add .`, or any pattern that
+auto-stages all modified files) can sweep the populated manifest
+into a commit. This has already happened once; do not let it happen
+again.
+
+Rules:
+
+1. **Stage files by explicit path.** `git add path/to/file.ts`,
+   never `-A` / `.` / `--all`. The `.claude/settings.json` here
+   denies those patterns at the harness layer; the `.githooks/
+   pre-commit` script catches them at the git layer. Both are
+   belt-and-suspenders, not replacements for the discipline.
+2. **Enable the pre-commit hook on first clone:**
+   `git config core.hooksPath .githooks`. (See
+   [Quickstart](README.md#quickstart).)
+3. **If you see `chat-arch-data/manifest.json` in `git status`
+   output as modified, that is local data**. Leave it unstaged.
+   Confirm before staging only if the *baseline shape* itself
+   changed (e.g., a `schemaVersion` bump that adds a new
+   top-level empty field).
+
+Same rule applies to anything else under
+`apps/standalone/public/chat-arch-data/` (`corrections.json`,
+`applied-improvements.json`, `correction-candidates.json` etc.) —
+those are also locally-generated and may carry PII.
+
 ## Build / test / lint commands
 
 Run from the repo root:

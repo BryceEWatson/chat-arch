@@ -23,6 +23,24 @@ export interface SidebarProps {
    * over the sidebar role below 600px.
    */
   variant?: SidebarVariant;
+  /**
+   * Phase 2a: ANALYTICS is collapsible — defaults to collapsed so the
+   * primary refocus surfaces (CORRECTIONS / PRACTICE / SESSIONS) sit
+   * above the fold. Optional so embeddings without persisted state
+   * still render at default-collapsed.
+   */
+  analyticsCollapsed?: boolean;
+  onToggleAnalyticsCollapsed?: () => void;
+  /**
+   * Phase 4 hosted refocus. Drives whether the CORRECTIONS entry is
+   * rendered at all. The corrections panel is a dead end on a hosted
+   * static build with no corrections.json, no applied-improvements
+   * ledger, and no `/api/mine-corrections` endpoint — surfacing the
+   * sidebar item would route a first-time visitor into an empty
+   * surface with no path forward. Hide it. Defaults to `true` so
+   * existing local-dev callers + tests keep the previous behavior.
+   */
+  correctionsAvailable?: boolean;
 }
 
 interface NavItem {
@@ -32,58 +50,66 @@ interface NavItem {
 }
 
 interface NavGroup {
-  group: 'BROWSE' | 'INSIGHTS';
+  group: 'FIX RULES' | 'BROWSE' | 'ANALYTICS';
   items: readonly NavItem[];
 }
 
-// Two-tier IA:
-//   BROWSE   → Sessions          (the v1 grid surface)
-//   INSIGHTS → Analysis, Cost    (aggregate / pattern surfaces)
-//
-// v2 spec §5.3 / decision D6a: TIMELINE is no longer a top-level surface;
-// it's absorbed into SESSIONS as an in-surface view toggle. The internal
-// `command` mode id is preserved for code stability — only the user-
-// facing label flips to SESSIONS so the sidebar matches the spec naming.
+// Phase 2a refocus IA: three-tier IA aligned to the new "audit your
+// practice" framing.
+//   FIX RULES  → Corrections, Practice — where the user goes to act
+//                on their own behavior changes. (Earlier label was
+//                "WORKSHOP"; the eval flagged it as too abstract for
+//                first-time users — "FIX RULES" announces the loop's
+//                outcome verb-first.)
+//   BROWSE     → Sessions — the v1 grid surface, kept lightweight.
+//   ANALYTICS  → Projects, Topics — descriptive surfaces that answer
+//                "what's in my corpus", collapsed by default so they
+//                don't crowd the workshop. (Phase 3 cut the
+//                ANALYSIS / constellation entry — duplicates and zombie
+//                projects didn't earn their slot in the rail — and the
+//                COST entry — cost analytics doesn't drive a patch
+//                decision so it didn't earn one either.)
 //
 // `detail` is intentionally missing — it's a drill-in surface reached by
-// clicking a session card, not a top-level mode. `constellation` is the
-// deep-dive analysis workspace; we surface it under the "ANALYSIS" label
-// (keeping the internal mode id stable avoids a cross-codebase rename).
+// clicking a session card, not a top-level mode.
 const NAV: readonly NavGroup[] = [
   {
-    group: 'BROWSE',
+    group: 'FIX RULES',
     items: [
-      // v2 spec §5.1: PROJECTS sits above SESSIONS in BROWSE — narratives
-      // live on projects, so PROJECTS is where users land for insights
-      // about how their work is going. SESSIONS is the v1 grid.
-      { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
-      { mode: 'topics', label: 'TOPICS', short: 'TOP' },
-      { mode: 'command', label: 'SESSIONS', short: 'SES' },
+      { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
+      { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
     ],
   },
   {
-    group: 'INSIGHTS',
+    group: 'BROWSE',
+    items: [{ mode: 'command', label: 'SESSIONS', short: 'SES' }],
+  },
+  {
+    group: 'ANALYTICS',
     items: [
-      // v2 spec §5.4 / D6b+D6c: PRACTICE leads INSIGHTS — it's the
-      // primary audit surface and absorbs CONSTELLATION's "value
-      // leaks" outputs + COST's outlier surfacing. The standalone
-      // CONSTELLATION + COST entries remain accessible for deep-dives
-      // until a follow-up phase consolidates their surfaces into
-      // PRACTICE / per-project panels.
-      { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
-      { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
-      { mode: 'constellation', label: 'ANALYSIS', short: 'ANL' },
-      { mode: 'cost', label: 'COST', short: 'CST' },
+      { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
+      { mode: 'topics', label: 'TOPICS', short: 'TOP' },
     ],
   },
 ];
 
-const ALL_ITEMS: readonly NavItem[] = NAV.flatMap((g) => g.items);
+// Horizontal-variant pill order is independent of the vertical groups
+// so collapse-state never hides primary nav on mobile. Order mirrors
+// the FIX RULES → BROWSE → ANALYTICS reading order from the vertical
+// rail so muscle memory carries across viewports.
+const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
+  { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
+  { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
+  { mode: 'command', label: 'SESSIONS', short: 'SES' },
+  { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
+  { mode: 'topics', label: 'TOPICS', short: 'TOP' },
+];
 
 // DATA item is rendered separately from the mode-driven nav: it's a
 // panel trigger, not a content surface, so it doesn't slot into the
-// `Mode` enum or the BROWSE/INSIGHTS groupings. The accent borrows the
-// destructive peach used by the existing data-source chip cluster.
+// `Mode` enum or the FIX-RULES/BROWSE/ANALYTICS groupings. The accent
+// borrows the destructive peach used by the existing data-source chip
+// cluster.
 const DATA_ITEM_LABEL = 'DATA';
 const DATA_ITEM_SHORT = 'DAT';
 const DATA_ITEM_COLOR = 'var(--lcars-peach)';
@@ -94,12 +120,29 @@ export function Sidebar({
   onOpenDataPanel,
   dataPanelOpen = false,
   variant = 'vertical',
+  analyticsCollapsed = false,
+  onToggleAnalyticsCollapsed,
+  correctionsAvailable = true,
 }: SidebarProps) {
+  // Phase 4 — filter the CORRECTIONS entry out of the nav model when
+  // there's nothing to show. PRACTICE remains under FIX RULES so the
+  // group still has a member; if the host wants to hide it too, that
+  // belongs in a follow-up. Done at the model level so both vertical
+  // and horizontal variants see the same filtered set without per-
+  // variant branching at the render site.
+  const filterCorrections = (item: NavItem): boolean =>
+    correctionsAvailable || item.mode !== 'corrections';
+  const navGroups: readonly NavGroup[] = NAV.map((g) => ({
+    group: g.group,
+    items: g.items.filter(filterCorrections),
+  }));
+  const horizontalPills: readonly NavItem[] =
+    HORIZONTAL_PILL_ORDER.filter(filterCorrections);
   if (variant === 'horizontal') {
     return (
       <nav className="lcars-sidebar lcars-sidebar--horizontal" aria-label="primary">
         <ul className="lcars-sidebar__pill-bar" role="tablist">
-          {ALL_ITEMS.map((item) => {
+          {horizontalPills.map((item) => {
             const active = item.mode === mode;
             const style = {
               ['--mode-color' as string]: MODE_COLOR[item.mode],
@@ -166,44 +209,74 @@ export function Sidebar({
         divergence from the design system and has been retired.
       */}
       <div className="lcars-sidebar__elbow lcars-sidebar__elbow--top" aria-hidden="true" />
-      {NAV.map((g) => (
-        <div key={g.group} className="lcars-sidebar__group">
-          <div className="lcars-sidebar__group-label" aria-hidden="true">
-            {g.group}
+      {navGroups.map((g) => {
+        const isAnalytics = g.group === 'ANALYTICS';
+        const collapsed = isAnalytics && analyticsCollapsed;
+        const groupClass =
+          'lcars-sidebar__group' +
+          (collapsed ? ' lcars-sidebar__group--collapsed' : '');
+        const labelClass =
+          'lcars-sidebar__group-label' +
+          (isAnalytics && onToggleAnalyticsCollapsed
+            ? ' lcars-sidebar__group-label--toggle'
+            : '');
+        return (
+          <div key={g.group} className={groupClass}>
+            {isAnalytics && onToggleAnalyticsCollapsed ? (
+              <div
+                className={labelClass}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                aria-controls={`lcars-sidebar-list-${g.group.toLowerCase()}`}
+                aria-label={`${collapsed ? 'expand' : 'collapse'} ${g.group} group`}
+                onClick={onToggleAnalyticsCollapsed}
+                onKeyDown={(e) => onActivate(e, onToggleAnalyticsCollapsed)}
+              >
+                {g.group}
+              </div>
+            ) : (
+              <div className={labelClass} aria-hidden="true">
+                {g.group}
+              </div>
+            )}
+            <ul
+              className="lcars-sidebar__list"
+              id={`lcars-sidebar-list-${g.group.toLowerCase()}`}
+            >
+              {g.items.map((item) => {
+                const active = item.mode === mode;
+                const style = {
+                  ['--mode-color' as string]: MODE_COLOR[item.mode],
+                } as React.CSSProperties;
+                // Why role=button on a div here: v7 LCARS iteration found that native
+                // <button> UA styles (Firefox on Windows in particular) blew past
+                // our LCARS `background-color` and left gray-button chrome visible.
+                // The shared onActivate helper keeps keyboard parity with <button>.
+                return (
+                  <li key={item.mode}>
+                    <div
+                      className={`lcars-sidebar__item${active ? ' lcars-sidebar__item--active' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={active ? 'page' : undefined}
+                      aria-label={`mode ${item.label}`}
+                      style={style}
+                      onClick={() => onSelectMode(item.mode)}
+                      onKeyDown={(e) => onActivate(e, () => onSelectMode(item.mode))}
+                    >
+                      <span className="lcars-sidebar__item-short" aria-hidden="true">
+                        {item.short}
+                      </span>
+                      <span className="lcars-sidebar__item-label">{item.label}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-          <ul className="lcars-sidebar__list">
-            {g.items.map((item) => {
-              const active = item.mode === mode;
-              const style = {
-                ['--mode-color' as string]: MODE_COLOR[item.mode],
-              } as React.CSSProperties;
-              // Why role=button on a div here: v7 LCARS iteration found that native
-              // <button> UA styles (Firefox on Windows in particular) blew past
-              // our LCARS `background-color` and left gray-button chrome visible.
-              // The shared onActivate helper keeps keyboard parity with <button>.
-              return (
-                <li key={item.mode}>
-                  <div
-                    className={`lcars-sidebar__item${active ? ' lcars-sidebar__item--active' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    aria-current={active ? 'page' : undefined}
-                    aria-label={`mode ${item.label}`}
-                    style={style}
-                    onClick={() => onSelectMode(item.mode)}
-                    onKeyDown={(e) => onActivate(e, () => onSelectMode(item.mode))}
-                  >
-                    <span className="lcars-sidebar__item-short" aria-hidden="true">
-                      {item.short}
-                    </span>
-                    <span className="lcars-sidebar__item-label">{item.label}</span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+        );
+      })}
       {onOpenDataPanel && (
         <div className="lcars-sidebar__group lcars-sidebar__group--actions">
           <div className="lcars-sidebar__group-label" aria-hidden="true">

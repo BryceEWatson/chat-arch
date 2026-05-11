@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { parseCloudZip } from '../data/zipUpload.js';
 import { maskedUploadLabel } from '../data/uploadLabel.js';
+import type { RescanProgress, RescanStatus } from '../data/rescan.js';
 import type { UploadedCloudData } from '../types.js';
 
 export interface UploadPanelProps {
@@ -15,7 +16,40 @@ export interface UploadPanelProps {
    * `onUpload`.
    */
   onLoadDemo?: () => void;
+  /**
+   * Optional SCAN LOCAL affordance for the empty-state landing. The
+   * canonical home for SCAN LOCAL is DataPanel, but DataPanel is only
+   * reachable from the populated view (via the sidebar's DATA pill).
+   * On the empty-state landing the sidebar isn't rendered, so a user
+   * with only local Claude data would otherwise be stuck. Wiring this
+   * prop surfaces the same `useRescan()` action inline. The hosted web
+   * build can't spawn the scanner, so the host gates with `scanAvailable`.
+   */
+  onScanLocal?: () => void;
+  scanAvailable?: boolean;
+  scanStatus?: RescanStatus;
+  scanProgress?: RescanProgress;
+  /**
+   * Hosted-build affordance — when `true`, render an INSTALL LOCALLY
+   * link as the primary action and demote CHOOSE ZIP to a secondary
+   * outlined button. Cloud-only visitors can still load their ZIP
+   * (it's a fully in-browser parse), but the headline pitch is the
+   * workshop loop which requires a local install.
+   *
+   * Defaults to `false`: in local-dev `pnpm dev` the workshop is
+   * already reachable via SCAN LOCAL, so the install link is noise.
+   */
+  showInstallLocally?: boolean;
+  /**
+   * Optional override for the INSTALL LOCALLY link target. Defaults to
+   * the README quickstart anchor on GitHub. Tests may pin this to a
+   * fixture URL.
+   */
+  installLocallyHref?: string;
 }
+
+const DEFAULT_INSTALL_LOCALLY_HREF =
+  'https://github.com/BryceEWatson/chat-arch#quickstart';
 
 /**
  * `label` is the MASKED filename (see `maskedUploadLabel`) — never the
@@ -37,9 +71,36 @@ type UploadState =
  * parses it in the browser via `parseCloudZip`, and calls `onLoaded` with the
  * resulting in-memory manifest. LCARS-styled, mobile-responsive.
  */
-export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: UploadPanelProps) {
+export function UploadPanel({
+  onLoaded,
+  variant = 'prominent',
+  onLoadDemo,
+  onScanLocal,
+  scanAvailable,
+  scanStatus = 'idle',
+  scanProgress,
+  showInstallLocally = false,
+  installLocallyHref = DEFAULT_INSTALL_LOCALLY_HREF,
+}: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<UploadState>({ status: 'idle' });
+
+  const scanRunning = scanStatus === 'running';
+  const scanShown = !!onScanLocal && scanAvailable === true;
+  const scanLabel = (() => {
+    if (scanStatus === 'running') {
+      const phase = scanProgress?.phase;
+      const ix = scanProgress?.ix ?? 0;
+      const total = scanProgress?.total ?? 0;
+      if (phase && ix > 0 && total > 0) return `SCANNING · ${phase.toUpperCase()} ${ix}/${total}`;
+      if (phase) return `SCANNING · ${phase.toUpperCase()}`;
+      return 'SCANNING…';
+    }
+    if (scanStatus === 'error') return 'SCAN FAILED';
+    if (scanStatus === 'ok') return 'SCANNED ✓';
+    return 'SCAN LOCAL';
+  })();
+  const scanCaption = scanRunning ? (scanProgress?.latest ?? null) : null;
 
   const openPicker = () => {
     if (state.status === 'parsing') return;
@@ -77,7 +138,7 @@ export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: Upl
       className={`lcars-upload-panel lcars-upload-panel--${variant}`}
       aria-label="upload cloud export"
     >
-      {variant === 'prominent' && (
+      {variant === 'prominent' && !showInstallLocally && (
         <>
           <h3 className="lcars-upload-panel__title">LOAD CLOUD EXPORT</h3>
           <p className="lcars-upload-panel__hint">
@@ -86,11 +147,65 @@ export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: Upl
           </p>
         </>
       )}
+      {variant === 'prominent' && showInstallLocally && (
+        <>
+          {/*
+            Hosted-build framing: chat-arch.dev demonstrates the UI on
+            sample data; the workshop loop (mine → patch CLAUDE.md →
+            re-mine) runs locally because it touches your CLAUDE.md
+            files. CHOOSE ZIP remains as a secondary path so cloud-only
+            users can still browse their archive without installing.
+          */}
+          <h3 className="lcars-upload-panel__title">INSTALL CHAT-ARCH LOCALLY</h3>
+          <p className="lcars-upload-panel__hint">
+            The workshop loop runs against your local Claude Code transcripts. Install chat-arch on
+            your machine to audit your own corpus and patch your CLAUDE.md — or use CHOOSE ZIP
+            below to browse a claude.ai export in your browser.
+          </p>
+        </>
+      )}
 
       <div className="lcars-upload-panel__buttons">
+        {/*
+          Primary-action priority:
+            1. INSTALL LOCALLY when host signals hosted build
+            2. SCAN LOCAL when /api/rescan is reachable (local dev)
+            3. CHOOSE ZIP as the only-data-path fallback
+          The non-primary buttons render in the demoted (outlined)
+          form so the eye lands on the single recommended action.
+        */}
+        {showInstallLocally && (
+          <a
+            className="lcars-upload-panel__button"
+            href={installLocallyHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            role="button"
+            aria-label="install chat-arch locally — opens the README quickstart on GitHub"
+          >
+            INSTALL LOCALLY
+          </a>
+        )}
+        {!showInstallLocally && scanShown && (
+          <button
+            type="button"
+            className="lcars-upload-panel__button"
+            onClick={onScanLocal}
+            disabled={scanRunning}
+            aria-label="scan local chat sources: ~/.claude and %APPDATA%\Claude"
+            aria-busy={scanRunning || undefined}
+            title="Scan local chat sources: ~/.claude and %APPDATA%\Claude. Cloud data only refreshes when you upload a new ZIP."
+          >
+            {scanLabel}
+          </button>
+        )}
         <button
           type="button"
-          className="lcars-upload-panel__button"
+          className={
+            showInstallLocally || scanShown
+              ? 'lcars-upload-panel__button lcars-upload-panel__button--cloud-secondary'
+              : 'lcars-upload-panel__button'
+          }
           onClick={openPicker}
           disabled={state.status === 'parsing'}
           aria-label="choose cloud export zip"
@@ -110,6 +225,11 @@ export function UploadPanel({ onLoaded, variant = 'prominent', onLoadDemo }: Upl
           </button>
         )}
       </div>
+      {!showInstallLocally && scanShown && scanCaption && (
+        <div className="lcars-upload-panel__status" role="status" aria-live="polite">
+          {scanCaption}
+        </div>
+      )}
       {onLoadDemo && variant === 'prominent' && (
         <p className="lcars-upload-panel__hint lcars-upload-panel__hint--demo">
           No export handy? Load the bundled fixture — about 100 hand-written fake conversations

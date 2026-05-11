@@ -4,13 +4,13 @@ import { PHASE_7_RESERVED_FILES, fetchAnalysisTierStatus } from './analysisFetch
 /**
  * Covers `[R-AC14]` representative cases:
  *   (1) none present → BROWSER, N=0
- *   (2) only `duplicates.semantic.json` present → BROWSER+LOCAL (1/6)
- *   (3) only `reloops.json` present → BROWSER+LOCAL (1/6)
- *   (4) three of six present → BROWSER+LOCAL (3/6)
- *   (5) all six present → BROWSER+LOCAL (6/6)
+ *   (2) only `duplicates.semantic.json` present → BROWSER+LOCAL (1/5)
+ *   (3) only `reloops.json` present → BROWSER+LOCAL (1/5)
+ *   (4) three of five present → BROWSER+LOCAL (3/5)
+ *   (5) all five present → BROWSER+LOCAL (5/5)
  *   (6) unknown extra file is ignored (not counted, not crash) — the
  *       enumeration is code-driven, so this is implicitly covered by
- *       only probing the six known names; we assert the set of tierFiles
+ *       only probing the five known names; we assert the set of tierFiles
  *       keys equals the reserved set.
  * Additional negative tests cover network errors + bad JSON.
  */
@@ -64,7 +64,7 @@ describe('fetchAnalysisTierStatus', () => {
     }
   });
 
-  it('(2) only duplicates.semantic.json present → BROWSER+LOCAL (1/6)', async () => {
+  it('(2) only duplicates.semantic.json present → BROWSER+LOCAL (1/5)', async () => {
     stubFetch({ 'duplicates.semantic.json': { generatedAt: 1700000000000 } });
     const result = await fetchAnalysisTierStatus('/data');
     expect(result.tierStatus).toBe('browser+local');
@@ -76,7 +76,7 @@ describe('fetchAnalysisTierStatus', () => {
     expect(result.tierFiles['reloops.json']?.present).toBe(false);
   });
 
-  it('(3) only reloops.json present → BROWSER+LOCAL (1/6)', async () => {
+  it('(3) only reloops.json present → BROWSER+LOCAL (1/5)', async () => {
     stubFetch({ 'reloops.json': { generatedAt: 1710000000000 } });
     const result = await fetchAnalysisTierStatus('/data');
     expect(result.tierStatus).toBe('browser+local');
@@ -84,21 +84,20 @@ describe('fetchAnalysisTierStatus', () => {
     expect(result.tierFiles['reloops.json']?.generatedAt).toBe(1710000000000);
   });
 
-  it('(4) three of six present → BROWSER+LOCAL (3/6)', async () => {
+  it('(4) three of five present → BROWSER+LOCAL (3/5)', async () => {
     stubFetch({
       'duplicates.semantic.json': { generatedAt: 1 },
       'reloops.json': { generatedAt: 2 },
-      'cost-diagnoses.json': { generatedAt: 3 },
+      'skill-seeds.json': { generatedAt: 3 },
     });
     const result = await fetchAnalysisTierStatus('/data');
     expect(result.tierStatus).toBe('browser+local');
     expect(result.tierPresentCount).toBe(3);
     expect(result.tierFiles['handoffs.json']?.present).toBe(false);
-    expect(result.tierFiles['skill-seeds.json']?.present).toBe(false);
     expect(result.tierFiles['zombies.diagnosed.json']?.present).toBe(false);
   });
 
-  it('(5) all six present → BROWSER+LOCAL (6/6) with timestamps', async () => {
+  it('(5) all five present → BROWSER+LOCAL (5/5) with timestamps', async () => {
     const map: Record<string, { generatedAt: number }> = {};
     PHASE_7_RESERVED_FILES.forEach((name, i) => {
       map[name] = { generatedAt: 1_700_000_000_000 + i };
@@ -106,7 +105,7 @@ describe('fetchAnalysisTierStatus', () => {
     stubFetch(map);
     const result = await fetchAnalysisTierStatus('/data');
     expect(result.tierStatus).toBe('browser+local');
-    expect(result.tierPresentCount).toBe(6);
+    expect(result.tierPresentCount).toBe(5);
     for (let i = 0; i < PHASE_7_RESERVED_FILES.length; i += 1) {
       const name = PHASE_7_RESERVED_FILES[i]!;
       expect(result.tierFiles[name]).toEqual({

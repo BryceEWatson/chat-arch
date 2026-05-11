@@ -2,7 +2,7 @@
  * Small "view source" chip linking out to the open-source repo. Lives
  * in two places:
  *
- *   - Bottom of the primary sidebar, under the CMD/TIM/ANL/CST nav.
+ *   - Bottom of the primary sidebar, under the COR/PRC/SES/PRJ/TOP nav.
  *     Anchored via an elbow footer so it reads as part of the LCARS
  *     chrome rather than floating UI.
  *   - Inline in the landing TrustStrip, next to the local-first

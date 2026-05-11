@@ -16,6 +16,13 @@ export interface EmptyStateProps {
    * empties (e.g., "NO SELECTION") don't need it.
    */
   onLoadDemo?: () => void;
+  /**
+   * Hosted-build affordance — when `true`, the UploadPanel surfaces an
+   * INSTALL LOCALLY link as the primary action and demotes CHOOSE ZIP
+   * to a secondary outlined button. Defaults to `false` (CHOOSE ZIP
+   * primary, no install link). The host passes `!rescanLikelyLocal`.
+   */
+  showInstallLocally?: boolean;
 }
 
 export function EmptyState({
@@ -23,6 +30,7 @@ export function EmptyState({
   message = 'Run pnpm --filter @chat-arch/exporter start to produce a manifest.',
   onUpload,
   onLoadDemo,
+  showInstallLocally = false,
 }: EmptyStateProps) {
   return (
     <section className="lcars-empty-state" role="status" aria-live="polite">
@@ -34,6 +42,7 @@ export function EmptyState({
           <UploadPanel
             onLoaded={onUpload}
             variant="prominent"
+            showInstallLocally={showInstallLocally}
             {...(onLoadDemo ? { onLoadDemo } : {})}
           />
         </>

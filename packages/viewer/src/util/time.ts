@@ -105,4 +105,38 @@ export function formatIsoDate(ts: number): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Always-relative-unit formatter. Unlike `formatRelative` (which falls
+ * back to absolute dates >3d), this stays in unit-of-time form across
+ * the full range — useful for headlines like "SINCE YOU PATCHED 64d
+ * AGO" where the eye wants a single relative number, not a mix of
+ * "64d ago" / "Apr 2" depending on threshold.
+ *
+ *   <1m       -> "just now"
+ *   <1h       -> "Nm ago"
+ *   <1d       -> "Nh ago"
+ *   <30d      -> "Nd ago"
+ *   <365d     -> "Nmo ago"   (30-day months — close enough for a headline)
+ *   else      -> "Ny ago"
+ */
+export function formatRelativeUnit(timestamp: number, now: number = Date.now()): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '—';
+  const diff = now - timestamp;
+  if (diff < MS_MIN) return 'just now';
+  if (diff < MS_HOUR) {
+    const m = Math.max(1, Math.floor(diff / MS_MIN));
+    return `${m}m ago`;
+  }
+  if (diff < MS_DAY) {
+    const h = Math.floor(diff / MS_HOUR);
+    return `${h}h ago`;
+  }
+  const days = Math.floor(diff / MS_DAY);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
+
 export const TIME_CONST = { MS_MIN, MS_HOUR, MS_DAY };

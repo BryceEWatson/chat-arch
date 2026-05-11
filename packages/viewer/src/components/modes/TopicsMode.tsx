@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { UnifiedSessionEntry, Topic, Project } from '@chat-arch/schema';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
@@ -13,7 +13,45 @@ import { SessionCard } from '../SessionCard.js';
  * Topics are universal labels (spec §4.2) — they apply to sessions
  * regardless of project assignment, including those parked under
  * `[UNASSIGNED]`.
+ *
+ * Phase 3 opt-in gate: the TOPICS surface is deferred behind an
+ * explicit user click because the broader topic-clustering feature
+ * downloads a 36 MB embedding model from Hugging Face on first use.
+ * Until the user opts in (persisted under `chat-arch:topics-opt-in`),
+ * this component renders an opt-in placeholder describing the trade
+ * instead of the topic index. The placeholder takes the user's click
+ * to flip the storage flag and re-render the populated mode.
  */
+
+/** localStorage key for the opt-in. `=== 'true'` means opted in. */
+const TOPICS_OPT_IN_KEY = 'chat-arch:topics-opt-in';
+
+/**
+ * Read the opt-in from localStorage with SSR + private-mode safety.
+ * Defaults to `false` whenever storage is unavailable so we never
+ * accidentally trigger the embedding download in a degraded environment.
+ */
+function readTopicsOptIn(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(TOPICS_OPT_IN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeTopicsOptIn(value: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value) {
+      window.localStorage.setItem(TOPICS_OPT_IN_KEY, 'true');
+    } else {
+      window.localStorage.removeItem(TOPICS_OPT_IN_KEY);
+    }
+  } catch {
+    // Private mode / policy-locked storage — opt-in is session-only.
+  }
+}
 
 export interface TopicsModeProps {
   topics: readonly Topic[];
@@ -26,6 +64,40 @@ export interface TopicsModeProps {
   onSelectProject?: (id: string) => void;
 }
 
+interface TopicsOptInGateProps {
+  onEnable: () => void;
+}
+
+/**
+ * Disclosure card shown when the user has not yet opted in. The body
+ * copy is verbatim from the Phase 3 spec — it names the model size,
+ * the source, and the privacy posture so the user can decide before
+ * the download starts.
+ */
+function TopicsOptInGate({ onEnable }: TopicsOptInGateProps) {
+  return (
+    <div
+      className="lcars-topics-opt-in"
+      role="region"
+      aria-label="enable topic clustering"
+    >
+      <h2 className="lcars-topics-opt-in__title">ENABLE TOPIC CLUSTERING</h2>
+      <p className="lcars-topics-opt-in__body">
+        Computes topic clusters using a 36MB embedding model downloaded one time from Hugging
+        Face. The download stays in your browser cache; nothing about your conversations is
+        uploaded.
+      </p>
+      <button
+        type="button"
+        className="lcars-topics-opt-in__cta"
+        onClick={onEnable}
+      >
+        ENABLE TOPICS
+      </button>
+    </div>
+  );
+}
+
 export function TopicsMode({
   topics,
   projects,
@@ -35,6 +107,19 @@ export function TopicsMode({
   onSelectSession,
   onSelectProject,
 }: TopicsModeProps) {
+  // Hydrate the opt-in from localStorage. Initial state intentionally
+  // mirrors `readTopicsOptIn()` so first paint already reflects the
+  // stored choice — there's no flash of the gate for users who already
+  // opted in. The effect below resyncs on mount in case storage
+  // changed in another tab between renders.
+  const [optedIn, setOptedIn] = useState<boolean>(() => readTopicsOptIn());
+  useEffect(() => {
+    setOptedIn(readTopicsOptIn());
+  }, []);
+
+  // All other hooks run unconditionally — React requires a stable hook
+  // order across renders, so we cannot early-return above them. The
+  // opt-in branch below is a render-time conditional, not a hook gate.
   const now = useMemo(() => Date.now(), []);
 
   const projectById = useMemo(() => {
@@ -48,6 +133,26 @@ export function TopicsMode({
     for (const s of sessions) m.set(s.id, s);
     return m;
   }, [sessions]);
+
+  if (!optedIn) {
+    return (
+      <TopicsOptInGate
+        onEnable={() => {
+          writeTopicsOptIn(true);
+          setOptedIn(true);
+        }}
+      />
+    );
+  }
+
+  const onDisable = () => {
+    writeTopicsOptIn(false);
+    setOptedIn(false);
+    // Snap back to the index when the user revokes — leaving
+    // `selectedTopicId` set would render "topic not found" against
+    // the gate the next time they enable.
+    onSelectTopic(null);
+  };
 
   if (topics.length === 0) {
     return (
@@ -81,15 +186,16 @@ export function TopicsMode({
     );
   }
 
-  return <TopicsIndex topics={topics} onSelectTopic={onSelectTopic} />;
+  return <TopicsIndex topics={topics} onSelectTopic={onSelectTopic} onDisable={onDisable} />;
 }
 
 interface TopicsIndexProps {
   topics: readonly Topic[];
   onSelectTopic: (id: string) => void;
+  onDisable: () => void;
 }
 
-function TopicsIndex({ topics, onSelectTopic }: TopicsIndexProps) {
+function TopicsIndex({ topics, onSelectTopic, onDisable }: TopicsIndexProps) {
   const [filter, setFilter] = useState('');
   const sorted = useMemo(() => {
     return [...topics].sort((a, b) => b.sessionIds.length - a.sessionIds.length);
@@ -103,7 +209,18 @@ function TopicsIndex({ topics, onSelectTopic }: TopicsIndexProps) {
   return (
     <div className="lcars-topics-index">
       <header className="lcars-topics-index__header">
-        <h2 className="lcars-topics-index__title">TOPICS</h2>
+        <h2 className="lcars-topics-index__title">
+          TOPICS{' '}
+          <button
+            type="button"
+            className="lcars-topics-index__disable"
+            onClick={onDisable}
+            aria-label="disable topic clustering and return to opt-in placeholder"
+            title="clears the local opt-in flag — re-enabling triggers the embedding download again"
+          >
+            (disable)
+          </button>
+        </h2>
         <label className="lcars-topics-index__filter">
           <span className="lcars-topics-index__filter-label" aria-hidden="true">
             FILTER

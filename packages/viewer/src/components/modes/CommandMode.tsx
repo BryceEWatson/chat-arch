@@ -12,9 +12,17 @@ export interface CommandModeProps {
   sessionDupIndex?: Map<string, SessionDuplicateInfo>;
   /** Set of project ids classified `zombie` — drives the ZOMBIE chip. */
   zombieProjectIds?: ReadonlySet<string>;
-  /** DUP-chip navigation → CONSTELLATION mode with cluster highlighted. */
+  /**
+   * DUP-chip click handler. Informational only post-Phase-3 (the
+   * CONSTELLATION drill-in target was cut); callback retained for
+   * future reuse and exercised by SessionCard unit tests.
+   */
   onDuplicateChipClick?: (clusterId: string, sessionId: string) => void;
-  /** ZOMBIE-chip navigation → CONSTELLATION mode filtered to zombies. */
+  /**
+   * ZOMBIE-chip click handler. Informational only post-Phase-3;
+   * callback retained for future reuse and exercised by SessionCard
+   * unit tests.
+   */
   onZombieChipClick?: (sessionId: string) => void;
   /**
    * Ids of sessions whose `project` came from the Phase 3 semantic

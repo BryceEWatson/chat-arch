@@ -56,6 +56,13 @@
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 
+  /* TopBar min-height + matching desktop sidebar elbow height. The
+     desktop layout puts the sidebar and the TopBar in the same grid
+     row (the LCARS L-corner), so the elbow's height must match the
+     TopBar's min-height exactly or the L breaks visually. Sharing
+     one variable prevents future drift. */
+  --lcars-top-bar-min-height: 44px;
+
   --lcars-sunflower: #ffcc99;
   /* Pre-composited sunflower × 0.85 over black. Used as a solid background
      color for inactive sidebar items so contrast (10.25:1 vs black text)
@@ -155,8 +162,10 @@
 .lcars-frame {
   display: grid;
   grid-template-columns: 1fr;
-  /* Tier C: top bar / pill sidebar / content column — content area flexes. */
-  grid-template-rows: auto auto 1fr;
+  /* Tier C: top bar / pill sidebar / content column / optional footer
+     trust strip. The footer row is `auto` so it collapses to zero when
+     no <TrustStrip variant="footer" /> is present. */
+  grid-template-rows: auto auto 1fr auto;
   gap: 6px;
 }
 /* Empty-state frame: keep the TopBar visible (SCAN LOCAL + UPLOAD CLOUD are
@@ -175,7 +184,7 @@
 @media (min-width: 900px) {
   .lcars-frame.lcars-frame--empty {
     grid-template-columns: 1fr;
-    grid-template-rows: 40px 1fr;
+    grid-template-rows: minmax(40px, auto) 1fr;
   }
   .lcars-frame.lcars-frame--empty .lcars-top-bar {
     grid-column: 1 / -1;
@@ -421,7 +430,10 @@
 @media (min-width: 600px) {
   .lcars-frame {
     grid-template-columns: 1fr;
-    grid-template-rows: 56px 1fr;
+    /* `minmax(56px, auto)` lets the TopBar's row grow when its inner
+       chips wrap to a second line. A fixed `56px` row clipped the
+       wrapped content (title + date pill rendered half-visible). */
+    grid-template-rows: minmax(56px, auto) 1fr auto;
     gap: 8px;
     /* No forced min-height — frame sizes to content. Populated layouts
        grow naturally from their session grid; empty state stays short
@@ -450,7 +462,10 @@
      the sidebar itself. */
   .lcars-frame {
     grid-template-columns: 160px 1fr;
-    grid-template-rows: 40px 1fr;
+    /* `minmax(40px, auto)` — see tablet note. Desktop has more
+       chips (location + indexed + earthdate + tier + rescan-chip)
+       and is the breakpoint where wrap-clipping was most visible. */
+    grid-template-rows: minmax(40px, auto) 1fr auto;
     column-gap: 8px;
     row-gap: 0;
   }
@@ -960,8 +975,14 @@
 
 @media (min-width: 600px) {
   .lcars-top-bar {
-    height: 56px;
-    padding: 0 14px;
+    /* `min-height` instead of `height` — the inner `__left` cluster has
+       `flex-wrap: wrap`, so when its chips can't fit horizontally they
+       wrap to a second row. A fixed outer height clips the wrapped row
+       (manifests as the title and date pill rendering half-visible).
+       `min-height` keeps the empty-bar tall enough to look balanced
+       while letting the bar grow if wrap kicks in. */
+    min-height: 56px;
+    padding: 6px 14px;
     flex-wrap: nowrap;
     justify-content: space-between;
   }
@@ -989,8 +1010,13 @@
      left edge butts against the 8px column-gap; right end keeps the
      classic LCARS half-pill cap. */
   .lcars-top-bar {
-    height: 44px;
-    padding: 0 18px;
+    /* See min-height note at the tablet breakpoint — same reason
+       here: wrap-on-overflow must extend the bar, not clip it. The
+       value lives in `--lcars-top-bar-min-height` because the
+       sidebar's top elbow must match exactly (see
+       `.lcars-sidebar__elbow` below). */
+    min-height: var(--lcars-top-bar-min-height);
+    padding: 6px 18px;
     background: var(--lcars-butterscotch);
     border-bottom: 0;
     border-radius: 0 22px 22px 0;
@@ -1106,6 +1132,33 @@
 .lcars-sidebar__group:first-of-type > .lcars-sidebar__group-label {
   padding-top: 6px;
 }
+/* Phase 2a: ANALYTICS group is collapsible. The label becomes
+   interactive — focusable, with a chevron suffix that flips when
+   expanded. The collapsed list hides via display:none so it doesn't
+   steal scroll space. */
+.lcars-sidebar__group-label--toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  outline: none;
+}
+.lcars-sidebar__group-label--toggle::after {
+  content: '▾';
+  font-size: 10px;
+  margin-left: 6px;
+  transition: transform 120ms ease-out;
+}
+.lcars-sidebar__group--collapsed .lcars-sidebar__group-label--toggle::after {
+  transform: rotate(-90deg);
+}
+.lcars-sidebar__group-label--toggle:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-sidebar__group--collapsed .lcars-sidebar__list {
+  display: none;
+}
 .lcars-sidebar__item {
   display: flex;
   align-items: center;
@@ -1178,10 +1231,13 @@
     overflow: visible;
   }
   .lcars-sidebar__elbow {
-    height: 40px;
+    /* Must match `.lcars-top-bar { min-height }` exactly — the elbow
+       sits in the same grid row as the TopBar (the L-corner), so any
+       drift between the two heights leaves a visible gap or overlap. */
+    height: var(--lcars-top-bar-min-height);
   }
   .lcars-sidebar__elbow--top {
-    border-radius: 40px 0 0 0;
+    border-radius: var(--lcars-top-bar-min-height) 0 0 0;
   }
   .lcars-sidebar__item {
     gap: 10px;
@@ -2778,6 +2834,20 @@
   background: var(--lcars-violet);
   color: var(--lcars-bg);
 }
+/* CHOOSE ZIP demoted to outlined when SCAN LOCAL is the primary
+   action (i.e. running locally). Keeps cloud-export branded as
+   butterscotch — this is the same palette as the primary, just
+   outlined to read as the secondary path. */
+.lcars-upload-panel__button--cloud-secondary {
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  border: 1.5px solid var(--lcars-butterscotch);
+}
+.lcars-upload-panel__button--cloud-secondary:hover:not(:disabled),
+.lcars-upload-panel__button--cloud-secondary:focus-visible:not(:disabled) {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+}
 .lcars-upload-panel__hint--demo {
   font-size: 11px;
   color: var(--lcars-text);
@@ -3197,45 +3267,6 @@
   align-self: center;
 }
 
-/* --- local analyzer empty state (Decision 15 / AC17) ---
-   Reusable "what the local tier would unlock" card. Rendered inside the
-   CONSTELLATION accordion per [R-D20] and as the COST mode Phase-7 stub. */
-.lcars-local-analyzer-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px dashed var(--lcars-violet);
-  border-radius: 8px;
-  background: rgba(204, 153, 204, 0.04);
-}
-.lcars-local-analyzer-empty__header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.lcars-local-analyzer-empty__title {
-  margin: 0;
-  color: var(--lcars-violet);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  font-weight: 700;
-}
-.lcars-local-analyzer-empty__preview {
-  margin: 0;
-  color: var(--lcars-text);
-  font-size: 12px;
-  line-height: 1.4;
-  opacity: 0.9;
-}
-.lcars-local-analyzer-empty__cta {
-  margin: 0;
-  color: var(--lcars-sunflower);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  line-height: 1.5;
-}
-
 /* --- source attribution micro-label (Decision 18 / [R-D18]) ---
    Default: inherits parent chip hue at 85% opacity so the label stays
    readable on colored / violet-tinted chip backgrounds (UX finding 4 —
@@ -3280,11 +3311,18 @@
   border: 1px solid var(--lcars-divider);
   border-top: 3px solid var(--lcars-butterscotch);
   border-radius: 8px;
-  cursor: pointer;
   transition: background 120ms ease-out;
 }
-.lcars-kpi:hover,
-.lcars-kpi:focus-visible {
+/* Phase 3 cut COST drill-in, so KPI tiles render as informational
+   `<div>`s without `role="button"`. Gate the cursor + hover affordance
+   behind the role attribute so any future interactive caller still
+   gets the lift, mirroring `.lcars-chip--narrative-*[role='button']`
+   below. */
+.lcars-kpi[role='button'] {
+  cursor: pointer;
+}
+.lcars-kpi[role='button']:hover,
+.lcars-kpi[role='button']:focus-visible {
   background: color-mix(in srgb, var(--lcars-sunflower) 5%, var(--lcars-bg-1));
   outline: none;
 }
@@ -3514,15 +3552,22 @@
   font-size: 9px;
   letter-spacing: 0.06em;
   font-weight: 600;
-  cursor: pointer;
   border: 1px solid currentColor;
+}
+/* Phase 3 cut the CONSTELLATION drill-in, so DUP / ZOMBIE chips are
+   informational `<span>`s when no click handler is supplied. Gate the
+   cursor + hover affordance behind `[role='button']` to match the
+   NARR pattern below — the `SessionCard.tsx` interactive branch sets
+   the role, the inert branch leaves it off and gets no hover lift. */
+.lcars-chip[role='button'] {
+  cursor: pointer;
 }
 .lcars-chip--dup {
   color: var(--lcars-violet);
   background: rgba(204, 153, 204, 0.12);
 }
-.lcars-chip--dup:hover,
-.lcars-chip--dup:focus-visible {
+.lcars-chip--dup[role='button']:hover,
+.lcars-chip--dup[role='button']:focus-visible {
   background: rgba(204, 153, 204, 0.28);
   outline: none;
 }
@@ -3530,8 +3575,8 @@
   color: var(--lcars-peach);
   background: rgba(255, 153, 51, 0.1);
 }
-.lcars-chip--zombie:hover,
-.lcars-chip--zombie:focus-visible {
+.lcars-chip--zombie[role='button']:hover,
+.lcars-chip--zombie[role='button']:focus-visible {
   background: rgba(255, 153, 51, 0.25);
   outline: none;
 }
@@ -3920,6 +3965,81 @@
   color: var(--lcars-ice);
   margin: 0;
 }
+/* Phase 3 opt-in disable link — small inline button next to the
+   TOPICS title that clears the local opt-in flag. Sits at a quieter
+   weight than the surrounding LCARS chrome so it reads as a
+   secondary affordance, not a primary nav target. */
+.lcars-topics-index__disable {
+  font-family: var(--lcars-font-prose);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--lcars-butterscotch);
+  background: transparent;
+  border: none;
+  padding: 0 6px;
+  margin-left: 6px;
+  cursor: pointer;
+  vertical-align: baseline;
+  opacity: 0.75;
+}
+.lcars-topics-index__disable:hover,
+.lcars-topics-index__disable:focus-visible {
+  color: var(--lcars-peach);
+  opacity: 1;
+  outline: none;
+  text-decoration: underline;
+}
+
+/* Phase 3 opt-in gate — disclosure card shown until the user clicks
+   ENABLE TOPICS. Mirrors the LocalAnalyzerEmpty visual weight (dashed
+   violet border on a faint violet wash) so the user reads it as
+   "feature is here, not yet active". */
+.lcars-topics-opt-in {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  margin: 16px;
+  border: 1px dashed var(--lcars-violet);
+  border-radius: 8px;
+  background: rgba(204, 153, 204, 0.04);
+  max-width: 640px;
+}
+.lcars-topics-opt-in__title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  color: var(--lcars-violet);
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+.lcars-topics-opt-in__body {
+  margin: 0;
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lcars-topics-opt-in__cta {
+  align-self: flex-start;
+  padding: 8px 16px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-bg);
+  background: var(--lcars-ice);
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+}
+.lcars-topics-opt-in__cta:hover,
+.lcars-topics-opt-in__cta:focus-visible {
+  background: var(--lcars-sunflower);
+  outline: none;
+}
 .lcars-topics-index__filter {
   display: inline-flex;
   align-items: center;
@@ -4190,579 +4310,6 @@
   opacity: 0.85;
 }
 
-/* --- 2s highlight ring keyframe ([R-D19]) --- */
-@keyframes lcars-kpi-highlight {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 153, 51, 0.9);
-    outline: 2px solid var(--lcars-peach);
-    outline-offset: 3px;
-  }
-  80% {
-    box-shadow: 0 0 0 8px rgba(255, 153, 51, 0);
-    outline: 2px solid var(--lcars-peach);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 153, 51, 0);
-    outline: 2px solid transparent;
-  }
-}
-.lcars-cost-section--highlight {
-  animation: lcars-kpi-highlight 2s ease-out 1;
-  animation-fill-mode: forwards;
-  border-radius: 8px;
-}
-
-/* --- COST mode layout (Decision 19) --- */
-.lcars-cost-mode {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 8px;
-  overflow-y: auto;
-  min-height: 0;
-}
-.lcars-cost-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-@media (min-width: 900px) {
-  .lcars-cost-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-.lcars-cost-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--lcars-bg-1);
-  border: 1px solid var(--lcars-divider);
-  border-radius: 8px;
-}
-.lcars-cost-cloud-notice {
-  padding: 12px 16px;
-  background: var(--lcars-bg-1);
-  border: 1px dashed var(--lcars-violet);
-  border-radius: 6px;
-  color: var(--lcars-text);
-  font-size: 13px;
-  line-height: 1.5;
-  opacity: 0.9;
-}
-.lcars-cost-cloud-notice strong {
-  color: var(--lcars-violet);
-  letter-spacing: 0.04em;
-}
-.lcars-cost-section__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--lcars-divider);
-}
-.lcars-cost-section__title {
-  margin: 0;
-  color: var(--lcars-peach);
-  font-size: 11.5px;
-  letter-spacing: 0.18em;
-  font-weight: 700;
-}
-.lcars-cost-section__filter-hint {
-  font-family: var(--lcars-font-prose);
-  color: var(--lcars-text);
-  font-size: 11.5px;
-  font-weight: 400;
-  opacity: 0.6;
-}
-.lcars-cost-section__summary {
-  font-family: var(--lcars-font-prose);
-  color: var(--lcars-text);
-  font-size: 11.5px;
-  font-weight: 400;
-  opacity: 0.6;
-  font-variant-numeric: tabular-nums;
-}
-.lcars-cost-section__summary strong {
-  color: var(--lcars-sunflower);
-  font-weight: 600;
-}
-.lcars-cost-section__empty {
-  color: var(--lcars-butterscotch);
-  font-size: 12px;
-  padding: 8px 0;
-}
-
-/* Stacked bar chart — peach (exact) + violet 65% (estimate) per
-   the accent contract. Labels and values sit below each bar. */
-.lcars-cost-stacked-bar {
-  list-style: none;
-  margin: 0;
-  padding: 8px 0 0;
-  display: flex;
-  flex-direction: row;
-  gap: 4px;
-  align-items: flex-end;
-  height: 160px;
-  overflow-x: auto;
-}
-.lcars-cost-stacked-bar__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-width: 46px;
-  flex: 1;
-}
-.lcars-cost-stacked-bar__track {
-  width: 100%;
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  min-height: 100px;
-  max-height: 120px;
-}
-.lcars-cost-stacked-bar__stack {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  background: rgba(102, 85, 68, 0.15);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.lcars-cost-stacked-bar__slice--exact {
-  background: var(--lcars-peach);
-}
-.lcars-cost-stacked-bar__slice--estimate {
-  background: var(--lcars-violet);
-  opacity: 0.65;
-}
-.lcars-cost-stacked-bar__label {
-  font-family: var(--lcars-font-mono);
-  font-size: 9.5px;
-  color: var(--lcars-butterscotch);
-  letter-spacing: 0.08em;
-  opacity: 0.8;
-  text-align: center;
-}
-.lcars-cost-stacked-bar__value {
-  font-family: var(--lcars-font-mono);
-  font-size: 11px;
-  color: var(--lcars-sunflower);
-  font-variant-numeric: tabular-nums;
-}
-
-.lcars-cost-legend {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-family: var(--lcars-font-prose);
-  font-size: 11px;
-  color: var(--lcars-text);
-  opacity: 0.7;
-}
-.lcars-cost-legend__sw {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  vertical-align: middle;
-  margin-right: 6px;
-}
-.lcars-cost-legend__sw--exact {
-  background: var(--lcars-peach);
-}
-.lcars-cost-legend__sw--estimate {
-  background: var(--lcars-violet);
-  opacity: 0.65;
-}
-
-/* Cost tables — the signature pattern is the inline SHARE bar inside
-   BY MODEL and BY PROJECT. The bar fill uses peach for model rows and
-   ice for project rows; a right-aligned % label floats over the bar
-   with mix-blend-mode so it stays readable against either ends. */
-.lcars-cost-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--lcars-font-prose);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-.lcars-cost-table th {
-  text-align: left;
-  font-family: var(--lcars-font-chrome);
-  color: var(--lcars-butterscotch);
-  font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--lcars-divider);
-}
-.lcars-cost-table th.num,
-.lcars-cost-table td.num {
-  text-align: right;
-}
-.lcars-cost-table td {
-  padding: 9px 8px;
-  color: var(--lcars-text);
-  border-bottom: 1px dashed rgba(102, 85, 68, 0.3);
-}
-.lcars-cost-table tr:last-child td {
-  border-bottom: none;
-}
-.lcars-cost-table__model,
-.lcars-cost-table__project {
-  color: var(--lcars-sunflower);
-  font-weight: 600;
-  font-family: var(--lcars-font-mono);
-  font-size: 11.5px;
-}
-.lcars-cost-table__rest td {
-  color: var(--lcars-butterscotch);
-  font-style: italic;
-}
-.lcars-cost-table__rank {
-  font-family: var(--lcars-font-mono);
-  color: var(--lcars-butterscotch);
-  opacity: 0.7;
-  width: 32px;
-  font-size: 11px;
-}
-.lcars-cost-table__title {
-  color: var(--lcars-sunflower);
-  font-weight: 500;
-  max-width: 380px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lcars-cost-table--dense td,
-.lcars-cost-table--dense th {
-  padding: 7px 8px;
-}
-.lcars-cost-table__row--clickable {
-  cursor: pointer;
-}
-.lcars-cost-table__row--clickable:hover {
-  background: rgba(255, 153, 51, 0.06);
-}
-
-/* Inline SHARE bar — the centerpiece of BY MODEL / BY PROJECT. */
-.lcars-cost-table__bar {
-  position: relative;
-  height: 18px;
-  background: rgba(102, 85, 68, 0.18);
-  border-radius: 9px;
-  overflow: hidden;
-  width: 140px;
-}
-.lcars-cost-table__bar-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: var(--lcars-peach);
-  border-radius: 9px;
-}
-.lcars-cost-table__bar-fill--ice {
-  background: var(--lcars-ice);
-}
-.lcars-cost-table__bar-label {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--lcars-font-prose);
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--lcars-bg);
-  mix-blend-mode: screen;
-  filter: invert(1);
-}
-
-/* --- CONSTELLATION mode layout (Decision 20 / [R-D20]) --- */
-.lcars-constellation-mode {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 8px;
-  overflow-y: auto;
-  min-height: 0;
-}
-.lcars-constellation-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--lcars-violet);
-  border-radius: 8px;
-  background: rgba(204, 153, 204, 0.04);
-}
-.lcars-constellation-section__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.lcars-constellation-section__title {
-  margin: 0;
-  color: var(--lcars-violet);
-  font-size: 13px;
-  letter-spacing: 0.12em;
-  font-weight: 700;
-}
-.lcars-constellation-section__hint {
-  color: var(--lcars-butterscotch);
-  font-size: 12px;
-}
-.lcars-constellation-section__filter {
-  color: var(--lcars-peach);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-.lcars-constellation-section__toggle {
-  align-self: flex-start;
-  margin-top: 8px;
-  padding: 4px 10px;
-  background: transparent;
-  border: 1px solid var(--lcars-dim);
-  border-radius: 6px;
-  color: var(--lcars-text);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  font-family: inherit;
-}
-.lcars-constellation-section__toggle:hover,
-.lcars-constellation-section__toggle:focus-visible {
-  background: rgba(204, 153, 204, 0.08);
-  border-color: var(--lcars-violet);
-  color: var(--lcars-sunflower);
-  outline: none;
-}
-.lcars-constellation-section__empty {
-  color: var(--lcars-butterscotch);
-  font-size: 12px;
-  padding: 4px 0;
-}
-.lcars-constellation-section__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 8px;
-}
-.lcars-constellation-section__grid--zombie {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-}
-
-/* Duplicate cluster card */
-.lcars-dup-cluster {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--lcars-butterscotch-muted);
-  border-radius: 6px;
-  background: var(--lcars-bg);
-}
-.lcars-dup-cluster--highlight {
-  border-color: var(--lcars-peach);
-  animation: lcars-kpi-highlight 2s ease-out 1;
-  animation-fill-mode: forwards;
-}
-.lcars-dup-cluster__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.lcars-dup-cluster__badge {
-  color: var(--lcars-violet);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-.lcars-dup-cluster__hash {
-  color: var(--lcars-butterscotch);
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-}
-.lcars-dup-cluster__sample {
-  margin: 0;
-  color: var(--lcars-text);
-  font-size: 12px;
-  line-height: 1.45;
-  font-style: italic;
-}
-.lcars-dup-cluster__members {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  max-height: 160px;
-  overflow-y: auto;
-}
-.lcars-dup-cluster__member-link {
-  display: block;
-  padding: 3px 6px;
-  border-left: 2px solid var(--source-color, var(--lcars-butterscotch-muted));
-  color: var(--lcars-sunflower);
-  font-size: 12px;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lcars-dup-cluster__member-link:hover,
-.lcars-dup-cluster__member-link:focus-visible {
-  background: rgba(255, 204, 153, 0.08);
-  outline: none;
-}
-.lcars-dup-cluster__member-empty {
-  color: var(--lcars-butterscotch);
-  font-size: 11px;
-  padding: 2px 6px;
-}
-/* AC20: the `<li>` the user clicked from gets a distinct violet left
-   border that auto-clears after ~3s (parent toggles the class). */
-.lcars-dup-cluster__member--origin {
-  position: relative;
-  border-left: 2px solid var(--lcars-violet);
-  background: rgba(204, 153, 204, 0.12);
-  transition:
-    background 400ms ease-out,
-    border-color 400ms ease-out;
-}
-
-/* Zombie project card */
-.lcars-zombie-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--lcars-butterscotch-muted);
-  border-radius: 6px;
-  background: var(--lcars-bg);
-}
-.lcars-zombie-card--zombie {
-  border-color: var(--lcars-peach);
-}
-.lcars-zombie-card--dormant {
-  border-color: var(--lcars-butterscotch);
-}
-.lcars-zombie-card--active {
-  border-color: var(--lcars-ice);
-}
-.lcars-zombie-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 6px;
-}
-.lcars-zombie-card__name {
-  margin: 0;
-  color: var(--lcars-sunflower);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lcars-zombie-card__class {
-  color: var(--lcars-peach);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  font-weight: 700;
-}
-.lcars-zombie-card__stats {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 10px;
-}
-.lcars-zombie-card__stats dt {
-  color: var(--lcars-butterscotch);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-}
-.lcars-zombie-card__stats dd {
-  margin: 0;
-  color: var(--lcars-text);
-  font-variant-numeric: tabular-nums;
-}
-.lcars-zombie-card__sparkline {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 24px;
-}
-.lcars-zombie-card__burst {
-  display: inline-block;
-  background: var(--lcars-violet);
-  opacity: 0.7;
-  border-radius: 2px;
-}
-.lcars-zombie-card__footer {
-  color: var(--lcars-butterscotch);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  font-style: italic;
-}
-
-/* --- Accordion ([R-D20]) ---
-   UX finding 5b: bump the header weight + give the collapsed block a
-   filled violet-tint so it reads as a section boundary, not as a
-   page-bottom tagline. Now rendered directly after EXACT DUPLICATES in
-   ConstellationMode, so cold users encounter it before scrolling the
-   project-lifecycle list. */
-.lcars-accordion {
-  border: 1px solid var(--lcars-violet);
-  border-radius: 8px;
-  background: rgba(204, 153, 204, 0.12);
-}
-.lcars-accordion__header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  cursor: pointer;
-  flex-wrap: wrap;
-  background: rgba(204, 153, 204, 0.12);
-  border-radius: 8px 8px 0 0;
-}
-.lcars-accordion__header:hover,
-.lcars-accordion__header:focus-visible {
-  background: rgba(204, 153, 204, 0.2);
-  outline: none;
-}
-.lcars-accordion__caret {
-  color: var(--lcars-violet);
-  font-family: 'Courier New', monospace;
-  font-size: 15px;
-  font-weight: 700;
-}
-.lcars-accordion__title {
-  color: var(--lcars-violet);
-  font-size: 13px;
-  letter-spacing: 0.12em;
-  font-weight: 700;
-}
-.lcars-accordion__cta {
-  color: var(--lcars-text);
-  opacity: 0.85;
-  font-size: 11px;
-}
-.lcars-accordion__body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0 14px 14px;
-}
-
 /* --- DetailMode prev/next + copy (Decision 11 / 12) --- */
 .lcars-detail-mode__nav {
   display: inline-flex;
@@ -4829,17 +4376,6 @@
    visual density. Uppercase labels at the same sizes stay at their
    existing weights (700) because they're already bold enough.
    Transcript body stays monospace (Courier) — code-shaped content. */
-.lcars-dup-cluster__sample,
-.lcars-dup-cluster__member-link,
-.lcars-local-analyzer-empty__preview,
-.lcars-local-analyzer-empty__cta,
-.lcars-constellation-section__hint,
-.lcars-cost-section__summary,
-.lcars-cost-section__filter-hint,
-.lcars-cost-section__empty,
-.lcars-cost-table td,
-.lcars-zombie-card__footer,
-.lcars-zombie-card__stat-value,
 .lcars-kpi__value,
 .lcars-kpi__coverage {
   font-weight: 600;
@@ -6284,17 +5820,112 @@
   align-self: center;
   max-width: 640px;
 }
+/* The "what chat-arch does" pitch on the empty-state landing.
+   Sits between the TrustStrip (privacy framing) and the
+   "NO DATA YET" ErrorState. Priya complained the landing showed
+   chrome and an empty-state error but never said what the product
+   does — this is the answer. */
+.lcars-empty-pitch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: center;
+  padding: 0 8px;
+  text-align: center;
+}
+.lcars-empty-pitch__headline {
+  margin: 0;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  color: var(--lcars-sunflower);
+}
+.lcars-empty-pitch__sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lcars-text);
+  opacity: 0.85;
+}
+@media (min-width: 600px) {
+  .lcars-empty-pitch__headline {
+    font-size: 26px;
+  }
+  .lcars-empty-pitch__sub {
+    font-size: 14px;
+  }
+}
+
+/* Phase 2a footer variant: leaner persistent strip that lives below
+   the populated frame so the local-first pledge is visible when
+   returning users land on data. Single row, smaller padding, spans
+   the full grid; mobile drops it entirely so the pill bar + content
+   keep the limited vertical space. */
+.lcars-trust-strip--footer {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 6px 16px;
+  font-size: 12px;
+  border-left: none;
+  border-top: 2px solid var(--lcars-butterscotch-muted);
+  background: rgba(221, 153, 68, 0.04);
+  border-radius: 0;
+  grid-column: 1 / -1;
+}
+.lcars-trust-strip--footer .lcars-trust-strip__row {
+  flex-wrap: nowrap;
+  gap: 14px;
+  width: 100%;
+}
+.lcars-trust-strip--footer .lcars-trust-strip__body {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+/*
+  Mobile (< 600px) renders a leaner one-line variant instead of
+  hiding the strip entirely. Earlier the strip dropped on mobile so
+  the pill bar + content kept the limited vertical space, but that
+  removed the local-first reassurance from the surface where it
+  matters most (a first-time visitor on their phone). This restyle
+  drops the longer body copy + RepoLink wrapper and keeps just the
+  pledge + a compact VIEW SOURCE link, costing one row of vertical
+  space.
+*/
+@media (max-width: 600px) {
+  .lcars-trust-strip--footer {
+    padding: 4px 12px;
+    font-size: 11px;
+    gap: 4px 10px;
+  }
+  .lcars-trust-strip--footer .lcars-trust-strip__row {
+    gap: 10px;
+  }
+  /* Hide the prose body — only the pledge + repo link survive on phones. */
+  .lcars-trust-strip--footer .lcars-trust-strip__body {
+    display: none;
+  }
+  .lcars-trust-strip--footer .lcars-trust-strip__pledge {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+  }
+}
 
 /* ---------------------------------------------------------------- *
- * v2 Phase 4 chrome — TopBar informational chips + DATA panel       *
- *   - .lcars-top-bar__tier-slot wraps the TierIndicator + sibling   *
+ * TopBar informational chips                                        *
+ *   - .lcars-top-bar__tier-slot wraps the TierIndicator + siblings  *
  *     so they render as a single inline cluster between the title   *
- *     and the location chip.                                         *
- *   - .lcars-top-bar__location is the current-surface chip          *
- *     (PROJECTS / SESSIONS / ANALYSIS / etc.) per spec §6.          *
+ *     and the EARTHDATE chip.                                       *
  *   - .lcars-top-bar__earthdate is the EARTHDATE chip.              *
- *   - .lcars-data-panel is the slide-in sheet hosting UPLOAD CLOUD, *
- *     SCAN LOCAL, and DELETE actions per decision D4.               *
+ *   - .lcars-top-bar__rescan-chip is the persistent +N delta from   *
+ *     the most recent rescan (dismissed via its ✕ button or by      *
+ *     starting another scan).                                       *
  * ---------------------------------------------------------------- */
 
 .lcars-top-bar__tier-slot {
@@ -6304,7 +5935,6 @@
   flex: 0 0 auto;
 }
 
-.lcars-top-bar__location,
 .lcars-top-bar__earthdate {
   display: inline-flex;
   align-items: center;
@@ -6322,20 +5952,56 @@
   flex: 0 0 auto;
   line-height: 1;
 }
-.lcars-top-bar__location-prefix {
-  color: var(--lcars-sunflower);
-  font-size: 12px;
-  line-height: 1;
-}
-.lcars-top-bar__location-label,
 .lcars-top-bar__earthdate-value {
   padding-bottom: 2px;
   line-height: 1;
 }
+.lcars-top-bar__rescan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border-radius: 14px;
+  background: var(--lcars-peach);
+  color: var(--lcars-bg);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+.lcars-top-bar__rescan-chip-label,
+.lcars-top-bar__rescan-chip-value {
+  padding-bottom: 2px;
+  line-height: 1;
+}
+.lcars-top-bar__rescan-chip-value {
+  font-variant-numeric: tabular-nums;
+}
+.lcars-top-bar__rescan-chip-dismiss {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--lcars-bg);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.lcars-top-bar__rescan-chip-dismiss:hover,
+.lcars-top-bar__rescan-chip-dismiss:focus-visible {
+  background: rgba(0, 0, 0, 0.5);
+  outline: none;
+}
 @media (max-width: 899px) {
   /* Mirror the source-btn mobile inversion — dark title bar needs
      light-on-dark chips. */
-  .lcars-top-bar__location,
   .lcars-top-bar__earthdate {
     background: rgba(255, 204, 153, 0.12);
     border-color: var(--lcars-butterscotch);
@@ -6608,6 +6274,274 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------------------------------------------------------------- */
+/* Phase 2b — "SINCE YOU PATCHED" summary surface                    */
+/* Hosted at the top of CorrectionsPanel; collapses to nothing when  */
+/* the apply ledger is empty so first-time users see the unchanged   */
+/* CoverageMeter above the buckets.                                  */
+/* ---------------------------------------------------------------- */
+.lcars-applied-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0 18px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 204, 153, 0.06),
+    rgba(0, 0, 0, 0.20)
+  );
+  border-left: 4px solid var(--lcars-sunflower);
+}
+.lcars-applied-summary__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.lcars-applied-summary__headline {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 16px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-sunflower);
+}
+.lcars-applied-summary__stale {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-peach);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--lcars-peach) 60%, transparent);
+  background: rgba(255, 153, 51, 0.08);
+}
+/* Actionable variant — same chip, but rendered as a <button> so the */
+/* user can fire onRefreshIndex directly instead of hunting for the  */
+/* chrome's UPDATE LOCAL control.                                    */
+button.lcars-applied-summary__stale--button {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+button.lcars-applied-summary__stale--button:hover,
+button.lcars-applied-summary__stale--button:focus-visible {
+  background: rgba(255, 153, 51, 0.16);
+  border-color: var(--lcars-peach);
+  outline: none;
+}
+.lcars-applied-summary__stale-arrow {
+  display: inline-block;
+  margin-left: 2px;
+}
+.lcars-applied-summary__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lcars-applied-summary__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.30);
+  border-radius: 6px;
+  border-bottom: 2px solid color-mix(in srgb, var(--lcars-text) 18%, transparent);
+}
+.lcars-applied-summary__stat--holding {
+  border-bottom-color: color-mix(in srgb, var(--lcars-sunflower) 70%, transparent);
+}
+.lcars-applied-summary__stat--recurring {
+  border-bottom-color: color-mix(in srgb, var(--lcars-peach) 70%, transparent);
+}
+.lcars-applied-summary__stat-value {
+  font-family: var(--lcars-font-chrome);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--lcars-text);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.lcars-applied-summary__stat--recurring .lcars-applied-summary__stat-value {
+  color: var(--lcars-peach);
+}
+.lcars-applied-summary__stat-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
+}
+.lcars-applied-summary__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-sunflower);
+}
+.lcars-applied-summary__toggle:hover,
+.lcars-applied-summary__toggle:focus-visible {
+  background: rgba(255, 204, 153, 0.08);
+  outline: none;
+}
+.lcars-applied-summary__chevron {
+  font-size: 10px;
+}
+.lcars-applied-summary__timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-applied-summary__row {
+  margin: 0;
+}
+.lcars-applied-summary__row-btn {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 1fr minmax(140px, auto) auto;
+  gap: 12px;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid color-mix(in srgb, var(--lcars-text) 10%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+}
+.lcars-applied-summary__row-btn:hover,
+.lcars-applied-summary__row-btn:focus-visible {
+  background: rgba(255, 204, 153, 0.06);
+  border-color: color-mix(in srgb, var(--lcars-sunflower) 40%, transparent);
+  outline: none;
+}
+.lcars-applied-summary__row-when {
+  font-family: var(--lcars-font-mono, monospace);
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lcars-applied-summary__row-rule {
+  font-size: 13px;
+  color: var(--lcars-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcars-applied-summary__row-target {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+  font-size: 10px;
+}
+.lcars-applied-summary__row-target-kind {
+  font-family: var(--lcars-font-chrome);
+  letter-spacing: 0.18em;
+  color: color-mix(in srgb, var(--lcars-sunflower) 80%, transparent);
+}
+.lcars-applied-summary__row-target-path {
+  font-family: var(--lcars-font-mono, monospace);
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+}
+.lcars-applied-summary__row-bucket {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.lcars-applied-summary__row-bucket--holding {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.08);
+}
+.lcars-applied-summary__row-bucket--recurring {
+  color: var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.10);
+}
+.lcars-applied-summary__row-bucket--gone {
+  color: color-mix(in srgb, var(--lcars-text) 55%, transparent);
+  background: rgba(255, 255, 255, 0.04);
+}
+@media (max-width: 600px) {
+  .lcars-applied-summary__row-btn {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto;
+    gap: 4px 8px;
+  }
+  .lcars-applied-summary__row-when {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .lcars-applied-summary__row-bucket {
+    grid-row: 1;
+    grid-column: 2;
+    justify-self: end;
+  }
+  .lcars-applied-summary__row-rule {
+    grid-row: 2;
+    grid-column: 1 / 3;
+    white-space: normal;
+  }
+  .lcars-applied-summary__row-target {
+    grid-row: 3;
+    grid-column: 1 / 3;
+  }
+}
+
+/* Highlight pulse — flashes the matching CorrectionPatternCard after  */
+/* the summary scrolls it into view. Two-second animation; the         */
+/* highlightedPatternId state clears at the same time.                 */
+@keyframes lcars-applied-summary-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 153, 0); }
+  20%      { box-shadow: 0 0 0 6px rgba(255, 204, 153, 0.45); }
+  60%      { box-shadow: 0 0 0 4px rgba(255, 204, 153, 0.15); }
+}
+.lcars-corrections__pattern-item {
+  border-radius: 8px;
+  transition: box-shadow 240ms ease-out;
+}
+.lcars-corrections__pattern-item[data-highlighted='true'] {
+  animation: lcars-applied-summary-pulse 2s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Static fallback — keep the highlight perceivable for reduced-     */
+  /* motion users without a pulsing animation. A solid amber outline + */
+  /* tint reads as "this card was selected" without movement.          */
+  .lcars-corrections__pattern-item[data-highlighted='true'] {
+    animation: none;
+    outline: 2px solid color-mix(in srgb, var(--lcars-peach) 70%, transparent);
+    outline-offset: 2px;
+    background: color-mix(in srgb, var(--lcars-peach) 6%, transparent);
+  }
+}
+
 .lcars-corrections__coverage {
   display: flex;
   flex-direction: column;
@@ -7218,4 +7152,81 @@
   margin: 0;
   font-size: 11.5px;
   color: color-mix(in srgb, var(--lcars-text) 78%, transparent);
+}
+.lcars-correction-pattern__btn--ghost {
+  border-color: color-mix(in srgb, var(--lcars-text) 30%, transparent);
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+}
+.lcars-correction-pattern__instance-pill {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.lcars-correction-pattern__instance-pill:hover,
+.lcars-correction-pattern__instance-pill:focus-visible {
+  border-color: color-mix(in srgb, var(--lcars-peach) 50%, transparent);
+  outline: none;
+}
+.lcars-correction-pattern__applied {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lcars-peach) 20%, transparent);
+  color: var(--lcars-peach);
+}
+.lcars-correction-pattern__applied-time {
+  margin-left: 6px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+.lcars-correction-pattern__confirm,
+.lcars-correction-pattern__apply-error {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.lcars-correction-pattern__confirm-blurb {
+  margin: 0;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--lcars-text) 88%, transparent);
+}
+.lcars-correction-pattern__confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+}
+.lcars-correction-pattern__confirm-textarea {
+  font-family: var(--lcars-font-mono, monospace);
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--lcars-text) 25%, transparent);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--lcars-text);
+  resize: vertical;
+}
+.lcars-correction-pattern__confirm-actions {
+  display: flex;
+  gap: 8px;
 }

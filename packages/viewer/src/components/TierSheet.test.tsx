@@ -10,7 +10,7 @@ function emptyFiles(): Record<string, { present: boolean; generatedAt?: number }
 }
 
 describe('TierSheet (AC14 / AC15)', () => {
-  it('enumerates all six Phase-7-reserved filenames (AC14)', () => {
+  it('enumerates all Phase-7-reserved filenames (AC14)', () => {
     render(
       <TierSheet
         tierStatus="browser"
@@ -34,7 +34,7 @@ describe('TierSheet (AC14 / AC15)', () => {
       />,
     );
     const comingSoon = screen.getAllByText('coming soon');
-    expect(comingSoon.length).toBe(6);
+    expect(comingSoon.length).toBe(PHASE_7_RESERVED_FILES.length);
   });
 
   it('shows ✓ + ISO date for present files with generatedAt', () => {
@@ -80,7 +80,7 @@ describe('TierSheet (AC14 / AC15)', () => {
     expect(screen.getByText(/not yet shipped/)).toBeDefined();
   });
 
-  it('header copy in CORE+EXTENDED state carries the N/6 count', () => {
+  it('header copy in CORE+EXTENDED state carries the N-of-total count', () => {
     render(
       <TierSheet
         tierStatus="browser+local"
@@ -89,8 +89,11 @@ describe('TierSheet (AC14 / AC15)', () => {
         onClose={() => {}}
       />,
     );
+    const total = PHASE_7_RESERVED_FILES.length;
     expect(
-      screen.getByText(/CORE \+ EXTENDED ANALYSIS — 3 of 6 extended views generated\./),
+      screen.getByText(
+        new RegExp(`CORE \\+ EXTENDED ANALYSIS — 3 of ${total} extended views generated\\.`),
+      ),
     ).toBeDefined();
   });
 

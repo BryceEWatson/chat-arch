@@ -96,6 +96,23 @@ export function mergeUploads(
   labelSet.add(incoming.sourceLabel);
   const sourceLabel = [...labelSet].join(' + ');
 
+  // Phase 4 P0.1: optional Phase-4 fields (`corrections`,
+  // `appliedImprovements`, `synthesizedRescanDelta`, `projects`) used to
+  // be silently dropped on a second upload because the literal-return
+  // shape only carried {manifest, conversationsById, sourceLabel}. A
+  // user who clicked LOAD DEMO DATA twice — or uploaded a real ZIP after
+  // a demo — lost the demo's corrections + applied + delta and the
+  // workshop surface disappeared mid-session.
+  //
+  // Preference rule for the three carry-over fields: `incoming` when
+  // present, else `existing`. Built via conditional spreads to satisfy
+  // `exactOptionalPropertyTypes` (we cannot write `field: undefined`).
+  //
+  // `synthesizedRescanDelta` is demo-only and explicitly does NOT carry
+  // over: parseCloudZip never sets it, so a real-ZIP-after-demo would
+  // otherwise leave the chip claiming "12 cli-direct sessions" against
+  // a cloud-only upload. The conditional below only carries the field
+  // when `incoming` itself sets it (i.e. another demo load).
   return {
     manifest: {
       schemaVersion: Math.max(existing.manifest.schemaVersion, incoming.manifest.schemaVersion) as
@@ -108,6 +125,24 @@ export function mergeUploads(
     },
     conversationsById,
     sourceLabel,
+    ...(incoming.corrections !== undefined
+      ? { corrections: incoming.corrections }
+      : existing.corrections !== undefined
+        ? { corrections: existing.corrections }
+        : {}),
+    ...(incoming.appliedImprovements !== undefined
+      ? { appliedImprovements: incoming.appliedImprovements }
+      : existing.appliedImprovements !== undefined
+        ? { appliedImprovements: existing.appliedImprovements }
+        : {}),
+    ...(incoming.synthesizedRescanDelta !== undefined
+      ? { synthesizedRescanDelta: incoming.synthesizedRescanDelta }
+      : {}),
+    ...(incoming.projects !== undefined
+      ? { projects: incoming.projects }
+      : existing.projects !== undefined
+        ? { projects: existing.projects }
+        : {}),
   };
 }
 

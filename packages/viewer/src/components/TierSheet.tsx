@@ -22,7 +22,7 @@ import { PHASE_7_RESERVED_FILES, type TierFileState } from '../data/analysisFetc
 export interface TierSheetProps {
   /** Current tier state. Drives the summary line at the top of the sheet. */
   tierStatus: 'browser' | 'browser+local';
-  /** N in `CORE + EXTENDED ANALYSIS (N/6)`. Displayed in the sheet header. */
+  /** N in `CORE + EXTENDED ANALYSIS (N/M)`. Displayed in the sheet header. */
   tierPresentCount: number;
   /** Per-file present/absent + timestamp map from `fetchAnalysisTierStatus`. */
   tierFiles: Record<string, TierFileState>;
@@ -35,7 +35,6 @@ const FILE_DESCRIPTIONS: Record<(typeof PHASE_7_RESERVED_FILES)[number], string>
   'zombies.diagnosed.json': 'LLM-classified zombie projects with abandonment cause.',
   'reloops.json': 'Re-solved problems you forgot you already solved.',
   'handoffs.json': 'Handoff-prompt templates extracted from assistant outputs.',
-  'cost-diagnoses.json': 'Per-session cost diagnoses (why did this cost so much?).',
   'skill-seeds.json': 'Candidate Claude-Code skills synthesized from your history.',
 };
 
@@ -69,7 +68,7 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
   const headerCopy =
     tierStatus === 'browser'
       ? 'CORE ANALYSIS — what you see now. Extended analysis is a planned second tier, not yet shipped.'
-      : `CORE + EXTENDED ANALYSIS — ${tierPresentCount} of 6 extended views generated.`;
+      : `CORE + EXTENDED ANALYSIS — ${tierPresentCount} of ${PHASE_7_RESERVED_FILES.length} extended views generated.`;
 
   return (
     <div
