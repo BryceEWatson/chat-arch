@@ -70,6 +70,118 @@ describe('CorrectionPatternCard', () => {
     expect(screen.getByText('×3')).toBeDefined();
   });
 
+  describe('upgrade headline (lead-with-the-punchline)', () => {
+    it('renders the upgrade.headline above the rationale when present', () => {
+      const u = upgrade({
+        headline: "Widen 'adversarial review' rule to fire on plans, not just experiment results.",
+      });
+      const p = pattern({ proposedUpgrades: [u] });
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      expect(
+        screen.getByText(
+          "Widen 'adversarial review' rule to fire on plans, not just experiment results.",
+        ),
+      ).toBeDefined();
+    });
+
+    it('falls back to a derived headline from rationale when the field is missing', () => {
+      // Legacy data path: corrections.json written before the headline
+      // field shipped. The card must still lead with a one-liner;
+      // long rationale alone is the bug the headline solves.
+      const u = upgrade({
+        rationale:
+          'Rule recurs in 5 sessions and 3 projects. Diagnose the trigger before reword.',
+      });
+      const p = pattern({ proposedUpgrades: [u] });
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      // First sentence (12 words, ≤15 cap — no truncation).
+      expect(
+        screen.getByText('Rule recurs in 5 sessions and 3 projects.'),
+      ).toBeDefined();
+    });
+
+    it('truncates a fallback headline to ~15 words with an ellipsis', () => {
+      const u = upgrade({
+        rationale:
+          'This is a deliberately long single sentence that runs well past fifteen words to verify the truncation branch kicks in and appends an ellipsis at the end',
+      });
+      const p = pattern({ proposedUpgrades: [u] });
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      // The first 15 words + ellipsis. Asserting on the ellipsis is
+      // enough; counting exact words is brittle.
+      const headlineText = screen.getByText(
+        /^This is a deliberately long single sentence that runs well past fifteen words to verify…$/,
+      );
+      expect(headlineText).toBeDefined();
+    });
+  });
+
+  describe('section ordering (proposals before evidence)', () => {
+    it('renders PROPOSED UPGRADES above EVIDENCE in the DOM', () => {
+      const p = pattern();
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      const proposals = screen.getByText('PROPOSED UPGRADES');
+      const evidence = screen.getByText('EVIDENCE');
+      // Both labels are in the document; compareDocumentPosition
+      // returns DOCUMENT_POSITION_FOLLOWING (4) when `evidence` follows
+      // `proposals`. Anything else means we regressed the ordering.
+      expect(
+        proposals.compareDocumentPosition(evidence) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('collapses EVIDENCE by default — instance bodies are hidden until the user opens them', () => {
+      const p = pattern();
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      // Header is visible; the conversation excerpts inside are not.
+      expect(screen.getByText('EVIDENCE')).toBeDefined();
+      expect(screen.queryByText(/please c1 stop using docstrings/)).toBeNull();
+    });
+
+    it('opens EVIDENCE when the toggle is clicked', () => {
+      const p = pattern();
+      render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
+      expect(screen.getByText(/please c1 stop using docstrings/)).toBeDefined();
+    });
+  });
+
   it('shows the ALREADY ENCODED badge when alreadyEncoded is set', () => {
     const p = pattern({ alreadyEncoded: true });
     render(<CorrectionPatternCard pattern={p} instancesById={buildInstancesById(p.instanceIds)} />);
@@ -335,6 +447,9 @@ describe('CorrectionPatternCard', () => {
         />,
       );
       fireEvent.click(screen.getByRole('button', { name: /SHOW DETAILS/i }));
+      // Evidence is collapsed by default after the proposals-first
+      // reordering; open it before asserting on the instance pills.
+      fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
       // 3 instances × 1 pill each.
       const pills = screen.getAllByRole('button', { name: /open session s-c/ });
       expect(pills).toHaveLength(3);
@@ -348,8 +463,10 @@ describe('CorrectionPatternCard', () => {
         <CorrectionPatternCard pattern={p} instancesById={buildInstancesById(p.instanceIds)} />,
       );
       fireEvent.click(screen.getByRole('button', { name: /SHOW DETAILS/i }));
-      // Only the SHOW/HIDE-DETAILS toggle and (disabled) APPLY remain
-      // as buttons in this branch — no per-instance pill buttons.
+      fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
+      // Only the SHOW/HIDE-DETAILS toggle, EVIDENCE toggle, and
+      // (disabled) APPLY remain as buttons in this branch — no
+      // per-instance pill buttons.
       expect(screen.queryAllByRole('button', { name: /open session/i })).toHaveLength(0);
     });
   });

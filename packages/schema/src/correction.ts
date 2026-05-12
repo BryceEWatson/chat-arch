@@ -112,6 +112,17 @@ export interface ProposedUpgrade {
    *   prompt-snippet       → "(reusable, no fixed path)"
    */
   targetPath: string;
+  /**
+   * One-sentence plain-English summary of WHAT this upgrade does and
+   * WHY it matters — the punchline. The card surfaces it large above
+   * the rationale paragraph so users can decide whether to act in a
+   * glance. ≤15 words, names the rule + the change, no jargon. The
+   * `rationale` field below remains the long-form diagnosis for users
+   * who want the evidence. Optional for back-compat: patterns from
+   * mining runs before this field shipped fall back to showing the
+   * rationale alone (the card truncates it as a fallback headline).
+   */
+  headline?: string;
   /** The literal text to add. User reviews before applying. */
   patch: string;
   /** Why this target — cites the inference rule that fired. */

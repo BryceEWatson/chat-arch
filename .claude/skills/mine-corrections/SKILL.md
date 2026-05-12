@@ -173,6 +173,7 @@ PRODUCE: a JSON array of ProposedUpgrade objects, ranked best-first. Each object
 {
   "target": "global-claude-md" | "project-claude-md" | "settings-hook" | "skill" | "prompt-snippet" | "agent" | "command",
   "targetPath": "<concrete file path or settings.json key>",
+  "headline": "<one plain-English sentence — what the upgrade does and why it matters>",
   "patch": "<the literal text to add or the unified diff if replacing>",
   "rationale": "<one paragraph; cite at least 2 instance ids by '<corId>' format from above>",
   "applied": false,
@@ -181,6 +182,7 @@ PRODUCE: a JSON array of ProposedUpgrade objects, ranked best-first. Each object
 
 CONSTRAINTS — non-negotiable:
 - patch must be CONCRETE TEXT, not a description of what to add.
+- headline must be ≤15 words, plain English, and name BOTH the rule being changed AND the change itself. Good: "Widen 'adversarial review' rule to fire on plans/lists/decisions, not just experiment results." Bad: "Update CLAUDE.md." / "Improve the adversarial review rule." / "Add a hook for tests." (Last one would be fine if rewritten to name the rule: "Add PostToolUse hook so 'run tests before committing' enforces itself.")
 - If alreadyEncoded is true: the existing rule is failing. Your top-ranked proposal MUST be a reword (with the failure diagnosed: why is the model violating the existing rule?) OR an escalation to deterministic enforcement (hook). Do NOT propose adding a new rule when one already exists.
 - If projectsAffected is one project: prefer project-claude-md over global-claude-md.
 - If projectsAffected is many projects: prefer global-claude-md.
@@ -198,6 +200,7 @@ After all sub-agents return, validate each proposal:
 - `targetPath` non-empty
 - `rationale` cites at least 2 strings of the form `<corId>` that exist in the cluster's instanceIds
 - `target` is one of the allowed values
+- `headline` non-empty and ≤15 words (split on whitespace). If absent or too long, do NOT drop the proposal — instead, set `headline` to the first sentence of `rationale` truncated to 15 words. Headline is a UX-quality field, not a correctness gate; a long headline beats no headline beats dropping the proposal.
 
 Drop invalid proposals. If a pattern ends up with zero valid proposals, keep the pattern but with `proposedUpgrades: []` and note it in status.
 
