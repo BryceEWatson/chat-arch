@@ -2616,6 +2616,12 @@ export function ChatArchViewer({
                         {...(uploadedData?.appliedImprovements
                           ? { overrideApplied: uploadedData.appliedImprovements }
                           : {})}
+                        {...(uploadedData?.correctionCandidates
+                          ? {
+                              overrideCandidates:
+                                uploadedData.correctionCandidates,
+                            }
+                          : {})}
                         onSelectSession={(id) => {
                           // Stash the source mode so BACK restores
                           // CORRECTIONS instead of falling to SESSIONS

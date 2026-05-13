@@ -412,6 +412,21 @@ async function processCoworkManifest(
     );
   }
 
+  // Decide transcriptStatus — drives the viewer's SCANNED-panel split
+  // between "transcript file missing on disk" and "Cowork CLI crashed
+  // before writing a transcript". The diagnostic distinguishing the
+  // two cases is whether the upstream manifest ever allocated a
+  // `cliSessionId` (the CLI side never came up if not — these almost
+  // always carry an `error` field too). Both states are no-transcript
+  // from chat-arch's POV but they have different remediation paths:
+  // crashes are recoverable from `audit.jsonl` in a future pass;
+  // missing-from-disk files are genuinely gone.
+  const transcriptStatus: 'ok' | 'crashed' | 'missing' = transcriptCopied
+    ? 'ok'
+    : typeof manifest.cliSessionId !== 'string' || manifest.cliSessionId.length === 0
+      ? 'crashed'
+      : 'missing';
+
   // Tool-use histogram — mined from the copied transcript (same content-
   // block shape as cli-direct / cloud). audit.jsonl does not carry tool
   // names (only `tool_use_summary` lines with ids), so we have to read
@@ -456,6 +471,7 @@ async function processCoworkManifest(
     ...(transcriptCopied && transcriptOutRel !== undefined
       ? { transcriptPath: toPosixRelative(path.join(outDir, transcriptOutRel), outDir) }
       : {}),
+    transcriptStatus,
     manifestPath: toPosixRelative(manifestOutAbs, outDir),
     // auditPath: omitted (Q1)
   };

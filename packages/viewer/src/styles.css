@@ -6659,7 +6659,14 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-weight: 600;
 }
 .lcars-corrections__pipeline-note {
-  margin-left: 8px;
+  display: block;
+  /* 9ch matches .lcars-corrections__pipeline-source min-width so the
+   * note flows on its own line, indented under the source-label
+   * column. Prevents mid-phrase wraps like
+   *   "CLI crashed before writing | a transcript"
+   * at narrow widths. */
+  margin-left: 9ch;
+  margin-top: 2px;
   font-size: 11.5px;
   font-style: italic;
   color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
@@ -6679,6 +6686,57 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-size: 11px;
   font-style: italic;
   color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
+}
+/* Pipeline-stage wrappers: each one groups the work performed by a
+ * single stage of the corrections pipeline. The status badge + note
+ * are load-bearing — they answer the "the headline says 0 mined but
+ * everything below has counts" question by making the EXPORTER SCAN
+ * vs LLM MINE boundary explicit. */
+.lcars-corrections__stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+.lcars-corrections__stage + .lcars-corrections__stage {
+  border-top: 1px dashed color-mix(in srgb, var(--lcars-text) 12%, transparent);
+  padding-top: 10px;
+}
+.lcars-corrections__stage-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lcars-corrections__stage-badge {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.lcars-corrections__stage[data-stage-status='done'] .lcars-corrections__stage-badge {
+  color: var(--lcars-sunflower);
+}
+.lcars-corrections__stage[data-stage-status='pending'] .lcars-corrections__stage-badge {
+  color: var(--lcars-peach);
+}
+.lcars-corrections__stage-title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 11.5px;
+  letter-spacing: 0.22em;
+  font-weight: 700;
+  color: var(--lcars-text);
+}
+.lcars-corrections__stage-note {
+  font-family: var(--lcars-font-mono, monospace);
+  font-size: 11px;
+  font-style: italic;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
+}
+.lcars-corrections__stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 18px;
 }
 .lcars-corrections__danger {
   display: flex;
@@ -6851,18 +6909,27 @@ button.lcars-applied-summary__stale--button:focus-visible {
   gap: 8px;
   padding: 12px 14px;
   border-radius: 0 8px 8px 0;
+  /* Default neutral treatment — applies to every bucket; the
+   * urgency-attribute selectors below override for buckets containing
+   * recurring / already-encoded patterns. Same visual that the
+   * dropped `--new` modifier class used to render. */
+  border-left: 3px solid color-mix(in srgb, var(--lcars-text) 30%, transparent);
+  background: rgba(0, 0, 0, 0.18);
 }
-.lcars-corrections__bucket--recurring {
-  border-left: 3px solid var(--lcars-peach);
-  background: rgba(255, 153, 51, 0.05);
-}
-.lcars-corrections__bucket--encoded {
+/* Encoded-but-failing signal (weaker urgency, sunflower accent) —
+ * applied when a bucket contains ≥1 alreadyEncoded pattern AND
+ * no recurring patterns. */
+.lcars-corrections__bucket[data-has-encoded='true'] {
   border-left: 3px solid var(--lcars-sunflower);
   background: rgba(255, 204, 102, 0.05);
 }
-.lcars-corrections__bucket--new {
-  border-left: 3px solid color-mix(in srgb, var(--lcars-text) 30%, transparent);
-  background: rgba(0, 0, 0, 0.18);
+/* Recurring-after-applied signal (highest urgency, peach accent) —
+ * declared last so it wins over the encoded rule when a bucket
+ * carries both signals. Same intent as the dropped `--recurring`
+ * modifier class: scan the page for these first. */
+.lcars-corrections__bucket[data-has-recurring='true'] {
+  border-left: 3px solid var(--lcars-peach);
+  background: rgba(255, 153, 51, 0.05);
 }
 .lcars-corrections__bucket-header {
   display: flex;
@@ -6876,10 +6943,17 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-size: 12.5px;
   letter-spacing: 0.18em;
   font-weight: 700;
+  /* Default neutral title color — matches the dropped `--new` modifier.
+   * Urgency selectors below override per signal. */
+  color: color-mix(in srgb, var(--lcars-text) 92%, transparent);
 }
-.lcars-corrections__bucket--recurring .lcars-corrections__bucket-title { color: var(--lcars-peach); }
-.lcars-corrections__bucket--encoded   .lcars-corrections__bucket-title { color: var(--lcars-sunflower); }
-.lcars-corrections__bucket--new       .lcars-corrections__bucket-title { color: color-mix(in srgb, var(--lcars-text) 92%, transparent); }
+.lcars-corrections__bucket[data-has-encoded='true'] .lcars-corrections__bucket-title {
+  color: var(--lcars-sunflower);
+}
+/* Recurring last so it wins when both signals are present. */
+.lcars-corrections__bucket[data-has-recurring='true'] .lcars-corrections__bucket-title {
+  color: var(--lcars-peach);
+}
 .lcars-corrections__bucket-count {
   font-family: var(--lcars-font-chrome);
   font-size: 10.5px;
@@ -7016,10 +7090,64 @@ button.lcars-applied-summary__stale--button:focus-visible {
 .lcars-correction-pattern__section-title {
   margin: 0;
   font-family: var(--lcars-font-chrome);
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  color: color-mix(in srgb, var(--lcars-text) 88%, transparent);
+  /* Bumped from 10.5px → 13px after UX feedback: the old size read as
+     a chip label and the eye skipped right past it, making it hard to
+     find the section breaks inside a dense card. */
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: var(--lcars-peach);
   font-weight: 700;
+  /* Subtle left accent so the header is found by both shape and
+     color, not color alone. Matches the LCARS chrome elsewhere in
+     the viewer where section labels live next to a colored bar. */
+  padding-left: 8px;
+  border-left: 3px solid var(--lcars-peach);
+  line-height: 1.2;
+}
+
+/* EVIDENCE toggle: header sits inside a button so the whole row is
+   clickable. Reset the button chrome so it reads as a header with a
+   hint to its right, not a generic button. */
+.lcars-correction-pattern__evidence-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.lcars-correction-pattern__evidence-toggle:focus-visible {
+  outline: 2px solid var(--lcars-peach);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.lcars-correction-pattern__evidence-toggle-hint {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
+}
+.lcars-correction-pattern__evidence-toggle:hover .lcars-correction-pattern__evidence-toggle-hint {
+  color: var(--lcars-peach);
+}
+
+/* Upgrade headline: the punchline. Sits above the target chip + path
+   so the user reads "what changes and why" in one glance before any
+   diagnosis prose or diff. Larger + brighter than rationale, which
+   stays as supporting detail below. */
+.lcars-correction-pattern__upgrade-headline {
+  margin: 0 0 2px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--lcars-text);
+  max-width: 78ch;
 }
 .lcars-correction-pattern__instance-list,
 .lcars-correction-pattern__upgrade-list {

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AppliedImprovementsFile,
   Correction,
@@ -75,6 +82,15 @@ export interface CorrectionsPanelProps {
    */
   overrideCorrections?: CorrectionsFile | null;
   overrideApplied?: AppliedImprovementsFile | null;
+  /**
+   * Phase 4 — demo path. Same role as `overrideCorrections`: when the
+   * host has loaded a demo fixture that bundles a synthesized
+   * `correction-candidates.json` (so the CoverageMeter + pipeline-
+   * stage markers from PR #33 render with non-zero data on the
+   * hosted demo), pass it here. When omitted, the candidates loader
+   * still hits disk as before.
+   */
+  overrideCandidates?: CorrectionsFile | null;
 }
 
 type LoadState =
@@ -109,73 +125,108 @@ const RUNNING_LINE_TAIL = 8;
 const STATUS_POLL_MS = 1500;
 const STATUS_LOG_TAIL = 6;
 
-type BucketDef = {
-  key: 'recurring' | 'encoded' | 'new';
+/**
+ * Sentinel topic for patterns emitted by mining runs that predate the
+ * `tag-topics` skill stage. Acts as a graceful fallback so the viewer
+ * doesn't break on legacy `corrections.json` files; re-mining assigns a
+ * real topic and the bucket disappears.
+ */
+const UNTAGGED_TOPIC = 'Untagged';
+
+function topicOf(p: CorrectionPattern): string {
+  return typeof p.topic === 'string' && p.topic.trim().length > 0
+    ? p.topic.trim()
+    : UNTAGGED_TOPIC;
+}
+
+interface TopicBucket {
+  key: string;
   label: string;
-  blurb: string;
-  match: (p: CorrectionPattern) => boolean;
-};
+  patterns: CorrectionPattern[];
+  /** Sum of occurrenceCount across all patterns — drives bucket order. */
+  weight: number;
+  /** True when ≥1 pattern is recurring after applied. Hoists the bucket
+   *  toward the top regardless of weight (recurring is the highest-
+   *  signal finding the user can act on), AND drives the bucket's
+   *  visual urgency via the `data-has-recurring` style hook so the
+   *  user can scan the page for hot spots at a glance. */
+  hasRecurring: boolean;
+  /** True when ≥1 pattern is alreadyEncoded but not recurring — a
+   *  weaker urgency signal than `hasRecurring`. Drives the bucket's
+   *  visual treatment when `hasRecurring` is false. */
+  hasEncoded: boolean;
+}
 
-const BUCKET_DEFS: ReadonlyArray<BucketDef> = [
-  {
-    key: 'recurring',
-    label: 'RECURRING AFTER APPLIED',
-    blurb:
-      'You wrote a rule, the model still gets it wrong. The encoded correction is failing in practice — reword it, add an example, or move it to a hook.',
-    match: (p) => p.recurringPostApplication,
-  },
-  {
-    key: 'encoded',
-    label: 'ALREADY ENCODED BUT FAILING',
-    blurb:
-      'The rule already exists in CLAUDE.md but the model is still being corrected on it — same finding, weaker signal than recurring-after-applied.',
-    match: (p) => p.alreadyEncoded && !p.recurringPostApplication,
-  },
-  {
-    key: 'new',
-    label: 'NEW PATTERNS TO ENCODE',
-    blurb:
-      'Recurring corrections that aren’t encoded anywhere. Pick a target file, paste the patch, and ship it.',
-    match: () => true,
-  },
-];
-
-// Phase 4 — hosted demo blurbs avoid CLAUDE.md / "ship it" language
-// that doesn't apply to a non-developer visitor on chat-arch.dev.
-// Same key ordering and matchers as BUCKET_DEFS so bucketFor() and
-// the bucket grid stay in sync.
-const BUCKET_DEFS_HOSTED_DEMO: ReadonlyArray<BucketDef> = [
-  {
-    key: 'recurring',
-    label: 'STILL FAILING AFTER A FIX',
-    blurb:
-      'You patched this — the timestamp shows when — and the model is still making the same mistake. The rule is too soft, too buried, or the wrong shape.',
-    match: (p) => p.recurringPostApplication,
-  },
-  {
-    key: 'encoded',
-    label: 'TOLD NOT TO, STILL DOES IT',
-    blurb:
-      'The model keeps making this mistake even though it has been told not to. The rule exists somewhere in your config but is being ignored in practice.',
-    match: (p) => p.alreadyEncoded && !p.recurringPostApplication,
-  },
-  {
-    key: 'new',
-    label: 'NEW PATTERNS TO ENCODE',
-    blurb:
-      'Recurring corrections that aren’t written down anywhere. These are good candidates for the next round of rules.',
-    match: () => true,
-  },
-];
-
-function bucketFor(p: CorrectionPattern): 'recurring' | 'encoded' | 'new' {
-  for (const b of BUCKET_DEFS) {
-    if (b.match(p)) return b.key;
+/**
+ * Group patterns by their LLM-derived topic. Buckets are ordered by:
+ *   1. has-recurring desc (recurring topics surface first)
+ *   2. weight desc (larger topics before smaller)
+ *   3. label asc (stable tiebreak)
+ * Within a bucket, recurring patterns sort to the top so the highest-
+ * signal items inside a topic are visible without scrolling.
+ */
+function buildTopicBuckets(
+  patterns: ReadonlyArray<CorrectionPattern>,
+): TopicBucket[] {
+  const seen = new Set<string>();
+  const byTopic = new Map<string, CorrectionPattern[]>();
+  for (const p of patterns) {
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    const topic = topicOf(p);
+    const arr = byTopic.get(topic);
+    if (arr) arr.push(p);
+    else byTopic.set(topic, [p]);
   }
-  return 'new';
+  const buckets: TopicBucket[] = [];
+  for (const [topic, group] of byTopic) {
+    group.sort(sortPatterns);
+    let weight = 0;
+    let hasRecurring = false;
+    let hasEncoded = false;
+    for (const p of group) {
+      weight += p.occurrenceCount;
+      if (p.recurringPostApplication) hasRecurring = true;
+      else if (p.alreadyEncoded) hasEncoded = true;
+    }
+    buckets.push({
+      key: topic,
+      // The Untagged sentinel gets a friendlier label so a partial
+      // re-mine (or legacy corrections.json from before tag-topics
+      // landed) doesn't surface a bare "UNTAGGED" header. The
+      // bucket's `key` stays `Untagged` so [data-topic] selectors and
+      // bucket-order rules can still target it.
+      label:
+        topic === UNTAGGED_TOPIC
+          ? 'UNTAGGED · re-mine to assign'
+          : topic.toUpperCase(),
+      patterns: group,
+      weight,
+      hasRecurring,
+      hasEncoded,
+    });
+  }
+  buckets.sort((a, b) => {
+    // The Untagged bucket is a graceful fallback, not signal — pin it
+    // to the bottom regardless of weight/recurring so it doesn't
+    // float above named topics on a partial re-mine.
+    const aUntagged = a.key === UNTAGGED_TOPIC;
+    const bUntagged = b.key === UNTAGGED_TOPIC;
+    if (aUntagged !== bUntagged) return aUntagged ? 1 : -1;
+    if (a.hasRecurring !== b.hasRecurring) return a.hasRecurring ? -1 : 1;
+    if (b.weight !== a.weight) return b.weight - a.weight;
+    return a.label.localeCompare(b.label);
+  });
+  return buckets;
 }
 
 function sortPatterns(a: CorrectionPattern, b: CorrectionPattern): number {
+  // Recurring-after-applied sorts to the top within a bucket — the
+  // strongest "your rule is failing in practice" signal beats raw
+  // confidence.
+  if (a.recurringPostApplication !== b.recurringPostApplication) {
+    return a.recurringPostApplication ? -1 : 1;
+  }
   if (b.confidence !== a.confidence) return b.confidence - a.confidence;
   return b.occurrenceCount - a.occurrenceCount;
 }
@@ -213,6 +264,7 @@ export function CorrectionsPanel({
   rescanAvailable = false,
   overrideCorrections,
   overrideApplied,
+  overrideCandidates,
 }: CorrectionsPanelProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   // Phase 2b: which pattern (if any) the AppliedImprovementsSummary
@@ -288,7 +340,9 @@ export function CorrectionsPanel({
         overrideCorrections !== undefined
           ? Promise.resolve(overrideCorrections)
           : loadCorrectionsFile(dataDirBaseUrl),
-        loadCorrectionCandidatesFile(dataDirBaseUrl),
+        overrideCandidates !== undefined
+          ? Promise.resolve(overrideCandidates)
+          : loadCorrectionCandidatesFile(dataDirBaseUrl),
         overrideApplied !== undefined
           ? Promise.resolve(overrideApplied)
           : loadAppliedImprovementsFile(dataDirBaseUrl),
@@ -310,7 +364,13 @@ export function CorrectionsPanel({
         message: err instanceof Error ? err.message : String(err),
       });
     }
-  }, [dataDirBaseUrl, refreshAutoWindow, overrideCorrections, overrideApplied]);
+  }, [
+    dataDirBaseUrl,
+    refreshAutoWindow,
+    overrideCorrections,
+    overrideApplied,
+    overrideCandidates,
+  ]);
 
   useEffect(() => {
     void refresh();
@@ -744,10 +804,6 @@ export function CorrectionsPanel({
         <BucketsView
           corrections={corrections!}
           highlightedPatternId={highlightedPatternId}
-          // Phase 4 — when corrections are showing on a host with no
-          // local server (the hosted demo path), reframe the bucket
-          // header copy to avoid CLAUDE.md / "paste the patch" jargon.
-          hostedDemo={!rescanAvailable}
           {...(applyAvailable ? { onApply: handleApply } : {})}
           {...(onSelectSession ? { onSelectSession } : {})}
         />
@@ -867,7 +923,14 @@ function CoverageDetail({
   patterns,
 }: CoverageDetailProps) {
   const drops = scanStats.wrapperFiltered + scanStats.tooLongFiltered;
-  const notRun = classified === 0;
+  // Done/pending is keyed off whether any patterns have been mined, NOT
+  // `classified` (which counts only classifications that still appear in
+  // the live candidates set). After a HEURISTIC_RECALL_VERSION bump that
+  // retires every prior candidate, `classified` returns to 0 while
+  // `patterns` is still non-zero — and the badge would otherwise lie
+  // "pending · click RE-MINE CORRECTIONS" while the Last-mined chip and
+  // the pattern list contradicted it.
+  const notRun = patterns === 0;
   const knownSources: ReadonlyArray<string> = [
     'cli-direct',
     'cli-desktop',
@@ -880,99 +943,174 @@ function CoverageDetail({
       id="lcars-corrections-pipeline-detail"
       className="lcars-corrections__coverage-detail"
     >
-      <div className="lcars-corrections__pipeline">
-        <span className="lcars-corrections__pipeline-label">SCANNED</span>
-        <span className="lcars-corrections__pipeline-sublabel">
-          transcripts read · indexed in manifest
-        </span>
-        <ul className="lcars-corrections__pipeline-list">
-          {knownSources.map((source) => {
-            const total = scanStats.sessionsBySource[source] ?? 0;
-            const missing = scanStats.sessionsMissingBySource[source] ?? 0;
-            const scanned = Math.max(0, total - missing);
-            const note =
-              total === 0
-                ? source === 'cloud'
-                  ? 'no claude.ai export loaded'
-                  : 'not present in this corpus'
-                : missing > 0
-                  ? `${fmt(missing)} indexed but transcript file not on disk — usually deleted or aborted sessions`
-                  : null;
-            return (
-              <li key={`scan-${source}`}>
-                <span className="lcars-corrections__pipeline-source">
-                  {SOURCE_LABEL[source] ?? source}
-                </span>{' '}
-                <strong>
-                  {fmt(scanned)} / {fmt(total)}
-                </strong>
-                {note && (
+      {/* Stage 1: Exporter scan — already done by the time the user
+       *  opens this panel. The ✓ + "done" copy answers the user's
+       *  "the headline says 0 mined but everything below has non-zero
+       *  counts" reading: those numbers are scan-stage progress, not
+       *  mine-stage progress. */}
+      <div
+        className="lcars-corrections__stage"
+        data-stage-status="done"
+        aria-label="EXPORTER SCAN stage — done"
+      >
+        <header className="lcars-corrections__stage-header">
+          <span
+            className="lcars-corrections__stage-badge"
+            aria-hidden="true"
+          >
+            ✓
+          </span>
+          <span className="lcars-corrections__stage-title">
+            EXPORTER SCAN
+          </span>
+          <span className="lcars-corrections__stage-note">
+            done · re-runs on SCAN LOCAL
+          </span>
+        </header>
+        <div className="lcars-corrections__stage-body">
+          <div className="lcars-corrections__pipeline">
+            <span className="lcars-corrections__pipeline-label">SCANNED</span>
+            <span className="lcars-corrections__pipeline-sublabel">
+              transcripts read · indexed in manifest
+            </span>
+            <ul className="lcars-corrections__pipeline-list">
+              {knownSources.map((source) => {
+                const total = scanStats.sessionsBySource[source] ?? 0;
+                const missing = scanStats.sessionsMissingBySource[source] ?? 0;
+                const crashed =
+                  scanStats.sessionsCrashedBySource?.[source] ?? 0;
+                const trueMissing = Math.max(0, missing - crashed);
+                const scanned = Math.max(0, total - missing);
+                // Note is a React node (not string) so the split path
+                // can render two stacked lines via <br/>, keeping the
+                // "X missing on disk" / "Y CLI crashed" halves on their
+                // own lines at narrow widths. The single-line branches
+                // collapse to a plain string wrapped in the same span.
+                let note: ReactNode = null;
+                if (total === 0) {
+                  note =
+                    source === 'cloud'
+                      ? 'no claude.ai export loaded'
+                      : 'not present in this corpus';
+                } else if (missing === 0) {
+                  note = null;
+                } else if (crashed > 0 && trueMissing > 0) {
+                  note = (
+                    <>
+                      {fmt(trueMissing)} transcript file missing on disk
+                      <br />
+                      {fmt(crashed)} CLI crashed before writing a transcript
+                    </>
+                  );
+                } else if (crashed > 0) {
+                  note = `${fmt(crashed)} CLI crashed before writing a transcript (audit.jsonl still has the user's turns)`;
+                } else {
+                  note = `${fmt(trueMissing)} transcript file missing on disk (deleted or aborted between session end and scan)`;
+                }
+                return (
+                  <li key={`scan-${source}`}>
+                    <span className="lcars-corrections__pipeline-source">
+                      {SOURCE_LABEL[source] ?? source}
+                    </span>{' '}
+                    <strong>
+                      {fmt(scanned)} / {fmt(total)}
+                    </strong>
+                    {note && (
+                      <span className="lcars-corrections__pipeline-note">
+                        {note}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="lcars-corrections__pipeline">
+            <span className="lcars-corrections__pipeline-label">PIPELINE</span>
+            <ul className="lcars-corrections__pipeline-list">
+              <li>
+                <strong>{fmt(scanStats.sessionsInManifest)}</strong> sessions in
+                manifest
+              </li>
+              <li>
+                <strong>{fmt(scanStats.sessionsScanned)}</strong> with transcripts
+                {scanStats.sessionsMissing > 0 && (
                   <span className="lcars-corrections__pipeline-note">
-                    {note}
+                    <span aria-hidden="true">←</span>{' '}
+                    {fmt(scanStats.sessionsMissing)} missing (no transcript file)
                   </span>
                 )}
               </li>
-            );
-          })}
-        </ul>
+              <li>
+                <strong>{fmt(scanStats.survivingTurns)}</strong> user prompts
+                {drops > 0 && (
+                  <span className="lcars-corrections__pipeline-note">
+                    <span aria-hidden="true">←</span> {fmt(drops)} dropped (
+                    {fmt(scanStats.wrapperFiltered)} system wrappers +{' '}
+                    {fmt(scanStats.tooLongFiltered)} pastes &gt;4KB)
+                  </span>
+                )}
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
-      <div className="lcars-corrections__pipeline">
-        <span className="lcars-corrections__pipeline-label">PIPELINE</span>
-        <ul className="lcars-corrections__pipeline-list">
-          <li>
-            <strong>{fmt(scanStats.sessionsInManifest)}</strong> sessions in
-            manifest
-          </li>
-          <li>
-            <strong>{fmt(scanStats.sessionsScanned)}</strong> with transcripts
-            {scanStats.sessionsMissing > 0 && (
-              <span className="lcars-corrections__pipeline-note">
-                <span aria-hidden="true">←</span>{' '}
-                {fmt(scanStats.sessionsMissing)} missing (no transcript file)
-              </span>
-            )}
-          </li>
-          <li>
-            <strong>{fmt(scanStats.survivingTurns)}</strong> user prompts
-            {drops > 0 && (
-              <span className="lcars-corrections__pipeline-note">
-                <span aria-hidden="true">←</span> {fmt(drops)} dropped (
-                {fmt(scanStats.wrapperFiltered)} system wrappers +{' '}
-                {fmt(scanStats.tooLongFiltered)} pastes &gt;4KB)
-              </span>
-            )}
-          </li>
-        </ul>
-      </div>
-      <div className="lcars-corrections__pipeline">
-        <span className="lcars-corrections__pipeline-label">CLASSIFICATION</span>
-        <ul className="lcars-corrections__pipeline-list">
-          {notRun ? (
-            <li>
-              No LLM classification pass run yet. Click{' '}
-              <code>RE-MINE CORRECTIONS</code> to start.
-            </li>
-          ) : (
-            <>
-              <li>
-                <strong>{fmt(classified)}</strong> classified by LLM
-              </li>
-              <li>
-                <strong>{fmt(actionable)}</strong> actionable
-                <span className="lcars-corrections__pipeline-note">
-                  ({fmt(classified - actionable)} ruled &ldquo;not a real correction&rdquo;)
-                </span>
-              </li>
-              <li>
-                <strong>{fmt(patterns)}</strong>{' '}
-                {patterns === 1 ? 'pattern' : 'patterns'} surfaced
-                <span className="lcars-corrections__pipeline-note">
-                  (clusters of &ge;3 distinct sessions)
-                </span>
-              </li>
-            </>
-          )}
-        </ul>
+      {/* Stage 2: LLM mine — the action the headline bar tracks. The
+       *  ▶ + "pending" copy when nothing's been classified yet makes
+       *  it explicit that the 0 / N count IS the next step (rather
+       *  than a result that contradicts the non-zero scan numbers
+       *  above). */}
+      <div
+        className="lcars-corrections__stage"
+        data-stage-status={notRun ? 'pending' : 'done'}
+        aria-label={`LLM MINE stage — ${notRun ? 'pending' : 'done'}`}
+      >
+        <header className="lcars-corrections__stage-header">
+          <span
+            className="lcars-corrections__stage-badge"
+            aria-hidden="true"
+          >
+            {notRun ? '▶' : '✓'}
+          </span>
+          <span className="lcars-corrections__stage-title">LLM MINE</span>
+          <span className="lcars-corrections__stage-note">
+            {notRun
+              ? 'pending · click MINE ALL to run'
+              : `done · ${fmt(classified)} classified`}
+          </span>
+        </header>
+        <div className="lcars-corrections__stage-body">
+          <div className="lcars-corrections__pipeline">
+            <span className="lcars-corrections__pipeline-label">CLASSIFICATION</span>
+            <ul className="lcars-corrections__pipeline-list">
+              {notRun ? (
+                <li>
+                  No LLM classification pass run yet. Click{' '}
+                  <code>MINE ALL</code> to start.
+                </li>
+              ) : (
+                <>
+                  <li>
+                    <strong>{fmt(classified)}</strong> classified by LLM
+                  </li>
+                  <li>
+                    <strong>{fmt(actionable)}</strong> actionable
+                    <span className="lcars-corrections__pipeline-note">
+                      ({fmt(classified - actionable)} ruled &ldquo;not a real correction&rdquo;)
+                    </span>
+                  </li>
+                  <li>
+                    <strong>{fmt(patterns)}</strong>{' '}
+                    {patterns === 1 ? 'pattern' : 'patterns'} surfaced
+                    <span className="lcars-corrections__pipeline-note">
+                      (clusters of &ge;3 distinct sessions)
+                    </span>
+                  </li>
+                </>
+              )}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1284,6 +1422,7 @@ const STATUS_LABELS: Record<CorrectionRunStatus['status'], string> = {
   embedding: 'embedding',
   clustering: 'clustering',
   proposing: 'generating proposals',
+  'tagging-topics': 'tagging topics',
   writing: 'writing output',
   complete: 'complete',
   error: 'error',
@@ -1442,17 +1581,6 @@ interface BucketsViewProps {
    * AppliedImprovementsSummary scrolls it into view.
    */
   highlightedPatternId?: string | null;
-  /**
-   * Phase 4 — when true, the panel is rendering demo corrections on
-   * the hosted static build (no `/api/rescan` reachable, no
-   * mining endpoint, no actual CLAUDE.md the user owns). The default
-   * blurb copy explicitly references "the rule already exists in
-   * CLAUDE.md", which is meaningless on a hosted demo. Reframe it
-   * to "the model keeps making this mistake even though it's been
-   * told not to" so the demo reads cleanly to a non-developer
-   * visitor.
-   */
-  hostedDemo?: boolean;
 }
 
 function BucketsView({
@@ -1460,82 +1588,68 @@ function BucketsView({
   onApply,
   onSelectSession,
   highlightedPatternId,
-  hostedDemo = false,
 }: BucketsViewProps) {
-  const bucketDefs = hostedDemo ? BUCKET_DEFS_HOSTED_DEMO : BUCKET_DEFS;
   const instancesById = useMemo(() => {
     const m = new Map<string, Correction>();
     for (const c of corrections.corrections) m.set(c.id, c);
     return m;
   }, [corrections.corrections]);
 
-  const buckets = useMemo(() => {
-    const seen = new Set<string>();
-    const grouped: Record<'recurring' | 'encoded' | 'new', CorrectionPattern[]> = {
-      recurring: [],
-      encoded: [],
-      new: [],
-    };
-    for (const p of corrections.patterns) {
-      if (seen.has(p.id)) continue;
-      seen.add(p.id);
-      grouped[bucketFor(p)].push(p);
-    }
-    for (const k of Object.keys(grouped) as Array<keyof typeof grouped>) {
-      grouped[k].sort(sortPatterns);
-    }
-    return grouped;
-  }, [corrections.patterns]);
+  const buckets = useMemo(
+    () => buildTopicBuckets(corrections.patterns),
+    [corrections.patterns],
+  );
 
   return (
     <div className="lcars-corrections__buckets">
-      {bucketDefs.map((def) => {
-        const items = buckets[def.key];
-        return (
-          <section
-            key={def.key}
-            className={`lcars-corrections__bucket lcars-corrections__bucket--${def.key}`}
-            aria-label={def.label}
-          >
-            <header className="lcars-corrections__bucket-header">
-              <h3 className="lcars-corrections__bucket-title">{def.label}</h3>
-              <span className="lcars-corrections__bucket-count">
-                {items.length} {items.length === 1 ? 'pattern' : 'patterns'}
-              </span>
-            </header>
-            <p className="lcars-corrections__bucket-blurb">{def.blurb}</p>
-            {items.length === 0 ? (
-              <p className="lcars-corrections__bucket-empty">Nothing here — good.</p>
-            ) : (
-              <ul className="lcars-corrections__pattern-list" role="list">
-                {items.map((p) => {
-                  const isHighlighted = highlightedPatternId === p.id;
-                  return (
-                    <li
-                      key={p.id}
-                      data-pattern-id={p.id}
-                      {...(isHighlighted ? { 'data-highlighted': 'true' } : {})}
-                      className="lcars-corrections__pattern-item"
-                    >
-                      <CorrectionPatternCard
-                        pattern={p}
-                        instancesById={instancesById}
-                        defaultExpanded={isHighlighted}
-                        {...(onApply
-                          ? {
-                              onApply: (upgrade, extras) => onApply(p, upgrade, extras),
-                            }
-                          : {})}
-                        {...(onSelectSession ? { onSelectSession } : {})}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        );
-      })}
+      {buckets.map((bucket) => (
+        <section
+          key={bucket.key}
+          className="lcars-corrections__bucket"
+          aria-label={bucket.label}
+          data-topic={bucket.key}
+          // Signal-based urgency hooks — restore the visual
+          // differentiation the dropped --recurring/--encoded/--new
+          // modifier classes used to provide. Recurring wins over
+          // encoded (the CSS uses attribute selectors, last rule
+          // wins) so a bucket with both signals reads as urgent.
+          data-has-recurring={bucket.hasRecurring ? 'true' : 'false'}
+          data-has-encoded={bucket.hasEncoded ? 'true' : 'false'}
+        >
+          <header className="lcars-corrections__bucket-header">
+            <h3 className="lcars-corrections__bucket-title">{bucket.label}</h3>
+            <span className="lcars-corrections__bucket-count">
+              {bucket.patterns.length}{' '}
+              {bucket.patterns.length === 1 ? 'pattern' : 'patterns'}
+            </span>
+          </header>
+          <ul className="lcars-corrections__pattern-list" role="list">
+            {bucket.patterns.map((p) => {
+              const isHighlighted = highlightedPatternId === p.id;
+              return (
+                <li
+                  key={p.id}
+                  data-pattern-id={p.id}
+                  {...(isHighlighted ? { 'data-highlighted': 'true' } : {})}
+                  className="lcars-corrections__pattern-item"
+                >
+                  <CorrectionPatternCard
+                    pattern={p}
+                    instancesById={instancesById}
+                    defaultExpanded={isHighlighted}
+                    {...(onApply
+                      ? {
+                          onApply: (upgrade, extras) => onApply(p, upgrade, extras),
+                        }
+                      : {})}
+                    {...(onSelectSession ? { onSelectSession } : {})}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }

@@ -71,6 +71,7 @@ function pattern(overrides: Partial<CorrectionPattern> & { id: string }): Correc
     confidence: overrides.confidence ?? 0.5,
     recurringPostApplication: overrides.recurringPostApplication ?? false,
     alreadyEncoded: overrides.alreadyEncoded ?? false,
+    ...(overrides.topic !== undefined ? { topic: overrides.topic } : {}),
   };
 }
 
@@ -134,74 +135,231 @@ describe('CorrectionsPanel', () => {
     });
   });
 
-  it('sorts patterns into the three buckets correctly', async () => {
+  it('groups patterns into buckets by topic, label uppercased', async () => {
     const patterns = [
-      pattern({ id: 'r1', canonicalRule: 'recurring rule', recurringPostApplication: true }),
-      pattern({ id: 'e1', canonicalRule: 'encoded rule', alreadyEncoded: true }),
-      pattern({ id: 'n1', canonicalRule: 'new rule' }),
-      // recurring + alreadyEncoded → still RECURRING (it's the stronger signal).
+      pattern({ id: 'g1', canonicalRule: 'git rule a', topic: 'Git Workflow' }),
+      pattern({ id: 't1', canonicalRule: 'test rule a', topic: 'Test Discipline' }),
+      pattern({ id: 'g2', canonicalRule: 'git rule b', topic: 'Git Workflow' }),
+    ];
+    mockedLoadCorrections.mockResolvedValue(file(patterns));
+    mockedLoadCandidates.mockResolvedValue(null);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('GIT WORKFLOW')).toBeDefined();
+    });
+    const git = screen.getByLabelText('GIT WORKFLOW');
+    const test = screen.getByLabelText('TEST DISCIPLINE');
+
+    expect(within(git).getByText('git rule a')).toBeDefined();
+    expect(within(git).getByText('git rule b')).toBeDefined();
+    expect(within(test).getByText('test rule a')).toBeDefined();
+    // No leakage across topics.
+    expect(within(git).queryByText('test rule a')).toBeNull();
+    expect(within(test).queryByText('git rule a')).toBeNull();
+  });
+
+  it('falls back to an UNTAGGED bucket for patterns without a topic field', async () => {
+    const patterns = [
+      pattern({ id: 'a', canonicalRule: 'pre-topic-stage rule' }),
+      pattern({ id: 'b', canonicalRule: 'another untagged', topic: '' }),
+      pattern({ id: 'c', canonicalRule: 'tagged rule', topic: 'Tool Usage' }),
+    ];
+    mockedLoadCorrections.mockResolvedValue(file(patterns));
+    mockedLoadCandidates.mockResolvedValue(null);
+    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^UNTAGGED/)).toBeDefined();
+    });
+    const untagged = screen.getByLabelText(/^UNTAGGED/);
+    const tool = screen.getByLabelText('TOOL USAGE');
+    expect(within(untagged).getByText('pre-topic-stage rule')).toBeDefined();
+    expect(within(untagged).getByText('another untagged')).toBeDefined();
+    expect(within(tool).getByText('tagged rule')).toBeDefined();
+  });
+
+  it('orders buckets: topics with recurring patterns first, then by total weight desc', async () => {
+    const patterns = [
+      // Heavy non-recurring bucket — would win on weight alone.
+      pattern({ id: 'h1', topic: 'Heavy', canonicalRule: 'heavy 1', occurrenceCount: 20 }),
+      pattern({ id: 'h2', topic: 'Heavy', canonicalRule: 'heavy 2', occurrenceCount: 20 }),
+      // Light bucket with a single RECURRING pattern — must hoist above Heavy.
       pattern({
-        id: 'r2',
-        canonicalRule: 'recurring and encoded',
+        id: 'r1',
+        topic: 'Recurring Topic',
+        canonicalRule: 'recurring',
         recurringPostApplication: true,
-        alreadyEncoded: true,
+        occurrenceCount: 3,
+      }),
+      // Medium-weight bucket between them.
+      pattern({ id: 'm1', topic: 'Medium', canonicalRule: 'medium', occurrenceCount: 10 }),
+    ];
+    mockedLoadCorrections.mockResolvedValue(file(patterns));
+    mockedLoadCandidates.mockResolvedValue(null);
+    const { container } = render(
+      <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText('RECURRING TOPIC')).toBeDefined();
+    });
+    const sections = Array.from(
+      container.querySelectorAll('.lcars-corrections__buckets > section'),
+    ).map((s) => s.getAttribute('aria-label'));
+    expect(sections).toEqual(['RECURRING TOPIC', 'HEAVY', 'MEDIUM']);
+  });
+
+  it('within a bucket: recurring sorts first, then by confidence desc', async () => {
+    const patterns = [
+      pattern({
+        id: 'low',
+        topic: 'T',
+        canonicalRule: 'low confidence',
+        confidence: 0.2,
+        occurrenceCount: 9,
+      }),
+      pattern({
+        id: 'hi',
+        topic: 'T',
+        canonicalRule: 'high confidence',
+        confidence: 0.95,
+        occurrenceCount: 3,
+      }),
+      pattern({
+        id: 'rec',
+        topic: 'T',
+        canonicalRule: 'recurring even with low confidence',
+        confidence: 0.3,
+        occurrenceCount: 4,
+        recurringPostApplication: true,
       }),
     ];
     mockedLoadCorrections.mockResolvedValue(file(patterns));
     mockedLoadCandidates.mockResolvedValue(null);
     render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
-      expect(screen.getByLabelText('RECURRING AFTER APPLIED')).toBeDefined();
+      expect(screen.getByLabelText('T')).toBeDefined();
     });
-    const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
-    const encoded = screen.getByLabelText('ALREADY ENCODED BUT FAILING');
-    const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
-
-    expect(within(recurring).getByText('recurring rule')).toBeDefined();
-    expect(within(recurring).getByText('recurring and encoded')).toBeDefined();
-    expect(within(encoded).getByText('encoded rule')).toBeDefined();
-    expect(within(fresh).getByText('new rule')).toBeDefined();
-
-    // No leakage between buckets.
-    expect(within(recurring).queryByText('encoded rule')).toBeNull();
-    expect(within(encoded).queryByText('recurring rule')).toBeNull();
-    expect(within(fresh).queryByText('encoded rule')).toBeNull();
-  });
-
-  it('sorts patterns within a bucket by confidence desc, then occurrenceCount desc', async () => {
-    const patterns = [
-      pattern({ id: 'low', canonicalRule: 'low confidence', confidence: 0.2, occurrenceCount: 9 }),
-      pattern({ id: 'hi', canonicalRule: 'high confidence', confidence: 0.95, occurrenceCount: 3 }),
-      pattern({ id: 'mid-a', canonicalRule: 'mid a', confidence: 0.5, occurrenceCount: 5 }),
-      pattern({ id: 'mid-b', canonicalRule: 'mid b', confidence: 0.5, occurrenceCount: 8 }),
-    ];
-    mockedLoadCorrections.mockResolvedValue(file(patterns));
-    mockedLoadCandidates.mockResolvedValue(null);
-    render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
-    await waitFor(() => {
-      expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
-    });
-    const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
+    const bucket = screen.getByLabelText('T');
     const titles = Array.from(
-      fresh.querySelectorAll('.lcars-correction-pattern__rule'),
+      bucket.querySelectorAll('.lcars-correction-pattern__rule'),
     ).map((el) => el.textContent);
-    // confidence: 0.95, 0.5 (count 8), 0.5 (count 5), 0.2.
-    expect(titles).toEqual(['high confidence', 'mid b', 'mid a', 'low confidence']);
+    // recurring → first; rest by confidence desc.
+    expect(titles).toEqual([
+      'recurring even with low confidence',
+      'high confidence',
+      'low confidence',
+    ]);
   });
 
-  it('renders the "Nothing here — good." placeholder for empty buckets', async () => {
+  // Codex review feedback on PR #32: the dropped `--recurring|encoded|new`
+  // modifier classes used to drive bucket border + background + title
+  // color (signal-based urgency). With dynamic topics those hardcodes
+  // don't fit, but the urgency signal still lives on every pattern as
+  // `recurringPostApplication` / `alreadyEncoded`. The replacement is
+  // `data-has-recurring` / `data-has-encoded` attribute hooks that the
+  // stylesheet now keys off. These tests lock the contract.
+  describe('bucket urgency attributes', () => {
+    it('flags data-has-recurring=true when the bucket contains a recurring pattern', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'r1',
+            topic: 'Git Workflow',
+            canonicalRule: 'a recurring rule',
+            recurringPostApplication: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('GIT WORKFLOW')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('GIT WORKFLOW');
+      expect(bucket.getAttribute('data-has-recurring')).toBe('true');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('false');
+    });
+
+    it('flags data-has-encoded=true when the bucket has an encoded-but-not-recurring pattern', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'e1',
+            topic: 'Tool Usage',
+            canonicalRule: 'encoded',
+            alreadyEncoded: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('TOOL USAGE')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('TOOL USAGE');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('true');
+      expect(bucket.getAttribute('data-has-recurring')).toBe('false');
+    });
+
+    it('prefers data-has-recurring when a bucket has both signals (recurring wins)', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'r-and-e',
+            topic: 'Mixed',
+            canonicalRule: 'recurring + encoded',
+            recurringPostApplication: true,
+            alreadyEncoded: true,
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('MIXED')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('MIXED');
+      // Builder records `recurring` and skips the `encoded` branch
+      // (else-if). CSS rule order also ensures the recurring style
+      // wins when both attributes are 'true' on the same element.
+      expect(bucket.getAttribute('data-has-recurring')).toBe('true');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('false');
+    });
+
+    it('flags both attributes as false for plain non-urgent buckets', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([
+          pattern({
+            id: 'plain',
+            topic: 'New Stuff',
+            canonicalRule: 'just a new pattern',
+          }),
+        ]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByLabelText('NEW STUFF')).toBeDefined();
+      });
+      const bucket = screen.getByLabelText('NEW STUFF');
+      expect(bucket.getAttribute('data-has-recurring')).toBe('false');
+      expect(bucket.getAttribute('data-has-encoded')).toBe('false');
+    });
+  });
+
+  it('does not render empty-bucket placeholders (no Nothing here — good.)', async () => {
     mockedLoadCorrections.mockResolvedValue(
-      file([pattern({ id: 'n1', canonicalRule: 'only a new pattern' })]),
+      file([pattern({ id: 'n1', canonicalRule: 'only one', topic: 'Solo' })]),
     );
     mockedLoadCandidates.mockResolvedValue(null);
     render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
     await waitFor(() => {
-      expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
+      expect(screen.getByLabelText('SOLO')).toBeDefined();
     });
-    const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
-    const encoded = screen.getByLabelText('ALREADY ENCODED BUT FAILING');
-    expect(within(recurring).getByText('Nothing here — good.')).toBeDefined();
-    expect(within(encoded).getByText('Nothing here — good.')).toBeDefined();
+    // Only one section renders; the old empty-bucket placeholder is gone.
+    expect(screen.queryByText(/Nothing here/i)).toBeNull();
+    expect(screen.queryByLabelText('RECURRING AFTER APPLIED')).toBeNull();
+    expect(screen.queryByLabelText('ALREADY ENCODED BUT FAILING')).toBeNull();
+    expect(screen.queryByLabelText('NEW PATTERNS TO ENCODE')).toBeNull();
   });
 
   describe('AppliedImprovementsSummary mount (Phase 2b)', () => {
@@ -212,8 +370,9 @@ describe('CorrectionsPanel', () => {
       mockedLoadCandidates.mockResolvedValue(null);
       mockedLoadApplied.mockResolvedValue(null);
       render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      // Untagged bucket renders (pattern has no topic field); summary does not.
       await waitFor(() => {
-        expect(screen.getByText('NEW PATTERNS TO ENCODE')).toBeDefined();
+        expect(screen.getByLabelText(/^UNTAGGED/)).toBeDefined();
       });
       expect(screen.queryByLabelText('since you patched')).toBeNull();
     });
@@ -341,12 +500,15 @@ describe('CorrectionsPanel', () => {
         ],
       });
       render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      // The pattern lands in the UNTAGGED bucket (no topic) but should now
+      // bear the recurring signal — the merge layer flipped
+      // recurringPostApplication=true based on the ledger entry. Verify the
+      // bucket sort puts it first (recurring sorts to top within a bucket).
       await waitFor(() => {
-        const recurring = screen.getByLabelText('RECURRING AFTER APPLIED');
-        expect(within(recurring).getByText('flips into recurring')).toBeDefined();
+        expect(screen.getByLabelText(/^UNTAGGED/)).toBeDefined();
       });
-      const fresh = screen.getByLabelText('NEW PATTERNS TO ENCODE');
-      expect(within(fresh).queryByText('flips into recurring')).toBeNull();
+      const bucket = screen.getByLabelText(/^UNTAGGED/);
+      expect(within(bucket).getByText('flips into recurring')).toBeDefined();
     });
 
     it('treats applied: true on the merged upgrade as initial APPLIED state', async () => {
@@ -396,63 +558,11 @@ describe('CorrectionsPanel', () => {
     });
   });
 
-  // Phase 4 — when CorrectionsPanel renders on a hosted static build
-  // (rescanAvailable=false), the bucket header copy explicitly
-  // referencing CLAUDE.md / "ship it" is meaningless to a non-developer
-  // visitor on chat-arch.dev. Verify the reframed labels + blurbs land.
-  describe('Phase 4 — hosted demo blurbs (rescanAvailable=false)', () => {
-    it('reframes the encoded bucket label + blurb to avoid CLAUDE.md jargon', async () => {
-      mockedLoadCorrections.mockResolvedValue(
-        file([
-          pattern({ id: 'e1', canonicalRule: 'demo encoded', alreadyEncoded: true }),
-        ]),
-      );
-      mockedLoadCandidates.mockResolvedValue(null);
-      // No rescanAvailable → defaults to false → hosted-demo blurbs.
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
-      await waitFor(() => {
-        expect(screen.getByLabelText('TOLD NOT TO, STILL DOES IT')).toBeDefined();
-      });
-      const bucket = screen.getByLabelText('TOLD NOT TO, STILL DOES IT');
-      // Multiple elements may match (the title + the blurb both
-      // contain the phrase); presence of any is enough.
-      expect(within(bucket).getAllByText(/told not to/i).length).toBeGreaterThan(0);
-      // Canonical CLAUDE.md jargon must not leak into the demo copy.
-      expect(within(bucket).queryByText(/already exists in CLAUDE\.md/i)).toBeNull();
-    });
-
-    it('reframes the recurring bucket label to "STILL FAILING AFTER A FIX"', async () => {
-      mockedLoadCorrections.mockResolvedValue(
-        file([
-          pattern({
-            id: 'r1',
-            canonicalRule: 'demo recurring',
-            recurringPostApplication: true,
-          }),
-        ]),
-      );
-      mockedLoadCandidates.mockResolvedValue(null);
-      render(<CorrectionsPanel dataDirBaseUrl="/x" />);
-      await waitFor(() => {
-        expect(screen.getByLabelText('STILL FAILING AFTER A FIX')).toBeDefined();
-      });
-    });
-
-    it('keeps the canonical labels when rescanAvailable=true (local dev)', async () => {
-      mockedLoadCorrections.mockResolvedValue(
-        file([
-          pattern({ id: 'e1', canonicalRule: 'local encoded', alreadyEncoded: true }),
-        ]),
-      );
-      mockedLoadCandidates.mockResolvedValue(null);
-      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
-      await waitFor(() => {
-        expect(screen.getByLabelText('ALREADY ENCODED BUT FAILING')).toBeDefined();
-      });
-      // Hosted-only label must not be present.
-      expect(screen.queryByLabelText('TOLD NOT TO, STILL DOES IT')).toBeNull();
-    });
-  });
+  // The Phase 4 hosted-demo blurb relabeling is gone — fixed taxonomy
+  // (RECURRING / ENCODED / NEW) was replaced with LLM-derived dynamic
+  // topic buckets, so there's no per-host bucket copy to reframe.
+  // The hosted demo fixture in `demoUpload.ts` now ships its own
+  // topic assignments and renders identically to local mining output.
 
   // Header-row redesign: "Generated <iso>" was demoted from a row of
   // its own to a "Last mined …" chip in the title row. Verify the chip
@@ -566,4 +676,267 @@ describe('CorrectionsPanel', () => {
       expect(screen.queryByText(/RE-MINE CORRECTIONS/i)).toBeNull();
     });
   });
+
+  // SCANNED panel: the per-source missing note now splits "transcript
+  // file missing on disk" from "CLI crashed before writing one"
+  // (Cowork's case). The split makes it explicit that the user's data
+  // *is* there in audit.jsonl for the crashed cases — different
+  // remediation path than the genuinely-gone files.
+  describe('SCANNED panel — crashed vs missing split', () => {
+    function fileWithScanStats(args: {
+      sessionsBySource: Record<string, number>;
+      sessionsMissingBySource: Record<string, number>;
+      sessionsCrashedBySource?: Record<string, number>;
+    }): CorrectionsFile {
+      return {
+        generatedAt: 1_700_000_000_000,
+        // At least one candidate is required for the CoverageMeter to
+        // mount (it gates on total > 0). The bucketing logic only cares
+        // about the `id` field for the headline; classification stays
+        // null so notRun=true in the LLM MINE stage.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        corrections: [{ id: 'cand-1' }, { id: 'cand-2' }] as any,
+        patterns: [],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: false,
+          embeddingClustering: false,
+          claudeMdCrossCheck: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scanStats: {
+          sessionsInManifest: 0,
+          sessionsScanned: 0,
+          sessionsMissing: 0,
+          sessionsBySource: args.sessionsBySource,
+          sessionsMissingBySource: args.sessionsMissingBySource,
+          ...(args.sessionsCrashedBySource
+            ? { sessionsCrashedBySource: args.sessionsCrashedBySource }
+            : {}),
+          rawUserTurns: 0,
+          wrapperFiltered: 0,
+          tooLongFiltered: 0,
+          survivingTurns: 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      };
+    }
+
+    it('renders split note when both crashed and true-missing exist', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue(
+        fileWithScanStats({
+          sessionsBySource: { cowork: 323 },
+          sessionsMissingBySource: { cowork: 51 },
+          sessionsCrashedBySource: { cowork: 14 },
+        }),
+      );
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      // Open the details disclosure so CoverageDetail renders.
+      const detailsBtn = await screen.findByRole('button', {
+        name: /details/i,
+      });
+      fireEvent.click(detailsBtn);
+      await waitFor(() => {
+        expect(
+          container.querySelector(
+            '[aria-label^="EXPORTER SCAN stage"]',
+          ),
+        ).not.toBeNull();
+      });
+      // 51 missing total - 14 crashed = 37 true-missing. The note
+      // should mention both numbers explicitly.
+      const cowork = container.querySelector(
+        '[aria-label^="EXPORTER SCAN stage"] li:nth-child(3)',
+      );
+      expect(cowork?.textContent ?? '').toMatch(/272\s*\/\s*323/);
+      expect(cowork?.textContent ?? '').toMatch(/37 transcript file missing on disk/);
+      expect(cowork?.textContent ?? '').toMatch(/14 CLI crashed/);
+    });
+
+    it('renders crashed-only note when all missing are crashes', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue(
+        fileWithScanStats({
+          sessionsBySource: { cowork: 20 },
+          sessionsMissingBySource: { cowork: 5 },
+          sessionsCrashedBySource: { cowork: 5 },
+        }),
+      );
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: /details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label^="EXPORTER SCAN stage"]'),
+        ).not.toBeNull();
+      });
+      const cowork = container.querySelector(
+        '[aria-label^="EXPORTER SCAN stage"] li:nth-child(3)',
+      );
+      expect(cowork?.textContent ?? '').toMatch(/5 CLI crashed/);
+      expect(cowork?.textContent ?? '').not.toMatch(/missing on disk/);
+    });
+
+    it('falls back to legacy "missing on disk" note when no crashed sub-count is reported', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue(
+        fileWithScanStats({
+          sessionsBySource: { cowork: 100 },
+          sessionsMissingBySource: { cowork: 10 },
+          // No sessionsCrashedBySource — older candidates file shape.
+        }),
+      );
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: /details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label^="EXPORTER SCAN stage"]'),
+        ).not.toBeNull();
+      });
+      const cowork = container.querySelector(
+        '[aria-label^="EXPORTER SCAN stage"] li:nth-child(3)',
+      );
+      expect(cowork?.textContent ?? '').toMatch(/10 transcript file missing on disk/);
+      expect(cowork?.textContent ?? '').not.toMatch(/CLI crashed/);
+    });
+  });
+
+  // Pipeline-stage markers: the EXPORTER SCAN vs LLM MINE boundary
+  // resolves the user's "the headline says 0 mined but the detail
+  // shows non-zero counts" confusion. Verify both stages render with
+  // the right done/pending status badges and copy.
+  describe('pipeline-stage markers', () => {
+    function emptyScanStats() {
+      return {
+        sessionsInManifest: 0,
+        sessionsScanned: 0,
+        sessionsMissing: 0,
+        sessionsBySource: {},
+        sessionsMissingBySource: {},
+        rawUserTurns: 0,
+        wrapperFiltered: 0,
+        tooLongFiltered: 0,
+        survivingTurns: 0,
+      };
+    }
+
+    it('marks EXPORTER SCAN as done and LLM MINE as pending when no classifications run yet', async () => {
+      mockedLoadCorrections.mockResolvedValue(null);
+      mockedLoadCandidates.mockResolvedValue({
+        generatedAt: 1_700_000_000_000,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        corrections: [{ id: 'cand-1' }] as any,
+        patterns: [],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: false,
+          embeddingClustering: false,
+          claudeMdCrossCheck: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scanStats: emptyScanStats() as any,
+      });
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', { name: /details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label^="EXPORTER SCAN stage"]'),
+        ).not.toBeNull();
+      });
+      const scanStage = container.querySelector(
+        '[aria-label^="EXPORTER SCAN stage"]',
+      );
+      const mineStage = container.querySelector(
+        '[aria-label^="LLM MINE stage"]',
+      );
+      expect(scanStage?.getAttribute('data-stage-status')).toBe('done');
+      expect(mineStage?.getAttribute('data-stage-status')).toBe('pending');
+      // Status echoed into aria-label so screen readers announce
+      // done/pending without having to walk into the body.
+      expect(scanStage?.getAttribute('aria-label')).toBe(
+        'EXPORTER SCAN stage — done',
+      );
+      expect(mineStage?.getAttribute('aria-label')).toBe(
+        'LLM MINE stage — pending',
+      );
+      expect(scanStage?.textContent ?? '').toMatch(/EXPORTER SCAN/);
+      expect(scanStage?.textContent ?? '').toMatch(/done · re-runs on SCAN LOCAL/);
+      expect(mineStage?.textContent ?? '').toMatch(/LLM MINE/);
+      expect(mineStage?.textContent ?? '').toMatch(/pending · click MINE ALL/);
+    });
+
+    // Regression: after a HEURISTIC_RECALL_VERSION bump retires every
+    // prior candidate, `classified` collapses to 0 (corrections live in
+    // corrections.json but their ids no longer intersect candidates).
+    // LLM MINE badge must still read "done" when patterns exist, or
+    // the panel lies "pending · click MINE ALL to run" while the
+    // Last-mined chip and pattern list contradict it.
+    it('marks LLM MINE as done when patterns exist even if classified count is 0', async () => {
+      mockedLoadCorrections.mockResolvedValue({
+        generatedAt: 1_700_000_000_000,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        corrections: [{ id: 'old-id', classification: { actionable: true, ruleSummary: 'r' } }] as any,
+        patterns: [pattern({ id: 'p1', canonicalRule: 'pat one' })],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: true,
+          embeddingClustering: true,
+          claudeMdCrossCheck: true,
+        },
+      });
+      mockedLoadCandidates.mockResolvedValue({
+        generatedAt: 1_700_000_000_001,
+        // Candidates set is disjoint from corrections (retired ids).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        corrections: [{ id: 'fresh-id' }] as any,
+        patterns: [],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: false,
+          embeddingClustering: false,
+          claudeMdCrossCheck: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scanStats: emptyScanStats() as any,
+      });
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      // Use the CoverageMeter's specific aria-label rather than a
+      // `/details/i` name match — when corrections has patterns,
+      // each card also exposes a "SHOW DETAILS" button which would
+      // shadow the meter's toggle.
+      fireEvent.click(
+        await screen.findByRole('button', { name: /show mining details/i }),
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[aria-label^="LLM MINE stage"]'),
+        ).not.toBeNull();
+      });
+      const mineStage = container.querySelector(
+        '[aria-label^="LLM MINE stage"]',
+      );
+      expect(mineStage?.getAttribute('data-stage-status')).toBe('done');
+      expect(mineStage?.getAttribute('aria-label')).toBe(
+        'LLM MINE stage — done',
+      );
+      expect(mineStage?.textContent ?? '').not.toMatch(/pending/);
+    });
+  });
+
 });

@@ -60,6 +60,7 @@ export interface CorrectionRunStatus {
     | 'embedding'
     | 'clustering'
     | 'proposing'
+    | 'tagging-topics'
     | 'writing'
     | 'complete'
     | 'error';

@@ -288,6 +288,29 @@ export interface UnifiedSessionEntry {
    */
   transcriptPath?: string;
 
+  /**
+   * Why `transcriptPath` is absent, when it is. Optional for back-compat
+   * (older manifests don't carry this and the correction analyzer falls
+   * back to the legacy "any-missing-is-missing" classification). New
+   * values:
+   *
+   *   - 'ok'      — transcript was copied (transcriptPath present).
+   *   - 'crashed' — upstream session metadata was incomplete (e.g.
+   *                 Cowork CLI handoff failed: no `cliSessionId`, often
+   *                 with an `error` field set on the source manifest).
+   *                 User-side prompts may still exist in audit.jsonl —
+   *                 future recovery work can mine those.
+   *   - 'missing' — pointers were complete but the transcript file
+   *                 wasn't on disk at scan time (deleted, aborted, or
+   *                 cleaned up by the upstream tool between session end
+   *                 and exporter scan).
+   *
+   * Drives the SCANNED panel's split note ("X missing on disk · Y CLI
+   * crashed") so the user can tell apart recoverable-but-not-recovered
+   * errors from genuinely-gone transcripts.
+   */
+  transcriptStatus?: 'ok' | 'crashed' | 'missing';
+
   /** Output-relative path to the source manifest (Cowork, Desktop-CLI only). */
   manifestPath?: string;
 

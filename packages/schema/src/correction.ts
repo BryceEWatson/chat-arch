@@ -112,6 +112,17 @@ export interface ProposedUpgrade {
    *   prompt-snippet       → "(reusable, no fixed path)"
    */
   targetPath: string;
+  /**
+   * One-sentence plain-English summary of WHAT this upgrade does and
+   * WHY it matters — the punchline. The card surfaces it large above
+   * the rationale paragraph so users can decide whether to act in a
+   * glance. ≤15 words, names the rule + the change, no jargon. The
+   * `rationale` field below remains the long-form diagnosis for users
+   * who want the evidence. Optional for back-compat: patterns from
+   * mining runs before this field shipped fall back to showing the
+   * rationale alone (the card truncates it as a fallback headline).
+   */
+  headline?: string;
   /** The literal text to add. User reviews before applying. */
   patch: string;
   /** Why this target — cites the inference rule that fired. */
@@ -180,6 +191,18 @@ export interface CorrectionPattern {
    * finding, surfaced separately in the viewer.
    */
   alreadyEncoded: boolean;
+  /**
+   * Short LLM-derived topic label (1-3 words, Title Case) shared
+   * across all patterns in the same theme — drives dynamic bucketing
+   * in the viewer instead of the predefined RECURRING/ENCODED/NEW
+   * taxonomy. Set by the mine-corrections skill's `tag-topics` stage,
+   * which sees ALL patterns in one LLM call so labels stay coherent
+   * across the corpus (no fragmentation between "Git Workflow" and
+   * "Git Practices"). Optional for back-compat: patterns from prior
+   * mining runs without this field render in an "Untagged" bucket
+   * until re-mined.
+   */
+  topic?: string;
 }
 
 export interface CorrectionsFile {
@@ -248,8 +271,22 @@ export interface ScanStats {
    *  `cli-desktop`, `cloud`). */
   sessionsBySource: Record<string, number>;
   /** Missing-transcript sessions broken out by source. Useful for
-   *  diagnosing whether all the gaps are concentrated in one ingester. */
+   *  diagnosing whether all the gaps are concentrated in one ingester.
+   *
+   *  Includes BOTH `transcriptStatus: 'missing'` (file gone from disk)
+   *  AND `transcriptStatus: 'crashed'` (upstream tool crashed before a
+   *  transcript was written). The `sessionsCrashedBySource` sub-count
+   *  below splits out the crashed sub-share so the SCANNED panel can
+   *  show them separately. */
   sessionsMissingBySource: Record<string, number>;
+  /** Crashed-session sub-count by source — a subset of
+   *  `sessionsMissingBySource`. Populated by `transcriptStatus: 'crashed'`
+   *  entries; in practice today only cowork emits these (CLI handoff
+   *  failures where `cliSessionId` is missing and an `error` field is
+   *  set on the source manifest). Optional for back-compat: older
+   *  candidate files predating this field render the legacy single-
+   *  number "missing" note. */
+  sessionsCrashedBySource?: Record<string, number>;
   /** Total user-role turns across all scanned transcripts, BEFORE the
    *  wrapper / length filter. */
   rawUserTurns: number;

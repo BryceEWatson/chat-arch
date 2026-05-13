@@ -358,10 +358,11 @@ function demoCorrection(
   };
 }
 
-/** Build the demo corrections + applied-improvements pair. */
+/** Build the demo corrections + applied-improvements + candidates triple. */
 function buildDemoCorrections(now: number): {
   corrections: CorrectionsFile;
   applied: AppliedImprovementsFile;
+  candidates: CorrectionsFile;
 } {
   const DAY_LOCAL = 86_400_000;
 
@@ -563,11 +564,13 @@ function buildDemoCorrections(now: number): {
   const upgrade = (
     target: ProposedUpgrade['target'],
     targetPath: string,
+    headline: string,
     patch: string,
     rationale: string,
   ): ProposedUpgrade => ({
     target,
     targetPath,
+    headline,
     patch,
     rationale,
     applied: false,
@@ -578,12 +581,14 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Add a Bash Tool Use section forbidding `cd <dir> &&` chains.',
       '## Bash Tool Use\n- Always pass absolute paths to the Bash tool. Never chain `cd <dir> && command` — the working directory resets between calls.',
       'Recurs across 4 sessions, 3 projects. Path-prefix problem; canonical fix is a global rule under Bash usage.',
     ),
     upgrade(
       'settings-hook',
       'settings.json :: hooks.PreToolUse',
+      'Escalate `cd &&` ban to a PreToolUse hook — soft rule is being ignored.',
       '{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "node scripts/reject-cd-chain.js" }] }',
       'Soft rule was already shipped (see applied-improvements ledger) and the model still violates it. Promote to a hook so the violation is rejected before it executes.',
     ),
@@ -593,6 +598,7 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Replace soft "clean code" guidance with an explicit no-docstrings rule.',
       '## Documentation\n- Do not add docstrings, JSDoc, or inline comments unless the user explicitly asks for them. Removing unrequested documentation is part of the cleanup pass.',
       'Recurs across 3 sessions; existing rule is too soft ("clean code") and the model defaults to documenting.',
     ),
@@ -602,12 +608,14 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'project-claude-md',
       '<repo>/CLAUDE.md',
+      'Promote ripgrep preference from "Tooling" footnote to a top-level section.',
       '## Search Conventions\n- Use `rg` (ripgrep), not `grep`, for content search. The repo is a pnpm monorepo — `rg` is configured to skip `node_modules`/`dist` automatically.',
       'Already-encoded under "Tooling" but the model bypasses it. Move to a top-level Search Conventions section so it lands in the model\'s default attention.',
     ),
     upgrade(
       'prompt-snippet',
       '(reusable, no fixed path)',
+      'Reusable mid-conversation reminder to use `rg` over `grep -r`.',
       'When searching: prefer `rg <pattern>` over `grep -r`. `rg` is faster, respects `.gitignore`, and is the project default.',
       'Reusable snippet for direct paste into a fresh conversation when the rule is being violated mid-task.',
     ),
@@ -617,6 +625,7 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Hoist the "strip debug output" rule out of a buried list into its own section.',
       '## Quality Gates\n- Remove all debug output (`console.log`, `print`, `dbg!`) before presenting a patch. Debug statements are scaffolding, not deliverable code.',
       'Encoded under Quality Gates; recurs because the rule is buried mid-list. Promote it or split Quality Gates into two sections (security + cleanup).',
     ),
@@ -626,12 +635,14 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Add a new global Workflow rule mandating test-first when adding behavior.',
       '## Workflow\n- Test-first: when adding behavior, write the failing test before the implementation. Show the failing test output, then the implementation, then the passing test.',
       'No matching rule found. Recurs across 4 sessions and projects — strong candidate for a new global directive.',
     ),
     upgrade(
       'skill',
       '~/.claude/skills/test-first/SKILL.md',
+      'Package the test-first procedure as a skill so it auto-triggers on "add a function".',
       '# test-first\n\nWhen the user asks for a new function / endpoint / component, default to:\n1. Draft the failing test.\n2. Run it (show red).\n3. Implement minimal code to pass.\n4. Run tests (show green).\n5. Refactor if needed.',
       'Workflow rule with a clear procedure — packageable as a skill so it triggers automatically on "add a function" requests.',
     ),
@@ -641,6 +652,7 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'project-claude-md',
       '<repo>/CLAUDE.md',
+      'Encode conventional-commits subject-line format as a project Git Conventions rule.',
       '## Git Conventions\n- Commit messages: conventional-commits format. Subject line is ≤72 chars, lowercase verb-first, no trailing period. Example: `fix: drop trailing period from commit subjects`.',
       'No matching rule in the project file; format expectations live only in PR descriptions. Encode as a Git Conventions section so the model picks it up at commit-suggestion time.',
     ),
@@ -658,6 +670,7 @@ function buildDemoCorrections(now: number): {
     confidence: number,
     recurringPostApplication: boolean,
     alreadyEncoded: boolean,
+    topic: string,
     scopeKind: 'global' | 'project' | 'tool' | 'request-shape' = 'global',
   ): CorrectionPattern => ({
     id,
@@ -671,10 +684,10 @@ function buildDemoCorrections(now: number): {
     confidence,
     recurringPostApplication,
     alreadyEncoded,
+    topic,
   });
 
   const patterns: CorrectionPattern[] = [
-    // RED — recurring after applied
     pattern(
       'demo-pat-1',
       'Use absolute paths in Bash tool calls; do not chain `cd <dir> &&`.',
@@ -683,6 +696,7 @@ function buildDemoCorrections(now: number): {
       0.92,
       true,
       true,
+      'Tool Usage',
     ),
     pattern(
       'demo-pat-2',
@@ -692,8 +706,8 @@ function buildDemoCorrections(now: number): {
       0.81,
       true,
       false,
+      'Output Discipline',
     ),
-    // YELLOW — already encoded but failing
     pattern(
       'demo-pat-3',
       'Use ripgrep (rg) instead of grep for content search.',
@@ -702,6 +716,7 @@ function buildDemoCorrections(now: number): {
       0.78,
       false,
       true,
+      'Tool Usage',
       'tool',
     ),
     pattern(
@@ -712,8 +727,8 @@ function buildDemoCorrections(now: number): {
       0.74,
       false,
       true,
+      'Output Discipline',
     ),
-    // NEW — candidates to encode
     pattern(
       'demo-pat-5',
       'Test-first: write the failing test before the implementation.',
@@ -722,6 +737,7 @@ function buildDemoCorrections(now: number): {
       0.69,
       false,
       false,
+      'Test Discipline',
       'request-shape',
     ),
     pattern(
@@ -732,6 +748,7 @@ function buildDemoCorrections(now: number): {
       0.66,
       false,
       false,
+      'Git Workflow',
       'project',
     ),
   ];
@@ -791,7 +808,57 @@ function buildDemoCorrections(now: number): {
     ],
   };
 
-  return { corrections, applied };
+  // ---- Candidates (correction-candidates.json analogue) -----------------
+  //
+  // Drives the CoverageMeter + EXPORTER SCAN / LLM MINE pipeline-stage
+  // markers (PR #33). On the hosted demo there's no exporter to write
+  // the real candidates file to disk, so we synthesize one that:
+  //   - reuses every mined `Correction` so the bucket math (`patterns`
+  //     in candidates set) lands at "fully mined" and the LLM MINE
+  //     badge reads `done · N classified`
+  //   - injects a plausible `scanStats` payload so the SCANNED list
+  //     and the split missing/crashed note exercise both rendering
+  //     paths on the demo
+  //
+  // Numbers chosen to make the panel feel inhabited without lying
+  // about the demo corpus — the totals roughly match the 20 demo
+  // sessions across cli/cowork/cloud splits.
+  const candidates: CorrectionsFile = {
+    generatedAt: now,
+    corrections: allCorrections,
+    patterns: [],
+    pipeline: {
+      heuristicRecall: true,
+      llmClassification: false,
+      embeddingClustering: false,
+      claudeMdCrossCheck: false,
+    },
+    scanStats: {
+      sessionsInManifest: 50,
+      sessionsScanned: 42,
+      sessionsMissing: 8,
+      sessionsBySource: {
+        cowork: 18,
+        'cli-direct': 14,
+        'cli-desktop': 10,
+        cloud: 8,
+      },
+      sessionsMissingBySource: {
+        cowork: 5,
+        'cli-direct': 2,
+        'cli-desktop': 1,
+      },
+      sessionsCrashedBySource: {
+        cowork: 3,
+      },
+      rawUserTurns: 215,
+      wrapperFiltered: 18,
+      tooLongFiltered: 5,
+      survivingTurns: 192,
+    },
+  };
+
+  return { corrections, applied, candidates };
 }
 
 // ---------- synthesis ------------------------------------------------------
@@ -990,7 +1057,7 @@ export function generateDemoUpload(): UploadedCloudData {
   // rescan delta. Bundled inline so the workshop loop is visible on
   // the hosted demo path without requiring a back-end mining pass.
   // See `buildDemoCorrections` for shape rationale.
-  const { corrections, applied } = buildDemoCorrections(now);
+  const { corrections, applied, candidates } = buildDemoCorrections(now);
 
   return {
     manifest: {
@@ -1014,6 +1081,7 @@ export function generateDemoUpload(): UploadedCloudData {
     sourceLabel: `DEMO DATA · ${enriched.length} fake conversations (bundled fixture)`,
     corrections,
     appliedImprovements: applied,
+    correctionCandidates: candidates,
     // Synthesized so the persistent rescan-delta chip lights up on
     // demo load (Priya's finding: the chip never appears on the demo
     // path because `setRescanDelta` only fires inside the /api/rescan
