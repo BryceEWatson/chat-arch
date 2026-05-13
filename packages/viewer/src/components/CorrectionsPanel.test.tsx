@@ -938,4 +938,117 @@ describe('CorrectionsPanel', () => {
       expect(mineStage?.textContent ?? '').not.toMatch(/pending/);
     });
   });
+
+  // Header-row redesign: "Generated <iso>" was demoted from a row of
+  // its own to a "Last mined …" chip in the title row. Verify the chip
+  // renders relative time and keeps the absolute ISO in `title=` for
+  // debugging without polluting the layout.
+  describe('Header timestamp chip', () => {
+    it('renders the chip in the title row when corrections.json has generatedAt', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([pattern({ id: 'n1', canonicalRule: 'rule one' })]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
+      await waitFor(() => {
+        expect(screen.getByText(/Last mined/i)).toBeDefined();
+      });
+      const chip = screen.getByText(/Last mined/i);
+      // Absolute ISO survives in `title=` for tooltip / debugging.
+      expect(chip.getAttribute('title')).toMatch(/Generated 20\d\d-/);
+      // Demoted row that used to read "Generated 20...Z" should be gone.
+      expect(screen.queryByText(/^Generated 20\d\d-/)).toBeNull();
+    });
+  });
+
+  // First-principles simplification (Tight): CoverageMeter shows just
+  // the bar + one figure ("271 / 581 mined"). The label, funnel
+  // sentence, actionable %, and pattern count are gone — diagnostic
+  // info now lives only behind the "details ▸" chevron.
+  describe('CoverageMeter — Tight layout', () => {
+    it('renders just the bar + "N / M mined" figure (no label, no funnel sentence)', async () => {
+      const c: CorrectionsFile = {
+        generatedAt: 1_700_000_000_000,
+        corrections: [
+          { id: 'c1', classification: { actionable: true, ruleSummary: 'r' } },
+          { id: 'c2', classification: { actionable: false, ruleSummary: 'r' } },
+          { id: 'c3', classification: { actionable: true, ruleSummary: 'r' } },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any,
+        patterns: [pattern({ id: 'p1', canonicalRule: 'pat one' })],
+        pipeline: {
+          heuristicRecall: true,
+          llmClassification: true,
+          embeddingClustering: true,
+          claudeMdCrossCheck: true,
+        },
+      };
+      const cands = {
+        ...c,
+        corrections: [
+          { id: 'c1' },
+          { id: 'c2' },
+          { id: 'c3' },
+          { id: 'c4' },
+          { id: 'c5' },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any,
+      };
+      mockedLoadCorrections.mockResolvedValue(c);
+      mockedLoadCandidates.mockResolvedValue(cands);
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      await waitFor(() => {
+        const figure = container.querySelector(
+          '.lcars-corrections__coverage-figure',
+        );
+        expect(figure?.textContent ?? '').toMatch(/3\s*\/\s*5\s*mined/);
+      });
+      // Cut by the simplification — these strings should be absent.
+      expect(screen.queryByText('MINING PROGRESS')).toBeNull();
+      expect(screen.queryByText('ANALYSIS COVERAGE')).toBeNull();
+      expect(screen.queryByText(/Of the .* mined/)).toBeNull();
+      expect(screen.queryByText(/became actionable corrections/)).toBeNull();
+      expect(screen.queryByText(/still to mine/)).toBeNull();
+    });
+  });
+
+  // MINE ALL collapse: the recent/older split was killed in favor of a
+  // single CTA that mines every unprocessed candidate in one pass.
+  // Verify the trigger renders one status + one button, and that all
+  // the historical jargon (recent/older/backfill/auto-window) is gone.
+  describe('MiningTrigger — single MINE ALL CTA', () => {
+    it('renders one status sentence + one primary CTA with the total count', async () => {
+      mockedLoadCorrections.mockResolvedValue(
+        file([pattern({ id: 'p1', canonicalRule: 'rule' })]),
+      );
+      mockedLoadCandidates.mockResolvedValue(null);
+      const { container } = render(
+        <CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />,
+      );
+      // Mocked autoWindow probe returns candidateCount=12; with
+      // selection='all' on the wire, that's the full unprocessed set.
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: /MINE ALL 12/ }),
+        ).toBeDefined();
+      });
+      const status = container.querySelector(
+        '.lcars-corrections__trigger-status',
+      );
+      expect(status?.textContent ?? '').toMatch(/12 ready to mine/);
+      const cta = screen.getByRole('button', { name: /MINE ALL 12/ });
+      expect(cta.getAttribute('title')).toMatch(/Mine all 12 unprocessed candidates/);
+      // Killed copy — no recent/older split, no backfill jargon, no
+      // auto-window chip, no kicker label.
+      expect(screen.queryByText('NEXT MINING PASS')).toBeNull();
+      expect(screen.queryByText('AUTO WINDOW')).toBeNull();
+      expect(screen.queryByText(/MINE\s+\d+\s+RECENT/)).toBeNull();
+      expect(screen.queryByText(/MINE\s+\d+\s+OLDER/)).toBeNull();
+      expect(screen.queryByText(/^BACKFILL OLDER/)).toBeNull();
+      expect(screen.queryByText(/← back to recent/i)).toBeNull();
+      expect(screen.queryByText(/RE-MINE CORRECTIONS/i)).toBeNull();
+    });
+  });
 });
