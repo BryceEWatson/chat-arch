@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { spawn } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -92,6 +92,103 @@ interface SpawnOutcome {
   stdout: string;
   stderr: string;
   spawnError: Error | null;
+}
+
+/**
+ * What we learn from probing the on-disk artifacts after the skill
+ * exits. Used by `classifyOutcome` to decide whether the run actually
+ * succeeded, independent of the CLI's exit code (which can be 0 even
+ * when the skill refused to proceed in headless mode — see below).
+ */
+export interface OutcomeProbe {
+  /** `generatedAt` from a corrections.json file present on disk, or
+   *  null if the file is missing / unreadable / lacks the field. */
+  correctionsGeneratedAt: number | null;
+  /** `status` from a `correction-status-<requestId>.json` file, or
+   *  null if absent. */
+  statusFileStatus: string | null;
+  /** `error` from the same status file (only set when status is
+   *  `'error'`), or null. */
+  statusFileError: string | null;
+}
+
+export interface MiningOutcomeVerdict {
+  ok: boolean;
+  reason: string | null;
+}
+
+/**
+ * Decide whether a mining run actually succeeded. The CLI's exit code
+ * isn't sufficient on its own: `claude -p` exits 0 when the skill
+ * decides not to proceed (e.g. it hits a documented "ask the user
+ * before proceeding" branch in headless mode where there's no one to
+ * answer). Without this check, the endpoint would emit `ok: true` for
+ * a run that wrote zero output, and the viewer's runMining would
+ * silently swap back to the idle state — the exact "MINE ALL fails
+ * silently" bug this helper exists to prevent.
+ *
+ * Definition of success: the skill wrote `corrections.json` (or
+ * refreshed an existing one) with `generatedAt >= startedAt`. If the
+ * status file says `status: error`, that's an explicit failure with a
+ * useful message to surface.
+ */
+export function classifyOutcome(
+  startedAt: number,
+  exitCode: number | null,
+  spawnError: Error | null,
+  probe: OutcomeProbe,
+): MiningOutcomeVerdict {
+  if (spawnError !== null) {
+    return { ok: false, reason: `spawn error: ${spawnError.message}` };
+  }
+  if (exitCode !== 0) {
+    return { ok: false, reason: `claude CLI exited with code ${exitCode}` };
+  }
+  if (probe.statusFileStatus === 'error') {
+    const msg = probe.statusFileError ?? '(no message in status file)';
+    return { ok: false, reason: `skill reported error: ${msg}` };
+  }
+  if (
+    probe.correctionsGeneratedAt === null ||
+    probe.correctionsGeneratedAt < startedAt
+  ) {
+    const detail =
+      probe.statusFileStatus !== null
+        ? ` (last skill status: ${probe.statusFileStatus})`
+        : ' (no skill status file written — skill likely aborted in Stage 0 before initializing, e.g. hit a cap-and-ask branch in headless mode or failed to verify Ollama)';
+    return {
+      ok: false,
+      reason:
+        `skill exited cleanly but did not write a fresh corrections.json${detail}. ` +
+        `This is the "silent abort" failure mode — the CLI returned exit 0 but no output was produced.`,
+    };
+  }
+  return { ok: true, reason: null };
+}
+
+async function probeOutcome(
+  rootAbs: string,
+  dataDir: string,
+  requestId: string,
+): Promise<OutcomeProbe> {
+  const dataDirAbs = resolve(rootAbs, dataDir);
+  const corrections = await readJsonOrNull<{ generatedAt?: unknown }>(
+    join(dataDirAbs, 'analysis', 'corrections.json'),
+  );
+  const status = await readJsonOrNull<{
+    status?: unknown;
+    error?: unknown;
+  }>(join(dataDirAbs, 'analysis', `correction-status-${requestId}.json`));
+  return {
+    correctionsGeneratedAt:
+      typeof corrections?.generatedAt === 'number'
+        ? corrections.generatedAt
+        : null,
+    statusFileStatus:
+      typeof status?.status === 'string' ? status.status : null,
+    statusFileError:
+      typeof status?.error === 'string' ? status.error : null,
+  };
 }
 
 interface MineParams {
@@ -677,15 +774,45 @@ async function streamMineCorrections(
     ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
     : '';
 
+  // Validate the on-disk outcome. The CLI's exit code alone isn't a
+  // reliable success signal: in headless `claude -p` mode, the skill
+  // can hit an "ask the user" branch (e.g. Stage 0 sub-agent cap),
+  // print a question, and exit cleanly with code 0 without writing
+  // anything. Reporting `ok: true` for that case is the silent
+  // failure path — the viewer would refresh, find no new corrections,
+  // and revert to idle without surfacing why.
+  const probe = await probeOutcome(repoRoot(), dataDir, requestId);
+  const verdict = classifyOutcome(
+    started,
+    outcome.exitCode,
+    outcome.spawnError,
+    probe,
+  );
+
+  // Skill cleans up the target-ids file on Stage 7 success. If the run
+  // failed, the file is now an orphan — sweep it ourselves so future
+  // diagnostics aren't cluttered (and so the user can re-arm MINE ALL
+  // without seeing a stale id file). Silent best-effort; an unreachable
+  // file is fine.
+  if (!verdict.ok && candidateIdsFile !== null) {
+    try {
+      await unlink(candidateIdsFile);
+    } catch {
+      // Already gone or unreadable — nothing to do.
+    }
+  }
+
+  const verdictNote = verdict.reason !== null ? '\n[outcome] ' + verdict.reason : '';
+
   send({
     type: 'done',
-    ok: outcome.exitCode === 0 && !outcome.spawnError,
+    ok: verdict.ok,
     exitCode: outcome.exitCode,
     durationMs: Date.now() - started,
     requestId,
     usedFallback,
     stdoutTail: tailBytes(outcome.stdout),
-    stderrTail: tailBytes(outcome.stderr + extraStderr),
+    stderrTail: tailBytes(outcome.stderr + extraStderr + verdictNote),
     command: usedFallback
       ? `claude -p "${fallbackPrompt}"`
       : `claude -p "${slashPrompt}"`,

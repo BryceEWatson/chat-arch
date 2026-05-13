@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   REQUIRED_HEADER,
+  classifyOutcome,
   isLocalOrigin,
+  type OutcomeProbe,
 } from '../../src/pages/api/mine-corrections.js';
+
+const emptyProbe: OutcomeProbe = {
+  correctionsGeneratedAt: null,
+  statusFileStatus: null,
+  statusFileError: null,
+};
 
 describe('mine-corrections — CSRF gate', () => {
   it('accepts http://localhost:<any>', () => {
@@ -49,5 +57,102 @@ describe('mine-corrections — CSRF gate', () => {
     // Pinned so a refactor can't silently rename it and break the
     // viewer client that posts the same string.
     expect(REQUIRED_HEADER).toBe('chat-arch-mine-corrections');
+  });
+});
+
+describe('mine-corrections — classifyOutcome', () => {
+  const started = 1_000_000;
+
+  it('reports success when corrections.json is fresh and exit was clean', () => {
+    const verdict = classifyOutcome(started, 0, null, {
+      ...emptyProbe,
+      correctionsGeneratedAt: started + 5_000,
+      statusFileStatus: 'complete',
+    });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.reason).toBeNull();
+  });
+
+  it('reports success when corrections.json generatedAt equals startedAt', () => {
+    // Boundary: skill could write generatedAt = exact start ms. Don't
+    // false-negative on that edge.
+    const verdict = classifyOutcome(started, 0, null, {
+      ...emptyProbe,
+      correctionsGeneratedAt: started,
+    });
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('flags the silent-abort path: exit 0 but no corrections.json written', () => {
+    // This is the bug that motivated the helper: claude -p exits clean
+    // because the skill printed a question and gave up, but nothing
+    // landed on disk. The verdict must surface that, not pass it
+    // through as success.
+    const verdict = classifyOutcome(started, 0, null, emptyProbe);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/did not write a fresh corrections\.json/);
+    expect(verdict.reason).toMatch(/no skill status file written/);
+  });
+
+  it('flags the silent-abort path even when corrections.json is stale', () => {
+    // Prior run's output still on disk from earlier mining. New run
+    // didn't refresh it. Must not credit the prior run.
+    const verdict = classifyOutcome(started, 0, null, {
+      ...emptyProbe,
+      correctionsGeneratedAt: started - 60_000,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/did not write a fresh corrections\.json/);
+  });
+
+  it('surfaces the skill error message when status file says error', () => {
+    const verdict = classifyOutcome(started, 0, null, {
+      correctionsGeneratedAt: null,
+      statusFileStatus: 'error',
+      statusFileError: 'Ollama is not running',
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toBe('skill reported error: Ollama is not running');
+  });
+
+  it('falls back to a placeholder when status=error has no message', () => {
+    const verdict = classifyOutcome(started, 0, null, {
+      correctionsGeneratedAt: null,
+      statusFileStatus: 'error',
+      statusFileError: null,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/skill reported error/);
+  });
+
+  it('includes the last-known phase when corrections is missing but status was non-error', () => {
+    // Skill crashed mid-pipeline without writing status=error.
+    const verdict = classifyOutcome(started, 0, null, {
+      correctionsGeneratedAt: null,
+      statusFileStatus: 'classifying',
+      statusFileError: null,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/last skill status: classifying/);
+  });
+
+  it('reports spawn errors before checking output', () => {
+    const verdict = classifyOutcome(
+      started,
+      null,
+      new Error('ENOENT: claude not on PATH'),
+      emptyProbe,
+    );
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/spawn error.*claude not on PATH/);
+  });
+
+  it('reports a non-zero exit code over the on-disk probe', () => {
+    const verdict = classifyOutcome(started, 1, null, {
+      ...emptyProbe,
+      correctionsGeneratedAt: started + 1_000,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toBe('claude CLI exited with code 1');
   });
 });

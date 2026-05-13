@@ -110,6 +110,22 @@ function formatAppliedAtIso(ms: number): string {
 
 const INITIAL_INSTANCE_COUNT = 3;
 
+/**
+ * Back-compat fallback for upgrades produced by mining runs before the
+ * `headline` field shipped. Take the rationale's first sentence and
+ * truncate at ~15 words so the card still leads with a one-line summary
+ * instead of a wall of diagnosis prose. Re-mining the corpus produces
+ * proper headlines and this branch retires.
+ */
+function deriveHeadline(rationale: string): string {
+  const trimmed = rationale.trim();
+  if (trimmed.length === 0) return '';
+  const firstSentence = trimmed.split(/(?<=[.!?])\s/)[0] ?? trimmed;
+  const words = firstSentence.split(/\s+/);
+  if (words.length <= 15) return firstSentence;
+  return words.slice(0, 15).join(' ') + '…';
+}
+
 export function CorrectionPatternCard({
   pattern,
   instancesById,
@@ -125,9 +141,15 @@ export function CorrectionPatternCard({
   useEffect(() => {
     if (defaultExpanded) setExpanded(true);
   }, [defaultExpanded]);
+  // EVIDENCE section is collapsed by default — proposals are the
+  // value, instances are the supporting evidence. Users who want to
+  // verify before applying click SHOW EVIDENCE; everyone else
+  // doesn't pay the wall-of-conversation tax.
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [copiedIx, setCopiedIx] = useState<number | null>(null);
   const [busyIx, setBusyIx] = useState<number | null>(null);
+  const evidenceRegionId = `lcars-correction-pattern-evidence-${pattern.id}`;
 
   const category = categoryFor(pattern);
   const categoryLabel =
@@ -213,68 +235,13 @@ export function CorrectionPatternCard({
 
       {expanded && (
         <div className="lcars-correction-pattern__body">
-          <section className="lcars-correction-pattern__section">
-            <h4 className="lcars-correction-pattern__section-title">INSTANCES</h4>
-            {visibleInstances.length === 0 ? (
-              <p className="lcars-correction-pattern__empty">
-                No instance bodies available — the corrections file may be partial.
-              </p>
-            ) : (
-              <ul className="lcars-correction-pattern__instance-list" role="list">
-                {visibleInstances.map((inst) => {
-                  const body = (
-                    <>
-                      {inst.precedingAssistantExcerpt && (
-                        <p className="lcars-correction-pattern__instance-context">
-                          <span className="lcars-correction-pattern__instance-tag">
-                            ASSISTANT
-                          </span>
-                          <span>{inst.precedingAssistantExcerpt}</span>
-                        </p>
-                      )}
-                      <p className="lcars-correction-pattern__instance-body">
-                        <span className="lcars-correction-pattern__instance-tag">USER</span>
-                        <span>{inst.excerpt}</span>
-                      </p>
-                    </>
-                  );
-                  if (onSelectSession) {
-                    return (
-                      <li
-                        key={inst.id}
-                        className="lcars-correction-pattern__instance"
-                      >
-                        <button
-                          type="button"
-                          className="lcars-correction-pattern__instance-pill"
-                          onClick={() => onSelectSession(inst.sessionId)}
-                          aria-label={`open session ${inst.sessionId}`}
-                          title={`Open session ${inst.sessionId}`}
-                        >
-                          {body}
-                        </button>
-                      </li>
-                    );
-                  }
-                  return (
-                    <li key={inst.id} className="lcars-correction-pattern__instance">
-                      {body}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {hiddenInstanceCount > 0 && (
-              <button
-                type="button"
-                className="lcars-correction-pattern__more"
-                onClick={() => setShowAllInstances(true)}
-              >
-                Show all ({instances.length})
-              </button>
-            )}
-          </section>
-
+          {/*
+            PROPOSED UPGRADES first: the action is the product. EVIDENCE
+            (instances) used to render above and pushed proposals
+            below-the-fold — see the UX feedback in PR #34's review
+            thread. Section headers are restyled for stronger visual
+            hierarchy.
+          */}
           <section className="lcars-correction-pattern__section">
             <h4 className="lcars-correction-pattern__section-title">PROPOSED UPGRADES</h4>
             {pattern.proposedUpgrades.length === 0 ? (
@@ -300,6 +267,97 @@ export function CorrectionPatternCard({
                   />
                 ))}
               </ul>
+            )}
+          </section>
+
+          <section className="lcars-correction-pattern__section">
+            <button
+              type="button"
+              className="lcars-correction-pattern__evidence-toggle"
+              aria-expanded={evidenceOpen}
+              aria-controls={evidenceRegionId}
+              onClick={() => setEvidenceOpen((v) => !v)}
+            >
+              {/*
+                role="heading" + aria-level on the visible label so a
+                screen-reader's heading-list navigation sees EVIDENCE at
+                the same level as the <h4>PROPOSED UPGRADES</h4> above.
+                Without this, the headings list would skip from h4 to
+                whatever sits below EVIDENCE — confusing for keyboard /
+                AT users walking the card by heading.
+              */}
+              <span
+                className="lcars-correction-pattern__section-title"
+                role="heading"
+                aria-level={4}
+              >
+                EVIDENCE
+              </span>
+              <span className="lcars-correction-pattern__evidence-toggle-hint">
+                {evidenceOpen ? '▾ hide' : `▸ show ${instances.length} ${instances.length === 1 ? 'instance' : 'instances'}`}
+              </span>
+            </button>
+            {evidenceOpen && (
+              <div id={evidenceRegionId} role="region" aria-label="EVIDENCE">
+                {visibleInstances.length === 0 ? (
+                  <p className="lcars-correction-pattern__empty">
+                    No instance bodies available — the corrections file may be partial.
+                  </p>
+                ) : (
+                  <ul className="lcars-correction-pattern__instance-list" role="list">
+                    {visibleInstances.map((inst) => {
+                      const body = (
+                        <>
+                          {inst.precedingAssistantExcerpt && (
+                            <p className="lcars-correction-pattern__instance-context">
+                              <span className="lcars-correction-pattern__instance-tag">
+                                ASSISTANT
+                              </span>
+                              <span>{inst.precedingAssistantExcerpt}</span>
+                            </p>
+                          )}
+                          <p className="lcars-correction-pattern__instance-body">
+                            <span className="lcars-correction-pattern__instance-tag">USER</span>
+                            <span>{inst.excerpt}</span>
+                          </p>
+                        </>
+                      );
+                      if (onSelectSession) {
+                        return (
+                          <li
+                            key={inst.id}
+                            className="lcars-correction-pattern__instance"
+                          >
+                            <button
+                              type="button"
+                              className="lcars-correction-pattern__instance-pill"
+                              onClick={() => onSelectSession(inst.sessionId)}
+                              aria-label={`open session ${inst.sessionId}`}
+                              title={`Open session ${inst.sessionId}`}
+                            >
+                              {body}
+                            </button>
+                          </li>
+                        );
+                      }
+                      return (
+                        <li key={inst.id} className="lcars-correction-pattern__instance">
+                          {body}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {hiddenInstanceCount > 0 && (
+                  <button
+                    type="button"
+                    className="lcars-correction-pattern__more"
+                    onClick={() => setShowAllInstances(true)}
+                  >
+                    Show all ({instances.length})
+                  </button>
+                )}
+              </div>
             )}
           </section>
         </div>
@@ -387,8 +445,19 @@ function UpgradeRow({
     }
   };
 
+  // Headline = the punchline. Skill writes it directly; legacy
+  // upgrades without it get a derived headline from rationale so the
+  // card still leads with a one-liner.
+  const headline =
+    typeof upgrade.headline === 'string' && upgrade.headline.trim().length > 0
+      ? upgrade.headline.trim()
+      : deriveHeadline(upgrade.rationale);
+
   return (
     <li className="lcars-correction-pattern__upgrade">
+      {headline.length > 0 && (
+        <p className="lcars-correction-pattern__upgrade-headline">{headline}</p>
+      )}
       <header className="lcars-correction-pattern__upgrade-header">
         <span
           className={`lcars-correction-pattern__target lcars-correction-pattern__target--${upgrade.target}`}

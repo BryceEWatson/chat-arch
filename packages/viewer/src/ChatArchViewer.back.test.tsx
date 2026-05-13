@@ -155,8 +155,9 @@ describe('ChatArchViewer — BACK from detail restores prior surface (P0.1)', ()
       expect(locationLabel()).toBe('CORRECTIONS');
     });
 
-    // Pattern cards collapse instance pills behind a SHOW DETAILS
-    // toggle. Click that first, then the instance pill. The panel's
+    // Pattern cards collapse instance pills behind SHOW DETAILS, and
+    // after the proposals-first reordering EVIDENCE is collapsed too.
+    // Open both to reach the instance pill. The panel's
     // onSelectSession wrapper sets priorModeBeforeDetail and calls
     // onSelect, which pushes #session/a and flips mode.
     const showDetails = await waitFor(() =>
@@ -164,6 +165,12 @@ describe('ChatArchViewer — BACK from detail restores prior surface (P0.1)', ()
     );
     act(() => {
       fireEvent.click(showDetails);
+    });
+    const evidence = await waitFor(() =>
+      screen.getByRole('button', { name: /EVIDENCE/ }),
+    );
+    act(() => {
+      fireEvent.click(evidence);
     });
     const pill = await waitFor(() =>
       screen.getByRole('button', { name: /open session a/i }),

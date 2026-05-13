@@ -7090,10 +7090,64 @@ button.lcars-applied-summary__stale--button:focus-visible {
 .lcars-correction-pattern__section-title {
   margin: 0;
   font-family: var(--lcars-font-chrome);
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  color: color-mix(in srgb, var(--lcars-text) 88%, transparent);
+  /* Bumped from 10.5px → 13px after UX feedback: the old size read as
+     a chip label and the eye skipped right past it, making it hard to
+     find the section breaks inside a dense card. */
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: var(--lcars-peach);
   font-weight: 700;
+  /* Subtle left accent so the header is found by both shape and
+     color, not color alone. Matches the LCARS chrome elsewhere in
+     the viewer where section labels live next to a colored bar. */
+  padding-left: 8px;
+  border-left: 3px solid var(--lcars-peach);
+  line-height: 1.2;
+}
+
+/* EVIDENCE toggle: header sits inside a button so the whole row is
+   clickable. Reset the button chrome so it reads as a header with a
+   hint to its right, not a generic button. */
+.lcars-correction-pattern__evidence-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.lcars-correction-pattern__evidence-toggle:focus-visible {
+  outline: 2px solid var(--lcars-peach);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.lcars-correction-pattern__evidence-toggle-hint {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
+}
+.lcars-correction-pattern__evidence-toggle:hover .lcars-correction-pattern__evidence-toggle-hint {
+  color: var(--lcars-peach);
+}
+
+/* Upgrade headline: the punchline. Sits above the target chip + path
+   so the user reads "what changes and why" in one glance before any
+   diagnosis prose or diff. Larger + brighter than rationale, which
+   stays as supporting detail below. */
+.lcars-correction-pattern__upgrade-headline {
+  margin: 0 0 2px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--lcars-text);
+  max-width: 78ch;
 }
 .lcars-correction-pattern__instance-list,
 .lcars-correction-pattern__upgrade-list {

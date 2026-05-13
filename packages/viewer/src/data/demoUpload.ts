@@ -563,11 +563,13 @@ function buildDemoCorrections(now: number): {
   const upgrade = (
     target: ProposedUpgrade['target'],
     targetPath: string,
+    headline: string,
     patch: string,
     rationale: string,
   ): ProposedUpgrade => ({
     target,
     targetPath,
+    headline,
     patch,
     rationale,
     applied: false,
@@ -578,12 +580,14 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Add a Bash Tool Use section forbidding `cd <dir> &&` chains.',
       '## Bash Tool Use\n- Always pass absolute paths to the Bash tool. Never chain `cd <dir> && command` — the working directory resets between calls.',
       'Recurs across 4 sessions, 3 projects. Path-prefix problem; canonical fix is a global rule under Bash usage.',
     ),
     upgrade(
       'settings-hook',
       'settings.json :: hooks.PreToolUse',
+      'Escalate `cd &&` ban to a PreToolUse hook — soft rule is being ignored.',
       '{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "node scripts/reject-cd-chain.js" }] }',
       'Soft rule was already shipped (see applied-improvements ledger) and the model still violates it. Promote to a hook so the violation is rejected before it executes.',
     ),
@@ -593,6 +597,7 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Replace soft "clean code" guidance with an explicit no-docstrings rule.',
       '## Documentation\n- Do not add docstrings, JSDoc, or inline comments unless the user explicitly asks for them. Removing unrequested documentation is part of the cleanup pass.',
       'Recurs across 3 sessions; existing rule is too soft ("clean code") and the model defaults to documenting.',
     ),
@@ -602,12 +607,14 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'project-claude-md',
       '<repo>/CLAUDE.md',
+      'Promote ripgrep preference from "Tooling" footnote to a top-level section.',
       '## Search Conventions\n- Use `rg` (ripgrep), not `grep`, for content search. The repo is a pnpm monorepo — `rg` is configured to skip `node_modules`/`dist` automatically.',
       'Already-encoded under "Tooling" but the model bypasses it. Move to a top-level Search Conventions section so it lands in the model\'s default attention.',
     ),
     upgrade(
       'prompt-snippet',
       '(reusable, no fixed path)',
+      'Reusable mid-conversation reminder to use `rg` over `grep -r`.',
       'When searching: prefer `rg <pattern>` over `grep -r`. `rg` is faster, respects `.gitignore`, and is the project default.',
       'Reusable snippet for direct paste into a fresh conversation when the rule is being violated mid-task.',
     ),
@@ -617,6 +624,7 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Hoist the "strip debug output" rule out of a buried list into its own section.',
       '## Quality Gates\n- Remove all debug output (`console.log`, `print`, `dbg!`) before presenting a patch. Debug statements are scaffolding, not deliverable code.',
       'Encoded under Quality Gates; recurs because the rule is buried mid-list. Promote it or split Quality Gates into two sections (security + cleanup).',
     ),
@@ -626,12 +634,14 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'global-claude-md',
       '~/.claude/CLAUDE.md',
+      'Add a new global Workflow rule mandating test-first when adding behavior.',
       '## Workflow\n- Test-first: when adding behavior, write the failing test before the implementation. Show the failing test output, then the implementation, then the passing test.',
       'No matching rule found. Recurs across 4 sessions and projects — strong candidate for a new global directive.',
     ),
     upgrade(
       'skill',
       '~/.claude/skills/test-first/SKILL.md',
+      'Package the test-first procedure as a skill so it auto-triggers on "add a function".',
       '# test-first\n\nWhen the user asks for a new function / endpoint / component, default to:\n1. Draft the failing test.\n2. Run it (show red).\n3. Implement minimal code to pass.\n4. Run tests (show green).\n5. Refactor if needed.',
       'Workflow rule with a clear procedure — packageable as a skill so it triggers automatically on "add a function" requests.',
     ),
@@ -641,6 +651,7 @@ function buildDemoCorrections(now: number): {
     upgrade(
       'project-claude-md',
       '<repo>/CLAUDE.md',
+      'Encode conventional-commits subject-line format as a project Git Conventions rule.',
       '## Git Conventions\n- Commit messages: conventional-commits format. Subject line is ≤72 chars, lowercase verb-first, no trailing period. Example: `fix: drop trailing period from commit subjects`.',
       'No matching rule in the project file; format expectations live only in PR descriptions. Encode as a Git Conventions section so the model picks it up at commit-suggestion time.',
     ),
