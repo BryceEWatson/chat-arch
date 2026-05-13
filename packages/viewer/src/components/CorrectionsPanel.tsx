@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AppliedImprovementsFile,
   Correction,
@@ -884,7 +891,14 @@ function CoverageDetail({
   patterns,
 }: CoverageDetailProps) {
   const drops = scanStats.wrapperFiltered + scanStats.tooLongFiltered;
-  const notRun = classified === 0;
+  // Done/pending is keyed off whether any patterns have been mined, NOT
+  // `classified` (which counts only classifications that still appear in
+  // the live candidates set). After a HEURISTIC_RECALL_VERSION bump that
+  // retires every prior candidate, `classified` returns to 0 while
+  // `patterns` is still non-zero — and the badge would otherwise lie
+  // "pending · click RE-MINE CORRECTIONS" while the Last-mined chip and
+  // the pattern list contradicted it.
+  const notRun = patterns === 0;
   const knownSources: ReadonlyArray<string> = [
     'cli-direct',
     'cli-desktop',
@@ -897,99 +911,174 @@ function CoverageDetail({
       id="lcars-corrections-pipeline-detail"
       className="lcars-corrections__coverage-detail"
     >
-      <div className="lcars-corrections__pipeline">
-        <span className="lcars-corrections__pipeline-label">SCANNED</span>
-        <span className="lcars-corrections__pipeline-sublabel">
-          transcripts read · indexed in manifest
-        </span>
-        <ul className="lcars-corrections__pipeline-list">
-          {knownSources.map((source) => {
-            const total = scanStats.sessionsBySource[source] ?? 0;
-            const missing = scanStats.sessionsMissingBySource[source] ?? 0;
-            const scanned = Math.max(0, total - missing);
-            const note =
-              total === 0
-                ? source === 'cloud'
-                  ? 'no claude.ai export loaded'
-                  : 'not present in this corpus'
-                : missing > 0
-                  ? `${fmt(missing)} indexed but transcript file not on disk — usually deleted or aborted sessions`
-                  : null;
-            return (
-              <li key={`scan-${source}`}>
-                <span className="lcars-corrections__pipeline-source">
-                  {SOURCE_LABEL[source] ?? source}
-                </span>{' '}
-                <strong>
-                  {fmt(scanned)} / {fmt(total)}
-                </strong>
-                {note && (
+      {/* Stage 1: Exporter scan — already done by the time the user
+       *  opens this panel. The ✓ + "done" copy answers the user's
+       *  "the headline says 0 mined but everything below has non-zero
+       *  counts" reading: those numbers are scan-stage progress, not
+       *  mine-stage progress. */}
+      <div
+        className="lcars-corrections__stage"
+        data-stage-status="done"
+        aria-label="EXPORTER SCAN stage — done"
+      >
+        <header className="lcars-corrections__stage-header">
+          <span
+            className="lcars-corrections__stage-badge"
+            aria-hidden="true"
+          >
+            ✓
+          </span>
+          <span className="lcars-corrections__stage-title">
+            EXPORTER SCAN
+          </span>
+          <span className="lcars-corrections__stage-note">
+            done · re-runs on SCAN LOCAL
+          </span>
+        </header>
+        <div className="lcars-corrections__stage-body">
+          <div className="lcars-corrections__pipeline">
+            <span className="lcars-corrections__pipeline-label">SCANNED</span>
+            <span className="lcars-corrections__pipeline-sublabel">
+              transcripts read · indexed in manifest
+            </span>
+            <ul className="lcars-corrections__pipeline-list">
+              {knownSources.map((source) => {
+                const total = scanStats.sessionsBySource[source] ?? 0;
+                const missing = scanStats.sessionsMissingBySource[source] ?? 0;
+                const crashed =
+                  scanStats.sessionsCrashedBySource?.[source] ?? 0;
+                const trueMissing = Math.max(0, missing - crashed);
+                const scanned = Math.max(0, total - missing);
+                // Note is a React node (not string) so the split path
+                // can render two stacked lines via <br/>, keeping the
+                // "X missing on disk" / "Y CLI crashed" halves on their
+                // own lines at narrow widths. The single-line branches
+                // collapse to a plain string wrapped in the same span.
+                let note: ReactNode = null;
+                if (total === 0) {
+                  note =
+                    source === 'cloud'
+                      ? 'no claude.ai export loaded'
+                      : 'not present in this corpus';
+                } else if (missing === 0) {
+                  note = null;
+                } else if (crashed > 0 && trueMissing > 0) {
+                  note = (
+                    <>
+                      {fmt(trueMissing)} transcript file missing on disk
+                      <br />
+                      {fmt(crashed)} CLI crashed before writing a transcript
+                    </>
+                  );
+                } else if (crashed > 0) {
+                  note = `${fmt(crashed)} CLI crashed before writing a transcript (audit.jsonl still has the user's turns)`;
+                } else {
+                  note = `${fmt(trueMissing)} transcript file missing on disk (deleted or aborted between session end and scan)`;
+                }
+                return (
+                  <li key={`scan-${source}`}>
+                    <span className="lcars-corrections__pipeline-source">
+                      {SOURCE_LABEL[source] ?? source}
+                    </span>{' '}
+                    <strong>
+                      {fmt(scanned)} / {fmt(total)}
+                    </strong>
+                    {note && (
+                      <span className="lcars-corrections__pipeline-note">
+                        {note}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="lcars-corrections__pipeline">
+            <span className="lcars-corrections__pipeline-label">PIPELINE</span>
+            <ul className="lcars-corrections__pipeline-list">
+              <li>
+                <strong>{fmt(scanStats.sessionsInManifest)}</strong> sessions in
+                manifest
+              </li>
+              <li>
+                <strong>{fmt(scanStats.sessionsScanned)}</strong> with transcripts
+                {scanStats.sessionsMissing > 0 && (
                   <span className="lcars-corrections__pipeline-note">
-                    {note}
+                    <span aria-hidden="true">←</span>{' '}
+                    {fmt(scanStats.sessionsMissing)} missing (no transcript file)
                   </span>
                 )}
               </li>
-            );
-          })}
-        </ul>
+              <li>
+                <strong>{fmt(scanStats.survivingTurns)}</strong> user prompts
+                {drops > 0 && (
+                  <span className="lcars-corrections__pipeline-note">
+                    <span aria-hidden="true">←</span> {fmt(drops)} dropped (
+                    {fmt(scanStats.wrapperFiltered)} system wrappers +{' '}
+                    {fmt(scanStats.tooLongFiltered)} pastes &gt;4KB)
+                  </span>
+                )}
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
-      <div className="lcars-corrections__pipeline">
-        <span className="lcars-corrections__pipeline-label">PIPELINE</span>
-        <ul className="lcars-corrections__pipeline-list">
-          <li>
-            <strong>{fmt(scanStats.sessionsInManifest)}</strong> sessions in
-            manifest
-          </li>
-          <li>
-            <strong>{fmt(scanStats.sessionsScanned)}</strong> with transcripts
-            {scanStats.sessionsMissing > 0 && (
-              <span className="lcars-corrections__pipeline-note">
-                <span aria-hidden="true">←</span>{' '}
-                {fmt(scanStats.sessionsMissing)} missing (no transcript file)
-              </span>
-            )}
-          </li>
-          <li>
-            <strong>{fmt(scanStats.survivingTurns)}</strong> user prompts
-            {drops > 0 && (
-              <span className="lcars-corrections__pipeline-note">
-                <span aria-hidden="true">←</span> {fmt(drops)} dropped (
-                {fmt(scanStats.wrapperFiltered)} system wrappers +{' '}
-                {fmt(scanStats.tooLongFiltered)} pastes &gt;4KB)
-              </span>
-            )}
-          </li>
-        </ul>
-      </div>
-      <div className="lcars-corrections__pipeline">
-        <span className="lcars-corrections__pipeline-label">CLASSIFICATION</span>
-        <ul className="lcars-corrections__pipeline-list">
-          {notRun ? (
-            <li>
-              No LLM classification pass run yet. Click{' '}
-              <code>RE-MINE CORRECTIONS</code> to start.
-            </li>
-          ) : (
-            <>
-              <li>
-                <strong>{fmt(classified)}</strong> classified by LLM
-              </li>
-              <li>
-                <strong>{fmt(actionable)}</strong> actionable
-                <span className="lcars-corrections__pipeline-note">
-                  ({fmt(classified - actionable)} ruled &ldquo;not a real correction&rdquo;)
-                </span>
-              </li>
-              <li>
-                <strong>{fmt(patterns)}</strong>{' '}
-                {patterns === 1 ? 'pattern' : 'patterns'} surfaced
-                <span className="lcars-corrections__pipeline-note">
-                  (clusters of &ge;3 distinct sessions)
-                </span>
-              </li>
-            </>
-          )}
-        </ul>
+      {/* Stage 2: LLM mine — the action the headline bar tracks. The
+       *  ▶ + "pending" copy when nothing's been classified yet makes
+       *  it explicit that the 0 / N count IS the next step (rather
+       *  than a result that contradicts the non-zero scan numbers
+       *  above). */}
+      <div
+        className="lcars-corrections__stage"
+        data-stage-status={notRun ? 'pending' : 'done'}
+        aria-label={`LLM MINE stage — ${notRun ? 'pending' : 'done'}`}
+      >
+        <header className="lcars-corrections__stage-header">
+          <span
+            className="lcars-corrections__stage-badge"
+            aria-hidden="true"
+          >
+            {notRun ? '▶' : '✓'}
+          </span>
+          <span className="lcars-corrections__stage-title">LLM MINE</span>
+          <span className="lcars-corrections__stage-note">
+            {notRun
+              ? 'pending · click RE-MINE CORRECTIONS to run'
+              : `done · ${fmt(classified)} classified`}
+          </span>
+        </header>
+        <div className="lcars-corrections__stage-body">
+          <div className="lcars-corrections__pipeline">
+            <span className="lcars-corrections__pipeline-label">CLASSIFICATION</span>
+            <ul className="lcars-corrections__pipeline-list">
+              {notRun ? (
+                <li>
+                  No LLM classification pass run yet. Click{' '}
+                  <code>RE-MINE CORRECTIONS</code> to start.
+                </li>
+              ) : (
+                <>
+                  <li>
+                    <strong>{fmt(classified)}</strong> classified by LLM
+                  </li>
+                  <li>
+                    <strong>{fmt(actionable)}</strong> actionable
+                    <span className="lcars-corrections__pipeline-note">
+                      ({fmt(classified - actionable)} ruled &ldquo;not a real correction&rdquo;)
+                    </span>
+                  </li>
+                  <li>
+                    <strong>{fmt(patterns)}</strong>{' '}
+                    {patterns === 1 ? 'pattern' : 'patterns'} surfaced
+                    <span className="lcars-corrections__pipeline-note">
+                      (clusters of &ge;3 distinct sessions)
+                    </span>
+                  </li>
+                </>
+              )}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   );
