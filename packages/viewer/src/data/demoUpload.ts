@@ -358,10 +358,11 @@ function demoCorrection(
   };
 }
 
-/** Build the demo corrections + applied-improvements pair. */
+/** Build the demo corrections + applied-improvements + candidates triple. */
 function buildDemoCorrections(now: number): {
   corrections: CorrectionsFile;
   applied: AppliedImprovementsFile;
+  candidates: CorrectionsFile;
 } {
   const DAY_LOCAL = 86_400_000;
 
@@ -807,7 +808,57 @@ function buildDemoCorrections(now: number): {
     ],
   };
 
-  return { corrections, applied };
+  // ---- Candidates (correction-candidates.json analogue) -----------------
+  //
+  // Drives the CoverageMeter + EXPORTER SCAN / LLM MINE pipeline-stage
+  // markers (PR #33). On the hosted demo there's no exporter to write
+  // the real candidates file to disk, so we synthesize one that:
+  //   - reuses every mined `Correction` so the bucket math (`patterns`
+  //     in candidates set) lands at "fully mined" and the LLM MINE
+  //     badge reads `done · N classified`
+  //   - injects a plausible `scanStats` payload so the SCANNED list
+  //     and the split missing/crashed note exercise both rendering
+  //     paths on the demo
+  //
+  // Numbers chosen to make the panel feel inhabited without lying
+  // about the demo corpus — the totals roughly match the 20 demo
+  // sessions across cli/cowork/cloud splits.
+  const candidates: CorrectionsFile = {
+    generatedAt: now,
+    corrections: allCorrections,
+    patterns: [],
+    pipeline: {
+      heuristicRecall: true,
+      llmClassification: false,
+      embeddingClustering: false,
+      claudeMdCrossCheck: false,
+    },
+    scanStats: {
+      sessionsInManifest: 50,
+      sessionsScanned: 42,
+      sessionsMissing: 8,
+      sessionsBySource: {
+        cowork: 18,
+        'cli-direct': 14,
+        'cli-desktop': 10,
+        cloud: 8,
+      },
+      sessionsMissingBySource: {
+        cowork: 5,
+        'cli-direct': 2,
+        'cli-desktop': 1,
+      },
+      sessionsCrashedBySource: {
+        cowork: 3,
+      },
+      rawUserTurns: 215,
+      wrapperFiltered: 18,
+      tooLongFiltered: 5,
+      survivingTurns: 192,
+    },
+  };
+
+  return { corrections, applied, candidates };
 }
 
 // ---------- synthesis ------------------------------------------------------
@@ -1006,7 +1057,7 @@ export function generateDemoUpload(): UploadedCloudData {
   // rescan delta. Bundled inline so the workshop loop is visible on
   // the hosted demo path without requiring a back-end mining pass.
   // See `buildDemoCorrections` for shape rationale.
-  const { corrections, applied } = buildDemoCorrections(now);
+  const { corrections, applied, candidates } = buildDemoCorrections(now);
 
   return {
     manifest: {
@@ -1030,6 +1081,7 @@ export function generateDemoUpload(): UploadedCloudData {
     sourceLabel: `DEMO DATA · ${enriched.length} fake conversations (bundled fixture)`,
     corrections,
     appliedImprovements: applied,
+    correctionCandidates: candidates,
     // Synthesized so the persistent rescan-delta chip lights up on
     // demo load (Priya's finding: the chip never appears on the demo
     // path because `setRescanDelta` only fires inside the /api/rescan

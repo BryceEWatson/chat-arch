@@ -46,6 +46,16 @@ export interface UploadedCloudData {
   corrections?: CorrectionsFile;
   appliedImprovements?: AppliedImprovementsFile;
   /**
+   * Phase 4 — demo path only. The corrections-candidates file is what
+   * drives the CoverageMeter + pipeline-stage markers (EXPORTER SCAN /
+   * LLM MINE) in the panel. Real cloud-zip uploads omit this — the
+   * panel falls back to the network fetch of `correction-candidates.
+   * json` from disk. On the hosted demo there's nothing on disk, so
+   * without a synthesized candidates file the CoverageMeter never
+   * mounts and PR #33's stage markers ship invisible.
+   */
+  correctionCandidates?: CorrectionsFile;
+  /**
    * Synthesized "what just rescanned" payload for the persistent
    * rescan-delta chip. The chip's normal source is the `/api/rescan`
    * success branch in onRescan; demo loads have no such pass to feed

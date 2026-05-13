@@ -82,6 +82,15 @@ export interface CorrectionsPanelProps {
    */
   overrideCorrections?: CorrectionsFile | null;
   overrideApplied?: AppliedImprovementsFile | null;
+  /**
+   * Phase 4 — demo path. Same role as `overrideCorrections`: when the
+   * host has loaded a demo fixture that bundles a synthesized
+   * `correction-candidates.json` (so the CoverageMeter + pipeline-
+   * stage markers from PR #33 render with non-zero data on the
+   * hosted demo), pass it here. When omitted, the candidates loader
+   * still hits disk as before.
+   */
+  overrideCandidates?: CorrectionsFile | null;
 }
 
 type LoadState =
@@ -182,7 +191,15 @@ function buildTopicBuckets(
     }
     buckets.push({
       key: topic,
-      label: topic.toUpperCase(),
+      // The Untagged sentinel gets a friendlier label so a partial
+      // re-mine (or legacy corrections.json from before tag-topics
+      // landed) doesn't surface a bare "UNTAGGED" header. The
+      // bucket's `key` stays `Untagged` so [data-topic] selectors and
+      // bucket-order rules can still target it.
+      label:
+        topic === UNTAGGED_TOPIC
+          ? 'UNTAGGED · re-mine to assign'
+          : topic.toUpperCase(),
       patterns: group,
       weight,
       hasRecurring,
@@ -190,6 +207,12 @@ function buildTopicBuckets(
     });
   }
   buckets.sort((a, b) => {
+    // The Untagged bucket is a graceful fallback, not signal — pin it
+    // to the bottom regardless of weight/recurring so it doesn't
+    // float above named topics on a partial re-mine.
+    const aUntagged = a.key === UNTAGGED_TOPIC;
+    const bUntagged = b.key === UNTAGGED_TOPIC;
+    if (aUntagged !== bUntagged) return aUntagged ? 1 : -1;
     if (a.hasRecurring !== b.hasRecurring) return a.hasRecurring ? -1 : 1;
     if (b.weight !== a.weight) return b.weight - a.weight;
     return a.label.localeCompare(b.label);
@@ -241,6 +264,7 @@ export function CorrectionsPanel({
   rescanAvailable = false,
   overrideCorrections,
   overrideApplied,
+  overrideCandidates,
 }: CorrectionsPanelProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   // Phase 2b: which pattern (if any) the AppliedImprovementsSummary
@@ -316,7 +340,9 @@ export function CorrectionsPanel({
         overrideCorrections !== undefined
           ? Promise.resolve(overrideCorrections)
           : loadCorrectionsFile(dataDirBaseUrl),
-        loadCorrectionCandidatesFile(dataDirBaseUrl),
+        overrideCandidates !== undefined
+          ? Promise.resolve(overrideCandidates)
+          : loadCorrectionCandidatesFile(dataDirBaseUrl),
         overrideApplied !== undefined
           ? Promise.resolve(overrideApplied)
           : loadAppliedImprovementsFile(dataDirBaseUrl),
@@ -338,7 +364,13 @@ export function CorrectionsPanel({
         message: err instanceof Error ? err.message : String(err),
       });
     }
-  }, [dataDirBaseUrl, refreshAutoWindow, overrideCorrections, overrideApplied]);
+  }, [
+    dataDirBaseUrl,
+    refreshAutoWindow,
+    overrideCorrections,
+    overrideApplied,
+    overrideCandidates,
+  ]);
 
   useEffect(() => {
     void refresh();
@@ -1043,7 +1075,7 @@ function CoverageDetail({
           <span className="lcars-corrections__stage-title">LLM MINE</span>
           <span className="lcars-corrections__stage-note">
             {notRun
-              ? 'pending · click RE-MINE CORRECTIONS to run'
+              ? 'pending · click MINE ALL to run'
               : `done · ${fmt(classified)} classified`}
           </span>
         </header>
@@ -1054,7 +1086,7 @@ function CoverageDetail({
               {notRun ? (
                 <li>
                   No LLM classification pass run yet. Click{' '}
-                  <code>RE-MINE CORRECTIONS</code> to start.
+                  <code>MINE ALL</code> to start.
                 </li>
               ) : (
                 <>

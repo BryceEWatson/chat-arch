@@ -118,6 +118,47 @@ describe('generateDemoUpload — Phase 4 applied-improvements ledger', () => {
   });
 });
 
+// PR #34 ships a `headline?: string` on ProposedUpgrade — the lead-with-
+// punchline card layout falls back to a derived headline when missing,
+// but the demo fixture's whole purpose is to showcase the punchline, so
+// every bundled upgrade should ship an explicit headline.
+describe('generateDemoUpload — Phase 4 ProposedUpgrade headline', () => {
+  it('every ProposedUpgrade in the demo fixture ships a non-empty headline', () => {
+    const data = generateDemoUpload();
+    for (const p of data.corrections!.patterns) {
+      for (const u of p.proposedUpgrades) {
+        expect(typeof u.headline).toBe('string');
+        expect((u.headline ?? '').length).toBeGreaterThan(10);
+      }
+    }
+  });
+});
+
+// PR #33 ships pipeline-stage markers (✓ EXPORTER SCAN / ▶ LLM MINE)
+// gated on a non-empty `correctionCandidates.scanStats`. Without this
+// payload on the demo path the entire stage UI ships invisible.
+describe('generateDemoUpload — Phase 4 corrections candidates fixture', () => {
+  it('bundles a candidates file with scanStats so the CoverageMeter mounts', () => {
+    const data = generateDemoUpload();
+    expect(data.correctionCandidates).toBeDefined();
+    const cands = data.correctionCandidates!;
+    expect(cands.corrections.length).toBeGreaterThan(0);
+    expect(cands.scanStats).toBeDefined();
+    const stats = cands.scanStats!;
+    expect(stats.sessionsInManifest).toBeGreaterThan(0);
+    expect(stats.sessionsScanned).toBeGreaterThan(0);
+    expect(Object.keys(stats.sessionsBySource).length).toBeGreaterThanOrEqual(2);
+    // Stage markers split missing/crashed — both should be exercised
+    // by the demo so the split-note rendering is visible.
+    expect(stats.sessionsCrashedBySource).toBeDefined();
+    const crashedTotal = Object.values(stats.sessionsCrashedBySource ?? {}).reduce(
+      (a, b) => a + b,
+      0,
+    );
+    expect(crashedTotal).toBeGreaterThan(0);
+  });
+});
+
 describe('generateDemoUpload — Phase 4 synthesized rescan delta', () => {
   it('includes a synthesizedRescanDelta with plausible per-source counts', () => {
     const data = generateDemoUpload();
