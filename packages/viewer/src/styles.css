@@ -6659,7 +6659,14 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-weight: 600;
 }
 .lcars-corrections__pipeline-note {
-  margin-left: 8px;
+  display: block;
+  /* 9ch matches .lcars-corrections__pipeline-source min-width so the
+   * note flows on its own line, indented under the source-label
+   * column. Prevents mid-phrase wraps like
+   *   "CLI crashed before writing | a transcript"
+   * at narrow widths. */
+  margin-left: 9ch;
+  margin-top: 2px;
   font-size: 11.5px;
   font-style: italic;
   color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
