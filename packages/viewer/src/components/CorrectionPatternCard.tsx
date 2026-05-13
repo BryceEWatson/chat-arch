@@ -149,6 +149,7 @@ export function CorrectionPatternCard({
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [copiedIx, setCopiedIx] = useState<number | null>(null);
   const [busyIx, setBusyIx] = useState<number | null>(null);
+  const evidenceRegionId = `lcars-correction-pattern-evidence-${pattern.id}`;
 
   const category = categoryFor(pattern);
   const categoryLabel =
@@ -274,9 +275,22 @@ export function CorrectionPatternCard({
               type="button"
               className="lcars-correction-pattern__evidence-toggle"
               aria-expanded={evidenceOpen}
+              aria-controls={evidenceRegionId}
               onClick={() => setEvidenceOpen((v) => !v)}
             >
-              <span className="lcars-correction-pattern__section-title">
+              {/*
+                role="heading" + aria-level on the visible label so a
+                screen-reader's heading-list navigation sees EVIDENCE at
+                the same level as the <h4>PROPOSED UPGRADES</h4> above.
+                Without this, the headings list would skip from h4 to
+                whatever sits below EVIDENCE — confusing for keyboard /
+                AT users walking the card by heading.
+              */}
+              <span
+                className="lcars-correction-pattern__section-title"
+                role="heading"
+                aria-level={4}
+              >
                 EVIDENCE
               </span>
               <span className="lcars-correction-pattern__evidence-toggle-hint">
@@ -284,7 +298,7 @@ export function CorrectionPatternCard({
               </span>
             </button>
             {evidenceOpen && (
-              <>
+              <div id={evidenceRegionId} role="region" aria-label="EVIDENCE">
                 {visibleInstances.length === 0 ? (
                   <p className="lcars-correction-pattern__empty">
                     No instance bodies available — the corrections file may be partial.
@@ -343,7 +357,7 @@ export function CorrectionPatternCard({
                     Show all ({instances.length})
                   </button>
                 )}
-              </>
+              </div>
             )}
           </section>
         </div>

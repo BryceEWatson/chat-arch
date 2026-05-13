@@ -180,6 +180,37 @@ describe('CorrectionPatternCard', () => {
       fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
       expect(screen.getByText(/please c1 stop using docstrings/)).toBeDefined();
     });
+
+    // a11y: PROPOSED UPGRADES is an <h4>, so EVIDENCE must announce as
+    // a heading at the same level — otherwise screen-reader heading-
+    // list navigation walks past it. The toggle button uses
+    // aria-expanded + aria-controls to pair with the disclosure region.
+    it('exposes EVIDENCE label as a level-4 heading paired to its region', () => {
+      const p = pattern();
+      const { container } = render(
+        <CorrectionPatternCard
+          pattern={p}
+          instancesById={buildInstancesById(p.instanceIds)}
+          defaultExpanded
+        />,
+      );
+      const toggle = screen.getByRole('button', { name: /EVIDENCE/ });
+      const controlsId = toggle.getAttribute('aria-controls');
+      expect(controlsId).toBeTruthy();
+      // PROPOSED UPGRADES is a real <h4> — pin heading-level parity.
+      const proposalsHeading = screen.getByText('PROPOSED UPGRADES');
+      expect(proposalsHeading.tagName).toBe('H4');
+      // EVIDENCE span needs role=heading aria-level=4 to match in the
+      // SR heading list.
+      const evidenceLabel = screen.getByText('EVIDENCE');
+      expect(evidenceLabel.getAttribute('role')).toBe('heading');
+      expect(evidenceLabel.getAttribute('aria-level')).toBe('4');
+      // Region is mounted only after open — click and verify pairing.
+      fireEvent.click(toggle);
+      const region = container.querySelector(`#${controlsId}`);
+      expect(region).not.toBeNull();
+      expect(region?.getAttribute('role')).toBe('region');
+    });
   });
 
   it('shows the ALREADY ENCODED badge when alreadyEncoded is set', () => {
