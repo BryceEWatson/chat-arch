@@ -10,6 +10,7 @@ import {
   type ChatCitation,
   type ChatStreamEvent,
 } from '@chat-arch/schema';
+import { resolveClaudeBin } from '../../lib/resolveClaude.js';
 
 /**
  * Chat page synthesis endpoint. Spawns `claude -p` against the `chat-
@@ -439,8 +440,16 @@ async function runChatAnswer(
   };
 
   const isWin = process.platform === 'win32';
+  const bin = resolveClaudeBin();
+  // When we have an absolute path (env/appdata), spawn without a shell
+  // so Node's arg array is passed verbatim — no cmd.exe special-char
+  // surprises, no PATHEXT lookup needed. When falling back to bare
+  // 'claude', we DO need a shell on Windows so the `.cmd` shim
+  // resolves (npm-installed CLIs typically expose only `claude.cmd`,
+  // not a `claude.exe` on PATH).
   const slashCommand = `/chat-answer --request-file=${requestFile}`;
-  const promptArg = isWin ? `"${slashCommand.replace(/"/g, '\\"')}"` : slashCommand;
+  const promptArg =
+    bin.useShell && isWin ? `"${slashCommand.replace(/"/g, '\\"')}"` : slashCommand;
   const allowedTools = 'Read Grep Glob Task';
   // `--output-format=stream-json` requires `--verbose` when paired with
   // `-p` (headless). Without it the CLI prints
@@ -462,10 +471,10 @@ async function runChatAnswer(
   await new Promise<void>((resolveOuter) => {
     let stdoutBuf = '';
     let stderrBuf = '';
-    const child = spawn('claude', args, {
+    const child = spawn(bin.file, args, {
       cwd: repoRoot(),
       env: process.env,
-      shell: isWin,
+      shell: bin.useShell,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let spawnError: Error | null = null;
