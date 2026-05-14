@@ -442,11 +442,18 @@ async function runChatAnswer(
   const slashCommand = `/chat-answer --request-file=${requestFile}`;
   const promptArg = isWin ? `"${slashCommand.replace(/"/g, '\\"')}"` : slashCommand;
   const allowedTools = 'Read Grep Glob Task';
+  // `--output-format=stream-json` requires `--verbose` when paired with
+  // `-p` (headless). Without it the CLI prints
+  // "Error: When using --print, --output-format=stream-json requires --verbose"
+  // and exits 1 before producing any events — surfaces in the UI as
+  // "claude CLI exited with code 1" because no `result` event ever
+  // arrives.
   const args = [
     '--allowedTools',
     allowedTools,
     '--output-format',
     'stream-json',
+    '--verbose',
     ...(body.resumeSessionId ? ['--resume', body.resumeSessionId] : []),
     '-p',
     promptArg,
