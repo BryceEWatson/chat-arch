@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clearUploadedData } from '../data/uploadedDataStore.js';
 import { clearSemanticLabels } from '../data/semanticLabelsStore.js';
 import { clearBenchResults } from '../data/benchResultsStore.js';
+import { clearChatHistory } from '../data/chatHistoryStore.js';
 
 /**
  * Selective-delete affordance. The button sits in the TopBar's left
@@ -262,8 +263,12 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
       }
       // Kitchen-sink mode (every source selected) additionally wipes
       // the `chat-arch:*` localStorage keys — onboarding state, UI
-      // preferences, etc. A user wiping just CLI shouldn't lose their
-      // onboarding state, so this path is gated on all-selected.
+      // preferences, etc. — AND the chat-page conversation history.
+      // Chat history isn't tied to a specific source (it can reference
+      // local AND cloud sessions), so it's gated on "the user asked for
+      // everything" rather than on any specific source's checkbox.
+      // A user wiping just CLI shouldn't lose their onboarding state
+      // or chat history, so this path stays all-selected.
       if (allSelected) {
         try {
           const keys: string[] = [];
@@ -275,6 +280,13 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
         } catch {
           /* ignore */
         }
+        // Chat history lives in its own IDB DB (`chat-arch-chat-history`)
+        // — included in the kitchen-sink wipe alongside the localStorage
+        // sweep so a user choosing "delete everything" sees a truly
+        // fresh state on reload. Best-effort; an unreachable IDB is
+        // fine (we already navigated past the await on the cloud-IDB
+        // wipes above).
+        await clearChatHistory().catch(() => undefined);
       }
       // Cache-bust the reload so the browser doesn't hand back a
       // cached manifest that references files we just deleted.
