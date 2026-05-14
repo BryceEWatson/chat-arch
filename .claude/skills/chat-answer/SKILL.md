@@ -44,6 +44,23 @@ Claude push back on in my Y sessions?"). Answer it grounded.
 
 Workflow:
 
+0. **Mandatory coverage reads (do these BEFORE anything else, every
+   time):**
+
+   - `manifest.json` (corpus index + date range — anchors any "across
+     N sessions" claim).
+   - The user's global `~/.claude/CLAUDE.md` (operating modes like
+     `/code` / `/research` / `/review`, persistent preferences). On
+     Windows this resolves to `C:\Users\<user>\.claude\CLAUDE.md`.
+   - The repo's own `CLAUDE.md` (project-specific rules, git
+     conventions, hook configurations, the things the corpus alone
+     can't surface because they're prescriptive not descriptive).
+
+   These three files are cheap and they prevent the failure mode where
+   a corpus-grep answer misses load-bearing structure the user has
+   already encoded in config. If they cite operating modes or hooks,
+   your answer should too.
+
 1. **Triage in one sentence** (printed, not silently). What kind of
    evidence does this question need? Pick one:
    - *Recurring-pattern* — needs frequency + breadth across sessions.
@@ -84,11 +101,35 @@ Workflow:
    - Cap each sub-agent at a tight word budget in your prompt (e.g.
      "≤400 words, bullet form, cite session ids inline") so the
      fan-out doesn't run for ten minutes per agent.
+   - **Per-SID evidence floor (load-bearing).** Tell each sub-agent:
+     *"For every SID you cite, return either (a) the keyword grep
+     count on that session's transcript (e.g. `[SID:abc] — 47 hits on
+     /loop`) OR (b) a verbatim quote ≤80 chars from the transcript
+     (e.g. `[SID:abc] — 'all tests passing — shipping it'`). NEVER
+     cite a SID with only 'the file exists' or 'manifest title looks
+     relevant' as evidence — that's existence, not support."* When
+     synthesizing, **drop SIDs with fewer than 3 keyword hits or no
+     usable quote**, even if it shrinks the cited list. A weak witness
+     inside a strong-looking list of three SIDs is worse than honestly
+     citing only the one strong witness.
 4. **Synthesize.** Lead with the answer. Evidence second. Cite sessions
    inline as `[SID:<uuid>]` using the manifest's `id` field. Distinguish
    *recurring pattern* from *happened once*. Surface honest negatives
    where they sharpen the answer ("X didn't pan out because Y") — they
    build trust more than smoothing things over.
+
+   **Cap at 3-4 strong items, NOT 5 with mixed strength.** A tight
+   list of fully-evidenced patterns beats a longer list where item 4
+   or 5 has thin grounding. If you have one strong item and three
+   weak ones, write one item.
+
+   **Order by novelty, not frequency.** Lead with the most
+   differentiated practice — the thing this user does that most
+   others don't (e.g. "mining your own corpus", "custom skill
+   pipeline") — even when it's less frequent than table-stakes
+   practices (e.g. PR-gated workflow, code review). Table-stakes
+   items can ship later in the list or be cut entirely if the
+   audience already takes them as given.
 5. **Follow-ups.** End with 1-3 suggested next questions on their own line,
    each prefixed `→ ` and phrased as the user would ask them. The UI
    renders these as one-click chips.
@@ -155,6 +196,29 @@ When the corpus does NOT support a claim, say so explicitly rather than
 fabricating evidence: "The corpus doesn't show this directly — based on
 indirect signal in [SID:abc], I'd guess … but it's an inference, not a
 finding."
+
+### Named workflows / slash commands / skills
+
+**Never invent a name.** A `/foo` slash command, named skill, agent
+type, or workflow may only appear in your answer if you have VERIFIED
+it via one of:
+
+  - Read of `.claude/skills/foo/SKILL.md` or
+    `.claude/commands/foo.md` (project-local or under `~/.claude/`).
+  - Read of `~/.claude/CLAUDE.md` declaring the command.
+  - A Grep hit showing the command actually invoked in a transcript
+    (look for the literal `/foo` in tool calls or user text — not
+    just discussed as an idea).
+
+If you have NONE of those three signals, describe the pattern in
+generic terms ("parallel multi-agent review", "polling sub-agent for
+long-running work") instead of naming it. A hallucinated workflow name
+destroys trust — the reader will search for it, fail to find it, and
+treat the whole answer as suspect.
+
+This rule has bitten in practice: an earlier run named "`/ultrareview`
+is the named multi-agent review pass" with high confidence. No such
+skill or command existed. Don't be that run.
 
 ## Corpus layout
 
