@@ -63,6 +63,27 @@ Workflow:
    always keyword-matching, not measuring actual usage. Trust qualitative
    examples (quotes, specific session IDs, tool-call evidence) over raw
    counts.
+
+   **Sub-agent rules (load-bearing — headless mode has no human to
+   answer permission prompts):**
+
+   - Always pass `subagent_type: "Explore"`. The `Explore` agent is
+     read-only (Glob / Grep / Read only — no Bash, no Write, no Edit)
+     and matches the kind of work corpus retrieval needs. The default
+     `general-purpose` agent has Bash + Write, which trips the harness
+     `Bash(find:*)` deny-list on multi-step shell pipes and stalls the
+     whole turn.
+   - In your prompt to the sub-agent, explicitly tell it: **"You have
+     no Bash. Use Grep for keyword search and Read with `offset`/`limit`
+     for slicing big files; do not attempt shell commands."**
+   - Tell it: **"Do NOT Read a transcript file in full — they range
+     from 25K to 500K tokens and will trip the 25K-token Read cap.
+     Always Grep first; only Read with `offset` + `limit` (e.g.
+     `Read file_path=… offset=0 limit=200`) once you've found a line
+     range worth quoting."**
+   - Cap each sub-agent at a tight word budget in your prompt (e.g.
+     "≤400 words, bullet form, cite session ids inline") so the
+     fan-out doesn't run for ten minutes per agent.
 4. **Synthesize.** Lead with the answer. Evidence second. Cite sessions
    inline as `[SID:<uuid>]` using the manifest's `id` field. Distinguish
    *recurring pattern* from *happened once*. Surface honest negatives
@@ -177,7 +198,30 @@ have Bash, Write, or Edit. This is intentional:
   draft-as-skill) will be separate user-triggered actions, not autonomous
   writes from this skill.
 - **Task is available** — use sub-agents (especially `Explore`) for
-  fan-out retrieval and parallel sub-questions.
+  fan-out retrieval and parallel sub-questions. **Always pass
+  `subagent_type: "Explore"`** so the sub-agent inherits the same read-
+  only tool profile; the default `general-purpose` agent has Bash and
+  trips harness permission prompts in headless mode.
+
+### Reading transcripts efficiently
+
+Transcript JSONL files in `local-transcripts/<source>/<uuid>.jsonl` can
+be enormous — typical sizes range from ~25K to 500K+ tokens. Reading
+one whole will trip Claude Code's 25K-token Read cap and waste tens of
+seconds of round-trip time.
+
+The right pattern:
+
+1. **Grep first.** A pattern over `local-transcripts/**/*.jsonl` finds
+   the lines/sessions that matter without loading any file in full.
+2. **Read with `offset` + `limit` after grep gives you a line number.**
+   E.g. `Read file_path=…/abc.jsonl offset=120 limit=40` reads 40
+   lines starting at line 120. Iterate if needed.
+3. **Skim via the manifest first.** `manifest.json` already has
+   `title` + `preview` (≤200 chars) + optional `summary` per session.
+   For a lot of questions the manifest alone is enough to identify the
+   relevant sessions; you only descend into transcripts when you need
+   to quote.
 
 ## Style
 

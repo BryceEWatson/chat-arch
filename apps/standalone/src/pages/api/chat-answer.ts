@@ -63,7 +63,18 @@ export const prerender = false;
 export const REQUIRED_HEADER = 'chat-arch-chat-answer';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_CONCURRENT = 3;
-const SILENT_ABORT_GRACE_MS = 60_000;
+// Inactivity watchdog. Fires when NO stream-json events arrive within
+// the grace window — a real silent-abort signal. An agentic flow that
+// dispatches sub-agents legitimately runs for minutes; what we care
+// about is "did the agent stop producing output?", not "is the total
+// duration too long." So this resets on every successful send. The
+// hard cap below catches genuine runaway cases.
+const INACTIVITY_GRACE_MS = 120_000;
+// Hard upper bound on a single turn, regardless of activity. Sized for
+// fan-out questions that legitimately spawn 2-3 sub-agents each doing
+// minutes of corpus work. Past this, we declare the turn lost — most
+// likely the agent got stuck on a permission prompt in headless mode.
+const HARD_CAP_MS = 10 * 60_000;
 
 export function isLocalOrigin(origin: string | null): boolean {
   if (!origin) return false;
@@ -606,26 +617,51 @@ export const POST: APIRoute = async ({ request }) => {
   inFlightByChatId.set(body.chatId, { startedAt: Date.now() });
   totalInFlight += 1;
 
-  // Silent-abort watchdog: if the stream lives past SILENT_ABORT_GRACE_MS
-  // without resolving, the response is closed and the gate released.
-  // The actual claude process keeps running in the background; the
-  // user's UI sees a clean error and can retry.
-  let watchdog: ReturnType<typeof setTimeout> | null = null;
+  // Two watchdogs:
+  //   - inactivityTimer: fires after INACTIVITY_GRACE_MS of no events.
+  //     Reset on every successful `send()` so an agent that's actively
+  //     emitting tool_use / token / trace events keeps the stream alive.
+  //   - hardCapTimer: absolute upper bound — fires even if events flow,
+  //     to catch a stuck loop that's emitting noise but making no
+  //     progress on the actual answer.
+  let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+  let hardCapTimer: ReturnType<typeof setTimeout> | null = null;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (ev: ChatStreamEvent): void => {
+      const armInactivity = () => {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => {
+          rawSend({
+            type: 'error',
+            message: `chat-answer received no events for ${INACTIVITY_GRACE_MS / 1000}s — agent appears stuck (possibly blocked on a tool-permission prompt in headless mode).`,
+            retryable: true,
+          });
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
+        }, INACTIVITY_GRACE_MS);
+      };
+      const rawSend = (ev: ChatStreamEvent): void => {
         try {
           controller.enqueue(encoder.encode(JSON.stringify(ev) + '\n'));
         } catch {
           // controller closed — ignore
         }
       };
-      watchdog = setTimeout(() => {
-        send({
+      const send = (ev: ChatStreamEvent): void => {
+        rawSend(ev);
+        // Any event from the agent counts as liveness — reset inactivity.
+        armInactivity();
+      };
+      armInactivity();
+      hardCapTimer = setTimeout(() => {
+        rawSend({
           type: 'error',
-          message: `chat-answer timed out after ${SILENT_ABORT_GRACE_MS}ms`,
+          message: `chat-answer hit the ${HARD_CAP_MS / 60_000}-minute hard cap. Try splitting the question or running it again.`,
           retryable: true,
         });
         try {
@@ -633,12 +669,13 @@ export const POST: APIRoute = async ({ request }) => {
         } catch {
           // already closed
         }
-      }, SILENT_ABORT_GRACE_MS);
+      }, HARD_CAP_MS);
 
       try {
         await runChatAnswer(body, send);
       } finally {
-        if (watchdog) clearTimeout(watchdog);
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        if (hardCapTimer) clearTimeout(hardCapTimer);
         inFlightByChatId.delete(body.chatId);
         totalInFlight = Math.max(0, totalInFlight - 1);
         try {
