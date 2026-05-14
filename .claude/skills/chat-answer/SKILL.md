@@ -112,6 +112,38 @@ Workflow:
      usable quote**, even if it shrinks the cited list. A weak witness
      inside a strong-looking list of three SIDs is worse than honestly
      citing only the one strong witness.
+
+   - **Counts MUST trace to a tool call in this turn — no exceptions.**
+     This is the failure mode the previous run hit. The per-SID
+     evidence floor (above) was satisfied with *plausible-looking*
+     fabricated numbers — claims like "246 hits on corrections.json"
+     where the actual count was 72, or "6 gh pr checks hits" where the
+     actual count was 0. The skill **must not pattern-match** what a
+     count "should be" from context.
+
+     Hard rule: if you cite "N hits on X in [SID:abc]", there must be
+     a `Grep` tool_use record THIS TURN for pattern=X on the path
+     containing abc, and you must use the count that Grep returned —
+     not your estimate, not an extrapolation, not "feels about right
+     given the others." If you didn't Grep it this turn, either Grep
+     it now, or drop the count and use a quote, or use a qualitative
+     word ("frequent", "recurring"). Tell each sub-agent the same
+     rule, explicitly.
+
+   - **Quotes beat counts.** A verbatim ≤80-char quote is more
+     verifiable than a number — the user can search for the string
+     and confirm it. Counts require trust that you actually ran the
+     Grep. Strongest places to pull quotes:
+       - `manifest.json` entry's `title` / `preview` / `summary`
+         field for the cited session (cheap; Grep + Read for that
+         one entry).
+       - The transcript's `ai-title` or `last-prompt` line (visible
+         in the manifest summary or via a targeted Grep on the
+         transcript for those keys).
+       - A line that actually surfaced in a Grep result the sub-
+         agent ran in this turn.
+     Prefer two SIDs with quotes over three SIDs with mixed
+     counts-or-quotes.
 4. **Synthesize.** Lead with the answer. Evidence second. Cite sessions
    inline as `[SID:<uuid>]` using the manifest's `id` field. Distinguish
    *recurring pattern* from *happened once*. Surface honest negatives
@@ -130,6 +162,25 @@ Workflow:
    practices (e.g. PR-gated workflow, code review). Table-stakes
    items can ship later in the list or be cut entirely if the
    audience already takes them as given.
+
+   **Measure the population BEFORE picking examples.** For any
+   recurring-pattern claim, run a corpus-wide Grep on the pattern
+   across `local-transcripts/**/*.jsonl` first to get the actual
+   match count (e.g. "82 files match `adversarial.{0,30}review`"),
+   THEN cite 2-3 strongest example SIDs from that population. The
+   final wording should look like: *"82 sessions show this pattern;
+   strongest witnesses: [SID:abc] [SID:def] [SID:ghi]."* This
+   prevents the inverse failure of the previous run — calling
+   something "a clear recurring pattern" when only 3 examples were
+   found, when the real population is 82.
+
+   **Honest-caveats paragraph is NOT a hedge zone.** Any quantitative
+   claim in your caveats — file counts, session counts, time ranges,
+   "Nx more / less" — must satisfy the same evidence floor as the
+   main-body claims. A wrong number in a caveat ("147 files of
+   memory" → actually 35) is worse than no number, because the
+   caveat is the part the reader is supposed to trust. If you don't
+   have a tool-call-grounded count, write the caveat without numbers.
 5. **Follow-ups.** End with 1-3 suggested next questions on their own line,
    each prefixed `→ ` and phrased as the user would ask them. The UI
    renders these as one-click chips.
@@ -219,6 +270,35 @@ treat the whole answer as suspect.
 This rule has bitten in practice: an earlier run named "`/ultrareview`
 is the named multi-agent review pass" with high confidence. No such
 skill or command existed. Don't be that run.
+
+### Policy versus enforcement (don't conflate)
+
+When citing a rule from the user's config (CLAUDE.md, settings.json,
+hooks, etc.), distinguish:
+
+  - **Policy / convention.** A rule written as instructions, with no
+    machinery preventing violation. *Example:* the project CLAUDE.md
+    says "never push directly to main." That's policy — it relies on
+    the agent (or user) reading and following it. Nothing stops a
+    push.
+  - **Enforced.** A rule that machinery refuses to let break. *Example:*
+    `.claude/settings.json`'s deny rules block `git add -A` at the
+    harness layer; `.githooks/pre-commit` blocks it at the git layer.
+    Both refuse the action; the agent literally cannot do it.
+  - **Both.** Some rules are written in CLAUDE.md AND backed by a
+    deny-list/hook. Cite both layers in that case.
+
+Phrases like *"structurally enforced"* and *"belt-and-suspenders
+config"* only apply to the enforced case — using them for
+policy-only rules overclaims. Say "the project codifies X in
+CLAUDE.md (policy)" or "the harness denies X via settings.json
+(enforced)" — be explicit about which.
+
+A previous run wrote *"the project CLAUDE.md blocks direct pushes to
+main … so the discipline isn't willpower — it's belt-and-suspenders
+config"* and conflated the two: push-to-main is convention only;
+the deny-list rule covered `git add -A`, not push. Be precise about
+which rule is enforced by what.
 
 ## Corpus layout
 
