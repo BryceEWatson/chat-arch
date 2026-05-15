@@ -9,6 +9,13 @@ import { buildPreview } from '../lib/preview.js';
 import { toPosixRelative } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 import { countToolUsesInMessage } from '../lib/toolUses.js';
+import {
+  aggregateSubagents,
+  type SubagentRollup,
+  sumHistograms,
+  sumTokens,
+  uniqueModels,
+} from '../lib/subagents.js';
 
 /**
  * `<uuid>.jsonl` at the TOP LEVEL of a project dir. Sub-agent transcripts
@@ -251,6 +258,13 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
       return;
     }
 
+    // Subagent rollup: <projectDir>/<uuid>/subagents/agent-*.jsonl. Host
+    // Claude Code uses the same layout as Cowork CLI; aggregateSubagents
+    // returns undefined when the dir doesn't exist (most sessions don't
+    // fan out).
+    const subagentsDir = path.join(path.dirname(transcriptPath), uuid, 'subagents');
+    const subagentRollup = await aggregateSubagents(subagentsDir);
+
     malformedLinesTotal += agg.malformedLineCount;
 
     let transcriptRel: string | undefined;
@@ -267,16 +281,18 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
     if (isDesktop) {
       const phase2Entry = phase2Entries.get(uuid);
       if (phase2Entry) {
-        entries.push(enrichCliDesktopEntry(phase2Entry, agg, transcriptRel, fileMtime));
+        entries.push(
+          enrichCliDesktopEntry(phase2Entry, agg, transcriptRel, fileMtime, subagentRollup),
+        );
         desktopCount += 1;
       } else {
         // UUID was reported by Phase 2 but the entry has vanished — should be
         // impossible since we read from the same file, but fall back to direct.
-        entries.push(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime));
+        entries.push(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime, subagentRollup));
         directCount += 1;
       }
     } else {
-      entries.push(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime));
+      entries.push(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime, subagentRollup));
       directCount += 1;
     }
   });
@@ -562,6 +578,7 @@ export function buildCliDirectEntry(
   uuid: string,
   transcriptRel: string | undefined,
   fileMtimeMs: number,
+  subagentRollup?: SubagentRollup | undefined,
 ): UnifiedSessionEntry {
   const { title, titleSource } = resolveTitle(agg);
 
@@ -572,11 +589,23 @@ export function buildCliDirectEntry(
   const cwd = agg.cwd;
   const project = cwd !== undefined ? path.win32.basename(cwd) || undefined : undefined;
 
+  // Merge subagent rollup into the parent aggregate. Parent transcript and
+  // subagent transcripts are disjoint files, so summing tokens + tools never
+  // double-counts; model union preserves parent-first insertion order.
+  const mergedTokens = subagentRollup
+    ? sumTokens(agg.tokens, subagentRollup.totalTokens)
+    : agg.tokens;
+  const mergedTools = subagentRollup
+    ? sumHistograms(agg.toolUses, subagentRollup.topTools)
+    : agg.toolUses;
+  const mergedModels = subagentRollup
+    ? uniqueModels(agg.modelsUsed, subagentRollup.modelsUsed)
+    : agg.modelsUsed;
   const tokensHasAny =
-    agg.tokens.input > 0 ||
-    agg.tokens.output > 0 ||
-    agg.tokens.cacheCreation > 0 ||
-    agg.tokens.cacheRead > 0;
+    mergedTokens.input > 0 ||
+    mergedTokens.output > 0 ||
+    mergedTokens.cacheCreation > 0 ||
+    mergedTokens.cacheRead > 0;
 
   const entry: UnifiedSessionEntry = {
     // REQUIRED
@@ -596,17 +625,18 @@ export function buildCliDirectEntry(
 
     // OPTIONAL (conditional spread — EOP discipline, R8)
     ...(agg.assistantTurns > 0 ? { assistantTurns: agg.assistantTurns } : {}),
-    ...(agg.modelsUsed.length > 0 ? { modelsUsed: agg.modelsUsed } : {}),
+    ...(mergedModels.length > 0 ? { modelsUsed: mergedModels } : {}),
     ...(cwd !== undefined ? { cwd } : {}),
     ...(project !== undefined && project.length > 0 ? { project } : {}),
-    ...(tokensHasAny ? { tokenTotals: agg.tokens } : {}),
-    ...(Object.keys(agg.toolUses).length > 0 ? { topTools: agg.toolUses } : {}),
+    ...(tokensHasAny ? { tokenTotals: mergedTokens } : {}),
+    ...(Object.keys(mergedTools).length > 0 ? { topTools: mergedTools } : {}),
     // Cached source-file mtime: drives incremental rescan. Equal to
     // `fileMtimeMs` here because this entry was built from the file
     // whose mtime we just read; the reuse check compares this cached
     // value to the current stat on the next rescan.
     sourceMtimeMs: fileMtimeMs,
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
+    ...(subagentRollup ? { subagentRollup } : {}),
   };
   return entry;
 }
@@ -630,6 +660,7 @@ export function enrichCliDesktopEntry(
   agg: TranscriptAggregate,
   transcriptRel: string | undefined,
   fileMtimeMs: number,
+  subagentRollup?: SubagentRollup | undefined,
 ): UnifiedSessionEntry {
   const startedAt = agg.minTimestamp ?? phase2Entry.startedAt ?? fileMtimeMs;
   const updatedAt = agg.maxTimestamp ?? phase2Entry.updatedAt ?? fileMtimeMs;
@@ -639,11 +670,22 @@ export function enrichCliDesktopEntry(
   const cwd = phase2Entry.cwd ?? agg.cwd;
   const project = cwd !== undefined ? path.win32.basename(cwd) || undefined : undefined;
 
+  // Merge subagent rollup the same way buildCliDirectEntry does — see its
+  // comment for the disjointness rationale.
+  const mergedTokens = subagentRollup
+    ? sumTokens(agg.tokens, subagentRollup.totalTokens)
+    : agg.tokens;
+  const mergedTools = subagentRollup
+    ? sumHistograms(agg.toolUses, subagentRollup.topTools)
+    : agg.toolUses;
+  const mergedModels = subagentRollup
+    ? uniqueModels(agg.modelsUsed, subagentRollup.modelsUsed)
+    : agg.modelsUsed;
   const tokensHasAny =
-    agg.tokens.input > 0 ||
-    agg.tokens.output > 0 ||
-    agg.tokens.cacheCreation > 0 ||
-    agg.tokens.cacheRead > 0;
+    mergedTokens.input > 0 ||
+    mergedTokens.output > 0 ||
+    mergedTokens.cacheCreation > 0 ||
+    mergedTokens.cacheRead > 0;
 
   const entry: UnifiedSessionEntry = {
     // REQUIRED — kept from Phase 2 except temporal/userTurns.
@@ -663,16 +705,17 @@ export function enrichCliDesktopEntry(
 
     // OPTIONAL
     ...(agg.assistantTurns > 0 ? { assistantTurns: agg.assistantTurns } : {}),
-    ...(agg.modelsUsed.length > 0 ? { modelsUsed: agg.modelsUsed } : {}),
+    ...(mergedModels.length > 0 ? { modelsUsed: mergedModels } : {}),
     ...(cwd !== undefined ? { cwd } : {}),
     ...(project !== undefined && project.length > 0 ? { project } : {}),
-    ...(tokensHasAny ? { tokenTotals: agg.tokens } : {}),
-    ...(Object.keys(agg.toolUses).length > 0 ? { topTools: agg.toolUses } : {}),
+    ...(tokensHasAny ? { tokenTotals: mergedTokens } : {}),
+    ...(Object.keys(mergedTools).length > 0 ? { topTools: mergedTools } : {}),
     // Cached transcript mtime — drives incremental rescan (see
     // `runCliExport`'s fast-path guard).
     sourceMtimeMs: fileMtimeMs,
     ...(phase2Entry.manifestPath !== undefined ? { manifestPath: phase2Entry.manifestPath } : {}),
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
+    ...(subagentRollup ? { subagentRollup } : {}),
   };
 
   return entry;
