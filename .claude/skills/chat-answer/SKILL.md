@@ -113,6 +113,19 @@ Workflow:
      inside a strong-looking list of three SIDs is worse than honestly
      citing only the one strong witness.
 
+   - **Final answer: every SID must carry a verbatim quote, not a
+     paraphrase.** When you list cited SIDs in the final synthesis,
+     each one needs an actual string copied character-exact from
+     somewhere — typically the manifest entry's `title` / `summary`
+     / `preview` field, or an `ai-title` / `last-prompt` line from
+     the transcript. **Paraphrases don't qualify.** A previous run
+     wrote `[SID:284ca64c] — "corpus-mining session"` where
+     "corpus-mining session" was the agent's own description, not
+     a string from the source. If you can't pull a real string for
+     a SID, drop the SID from the cited list rather than substitute
+     a paraphrase. Two SIDs with verbatim titles beat three SIDs
+     where one is paraphrased.
+
    - **Counts MUST trace to a tool call in this turn — no exceptions.**
      This is the failure mode the previous run hit. The per-SID
      evidence floor (above) was satisfied with *plausible-looking*
@@ -144,6 +157,18 @@ Workflow:
          agent ran in this turn.
      Prefer two SIDs with quotes over three SIDs with mixed
      counts-or-quotes.
+
+   - **Verbatim means CHARACTER-EXACT.** When you put text inside
+     quote marks, the bytes must match the source byte-for-byte:
+     no invented trailing periods, no capitalization normalization,
+     no smart-quote substitution, no whitespace re-flow. The reader
+     will literally diff your quote against the source. A previous
+     run quoted CLAUDE.md as *"Run an adversarial review agent
+     before finalizing experiment results."* with a trailing period
+     when the actual line had none — small slip, but exactly the
+     kind of fidelity error this rule targets. If you're not 100%
+     sure of the punctuation, paraphrase outside quotes instead of
+     guessing inside them.
 4. **Synthesize.** Lead with the answer. Evidence second. Cite sessions
    inline as `[SID:<uuid>]` using the manifest's `id` field. Distinguish
    *recurring pattern* from *happened once*. Surface honest negatives
@@ -166,13 +191,29 @@ Workflow:
    **Measure the population BEFORE picking examples.** For any
    recurring-pattern claim, run a corpus-wide Grep on the pattern
    across `local-transcripts/**/*.jsonl` first to get the actual
-   match count (e.g. "82 files match `adversarial.{0,30}review`"),
-   THEN cite 2-3 strongest example SIDs from that population. The
-   final wording should look like: *"82 sessions show this pattern;
-   strongest witnesses: [SID:abc] [SID:def] [SID:ghi]."* This
-   prevents the inverse failure of the previous run — calling
-   something "a clear recurring pattern" when only 3 examples were
-   found, when the real population is 82.
+   match count, THEN cite 2-3 strongest example SIDs from that
+   population.
+
+   **Every population count must show the exact Grep pattern that
+   produced it, inline with the number.** Not "82 transcripts
+   mention adversarial review" — write "**76 files match Grep
+   `adversarial.{0,30}review` (this turn)**: [SID:abc] [SID:def]
+   are the strongest witnesses." Putting the pattern in the answer
+   makes silent drift impossible: if you ran `adversarial.{0,30}review`
+   and got 76, you literally cannot type 82 — the inconsistency
+   becomes a self-correction.
+
+   A previous run reported "82 transcripts" when the actual count
+   was 76 (and "2,588 occurrences" when the actual was 2,480) —
+   the agent ran the grep but rounded / extrapolated when typing
+   the number into the answer. Forcing the pattern + the number
+   into the same sentence eliminates that gap.
+
+   When you cite a SECONDARY count alongside a primary (e.g. "82
+   files / 2,588 occurrences"), the second count is also a separate
+   trace-to-Grep claim — show its pattern too, or drop it. Aggregate
+   counts that don't help the reader's understanding (e.g. line
+   counts on top of file counts) usually fail this test; cut them.
 
    **Honest-caveats paragraph is NOT a hedge zone.** Any quantitative
    claim in your caveats — file counts, session counts, time ranges,
