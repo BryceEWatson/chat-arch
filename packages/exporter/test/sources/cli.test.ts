@@ -350,6 +350,36 @@ describe('streamAggregate', () => {
     const agg = await streamAggregate(file);
     expect(agg.toolUses).toEqual({});
   });
+
+  it('captures user-text samples starting from turn 2 (turn 1 already feeds preview)', async () => {
+    const file = await writeTranscript('proj-a', UUID_A, [
+      userLine('first prompt — should NOT appear in samples (it is the preview source)'),
+      assistantLine('m'),
+      userLine('second prompt'),
+      userLine('third prompt'),
+      userLine('fourth prompt'),
+    ]);
+    const agg = await streamAggregate(file);
+    expect(agg.firstUserText).toContain('first prompt');
+    expect(agg.userTextSamples).toEqual(['second prompt', 'third prompt', 'fourth prompt']);
+  });
+
+  it('caps userTextSamples at 5 entries and truncates each to 400 chars', async () => {
+    const long = 'x'.repeat(500);
+    const file = await writeTranscript('proj-a', UUID_A, [
+      userLine('preview source'),
+      userLine(long),
+      userLine('two'),
+      userLine('three'),
+      userLine('four'),
+      userLine('five'),
+      userLine('six — should be dropped, cap is 5'),
+    ]);
+    const agg = await streamAggregate(file);
+    expect(agg.userTextSamples).toHaveLength(5);
+    expect(agg.userTextSamples[0]).toHaveLength(400);
+    expect(agg.userTextSamples).not.toContain('six — should be dropped, cap is 5');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -532,6 +562,7 @@ describe('buildCliDirectEntry', () => {
       maxTimestamp: 2,
       malformedLineCount: 0,
       toolUses: {},
+      userTextSamples: [],
     };
     const e = buildCliDirectEntry(agg, UUID_A, undefined, 0);
     expect(e.project).toBe('my.dotted.site');
@@ -553,6 +584,7 @@ describe('buildCliDirectEntry', () => {
       maxTimestamp: undefined,
       malformedLineCount: 0,
       toolUses: {},
+      userTextSamples: [],
     };
     const e = buildCliDirectEntry(agg, UUID_A, undefined, mtime);
     expect(e.startedAt).toBe(mtime);
@@ -575,6 +607,7 @@ describe('buildCliDirectEntry', () => {
       maxTimestamp: undefined,
       malformedLineCount: 0,
       toolUses: {},
+      userTextSamples: [],
     };
     const e = buildCliDirectEntry(agg, UUID_A, undefined, 1_000);
     const errors = validateEntries([e]);

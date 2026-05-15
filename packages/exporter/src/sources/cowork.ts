@@ -16,12 +16,44 @@ import { buildPreview } from '../lib/preview.js';
 import { toPosixRelative } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 import { streamToolUses } from '../lib/toolUses.js';
+import { readJsonlLines } from '../lib/jsonl.js';
 import {
   aggregateSubagents,
   sumHistograms,
   sumTokens,
   uniqueModels,
 } from '../lib/subagents.js';
+import {
+  extractFirstUserText,
+  USER_TEXT_SAMPLES_CHAR_CAP,
+  USER_TEXT_SAMPLES_MAX,
+} from './cli.js';
+
+/**
+ * Walk a Cowork transcript JSONL and collect up to {@link USER_TEXT_SAMPLES_MAX}
+ * user-turn excerpts (≤ {@link USER_TEXT_SAMPLES_CHAR_CAP} chars each), starting
+ * at the FIRST user turn — Cowork's preview is sourced from `manifest.initialMessage`
+ * (not the transcript), so the first transcript user turn is not a double-count.
+ *
+ * Never throws. Returns `[]` for missing files / no user lines.
+ */
+async function streamUserTextSamples(transcriptPath: string): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    for await (const y of readJsonlLines<Record<string, unknown>>(transcriptPath)) {
+      if (y.kind === 'error') continue;
+      const line = y.line;
+      if (line['type'] !== 'user') continue;
+      const t = extractFirstUserText(line['message']);
+      if (t === undefined || t.length === 0) continue;
+      out.push(t.slice(0, USER_TEXT_SAMPLES_CHAR_CAP));
+      if (out.length >= USER_TEXT_SAMPLES_MAX) break;
+    }
+  } catch {
+    // unreadable file — return whatever we collected (likely [])
+  }
+  return out;
+}
 // Note: `processDesktopCliManifest` (./desktop-cli) is no longer invoked
 // from here — both AppData roots are Cowork-shaped per Anthropic's rename
 // (anthropics/claude-code#29373, #27463). The Desktop-CLI module stays
@@ -506,6 +538,9 @@ async function processCoworkManifest(
   // of sessions) and keeps the extraction co-located with the other
   // sources via the shared `streamToolUses` helper.
   const toolUses = transcriptAbsTarget ? await streamToolUses(transcriptAbsTarget) : {};
+  const userTextSamples = transcriptAbsTarget
+    ? await streamUserTextSamples(transcriptAbsTarget)
+    : [];
 
   // Subagent rollup — walk <sessionDir>/.claude/projects/-sessions-<proc>/
   // <cliSessionId>/subagents/agent-*.jsonl for Task-tool sub-agents (often
@@ -603,6 +638,7 @@ async function processCoworkManifest(
     ...(typeof manifest.error === 'string' && manifest.error.length > 0
       ? { errorMessage: manifest.error }
       : {}),
+    ...(userTextSamples.length > 0 ? { userTextSamples } : {}),
     ...(subagentRollup ? { subagentRollup } : {}),
   };
 

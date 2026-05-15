@@ -95,7 +95,18 @@ interface TranscriptAggregate {
    * tools — no extra read. See `lib/toolUses.ts`.
    */
   toolUses: Record<string, number>;
+  /**
+   * Up to {@link USER_TEXT_SAMPLES_MAX} extracted user-turn excerpts,
+   * captured AFTER the first user turn so they don't double-count with
+   * `preview` (which is sourced from `firstUserText`). Each ≤
+   * {@link USER_TEXT_SAMPLES_CHAR_CAP} chars. Drives analysis-grade
+   * inputs like `discoverNarratives` clustering.
+   */
+  userTextSamples: string[];
 }
+
+export const USER_TEXT_SAMPLES_MAX = 5;
+export const USER_TEXT_SAMPLES_CHAR_CAP = 400;
 
 function zeroAggregate(): TranscriptAggregate {
   return {
@@ -112,6 +123,7 @@ function zeroAggregate(): TranscriptAggregate {
     maxTimestamp: undefined,
     malformedLineCount: 0,
     toolUses: {},
+    userTextSamples: [],
   };
 }
 
@@ -477,6 +489,14 @@ export async function streamAggregate(transcriptPath: string): Promise<Transcrip
       if (agg.firstUserText === undefined) {
         const t = extractFirstUserText(line['message']);
         if (t !== undefined) agg.firstUserText = t;
+      } else if (agg.userTextSamples.length < USER_TEXT_SAMPLES_MAX) {
+        // Capture user turns 2…N+1 as `userTextSamples`. Turn 1 already feeds
+        // `preview` via `firstUserText`, so starting from turn 2 prevents the
+        // double-count that would skew narrative clustering toward duplicates.
+        const t = extractFirstUserText(line['message']);
+        if (t !== undefined && t.length > 0) {
+          agg.userTextSamples.push(t.slice(0, USER_TEXT_SAMPLES_CHAR_CAP));
+        }
       }
     } else if (type === 'assistant') {
       agg.assistantTurns += 1;
@@ -636,6 +656,7 @@ export function buildCliDirectEntry(
     // value to the current stat on the next rescan.
     sourceMtimeMs: fileMtimeMs,
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
+    ...(agg.userTextSamples.length > 0 ? { userTextSamples: agg.userTextSamples } : {}),
     ...(subagentRollup ? { subagentRollup } : {}),
   };
   return entry;
@@ -715,6 +736,7 @@ export function enrichCliDesktopEntry(
     sourceMtimeMs: fileMtimeMs,
     ...(phase2Entry.manifestPath !== undefined ? { manifestPath: phase2Entry.manifestPath } : {}),
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
+    ...(agg.userTextSamples.length > 0 ? { userTextSamples: agg.userTextSamples } : {}),
     ...(subagentRollup ? { subagentRollup } : {}),
   };
 
