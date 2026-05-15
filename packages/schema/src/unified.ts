@@ -316,6 +316,49 @@ export interface UnifiedSessionEntry {
 
   /** Output-relative path to the Cowork audit log. */
   auditPath?: string;
+
+  // ---- Analysis-grade enrichments ----
+
+  /**
+   * Up to 5 user-turn excerpts (≤400 chars each), captured AFTER the
+   * preview-source turn so they don't double-count with `preview`.
+   * Populated by all sources (local + cloud).
+   * Analysis pipelines (e.g. discoverNarratives) read this for richer
+   * clustering input than the 200-char preview alone. The viewer ignores
+   * this field — it's an analysis-grade input, not a display string.
+   */
+  userTextSamples?: readonly string[];
+
+  /** Cowork-only: host folders mounted into the VM workspace. */
+  userSelectedFolders?: readonly string[];
+
+  /** Cowork-only: skill/command IDs available to the session. Source-name match. */
+  slashCommands?: readonly string[];
+
+  /** Cowork-only: MCP tools enabled at session start. Source-name + shape match. */
+  enabledMcpTools?: Readonly<Record<string, boolean>>;
+
+  /**
+   * Cowork-only: human-readable error message from the source manifest's
+   * `error` field. Complements `transcriptStatus` (categorical) with the
+   * verbose form. Renamed to `errorMessage` to avoid name-collision risk
+   * with any consumer's idiomatic `entry.error` slot.
+   */
+  errorMessage?: string;
+
+  /**
+   * Subagent rollup, populated by `aggregateSubagents` for Cowork and host
+   * CLI sources. Absent when the session had no subagent fan-out.
+   * `tokenTotals`/`topTools`/`modelsUsed` on the entry are merged values
+   * (parent + subagents); this field keeps the subagent-only breakdown
+   * inspectable.
+   */
+  subagentRollup?: {
+    count: number;
+    totalTokens: TokenTotals;
+    modelsUsed: readonly string[];
+    topTools: Readonly<Record<string, number>>;
+  };
 }
 
 export interface SessionManifest {
