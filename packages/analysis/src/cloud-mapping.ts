@@ -259,6 +259,43 @@ export function buildEntry(
 
   const hasTools = Object.keys(topTools).length > 0;
 
+  // Analysis-grade user-text samples. Skip the first human message (already
+  // captured by `preview`'s firstHumanText source — same anti-double-count
+  // rule local sources apply). Cap at 5 turns × 400 chars to match
+  // `USER_TEXT_SAMPLES_MAX` / `USER_TEXT_SAMPLES_CHAR_CAP` in
+  // packages/exporter/src/sources/cli.ts.
+  const userTextSamples: string[] = [];
+  {
+    const cap = 5;
+    const charCap = 400;
+    let seenFirstHuman = false;
+    for (const msg of chatMessages) {
+      if (msg.sender !== 'human') continue;
+      let text: string | undefined;
+      if (Array.isArray(msg.content)) {
+        for (const b of msg.content) {
+          if (b && typeof b === 'object' && b.type === 'text') {
+            const t = (b as { text?: unknown }).text;
+            if (typeof t === 'string' && t.length > 0) {
+              text = t;
+              break;
+            }
+          }
+        }
+      }
+      if (text === undefined && typeof msg.text === 'string' && msg.text.length > 0) {
+        text = msg.text;
+      }
+      if (text === undefined) continue;
+      if (!seenFirstHuman) {
+        seenFirstHuman = true;
+        continue;
+      }
+      userTextSamples.push(text.slice(0, charCap));
+      if (userTextSamples.length >= cap) break;
+    }
+  }
+
   // Project label — matched against title first (high signal) then summary
   // (fallback), first-match-wins, using the export's own `projects.json`
   // names as the allowlist. Coverage on a real 1041-conversation corpus:
@@ -292,6 +329,7 @@ export function buildEntry(
     ...(hasSummary ? { summary } : {}),
     ...(hasTools ? { topTools } : {}),
     ...(matchedProject !== null ? { project: matchedProject } : {}),
+    ...(userTextSamples.length > 0 ? { userTextSamples } : {}),
     transcriptPath: `cloud-conversations/${conv.uuid}.json`,
   };
 
