@@ -39,8 +39,14 @@ const DESKTOP_CLI_KNOWN_KEYS = new Set<string>([
  * `outDir/manifests/cli-desktop/<rawSessionId>.json`. Returns a
  * UnifiedSessionEntry or null if the manifest is unreadable / invalid.
  *
- * Phase 3 overwrites `userTurns` (currently 0) and sets `transcriptPath`
- * after walking `~/.claude/projects/`.
+ * The unified CLI walker (`runCliExport`) overwrites `userTurns`
+ * (initialized to 0 here) and sets `transcriptPath` once it has matched
+ * the manifest's `cliSessionId` to a transcript under
+ * `~/.claude/projects/`.
+ *
+ * Kept for back-compat reads of older `claude-code-sessions/` data — the
+ * Cowork walker no longer routes manifests through here directly
+ * (Anthropic's rename made both AppData roots Cowork-shaped).
  */
 export async function processDesktopCliManifest(
   manifestPath: string,
@@ -128,7 +134,7 @@ export async function processDesktopCliManifest(
     title: manifest.title || UNTITLED_SESSION,
     titleSource: 'manifest',
     preview: null, // Desktop-CLI has no initialMessage equivalent
-    userTurns: 0, // TODO(phase-3): overwrite with transcript-derived count
+    userTurns: 0, // overwritten by enrichCliDesktopEntry after transcript walk
     model: manifest.model, // verbatim, keep [1m] suffix
     cwdKind: 'host',
     totalCostUsd: null, // Desktop-CLI has no cost summary; Phase 4 merge may fill

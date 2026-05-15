@@ -394,7 +394,7 @@ describe('findTranscriptPaths', () => {
     expect(warnings.some((w) => w.includes('not found'))).toBe(true);
   });
 
-  it('returns top-level <uuid>.jsonl files but skips sub-agent subdirs (D1)', async () => {
+  it('returns top-level <uuid>.jsonl files but skips sub-agent subdirs', async () => {
     const p1 = await writeTranscript('proj-a', UUID_A, [userLine('x')]);
     const p2 = await writeTranscript('proj-a', UUID_B, [userLine('x')]);
     // Sub-agent dir — should NOT be returned.
@@ -408,6 +408,26 @@ describe('findTranscriptPaths', () => {
     await writeFile(path.join(projectsRoot, 'proj-a', 'README.md'), '# not a transcript', 'utf8');
     const found = await findTranscriptPaths(projectsRoot);
     expect(found.sort()).toEqual([p1, p2].sort());
+  });
+
+  it('aggregateSubagents reads from <uuid>/subagents/agent-*.jsonl, not findTranscriptPaths', async () => {
+    // Sanity-check the boundary: findTranscriptPaths must NOT walk into
+    // subagents/ even when an `agent-*.jsonl` exists there; that path is
+    // owned by `aggregateSubagents`.
+    await writeTranscript('proj-a', UUID_A, [userLine('x')]);
+    const subagentsDir = path.join(projectsRoot, 'proj-a', UUID_A, 'subagents');
+    await mkdir(subagentsDir, { recursive: true });
+    await writeFile(
+      path.join(subagentsDir, 'agent-abc.jsonl'),
+      JSON.stringify(userLine('sub')) + '\n',
+      'utf8',
+    );
+    const { aggregateSubagents } = await import('../../src/lib/subagents.js');
+    const rollup = await aggregateSubagents(subagentsDir);
+    expect(rollup?.count).toBe(1);
+    const transcripts = await findTranscriptPaths(projectsRoot);
+    // Only the top-level <UUID_A>.jsonl is returned; the subagent file is not.
+    expect(transcripts.filter((p) => p.includes('agent-abc'))).toHaveLength(0);
   });
 
   it('picks up case-variant sibling dirs (Windows quirk)', async () => {

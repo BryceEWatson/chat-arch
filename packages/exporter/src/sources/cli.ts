@@ -19,10 +19,11 @@ import {
 import { EXPORTER_VERSION } from '../analysis/index.js';
 
 /**
- * `<uuid>.jsonl` at the TOP LEVEL of a project dir. Sub-agent transcripts
- * under `<uuid>/` (a directory sibling) are intentionally OUT OF SCOPE —
- * D1 of the Phase 3 plan. They're inner-child retries from the primary
- * transcript and add no new signal for the viewer.
+ * `<uuid>.jsonl` at the TOP LEVEL of a project dir is a session transcript.
+ * Sub-agent transcripts under `<uuid>/subagents/agent-*.jsonl` are walked
+ * separately by `aggregateSubagents` (lib/subagents.ts) and rolled up into
+ * the parent entry's `subagentRollup` field — they are NOT emitted as
+ * separate UnifiedSessionEntry rows.
  */
 const UUID_JSONL_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i;
 
@@ -355,7 +356,8 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
  * Walk `<root>/<projectDir>/*.jsonl` at maxdepth 1 — D1. Skips:
  *  - non-directory entries at root,
  *  - files whose name is not `<uuid>.jsonl`,
- *  - sub-agent transcripts under `<projectDir>/<uuid>/...`.
+ *  - sub-agent transcripts under `<projectDir>/<uuid>/subagents/` (those are
+ *    handled by `aggregateSubagents`, not this walker).
  *
  * Returns absolute paths. Never throws on a missing root; returns [].
  */

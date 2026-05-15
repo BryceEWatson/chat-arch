@@ -79,6 +79,10 @@ export interface UnifiedSessionEntry {
    *
    * Populating this in the manifest avoids forcing the viewer to eager-fetch
    * per-session chunks for card previews (~11 MB saved at 1033 sessions).
+   *
+   * For analysis-grade input (e.g. discoverNarratives clustering),
+   * `userTextSamples` carries longer multi-turn excerpts in addition to
+   * this 200-char preview.
    */
   preview: string | null;
 
@@ -297,9 +301,10 @@ export interface UnifiedSessionEntry {
    *   - 'ok'      — transcript was copied (transcriptPath present).
    *   - 'crashed' — upstream session metadata was incomplete (e.g.
    *                 Cowork CLI handoff failed: no `cliSessionId`, often
-   *                 with an `error` field set on the source manifest).
-   *                 User-side prompts may still exist in audit.jsonl —
-   *                 future recovery work can mine those.
+   *                 with an `error` field set on the source manifest —
+   *                 mirrored on the entry as `errorMessage` in verbose
+   *                 form). User-side prompts may still exist in
+   *                 audit.jsonl — future recovery work can mine those.
    *   - 'missing' — pointers were complete but the transcript file
    *                 wasn't on disk at scan time (deleted, aborted, or
    *                 cleaned up by the upstream tool between session end
