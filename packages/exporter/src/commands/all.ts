@@ -10,6 +10,7 @@ import { runAnalysis } from '../analysis/index.js';
 import { findRepoRoot } from '../lib/repo-root.js';
 import { validateEntries } from '../lib/validate-entry.js';
 import { logger } from '../lib/logger.js';
+import { discoverWslCliProjectsRoots } from '../lib/wsl.js';
 
 /**
  * Read the cloud-manifest.json written by a previous `cloud` phase.
@@ -95,9 +96,19 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   // ---- Phase 3: cli ----
   logger.info('  [2/3] cli: scanning…');
   const cliStart = Date.now();
+  // Discover WSL CLI projects roots on Windows (no-op elsewhere). Failures
+  // are warn-once'd internally; we don't fail the whole rescan if WSL is
+  // unreachable.
+  const wslRoots = await discoverWslCliProjectsRoots();
+  if (wslRoots.length > 0) {
+    logger.info(`  [2/3] cli: + ${wslRoots.length} WSL root(s)`);
+  }
   let cliResult;
   try {
-    cliResult = await runCliExport({ outDir });
+    cliResult = await runCliExport({
+      outDir,
+      ...(wslRoots.length > 0 ? { additionalProjectsRoots: wslRoots } : {}),
+    });
   } catch (err) {
     logger.error(`cli phase failed: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
@@ -109,7 +120,8 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   const cliDeskRescanned = cliResult.counts['cli-desktop'] - cliDeskReused;
   logger.info(
     `  [2/3] cli: cli-direct=${cliResult.counts['cli-direct']} (${cliDirectReused} reused, ${cliDirectRescanned} rescanned) ` +
-      `cli-desktop=${cliResult.counts['cli-desktop']} (${cliDeskReused} reused, ${cliDeskRescanned} rescanned) in ${cliMs} ms`,
+      `cli-desktop=${cliResult.counts['cli-desktop']} (${cliDeskReused} reused, ${cliDeskRescanned} rescanned) ` +
+      `pruned=${cliResult.prunedCount} in ${cliMs} ms`,
   );
 
   // ---- Phase 4: cloud ----

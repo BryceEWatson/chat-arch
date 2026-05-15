@@ -16,6 +16,7 @@ import {
   sumTokens,
   uniqueModels,
 } from '../lib/subagents.js';
+import { collectPrunedEntries } from '../lib/sessionsIndex.js';
 import { EXPORTER_VERSION } from '../analysis/index.js';
 
 /**
@@ -46,6 +47,14 @@ export interface RunCliExportOptions {
   outDir: string;
   /** Defaults to `os.homedir() + /.claude/projects`. */
   projectsRoot?: string;
+  /**
+   * Additional CLI projects roots to walk alongside the primary one. Used
+   * by the WSL pipeline to feed `\\wsl.localhost\<distro>\home\<user>\
+   * .claude\projects\` directories without duplicating every other walker
+   * setup. Each extra root contributes its own transcripts AND its own
+   * `sessions-index.json`-derived pruned entries.
+   */
+  additionalProjectsRoots?: readonly string[];
   /** Defaults to `<outDir>/cowork-sessions.json` (Phase 2's output). */
   phase2CoworkJsonPath?: string;
 }
@@ -56,6 +65,12 @@ export interface CliExportResult {
   transcriptsCopied: number;
   transcriptsSkipped: number;
   malformedLinesTotal: number;
+  /**
+   * Pruned entries reconstructed from `sessions-index.json` — sessions
+   * Anthropic's CLI has already deleted from disk but the index still
+   * lists. See {@link readPrunedFromSessionsIndex}.
+   */
+  prunedCount: number;
   /**
    * Number of entries reused verbatim from the previous cli-sessions.json
    * (source mtime hadn't changed). Reported in the exporter summary so
@@ -181,7 +196,8 @@ async function loadPreviousCliEntries(outDir: string): Promise<Map<string, Unifi
  * stat calls when nothing has changed.
  */
 export async function runCliExport(opts: RunCliExportOptions): Promise<CliExportResult> {
-  const projectsRoot = opts.projectsRoot ?? path.join(os.homedir(), '.claude', 'projects');
+  const primaryRoot = opts.projectsRoot ?? path.join(os.homedir(), '.claude', 'projects');
+  const allRoots = [primaryRoot, ...(opts.additionalProjectsRoots ?? [])];
   const outDir = opts.outDir;
   const phase2Path = opts.phase2CoworkJsonPath ?? path.join(outDir, 'cowork-sessions.json');
 
@@ -193,7 +209,14 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
     recursive: true,
   });
 
-  const transcriptPaths = await findTranscriptPaths(projectsRoot);
+  // Walk every CLI projects root in parallel and concat. WSL roots reach
+  // \\wsl.localhost\<distro>\home\<user>\.claude\projects via UNC; macOS /
+  // Linux native runs would feed their own homedir here too. Failures
+  // (unreachable distro, permission errors) surface as empty lists, not
+  // exceptions — see `findTranscriptPaths`.
+  const transcriptPaths = (
+    await Promise.all(allRoots.map((r) => findTranscriptPaths(r)))
+  ).flat();
   const { desktopIds, phase2Entries } = await loadCliDesktopIds(phase2Path);
   const prevEntries = await loadPreviousCliEntries(outDir);
 
@@ -319,6 +342,32 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
     }
   });
 
+  // Pruned-session ingestion: every CLI projects root may carry
+  // `<projectDir>/sessions-index.json` files that list sessions whose
+  // `<uuid>.jsonl` Anthropic has already deleted. Reconstruct lightweight
+  // entries from the index metadata (firstPrompt, messageCount, etc.) and
+  // tag them transcriptStatus='pruned'. De-dup against the sessionIds the
+  // regular walker already emitted — when both exist (transcript on disk
+  // AND index entry), the transcript wins.
+  const emittedIds = new Set(entries.map((e) => e.id));
+  let prunedCount = 0;
+  for (const root of allRoots) {
+    const pruned = await collectPrunedEntries(root, 'host', 'cli-direct', async (p) => {
+      try {
+        return await readdir(p);
+      } catch {
+        return [];
+      }
+    });
+    for (const e of pruned) {
+      if (emittedIds.has(e.id)) continue;
+      emittedIds.add(e.id);
+      entries.push(e);
+      prunedCount += 1;
+      directCount += 1; // pruned entries are cli-direct-shaped
+    }
+  }
+
   // Stable order: updatedAt desc. Matches Phase 2 convention.
   entries.sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -345,6 +394,7 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
       'cli-direct': directReused,
       'cli-desktop': desktopReused,
     },
+    prunedCount,
   };
 }
 

@@ -4,6 +4,7 @@ import { runCliExport } from '../sources/cli.js';
 import { findRepoRoot } from '../lib/repo-root.js';
 import { validateEntries } from '../lib/validate-entry.js';
 import { logger } from '../lib/logger.js';
+import { discoverWslCliProjectsRoots } from '../lib/wsl.js';
 
 export async function runCliSubcommand(argv: readonly string[]): Promise<number> {
   const { values } = parseArgs({
@@ -41,14 +42,24 @@ export async function runCliSubcommand(argv: readonly string[]): Promise<number>
   const started = Date.now();
   logger.info(`cli export → ${outDir}`);
 
+  // WSL CLI projects: on Windows, also walk every WSL distro's
+  // ~/.claude/projects via \\wsl.localhost\<distro>\home\<user>\.claude\
+  // projects. On non-Windows this is a no-op. Failures are warn-once'd
+  // internally; we don't bail the whole export over WSL trouble.
+  const wslRoots = await discoverWslCliProjectsRoots();
+  if (wslRoots.length > 0) {
+    logger.info(`cli export: discovered ${wslRoots.length} WSL CLI projects root(s)`);
+  }
+
   const result = await runCliExport({
     outDir,
     ...(phase2CoworkJsonPath !== undefined ? { phase2CoworkJsonPath } : {}),
+    ...(wslRoots.length > 0 ? { additionalProjectsRoots: wslRoots } : {}),
   });
 
   const elapsedMs = Date.now() - started;
   logger.info(
-    `cli export complete in ${elapsedMs} ms — cli-direct=${result.counts['cli-direct']}, cli-desktop=${result.counts['cli-desktop']}, transcripts copied=${result.transcriptsCopied}, skipped=${result.transcriptsSkipped}, malformed lines=${result.malformedLinesTotal}`,
+    `cli export complete in ${elapsedMs} ms — cli-direct=${result.counts['cli-direct']}, cli-desktop=${result.counts['cli-desktop']}, pruned (reconstructed from sessions-index)=${result.prunedCount}, transcripts copied=${result.transcriptsCopied}, skipped=${result.transcriptsSkipped}, malformed lines=${result.malformedLinesTotal}`,
   );
 
   // Post-write shape validation — R11.
