@@ -14,6 +14,28 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-15
+
+### Added
+
+- **`sessions-index.json` ingestion** — the host-CLI walker now reads
+  Anthropic's per-project `sessions-index.json` and reconstructs
+  lightweight `UnifiedSessionEntry`s for sessions whose `.jsonl` has
+  already been pruned from disk. New `transcriptStatus: 'pruned'`
+  distinguishes them. `userTextSamples` is populated from the index's
+  `firstPrompt` so `discoverNarratives` still gets clustering input.
+- **WSL CLI scanning (Windows host)** — the `cli` and `all` subcommands
+  now enumerate WSL distros via `wsl --list --quiet` and walk
+  `\\wsl.localhost\<distro>\home\<user>\.claude\projects\` for each one
+  via UNC. `docker-desktop` and other system distros are skipped.
+  Failures (no WSL installed, unreachable distro) are warn-once'd and
+  the rest of the scan continues.
+- **`additionalProjectsRoots` option on `runCliExport`** so other
+  callers can feed extra CLI roots without round-tripping through the
+  WSL discovery code (e.g., future macOS / Linux native scans).
+- **`prunedCount` on `CliExportResult`** — reported in the `all`
+  summary alongside the rescanned/reused counts.
+
 ## [0.9.0] — 2026-05-15
 
 ### Added
