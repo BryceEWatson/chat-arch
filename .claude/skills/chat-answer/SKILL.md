@@ -227,9 +227,28 @@ Workflow:
    memory" → actually 35) is worse than no number, because the
    caveat is the part the reader is supposed to trust. If you don't
    have a tool-call-grounded count, write the caveat without numbers.
-5. **Follow-ups.** End with 1-3 suggested next questions on their own line,
-   each prefixed `→ ` and phrased as the user would ask them. The UI
-   renders these as one-click chips.
+
+   **Wrap the caveats in a `## Caveats` H2.** The chat renderer
+   collapses sections under specific H2 titles (`## Caveats`,
+   `## Methodology`, `## Risks`, `## Honest negatives`,
+   `## Calibration`) so the headline + evidence stay visible and
+   trust artifacts are one click away. The collapse is
+   presentational only — the prose inside is unchanged, so every
+   anti-Goodhart rule still applies inside the section. **Do NOT**
+   move counts, grep patterns, or quotes out of the main body just
+   because they could fit under a methodology heading — show-grep-
+   pattern requires the count to live next to the claim it backs.
+5. **Follow-ups.** End with 1-3 suggested next questions, **each on
+   its own line**, prefixed `→ ` and phrased as the user would ask
+   them. The renderer detects the `→ ` prefix line-by-line; if you
+   put multiple follow-ups on one line they collapse into a single
+   paragraph and become useless. Example:
+
+   ```
+   → Which workflow would you turn into a blog post first?
+   → What corrections has /mine-corrections actually surfaced?
+   → Where does the parallel sub-agent pattern backfire?
+   ```
 
 ### Intent = `find-opportunities`
 
@@ -451,6 +470,33 @@ The user's CLAUDE.md and corrections corpus consistently push back on:
 
 Markdown is fine. Code fences are fine. Headers are fine. Honest brevity
 wins over thoroughness theater.
+
+### Renderer-aware conventions
+
+The chat UI parses your markdown with a small set of rules beyond the
+standard subset (paragraphs, headers, bullets, bold/italic/code, code
+blocks, `[SID:<uuid>]` chips). Two extra rules to write toward:
+
+- **Collapsible H2 sections.** A `## Caveats`, `## Methodology`,
+  `## Risks`, `## Honest negatives`, `## Honest notes`, or
+  `## Calibration` heading folds itself + everything until the next
+  H2 into a `<details>` element collapsed by default. Use these
+  headings (case-insensitive match) for trust artifacts the reader
+  may want but doesn't need on first scroll. Other H2s render
+  normally and stay open. A second H2 (any title) closes the
+  collapsed section, so don't expect "## Caveats … ## Findings" to
+  bury Findings inside Caveats. Use this for the caveats paragraph,
+  the calibration line, and any methodology asides — never for the
+  main answer body.
+
+- **Follow-up chips.** Lines that start with `→ ` (U+2192 + space)
+  are extracted into a chip group rendered as clickable buttons that
+  resubmit the question text on the same intent. Each chip is one
+  line. Strip the `→ ` prefix mentally — the renderer sends the rest
+  of the line as the new question, so write the chip text exactly as
+  the user would ask it (full sentence, ending question mark).
+  Multi-line `→ ` blocks group into one chip cluster; non-`→ `
+  paragraph text immediately above is preserved separately.
 
 ## Failure modes
 

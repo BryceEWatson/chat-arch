@@ -12,6 +12,12 @@ export interface ChatStreamedMessageProps {
    * forwarding an already-optional prop don't need a conditional spread.
    */
   onCitationClick?: ((sessionId: string) => void) | undefined;
+  /**
+   * Click handler for follow-up chips (`→ Question?` lines the agent
+   * emits at the end of an answer). Receives the question text exactly
+   * as the agent wrote it; the host typically resubmits it as a new turn.
+   */
+  onFollowUpClick?: ((question: string) => void) | undefined;
   /** Render variant. `live` adds a typing caret at end; `final` does not. */
   variant: 'live' | 'final';
 }
@@ -19,23 +25,44 @@ export interface ChatStreamedMessageProps {
 const SID_RE = /\[SID:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi;
 
 /**
- * Render assistant markdown with inline citation chips. Phase 1: a tight
- * subset of markdown is supported inline (paragraphs, line breaks,
- * bold, italic, inline code, code blocks, headers, bullet lists). Full
- * markdown (links, images, tables) is deferred — the agent's prompt is
- * tuned to emit this subset.
+ * H2 headings whose section should render collapsed-by-default. The
+ * skill emits methodology / caveats / risks under these literal labels
+ * (see `.claude/skills/chat-answer/SKILL.md` "Style" section). Match
+ * is case-insensitive against the trimmed heading text. Anything else
+ * renders as a normal H2.
  *
- * Sanitization model: we never inject raw HTML. The renderer walks the
- * text and produces React elements directly — there's no `dangerouslySet
- * InnerHTML` anywhere, so a token containing `<img onerror=...>` is
- * rendered as literal text, not executed. This makes the streamed-
- * markdown XSS surface from the adversarial review (A12) a non-issue
- * by construction.
+ * Why collapsed-by-default: the answer's headline + evidence is what
+ * the user is here for; methodology/caveats/risks are trust artifacts
+ * they can opt into. This is a presentation rule only — the prose
+ * content itself is unchanged, so cutting the chrome doesn't elide
+ * any of the skill's anti-Goodhart disciplines (counts-with-grep-
+ * patterns, character-exact quotes) — those still ship in the body.
+ */
+const COLLAPSIBLE_TITLE_RE =
+  /^(?:honest\s+)?(caveats?|negatives?|methodology|calibration|risks?|honest\s+notes?)$/i;
+
+/** Lines that begin with this prefix are turned into follow-up chips. */
+const FOLLOWUP_LINE_RE = /^→\s+(.+)$/;
+
+/**
+ * Render assistant markdown with inline citation chips, collapsible
+ * trust-artifact sections (`## Caveats`, `## Methodology`, `## Risks`),
+ * and follow-up chips (lines prefixed with `→ `). Tight subset of
+ * markdown otherwise: paragraphs, line breaks, bold, italic, inline
+ * code, code blocks, headers, bullet lists. Full markdown (links,
+ * images, tables) is deferred — the agent's prompt is tuned to emit
+ * this subset.
+ *
+ * Sanitization model: we never inject raw HTML. The renderer walks
+ * the text and produces React elements directly — there's no
+ * `dangerouslySetInnerHTML` anywhere, so a token containing
+ * `<img onerror=...>` is rendered as literal text, not executed.
  */
 export function ChatStreamedMessage({
   text,
   citations,
   onCitationClick,
+  onFollowUpClick,
   variant,
 }: ChatStreamedMessageProps) {
   const citationBySid = useMemo(() => {
@@ -44,11 +71,10 @@ export function ChatStreamedMessage({
     return m;
   }, [citations]);
 
-  const nodes = useMemo(() => renderMarkdown(text, citationBySid, onCitationClick), [
-    text,
-    citationBySid,
-    onCitationClick,
-  ]);
+  const nodes = useMemo(
+    () => renderMarkdown(text, citationBySid, onCitationClick, onFollowUpClick),
+    [text, citationBySid, onCitationClick, onFollowUpClick],
+  );
 
   return (
     <div className="lcars-chat-message lcars-chat-message--assistant">
@@ -59,10 +85,14 @@ export function ChatStreamedMessage({
 }
 
 interface Block {
-  kind: 'p' | 'h1' | 'h2' | 'h3' | 'code' | 'ul';
+  kind: 'p' | 'h1' | 'h2' | 'h3' | 'code' | 'ul' | 'followups' | 'collapsible';
   content: string;
   items?: string[];
   lang?: string;
+  /** For 'collapsible': summary text rendered in <summary>. */
+  title?: string;
+  /** For 'collapsible': flat blocks rendered inside <details>. */
+  inner?: Block[];
 }
 
 function parseBlocks(text: string): Block[] {
@@ -98,6 +128,20 @@ function parseBlocks(text: string): Block[] {
       i += 1;
       continue;
     }
+    // Follow-up chip lines — consume consecutive `→ ` lines into one
+    // block. Treated as a sibling of bullet lists so the renderer can
+    // emit a chip group instead of a paragraph wall.
+    if (FOLLOWUP_LINE_RE.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const m = FOLLOWUP_LINE_RE.exec(lines[i]!);
+        if (!m) break;
+        items.push(m[1]!.trim());
+        i += 1;
+      }
+      blocks.push({ kind: 'followups', content: '', items });
+      continue;
+    }
     // Bullet list
     if (/^[-*] /.test(line)) {
       const items: string[] = [];
@@ -119,6 +163,7 @@ function parseBlocks(text: string): Block[] {
       const l = lines[i]!;
       if (l.trim().length === 0) break;
       if (/^```/.test(l) || /^#{1,3} /.test(l) || /^[-*] /.test(l)) break;
+      if (FOLLOWUP_LINE_RE.test(l)) break;
       i += 1;
     }
     blocks.push({ kind: 'p', content: lines.slice(paraStart, i).join('\n') });
@@ -126,39 +171,138 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
+/**
+ * Post-process flat blocks: when an H2 matches the collapsible-title
+ * pattern, fold it and the following blocks (until next H1/H2 or end)
+ * into a single `collapsible` block. This is a presentation transform
+ * only — content is preserved verbatim; only the chrome that wraps it
+ * changes.
+ *
+ * Boundary: any subsequent H1 or H2 closes the section. H3 stays inside.
+ * That matches the skill's section convention (H2 for top-level
+ * sections, H3 for subsections within them).
+ */
+function groupCollapsibles(blocks: Block[]): Block[] {
+  const out: Block[] = [];
+  let i = 0;
+  while (i < blocks.length) {
+    const b = blocks[i]!;
+    if (b.kind === 'h2' && COLLAPSIBLE_TITLE_RE.test(b.content.trim())) {
+      const inner: Block[] = [];
+      let j = i + 1;
+      while (j < blocks.length) {
+        const next = blocks[j]!;
+        if (next.kind === 'h1' || next.kind === 'h2') break;
+        inner.push(next);
+        j += 1;
+      }
+      out.push({ kind: 'collapsible', content: '', title: b.content, inner });
+      i = j;
+      continue;
+    }
+    out.push(b);
+    i += 1;
+  }
+  return out;
+}
+
 function renderMarkdown(
   text: string,
   citationBySid: Map<string, ChatCitation>,
   onCitationClick: ((sid: string) => void) | undefined,
+  onFollowUpClick: ((question: string) => void) | undefined,
 ): React.ReactNode[] {
-  const blocks = parseBlocks(text);
-  return blocks.map((block, ix) => {
-    const key = `b${ix}`;
-    if (block.kind === 'code') {
-      return (
-        <pre key={key} className="lcars-chat-message__code">
-          <code data-lang={block.lang || undefined}>{block.content}</code>
-        </pre>
-      );
-    }
-    if (block.kind === 'h1') return <h1 key={key} className="lcars-chat-message__h1">{renderInline(block.content, citationBySid, onCitationClick)}</h1>;
-    if (block.kind === 'h2') return <h2 key={key} className="lcars-chat-message__h2">{renderInline(block.content, citationBySid, onCitationClick)}</h2>;
-    if (block.kind === 'h3') return <h3 key={key} className="lcars-chat-message__h3">{renderInline(block.content, citationBySid, onCitationClick)}</h3>;
-    if (block.kind === 'ul') {
-      return (
-        <ul key={key} className="lcars-chat-message__ul">
-          {(block.items ?? []).map((item, jx) => (
-            <li key={jx}>{renderInline(item, citationBySid, onCitationClick)}</li>
-          ))}
-        </ul>
-      );
-    }
+  const flat = parseBlocks(text);
+  const blocks = groupCollapsibles(flat);
+  return blocks.map((block, ix) =>
+    renderBlock(block, `b${ix}`, citationBySid, onCitationClick, onFollowUpClick),
+  );
+}
+
+function renderBlock(
+  block: Block,
+  key: string,
+  citationBySid: Map<string, ChatCitation>,
+  onCitationClick: ((sid: string) => void) | undefined,
+  onFollowUpClick: ((question: string) => void) | undefined,
+): React.ReactNode {
+  if (block.kind === 'code') {
     return (
-      <p key={key} className="lcars-chat-message__p">
-        {renderInline(block.content, citationBySid, onCitationClick)}
-      </p>
+      <pre key={key} className="lcars-chat-message__code">
+        <code data-lang={block.lang || undefined}>{block.content}</code>
+      </pre>
     );
-  });
+  }
+  if (block.kind === 'h1') {
+    return (
+      <h1 key={key} className="lcars-chat-message__h1">
+        {renderInline(block.content, citationBySid, onCitationClick)}
+      </h1>
+    );
+  }
+  if (block.kind === 'h2') {
+    return (
+      <h2 key={key} className="lcars-chat-message__h2">
+        {renderInline(block.content, citationBySid, onCitationClick)}
+      </h2>
+    );
+  }
+  if (block.kind === 'h3') {
+    return (
+      <h3 key={key} className="lcars-chat-message__h3">
+        {renderInline(block.content, citationBySid, onCitationClick)}
+      </h3>
+    );
+  }
+  if (block.kind === 'ul') {
+    return (
+      <ul key={key} className="lcars-chat-message__ul">
+        {(block.items ?? []).map((item, jx) => (
+          <li key={jx}>{renderInline(item, citationBySid, onCitationClick)}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (block.kind === 'followups') {
+    const items = block.items ?? [];
+    if (items.length === 0) return null;
+    return (
+      <div key={key} className="lcars-chat-message__followups" role="group" aria-label="suggested follow-up questions">
+        {items.map((q, jx) => (
+          <button
+            type="button"
+            key={jx}
+            className="lcars-chat-message__followup"
+            onClick={() => onFollowUpClick?.(q)}
+            disabled={!onFollowUpClick}
+            title={onFollowUpClick ? 'Ask this as a follow-up' : 'Suggested follow-up'}
+          >
+            <span className="lcars-chat-message__followup-arrow" aria-hidden="true">→</span>
+            <span className="lcars-chat-message__followup-text">{q}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (block.kind === 'collapsible') {
+    return (
+      <details key={key} className="lcars-chat-message__details">
+        <summary className="lcars-chat-message__details-summary">
+          {renderInline(block.title ?? '', citationBySid, onCitationClick)}
+        </summary>
+        <div className="lcars-chat-message__details-body">
+          {(block.inner ?? []).map((b, jx) =>
+            renderBlock(b, `${key}-i${jx}`, citationBySid, onCitationClick, onFollowUpClick),
+          )}
+        </div>
+      </details>
+    );
+  }
+  return (
+    <p key={key} className="lcars-chat-message__p">
+      {renderInline(block.content, citationBySid, onCitationClick)}
+    </p>
+  );
 }
 
 /**

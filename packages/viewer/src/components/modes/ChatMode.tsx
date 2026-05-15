@@ -295,6 +295,29 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
     [],
   );
 
+  /**
+   * Click handler for `→ Question?` follow-up chips rendered inside an
+   * assistant message. Resubmits the chip's text as a new turn against
+   * the current intent, going through the same disclosure-modal gate
+   * the textarea send uses. No-op while a turn is in flight (sendTurn
+   * also early-returns, but checking here avoids briefly opening the
+   * disclosure modal for a click that won't run).
+   */
+  const handleFollowUpClick = useCallback(
+    (question: string) => {
+      if (inFlight) return;
+      const trimmed = question.trim();
+      if (trimmed.length === 0) return;
+      if (!chatDisclosureAcknowledged()) {
+        pendingSendRef.current = { question: trimmed, intent };
+        setDisclosureOpen(true);
+        return;
+      }
+      void sendTurn(trimmed, intent);
+    },
+    [inFlight, intent, sendTurn],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Cmd/Ctrl+Enter to send; plain Enter inserts a newline.
@@ -450,6 +473,7 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
                     text={t.content}
                     citations={t.citations ?? []}
                     onCitationClick={onSelectSession}
+                    onFollowUpClick={handleFollowUpClick}
                     variant="final"
                   />
                 </div>

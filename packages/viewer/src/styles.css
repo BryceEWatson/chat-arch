@@ -7718,6 +7718,102 @@ button.lcars-applied-summary__stale--button:focus-visible {
   border-radius: 4px;
 }
 
+/* --- Collapsible trust-artifact section (Caveats / Methodology / Risks) --- */
+
+.lcars-chat-message__details {
+  margin: 0.8em 0;
+  border: 1px solid color-mix(in srgb, var(--lcars-ice) 25%, transparent);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.lcars-chat-message__details[open] {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.lcars-chat-message__details-summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-family: var(--lcars-font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--lcars-ice);
+  text-transform: uppercase;
+  user-select: none;
+  outline: none;
+  list-style: none;
+}
+
+.lcars-chat-message__details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.lcars-chat-message__details-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 120ms ease;
+  color: color-mix(in srgb, var(--lcars-ice) 80%, transparent);
+}
+
+.lcars-chat-message__details[open] .lcars-chat-message__details-summary::before {
+  transform: rotate(90deg);
+}
+
+.lcars-chat-message__details-summary:hover {
+  color: var(--lcars-sunflower);
+}
+
+.lcars-chat-message__details-body {
+  padding: 0 12px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--lcars-ice) 15%, transparent);
+}
+
+/* --- Follow-up chip group (`→ Question?` lines) --- */
+
+.lcars-chat-message__followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 1em 0 0.4em;
+}
+
+.lcars-chat-message__followup {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: color-mix(in srgb, var(--lcars-ice) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lcars-ice) 40%, transparent);
+  color: var(--lcars-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  padding: 5px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.lcars-chat-message__followup:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lcars-sunflower) 14%, transparent);
+  border-color: color-mix(in srgb, var(--lcars-sunflower) 55%, transparent);
+}
+
+.lcars-chat-message__followup:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.lcars-chat-message__followup-arrow {
+  color: var(--lcars-sunflower);
+  font-weight: bold;
+}
+
+.lcars-chat-message__followup-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* --- Citation chip --- */
 
 .lcars-chat-citation {
