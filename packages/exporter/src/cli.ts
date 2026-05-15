@@ -10,8 +10,9 @@ const USAGE = `\
 chat-arch <subcommand> [options]
 
 Subcommands:
-  cowork   Walk %APPDATA%\\Claude (local-agent-mode-sessions + claude-code-sessions)
-           and write cowork-sessions.json + copied manifests/transcripts.
+  cowork   Walk %APPDATA%\\Claude (local-agent-mode-sessions + claude-code-sessions —
+           both Cowork-shaped per Anthropic's rename) and write
+           cowork-sessions.json + copied manifests/transcripts.
   cli      Walk ~/.claude/projects/, stream each transcript, and write
            cli-sessions.json + copied transcripts (cli-direct + enriched cli-desktop).
   cloud    Unpack the Settings → Privacy export ZIP and write

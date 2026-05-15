@@ -27,15 +27,17 @@ afterEach(async () => {
 });
 
 describe('runCoworkExport (fixture)', () => {
-  it('walks both roots and emits one entry per valid manifest', async () => {
+  it('walks both AppData roots and emits one Cowork entry per valid manifest', async () => {
     const result = await runCoworkExport({
       outDir,
       appDataClaudeRoot: FIXTURE_APPDATA,
     });
-    // 5 Cowork manifests on disk: old/mid/new/corrupt/scheduled. The corrupt
-    // one is skipped, so 4 entries. 2 Desktop-CLI entries. Total 6.
-    expect(result.counts.cowork).toBe(4);
-    expect(result.counts['cli-desktop']).toBe(2);
+    // Post-Anthropic-rename: both `local-agent-mode-sessions/` and
+    // `claude-code-sessions/` feed the same Cowork pipeline. Fixture has
+    // 5 manifests under local-agent-mode-sessions (one corrupt → skipped)
+    // and 2 under claude-code-sessions, all Cowork-shape-valid. Total 6.
+    expect(result.counts.cowork).toBe(6);
+    expect(result.counts['cli-desktop']).toBe(0);
     expect(result.entries.length).toBe(6);
     expect(result.sessionsSkipped).toBe(1);
   });

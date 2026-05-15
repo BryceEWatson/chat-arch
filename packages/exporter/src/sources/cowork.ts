@@ -22,7 +22,10 @@ import {
   sumTokens,
   uniqueModels,
 } from '../lib/subagents.js';
-import { processDesktopCliManifest } from './desktop-cli.js';
+// Note: `processDesktopCliManifest` (./desktop-cli) is no longer invoked
+// from here — both AppData roots are Cowork-shaped per Anthropic's rename
+// (anthropics/claude-code#29373, #27463). The Desktop-CLI module stays
+// exported from `src/index.ts` for back-compat reads of legacy data only.
 
 /**
  * Pull parent-session TokenTotals from a Cowork audit's `modelUsage` map.
@@ -34,6 +37,20 @@ import { processDesktopCliManifest } from './desktop-cli.js';
  * Returns a zero TokenTotals when modelUsage is absent or empty — callers
  * decide whether to drop the field via a conditional spread.
  */
+/**
+ * Coerce Cowork's `enabledMcpTools` (typed loosely as Record<string, unknown>)
+ * to the unified entry's stricter `Record<string, boolean>`. In practice every
+ * value observed is a boolean — non-boolean entries are dropped rather than
+ * forced. Keeps the unified field's contract clean.
+ */
+function coerceMcpToolFlags(raw: Readonly<Record<string, unknown>>): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === 'boolean') out[k] = v;
+  }
+  return out;
+}
+
 function modelUsageToTokens(modelUsage: Record<string, unknown> | undefined): TokenTotals {
   const totals: TokenTotals = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
   if (!modelUsage) return totals;
@@ -165,18 +182,24 @@ export async function runCoworkExport(opts: RunCoworkExportOptions): Promise<Cow
   await mkdir(path.join(outDir, 'manifests', 'cli-desktop'), { recursive: true });
   await mkdir(path.join(outDir, 'local-transcripts', 'cowork'), { recursive: true });
 
-  const coworkRoot = path.join(appDataRoot, 'local-agent-mode-sessions');
-  const cliRoot = path.join(appDataRoot, 'claude-code-sessions');
-
-  const coworkManifestPaths = await findManifestPaths(coworkRoot);
-  const cliManifestPaths = await findManifestPaths(cliRoot);
+  // Both `local-agent-mode-sessions/` and `claude-code-sessions/` are Cowork-
+  // shaped per Anthropic's rename (refs anthropics/claude-code#29373, #27463).
+  // The Desktop-CLI walker block is gone; the desktop-cli manifest processor
+  // is kept for back-compat reads of older entries.
+  const coworkRoots = [
+    path.join(appDataRoot, 'local-agent-mode-sessions'),
+    path.join(appDataRoot, 'claude-code-sessions'),
+  ];
+  const coworkManifestPaths = (
+    await Promise.all(coworkRoots.map(findManifestPaths))
+  ).flat();
   const prevEntries = await loadPreviousCoworkEntries(outDir);
 
   let sessionsSkipped = 0;
   let transcriptsCopied = 0;
   let transcriptsMissing = 0;
   let coworkReused = 0;
-  let cliDesktopReused = 0;
+  const cliDesktopReused = 0;
 
   const coworkEntries: UnifiedSessionEntry[] = [];
   await runWithConcurrency(coworkManifestPaths, CONCURRENCY, async (manifestPath) => {
@@ -192,24 +215,6 @@ export async function runCoworkExport(opts: RunCoworkExportOptions): Promise<Cow
   });
 
   const cliEntries: UnifiedSessionEntry[] = [];
-  let desktopCliZeroTurns = 0;
-  await runWithConcurrency(cliManifestPaths, CONCURRENCY, async (manifestPath) => {
-    const res = await processDesktopCliManifest(manifestPath, outDir, prevEntries);
-    if (res === null) {
-      sessionsSkipped += 1;
-      return;
-    }
-    const { entry, reused } = res;
-    if (reused) cliDesktopReused += 1;
-    if (entry.userTurns === 0) desktopCliZeroTurns += 1;
-    cliEntries.push(entry);
-  });
-
-  if (desktopCliZeroTurns > 0) {
-    logger.warn(
-      `${desktopCliZeroTurns} Desktop-CLI sessions have userTurns=0 until Phase 3 transcript walk enriches them.`,
-    );
-  }
 
   // Sort entries deterministically by updatedAt desc for downstream stability.
   const entries = [...coworkEntries, ...cliEntries].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -316,7 +321,21 @@ async function processCoworkManifest(
 
   // Validate minimum required fields.
   if (!isMinimallyValidCowork(parsed)) {
-    logger.warn(`Cowork manifest ${manifestPath} missing required minimum fields; skipping`);
+    // claude-code-sessions/ shape divergence: warn-once when a manifest
+    // there matches neither Cowork nor Desktop-CLI. This is the canary
+    // for Anthropic shipping yet another shape on top of the rename.
+    if (
+      manifestPath.includes(`${path.sep}claude-code-sessions${path.sep}`) &&
+      !isMinimallyValidDesktopCli(parsed)
+    ) {
+      logger.warnOnce(
+        `claude-code-sessions-unknown-shape:${manifestPath}`,
+        `[chat-arch] claude-code-sessions manifest ${manifestPath} matched neither ` +
+          `Cowork nor Desktop-CLI schema — Anthropic may have shipped a new shape`,
+      );
+    } else {
+      logger.warn(`Cowork manifest ${manifestPath} missing required minimum fields; skipping`);
+    }
     return null;
   }
 
@@ -578,7 +597,9 @@ async function processCoworkManifest(
       ? { userSelectedFolders: manifest.userSelectedFolders }
       : {}),
     ...(manifest.slashCommands ? { slashCommands: manifest.slashCommands } : {}),
-    ...(manifest.enabledMcpTools ? { enabledMcpTools: manifest.enabledMcpTools } : {}),
+    ...(manifest.enabledMcpTools
+      ? { enabledMcpTools: coerceMcpToolFlags(manifest.enabledMcpTools) }
+      : {}),
     ...(typeof manifest.error === 'string' && manifest.error.length > 0
       ? { errorMessage: manifest.error }
       : {}),
