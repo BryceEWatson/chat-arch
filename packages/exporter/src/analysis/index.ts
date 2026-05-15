@@ -71,7 +71,7 @@ export interface RunAnalysisResult {
  * gate reuse on a version match — when the on-disk entry shape
  * changes, all prior caches self-invalidate on next rescan.
  */
-export const EXPORTER_VERSION = '0.9.0';
+export const EXPORTER_VERSION = '0.10.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
