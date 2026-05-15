@@ -84,7 +84,12 @@ export function discoverNarratives(
     for (const sid of project.sessionIds) {
       const s = sessionById.get(sid);
       if (s === undefined) continue;
-      const text = [s.title, s.preview ?? '', s.summary ?? ''].join('\n');
+      const text = [
+        s.title,
+        s.preview ?? '',
+        s.summary ?? '',
+        ...(s.userTextSamples ?? []),
+      ].join('\n');
       const r = scoreSentiment(text);
       scored.push({
         session: s,
