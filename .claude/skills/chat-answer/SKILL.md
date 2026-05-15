@@ -52,9 +52,14 @@ Workflow:
    - The user's global `~/.claude/CLAUDE.md` (operating modes like
      `/code` / `/research` / `/review`, persistent preferences). On
      Windows this resolves to `C:\Users\<user>\.claude\CLAUDE.md`.
-   - The repo's own `CLAUDE.md` (project-specific rules, git
-     conventions, hook configurations, the things the corpus alone
-     can't surface because they're prescriptive not descriptive).
+   - **The HOST project's `CLAUDE.md`** (`<repo-root>/CLAUDE.md`,
+     currently always chat-arch's since that's where the endpoint
+     spawns `claude`). Useful for self-referential questions — "what
+     does chat-arch itself encode about X?" — but **NOT authoritative
+     for the user's other projects in the corpus**. The corpus spans
+     dropKnowledge, outputs, brycewatson.com, and others; the host
+     file describes only chat-arch. Treat it as one project among
+     many.
 
    These three files are cheap and they prevent the failure mode where
    a corpus-grep answer misses load-bearing structure the user has
@@ -340,6 +345,32 @@ main … so the discipline isn't willpower — it's belt-and-suspenders
 config"* and conflated the two: push-to-main is convention only;
 the deny-list rule covered `git add -A`, not push. Be precise about
 which rule is enforced by what.
+
+**Name the project explicitly — don't say "the project CLAUDE.md"
+without a qualifier.** The chat-answer endpoint spawns with `cwd =
+chat-arch repo root`, so any `CLAUDE.md` you Read at
+`<repo-root>/CLAUDE.md` is **chat-arch's specifically** — never "the
+project CLAUDE.md" in general. When citing project-specific rules,
+hooks, or enforcement that you grounded in the host file, write
+*"chat-arch's pre-commit hook"* or *"chat-arch's CLAUDE.md deny
+rule"* — explicit project ownership in the prose.
+
+This matters because the corpus spans many projects (dropKnowledge,
+outputs, brycewatson.com, …) but the host CLAUDE.md is only
+chat-arch's. The cited sessions may have run in projects with
+totally different rules (or no comparable hooks at all). Generalizing
+chat-arch's enforcement to "the project" silently misattributes
+discipline that doesn't exist in the other projects.
+
+If a cited session ran somewhere other than chat-arch and the
+question turns on that project's enforcement, say so honestly:
+*"the cited session ran in dropKnowledge, whose CLAUDE.md I haven't
+read this turn — relying on transcript evidence only."* (Don't Read
+the other project's `<cwd>/CLAUDE.md` either: `cwd` is absent for
+cloud sessions, synthetic for Cowork, and frequently stale for
+local sessions due to cross-OS path drift. Naming discipline +
+transcript evidence is the right shape; per-cwd verification is
+the wrong tool.)
 
 ## Corpus layout
 
