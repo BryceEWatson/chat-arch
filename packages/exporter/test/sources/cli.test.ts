@@ -678,11 +678,11 @@ describe('runCliExport (hermetic)', () => {
     expect(result.counts['cli-desktop']).toBe(0);
     expect(result.transcriptsCopied).toBe(2);
 
-    // cli-sessions.json on disk parses and matches.
-    const parsed = JSON.parse(
+    // cli-sessions.json on disk parses and matches (envelope shape).
+    const envelope = JSON.parse(
       await readFile(path.join(outDir, 'cli-sessions.json'), 'utf8'),
-    ) as UnifiedSessionEntry[];
-    expect(parsed).toHaveLength(2);
+    ) as { __exporterVersion: string; entries: UnifiedSessionEntry[] };
+    expect(envelope.entries).toHaveLength(2);
 
     // Transcripts copied to cli-direct subdir.
     const copiedA = path.join(outDir, 'local-transcripts', 'cli-direct', `${UUID_A}.jsonl`);

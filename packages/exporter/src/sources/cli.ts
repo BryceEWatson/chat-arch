@@ -16,6 +16,7 @@ import {
   sumTokens,
   uniqueModels,
 } from '../lib/subagents.js';
+import { EXPORTER_VERSION } from '../analysis/index.js';
 
 /**
  * `<uuid>.jsonl` at the TOP LEVEL of a project dir. Sub-agent transcripts
@@ -150,10 +151,18 @@ async function loadPreviousCliEntries(outDir: string): Promise<Map<string, Unifi
   } catch {
     return map;
   }
-  if (!Array.isArray(parsed)) return map;
-  for (const e of parsed as UnifiedSessionEntry[]) {
-    if (e && typeof e.id === 'string' && typeof e.source === 'string') {
-      map.set(`${e.source}:${e.id}`, e);
+  // Bare-array (pre-envelope) shape: do not reuse — entries were produced by
+  // a different exporter version with a different on-disk schema. They'll be
+  // rebuilt this run and re-written with the new envelope.
+  if (Array.isArray(parsed)) return map;
+  if (parsed && typeof parsed === 'object') {
+    const envelope = parsed as { __exporterVersion?: unknown; entries?: unknown };
+    if (envelope.__exporterVersion !== EXPORTER_VERSION) return map;
+    if (!Array.isArray(envelope.entries)) return map;
+    for (const e of envelope.entries as UnifiedSessionEntry[]) {
+      if (e && typeof e.id === 'string' && typeof e.source === 'string') {
+        map.set(`${e.source}:${e.id}`, e);
+      }
     }
   }
   return map;
@@ -313,7 +322,14 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
   entries.sort((a, b) => b.updatedAt - a.updatedAt);
 
   const outFile = path.join(outDir, 'cli-sessions.json');
-  await writeFile(outFile, JSON.stringify(entries, null, 2) + '\n', 'utf8');
+  // Envelope so the loader can gate reuse on EXPORTER_VERSION — see
+  // `loadPreviousCliEntries`. Older bare-array shapes self-invalidate on
+  // first read.
+  await writeFile(
+    outFile,
+    JSON.stringify({ __exporterVersion: EXPORTER_VERSION, entries }, null, 2) + '\n',
+    'utf8',
+  );
 
   return {
     entries,
@@ -407,11 +423,24 @@ export async function loadCliDesktopIds(phase2CoworkJsonPath: string): Promise<{
     );
     return { desktopIds, phase2Entries };
   }
-  if (!Array.isArray(parsed)) {
-    logger.warn(`Phase 2 output ${phase2CoworkJsonPath} is not an array; ignoring`);
+  // Tolerate both shapes: legacy bare array (pre-envelope) and the
+  // EXPORTER_VERSION-tagged envelope written by `runCoworkExport`.
+  let entries: readonly UnifiedSessionEntry[];
+  if (Array.isArray(parsed)) {
+    entries = parsed as UnifiedSessionEntry[];
+  } else if (
+    parsed &&
+    typeof parsed === 'object' &&
+    Array.isArray((parsed as { entries?: unknown }).entries)
+  ) {
+    entries = (parsed as { entries: UnifiedSessionEntry[] }).entries;
+  } else {
+    logger.warn(
+      `Phase 2 output ${phase2CoworkJsonPath} is not an array or envelope; ignoring`,
+    );
     return { desktopIds, phase2Entries };
   }
-  for (const e of parsed as UnifiedSessionEntry[]) {
+  for (const e of entries) {
     if (e && e.source === 'cli-desktop' && typeof e.id === 'string') {
       desktopIds.add(e.id);
       phase2Entries.set(e.id, e);

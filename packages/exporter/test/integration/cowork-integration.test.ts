@@ -29,10 +29,12 @@ describe('cowork integration (fixture appdata → outDir)', () => {
       appDataClaudeRoot: FIXTURE_APPDATA,
     });
 
-    // Output file exists and is parseable.
+    // Output file exists and is parseable. Envelope shape since the
+    // cache-bust envelope was introduced.
     const file = path.join(outDir, 'cowork-sessions.json');
     const parsed = JSON.parse(await readFile(file, 'utf8'));
-    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toMatchObject({ __exporterVersion: expect.any(String) });
+    expect(Array.isArray(parsed.entries)).toBe(true);
 
     // Manifest copies landed in the right subdirs with the R3 naming.
     // Both AppData roots now feed the Cowork pipeline (Anthropic rename),

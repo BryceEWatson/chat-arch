@@ -17,6 +17,7 @@ import { toPosixRelative } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 import { streamToolUses } from '../lib/toolUses.js';
 import { readJsonlLines } from '../lib/jsonl.js';
+import { EXPORTER_VERSION } from '../analysis/index.js';
 import {
   aggregateSubagents,
   sumHistograms,
@@ -136,10 +137,18 @@ async function loadPreviousCoworkEntries(
   } catch {
     return map;
   }
-  if (!Array.isArray(parsed)) return map;
-  for (const e of parsed as UnifiedSessionEntry[]) {
-    if (e && typeof e.id === 'string' && typeof e.source === 'string') {
-      map.set(`${e.source}:${e.id}`, e);
+  // Bare-array (pre-envelope) shape: do not reuse — entries were written by
+  // an exporter version with a different on-disk schema. They'll get
+  // rewritten with the new envelope after this rescan.
+  if (Array.isArray(parsed)) return map;
+  if (parsed && typeof parsed === 'object') {
+    const envelope = parsed as { __exporterVersion?: unknown; entries?: unknown };
+    if (envelope.__exporterVersion !== EXPORTER_VERSION) return map;
+    if (!Array.isArray(envelope.entries)) return map;
+    for (const e of envelope.entries as UnifiedSessionEntry[]) {
+      if (e && typeof e.id === 'string' && typeof e.source === 'string') {
+        map.set(`${e.source}:${e.id}`, e);
+      }
     }
   }
   return map;
@@ -252,7 +261,14 @@ export async function runCoworkExport(opts: RunCoworkExportOptions): Promise<Cow
   const entries = [...coworkEntries, ...cliEntries].sort((a, b) => b.updatedAt - a.updatedAt);
 
   const outFile = path.join(outDir, 'cowork-sessions.json');
-  await writeFile(outFile, JSON.stringify(entries, null, 2) + '\n', 'utf8');
+  // Envelope so the loader can gate reuse on EXPORTER_VERSION — see
+  // `loadPreviousCoworkEntries`. Older bare-array shapes self-invalidate
+  // on first read.
+  await writeFile(
+    outFile,
+    JSON.stringify({ __exporterVersion: EXPORTER_VERSION, entries }, null, 2) + '\n',
+    'utf8',
+  );
 
   return {
     entries,

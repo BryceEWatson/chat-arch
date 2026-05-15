@@ -48,9 +48,15 @@ describe('runCoworkExport (fixture)', () => {
       appDataClaudeRoot: FIXTURE_APPDATA,
     });
     const file = path.join(outDir, 'cowork-sessions.json');
-    const roundtripped = JSON.parse(await readFile(file, 'utf8')) as UnifiedSessionEntry[];
-    expect(roundtripped).toHaveLength(result.entries.length);
-    expect(roundtripped.map((e) => e.id).sort()).toEqual(result.entries.map((e) => e.id).sort());
+    const envelope = JSON.parse(await readFile(file, 'utf8')) as {
+      __exporterVersion: string;
+      entries: UnifiedSessionEntry[];
+    };
+    expect(typeof envelope.__exporterVersion).toBe('string');
+    expect(envelope.entries).toHaveLength(result.entries.length);
+    expect(envelope.entries.map((e) => e.id).sort()).toEqual(
+      result.entries.map((e) => e.id).sort(),
+    );
   });
 
   it('falls back to stripped sessionId for entry id when manifest has no cliSessionId (old-schema Cowork)', async () => {
