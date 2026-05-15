@@ -5,6 +5,7 @@ import type {
   CoworkManifestRaw,
   DesktopCliManifestKnown,
   DesktopCliManifestRaw,
+  TokenTotals,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
 import { UNTITLED_SESSION } from '@chat-arch/schema';
@@ -15,7 +16,53 @@ import { buildPreview } from '../lib/preview.js';
 import { toPosixRelative } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 import { streamToolUses } from '../lib/toolUses.js';
+import {
+  aggregateSubagents,
+  sumHistograms,
+  sumTokens,
+  uniqueModels,
+} from '../lib/subagents.js';
 import { processDesktopCliManifest } from './desktop-cli.js';
+
+/**
+ * Pull parent-session TokenTotals from a Cowork audit's `modelUsage` map.
+ * Cowork audit lines carry per-model `inputTokens` / `outputTokens` /
+ * `cacheCreationInputTokens` / `cacheReadInputTokens` — sum them up so the
+ * unified entry exposes a single TokenTotals to consumers (cost estimation,
+ * /chat answers).
+ *
+ * Returns a zero TokenTotals when modelUsage is absent or empty — callers
+ * decide whether to drop the field via a conditional spread.
+ */
+function modelUsageToTokens(modelUsage: Record<string, unknown> | undefined): TokenTotals {
+  const totals: TokenTotals = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  if (!modelUsage) return totals;
+  for (const v of Object.values(modelUsage)) {
+    if (!v || typeof v !== 'object') continue;
+    const u = v as {
+      inputTokens?: unknown;
+      outputTokens?: unknown;
+      cacheCreationInputTokens?: unknown;
+      cacheReadInputTokens?: unknown;
+    };
+    if (typeof u.inputTokens === 'number' && Number.isFinite(u.inputTokens)) {
+      totals.input += u.inputTokens;
+    }
+    if (typeof u.outputTokens === 'number' && Number.isFinite(u.outputTokens)) {
+      totals.output += u.outputTokens;
+    }
+    if (
+      typeof u.cacheCreationInputTokens === 'number' &&
+      Number.isFinite(u.cacheCreationInputTokens)
+    ) {
+      totals.cacheCreation += u.cacheCreationInputTokens;
+    }
+    if (typeof u.cacheReadInputTokens === 'number' && Number.isFinite(u.cacheReadInputTokens)) {
+      totals.cacheRead += u.cacheReadInputTokens;
+    }
+  }
+  return totals;
+}
 
 /**
  * Load the previous cowork-sessions.json (if present) and index by
@@ -279,8 +326,14 @@ async function processCoworkManifest(
   // Fast path: manifest mtime matches what we cached last run →
   // nothing changed since the last rescan. Reuse the entry verbatim.
   // Skips: drift warnings (already seen), audit.jsonl aggregation
-  // (biggest cost), transcript copy (unless outDir was wiped), and
-  // tool-use mining.
+  // (biggest cost), transcript copy (unless outDir was wiped),
+  // tool-use mining, and the subagents/ walk.
+  //
+  // Staleness window: subagent rollups refresh only when the manifest
+  // mtime changes. In practice Cowork rewrites the manifest on every
+  // activity tick (lastActivityAt updates in lock-step with audit +
+  // transcript), so a new subagent fan-out almost always trips the
+  // mtime check on the next rescan.
   const prev = prevEntries.get(`cowork:${cliSessionIdResolved}`);
   if (
     prev !== undefined &&
@@ -434,10 +487,55 @@ async function processCoworkManifest(
   // of sessions) and keeps the extraction co-located with the other
   // sources via the shared `streamToolUses` helper.
   const toolUses = transcriptAbsTarget ? await streamToolUses(transcriptAbsTarget) : {};
-  const hasTools = Object.keys(toolUses).length > 0;
+
+  // Subagent rollup — walk <sessionDir>/.claude/projects/-sessions-<proc>/
+  // <cliSessionId>/subagents/agent-*.jsonl for Task-tool sub-agents (often
+  // Haiku) whose tokens/tool calls would otherwise be invisible.
+  //
+  // Guard: cliSessionId may be null when CLI handoff crashed
+  // (transcriptStatus='crashed'). Only walk when both cliSessionId and
+  // processName are present; otherwise the path is invalid.
+  const subagentRollup =
+    typeof manifest.cliSessionId === 'string' &&
+    manifest.cliSessionId.length > 0 &&
+    typeof manifest.processName === 'string' &&
+    manifest.processName.length > 0
+      ? await aggregateSubagents(
+          path.join(
+            sessionDir,
+            '.claude',
+            'projects',
+            `-sessions-${manifest.processName}`,
+            manifest.cliSessionId,
+            'subagents',
+          ),
+        )
+      : undefined;
+
+  // Merge parent + subagent aggregates so downstream consumers see a single
+  // session-wide rollup. Tool counts come from disjoint transcripts (parent
+  // vs. subagent files) and add cleanly. Token totals follow the same merge
+  // — `audit.modelUsage` may or may not already include subagent tokens in
+  // a given session; either way summing here over-attributes at worst, and
+  // the standalone `subagentRollup` field below keeps the breakdown
+  // inspectable for callers that need to disambiguate.
+  const parentTokens = modelUsageToTokens(audit.modelUsage);
+  const mergedTokens = subagentRollup
+    ? sumTokens(parentTokens, subagentRollup.totalTokens)
+    : parentTokens;
+  const tokensHasAny =
+    mergedTokens.input > 0 ||
+    mergedTokens.output > 0 ||
+    mergedTokens.cacheCreation > 0 ||
+    mergedTokens.cacheRead > 0;
+  const mergedTools = subagentRollup ? sumHistograms(toolUses, subagentRollup.topTools) : toolUses;
+  const hasTools = Object.keys(mergedTools).length > 0;
 
   const modelsUsedArr = audit.modelUsage !== undefined ? Object.keys(audit.modelUsage) : [];
-  const modelsUsed: readonly string[] = modelsUsedArr.length > 0 ? modelsUsedArr : [manifest.model];
+  const baseModels: readonly string[] = modelsUsedArr.length > 0 ? modelsUsedArr : [manifest.model];
+  const modelsUsed: readonly string[] = subagentRollup
+    ? uniqueModels(baseModels, subagentRollup.modelsUsed)
+    : baseModels;
 
   // Build entry via R4 conditional-spread template.
   const entry: UnifiedSessionEntry = {
@@ -464,7 +562,8 @@ async function processCoworkManifest(
     ...(audit.assistantTurns > 0 ? { assistantTurns: audit.assistantTurns } : {}),
     ...(modelsUsed.length > 0 ? { modelsUsed } : {}),
     cwd: manifest.cwd,
-    ...(hasTools ? { topTools: toolUses } : {}),
+    ...(tokensHasAny ? { tokenTotals: mergedTokens } : {}),
+    ...(hasTools ? { topTools: mergedTools } : {}),
     // Cached manifest file mtime — drives the incremental-rescan
     // fast path. Updated every time we (re)process the manifest.
     ...(currentMtime > 0 ? { sourceMtimeMs: currentMtime } : {}),
@@ -474,6 +573,16 @@ async function processCoworkManifest(
     transcriptStatus,
     manifestPath: toPosixRelative(manifestOutAbs, outDir),
     // auditPath: omitted (Q1)
+    // Cowork manifest fields previously dropped — exposed for /chat answers.
+    ...(manifest.userSelectedFolders
+      ? { userSelectedFolders: manifest.userSelectedFolders }
+      : {}),
+    ...(manifest.slashCommands ? { slashCommands: manifest.slashCommands } : {}),
+    ...(manifest.enabledMcpTools ? { enabledMcpTools: manifest.enabledMcpTools } : {}),
+    ...(typeof manifest.error === 'string' && manifest.error.length > 0
+      ? { errorMessage: manifest.error }
+      : {}),
+    ...(subagentRollup ? { subagentRollup } : {}),
   };
 
   return { entry, transcriptCopied, reused: false };
