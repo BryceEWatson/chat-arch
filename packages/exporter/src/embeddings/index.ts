@@ -54,3 +54,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 export { isOllamaAvailable, embedOne } from './ollama.js';
 export type { EmbedOneOptions } from './ollama.js';
+
+export { V2_DEFAULT_EMBEDDING_MODEL } from './model.js';
+export { runEmbed, type RunEmbedOptions, type RunEmbedResult } from './embedDriver.js';
+export { buildEmbeddingInput } from './buildEmbeddingInput.js';
