@@ -14,6 +14,39 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-15
+
+### Added
+
+- **Subagent rollup** — Cowork and host-CLI sessions whose Task tool
+  fans out to sub-agents (often Haiku) now contribute the sub-agents'
+  tokens, tool calls, and models to the parent entry's
+  `tokenTotals` / `topTools` / `modelsUsed`. The sub-agent-only
+  breakdown stays inspectable via the new `subagentRollup` field.
+- **`userTextSamples`** — every source now emits up to 5 user-turn
+  excerpts (≤400 chars each) for analysis-grade input. Feeds
+  `discoverNarratives` clustering so the pipeline sees more than the
+  200-char `preview`.
+- **Inline Cowork enrichments** — `userSelectedFolders`,
+  `slashCommands`, `enabledMcpTools`, `errorMessage` are now exposed
+  on the unified entry instead of being dropped at the
+  drift-detection stage.
+- **`tokenTotals` on Cowork entries** — derived from
+  `audit.modelUsage`; previously absent.
+
+### Changed
+
+- **`claude-code-sessions/` routed through Cowork** — Anthropic's
+  rename (refs anthropics/claude-code#29373, #27463) means both
+  AppData roots are now Cowork-shaped. The Desktop-CLI walker is
+  removed; a warn-once fires if a manifest there matches neither
+  schema.
+- **Per-source cache envelope** — `cli-sessions.json` and
+  `cowork-sessions.json` now write
+  `{ __exporterVersion, entries }`. Loaders gate reuse on an exact
+  version match so on-disk-shape changes self-invalidate. Legacy
+  bare-array files are tolerated for one rescan cycle.
+
 ## [0.8.0] — 2026-05-08
 
 ### Added

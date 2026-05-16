@@ -350,6 +350,36 @@ describe('streamAggregate', () => {
     const agg = await streamAggregate(file);
     expect(agg.toolUses).toEqual({});
   });
+
+  it('captures user-text samples starting from turn 2 (turn 1 already feeds preview)', async () => {
+    const file = await writeTranscript('proj-a', UUID_A, [
+      userLine('first prompt — should NOT appear in samples (it is the preview source)'),
+      assistantLine('m'),
+      userLine('second prompt'),
+      userLine('third prompt'),
+      userLine('fourth prompt'),
+    ]);
+    const agg = await streamAggregate(file);
+    expect(agg.firstUserText).toContain('first prompt');
+    expect(agg.userTextSamples).toEqual(['second prompt', 'third prompt', 'fourth prompt']);
+  });
+
+  it('caps userTextSamples at 5 entries and truncates each to 400 chars', async () => {
+    const long = 'x'.repeat(500);
+    const file = await writeTranscript('proj-a', UUID_A, [
+      userLine('preview source'),
+      userLine(long),
+      userLine('two'),
+      userLine('three'),
+      userLine('four'),
+      userLine('five'),
+      userLine('six — should be dropped, cap is 5'),
+    ]);
+    const agg = await streamAggregate(file);
+    expect(agg.userTextSamples).toHaveLength(5);
+    expect(agg.userTextSamples[0]).toHaveLength(400);
+    expect(agg.userTextSamples).not.toContain('six — should be dropped, cap is 5');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -364,7 +394,7 @@ describe('findTranscriptPaths', () => {
     expect(warnings.some((w) => w.includes('not found'))).toBe(true);
   });
 
-  it('returns top-level <uuid>.jsonl files but skips sub-agent subdirs (D1)', async () => {
+  it('returns top-level <uuid>.jsonl files but skips sub-agent subdirs', async () => {
     const p1 = await writeTranscript('proj-a', UUID_A, [userLine('x')]);
     const p2 = await writeTranscript('proj-a', UUID_B, [userLine('x')]);
     // Sub-agent dir — should NOT be returned.
@@ -378,6 +408,26 @@ describe('findTranscriptPaths', () => {
     await writeFile(path.join(projectsRoot, 'proj-a', 'README.md'), '# not a transcript', 'utf8');
     const found = await findTranscriptPaths(projectsRoot);
     expect(found.sort()).toEqual([p1, p2].sort());
+  });
+
+  it('aggregateSubagents reads from <uuid>/subagents/agent-*.jsonl, not findTranscriptPaths', async () => {
+    // Sanity-check the boundary: findTranscriptPaths must NOT walk into
+    // subagents/ even when an `agent-*.jsonl` exists there; that path is
+    // owned by `aggregateSubagents`.
+    await writeTranscript('proj-a', UUID_A, [userLine('x')]);
+    const subagentsDir = path.join(projectsRoot, 'proj-a', UUID_A, 'subagents');
+    await mkdir(subagentsDir, { recursive: true });
+    await writeFile(
+      path.join(subagentsDir, 'agent-abc.jsonl'),
+      JSON.stringify(userLine('sub')) + '\n',
+      'utf8',
+    );
+    const { aggregateSubagents } = await import('../../src/lib/subagents.js');
+    const rollup = await aggregateSubagents(subagentsDir);
+    expect(rollup?.count).toBe(1);
+    const transcripts = await findTranscriptPaths(projectsRoot);
+    // Only the top-level <UUID_A>.jsonl is returned; the subagent file is not.
+    expect(transcripts.filter((p) => p.includes('agent-abc'))).toHaveLength(0);
   });
 
   it('picks up case-variant sibling dirs (Windows quirk)', async () => {
@@ -532,6 +582,7 @@ describe('buildCliDirectEntry', () => {
       maxTimestamp: 2,
       malformedLineCount: 0,
       toolUses: {},
+      userTextSamples: [],
     };
     const e = buildCliDirectEntry(agg, UUID_A, undefined, 0);
     expect(e.project).toBe('my.dotted.site');
@@ -553,6 +604,7 @@ describe('buildCliDirectEntry', () => {
       maxTimestamp: undefined,
       malformedLineCount: 0,
       toolUses: {},
+      userTextSamples: [],
     };
     const e = buildCliDirectEntry(agg, UUID_A, undefined, mtime);
     expect(e.startedAt).toBe(mtime);
@@ -575,6 +627,7 @@ describe('buildCliDirectEntry', () => {
       maxTimestamp: undefined,
       malformedLineCount: 0,
       toolUses: {},
+      userTextSamples: [],
     };
     const e = buildCliDirectEntry(agg, UUID_A, undefined, 1_000);
     const errors = validateEntries([e]);
@@ -645,11 +698,11 @@ describe('runCliExport (hermetic)', () => {
     expect(result.counts['cli-desktop']).toBe(0);
     expect(result.transcriptsCopied).toBe(2);
 
-    // cli-sessions.json on disk parses and matches.
-    const parsed = JSON.parse(
+    // cli-sessions.json on disk parses and matches (envelope shape).
+    const envelope = JSON.parse(
       await readFile(path.join(outDir, 'cli-sessions.json'), 'utf8'),
-    ) as UnifiedSessionEntry[];
-    expect(parsed).toHaveLength(2);
+    ) as { __exporterVersion: string; entries: UnifiedSessionEntry[] };
+    expect(envelope.entries).toHaveLength(2);
 
     // Transcripts copied to cli-direct subdir.
     const copiedA = path.join(outDir, 'local-transcripts', 'cli-direct', `${UUID_A}.jsonl`);

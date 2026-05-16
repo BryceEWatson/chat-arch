@@ -66,7 +66,12 @@ export interface RunAnalysisResult {
   };
 }
 
-const EXPORTER_VERSION = '0.8.0';
+/**
+ * Exported so the per-source cache loaders (cli.ts, cowork.ts) can
+ * gate reuse on a version match — when the on-disk entry shape
+ * changes, all prior caches self-invalidate on next rescan.
+ */
+export const EXPORTER_VERSION = '0.9.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

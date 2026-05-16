@@ -5,6 +5,7 @@ import type {
   CoworkManifestRaw,
   DesktopCliManifestKnown,
   DesktopCliManifestRaw,
+  TokenTotals,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
 import { UNTITLED_SESSION } from '@chat-arch/schema';
@@ -15,7 +16,103 @@ import { buildPreview } from '../lib/preview.js';
 import { toPosixRelative } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 import { streamToolUses } from '../lib/toolUses.js';
-import { processDesktopCliManifest } from './desktop-cli.js';
+import { readJsonlLines } from '../lib/jsonl.js';
+import { EXPORTER_VERSION } from '../analysis/index.js';
+import {
+  aggregateSubagents,
+  sumHistograms,
+  sumTokens,
+  uniqueModels,
+} from '../lib/subagents.js';
+import {
+  extractFirstUserText,
+  USER_TEXT_SAMPLES_CHAR_CAP,
+  USER_TEXT_SAMPLES_MAX,
+} from './cli.js';
+
+/**
+ * Walk a Cowork transcript JSONL and collect up to {@link USER_TEXT_SAMPLES_MAX}
+ * user-turn excerpts (≤ {@link USER_TEXT_SAMPLES_CHAR_CAP} chars each), starting
+ * at the FIRST user turn — Cowork's preview is sourced from `manifest.initialMessage`
+ * (not the transcript), so the first transcript user turn is not a double-count.
+ *
+ * Never throws. Returns `[]` for missing files / no user lines.
+ */
+async function streamUserTextSamples(transcriptPath: string): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    for await (const y of readJsonlLines<Record<string, unknown>>(transcriptPath)) {
+      if (y.kind === 'error') continue;
+      const line = y.line;
+      if (line['type'] !== 'user') continue;
+      const t = extractFirstUserText(line['message']);
+      if (t === undefined || t.length === 0) continue;
+      out.push(t.slice(0, USER_TEXT_SAMPLES_CHAR_CAP));
+      if (out.length >= USER_TEXT_SAMPLES_MAX) break;
+    }
+  } catch {
+    // unreadable file — return whatever we collected (likely [])
+  }
+  return out;
+}
+// Note: `processDesktopCliManifest` (./desktop-cli) is no longer invoked
+// from here — both AppData roots are Cowork-shaped per Anthropic's rename
+// (anthropics/claude-code#29373, #27463). The Desktop-CLI module stays
+// exported from `src/index.ts` for back-compat reads of legacy data only.
+
+/**
+ * Pull parent-session TokenTotals from a Cowork audit's `modelUsage` map.
+ * Cowork audit lines carry per-model `inputTokens` / `outputTokens` /
+ * `cacheCreationInputTokens` / `cacheReadInputTokens` — sum them up so the
+ * unified entry exposes a single TokenTotals to consumers (cost estimation,
+ * /chat answers).
+ *
+ * Returns a zero TokenTotals when modelUsage is absent or empty — callers
+ * decide whether to drop the field via a conditional spread.
+ */
+/**
+ * Coerce Cowork's `enabledMcpTools` (typed loosely as Record<string, unknown>)
+ * to the unified entry's stricter `Record<string, boolean>`. In practice every
+ * value observed is a boolean — non-boolean entries are dropped rather than
+ * forced. Keeps the unified field's contract clean.
+ */
+function coerceMcpToolFlags(raw: Readonly<Record<string, unknown>>): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === 'boolean') out[k] = v;
+  }
+  return out;
+}
+
+function modelUsageToTokens(modelUsage: Record<string, unknown> | undefined): TokenTotals {
+  const totals: TokenTotals = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  if (!modelUsage) return totals;
+  for (const v of Object.values(modelUsage)) {
+    if (!v || typeof v !== 'object') continue;
+    const u = v as {
+      inputTokens?: unknown;
+      outputTokens?: unknown;
+      cacheCreationInputTokens?: unknown;
+      cacheReadInputTokens?: unknown;
+    };
+    if (typeof u.inputTokens === 'number' && Number.isFinite(u.inputTokens)) {
+      totals.input += u.inputTokens;
+    }
+    if (typeof u.outputTokens === 'number' && Number.isFinite(u.outputTokens)) {
+      totals.output += u.outputTokens;
+    }
+    if (
+      typeof u.cacheCreationInputTokens === 'number' &&
+      Number.isFinite(u.cacheCreationInputTokens)
+    ) {
+      totals.cacheCreation += u.cacheCreationInputTokens;
+    }
+    if (typeof u.cacheReadInputTokens === 'number' && Number.isFinite(u.cacheReadInputTokens)) {
+      totals.cacheRead += u.cacheReadInputTokens;
+    }
+  }
+  return totals;
+}
 
 /**
  * Load the previous cowork-sessions.json (if present) and index by
@@ -40,10 +137,18 @@ async function loadPreviousCoworkEntries(
   } catch {
     return map;
   }
-  if (!Array.isArray(parsed)) return map;
-  for (const e of parsed as UnifiedSessionEntry[]) {
-    if (e && typeof e.id === 'string' && typeof e.source === 'string') {
-      map.set(`${e.source}:${e.id}`, e);
+  // Bare-array (pre-envelope) shape: do not reuse — entries were written by
+  // an exporter version with a different on-disk schema. They'll get
+  // rewritten with the new envelope after this rescan.
+  if (Array.isArray(parsed)) return map;
+  if (parsed && typeof parsed === 'object') {
+    const envelope = parsed as { __exporterVersion?: unknown; entries?: unknown };
+    if (envelope.__exporterVersion !== EXPORTER_VERSION) return map;
+    if (!Array.isArray(envelope.entries)) return map;
+    for (const e of envelope.entries as UnifiedSessionEntry[]) {
+      if (e && typeof e.id === 'string' && typeof e.source === 'string') {
+        map.set(`${e.source}:${e.id}`, e);
+      }
     }
   }
   return map;
@@ -118,18 +223,24 @@ export async function runCoworkExport(opts: RunCoworkExportOptions): Promise<Cow
   await mkdir(path.join(outDir, 'manifests', 'cli-desktop'), { recursive: true });
   await mkdir(path.join(outDir, 'local-transcripts', 'cowork'), { recursive: true });
 
-  const coworkRoot = path.join(appDataRoot, 'local-agent-mode-sessions');
-  const cliRoot = path.join(appDataRoot, 'claude-code-sessions');
-
-  const coworkManifestPaths = await findManifestPaths(coworkRoot);
-  const cliManifestPaths = await findManifestPaths(cliRoot);
+  // Both `local-agent-mode-sessions/` and `claude-code-sessions/` are Cowork-
+  // shaped per Anthropic's rename (refs anthropics/claude-code#29373, #27463).
+  // The Desktop-CLI walker block is gone; the desktop-cli manifest processor
+  // is kept for back-compat reads of older entries.
+  const coworkRoots = [
+    path.join(appDataRoot, 'local-agent-mode-sessions'),
+    path.join(appDataRoot, 'claude-code-sessions'),
+  ];
+  const coworkManifestPaths = (
+    await Promise.all(coworkRoots.map(findManifestPaths))
+  ).flat();
   const prevEntries = await loadPreviousCoworkEntries(outDir);
 
   let sessionsSkipped = 0;
   let transcriptsCopied = 0;
   let transcriptsMissing = 0;
   let coworkReused = 0;
-  let cliDesktopReused = 0;
+  const cliDesktopReused = 0;
 
   const coworkEntries: UnifiedSessionEntry[] = [];
   await runWithConcurrency(coworkManifestPaths, CONCURRENCY, async (manifestPath) => {
@@ -145,30 +256,19 @@ export async function runCoworkExport(opts: RunCoworkExportOptions): Promise<Cow
   });
 
   const cliEntries: UnifiedSessionEntry[] = [];
-  let desktopCliZeroTurns = 0;
-  await runWithConcurrency(cliManifestPaths, CONCURRENCY, async (manifestPath) => {
-    const res = await processDesktopCliManifest(manifestPath, outDir, prevEntries);
-    if (res === null) {
-      sessionsSkipped += 1;
-      return;
-    }
-    const { entry, reused } = res;
-    if (reused) cliDesktopReused += 1;
-    if (entry.userTurns === 0) desktopCliZeroTurns += 1;
-    cliEntries.push(entry);
-  });
-
-  if (desktopCliZeroTurns > 0) {
-    logger.warn(
-      `${desktopCliZeroTurns} Desktop-CLI sessions have userTurns=0 until Phase 3 transcript walk enriches them.`,
-    );
-  }
 
   // Sort entries deterministically by updatedAt desc for downstream stability.
   const entries = [...coworkEntries, ...cliEntries].sort((a, b) => b.updatedAt - a.updatedAt);
 
   const outFile = path.join(outDir, 'cowork-sessions.json');
-  await writeFile(outFile, JSON.stringify(entries, null, 2) + '\n', 'utf8');
+  // Envelope so the loader can gate reuse on EXPORTER_VERSION — see
+  // `loadPreviousCoworkEntries`. Older bare-array shapes self-invalidate
+  // on first read.
+  await writeFile(
+    outFile,
+    JSON.stringify({ __exporterVersion: EXPORTER_VERSION, entries }, null, 2) + '\n',
+    'utf8',
+  );
 
   return {
     entries,
@@ -269,7 +369,21 @@ async function processCoworkManifest(
 
   // Validate minimum required fields.
   if (!isMinimallyValidCowork(parsed)) {
-    logger.warn(`Cowork manifest ${manifestPath} missing required minimum fields; skipping`);
+    // claude-code-sessions/ shape divergence: warn-once when a manifest
+    // there matches neither Cowork nor Desktop-CLI. This is the canary
+    // for Anthropic shipping yet another shape on top of the rename.
+    if (
+      manifestPath.includes(`${path.sep}claude-code-sessions${path.sep}`) &&
+      !isMinimallyValidDesktopCli(parsed)
+    ) {
+      logger.warnOnce(
+        `claude-code-sessions-unknown-shape:${manifestPath}`,
+        `[chat-arch] claude-code-sessions manifest ${manifestPath} matched neither ` +
+          `Cowork nor Desktop-CLI schema — Anthropic may have shipped a new shape`,
+      );
+    } else {
+      logger.warn(`Cowork manifest ${manifestPath} missing required minimum fields; skipping`);
+    }
     return null;
   }
 
@@ -279,8 +393,14 @@ async function processCoworkManifest(
   // Fast path: manifest mtime matches what we cached last run →
   // nothing changed since the last rescan. Reuse the entry verbatim.
   // Skips: drift warnings (already seen), audit.jsonl aggregation
-  // (biggest cost), transcript copy (unless outDir was wiped), and
-  // tool-use mining.
+  // (biggest cost), transcript copy (unless outDir was wiped),
+  // tool-use mining, and the subagents/ walk.
+  //
+  // Staleness window: subagent rollups refresh only when the manifest
+  // mtime changes. In practice Cowork rewrites the manifest on every
+  // activity tick (lastActivityAt updates in lock-step with audit +
+  // transcript), so a new subagent fan-out almost always trips the
+  // mtime check on the next rescan.
   const prev = prevEntries.get(`cowork:${cliSessionIdResolved}`);
   if (
     prev !== undefined &&
@@ -434,10 +554,58 @@ async function processCoworkManifest(
   // of sessions) and keeps the extraction co-located with the other
   // sources via the shared `streamToolUses` helper.
   const toolUses = transcriptAbsTarget ? await streamToolUses(transcriptAbsTarget) : {};
-  const hasTools = Object.keys(toolUses).length > 0;
+  const userTextSamples = transcriptAbsTarget
+    ? await streamUserTextSamples(transcriptAbsTarget)
+    : [];
+
+  // Subagent rollup — walk <sessionDir>/.claude/projects/-sessions-<proc>/
+  // <cliSessionId>/subagents/agent-*.jsonl for Task-tool sub-agents (often
+  // Haiku) whose tokens/tool calls would otherwise be invisible.
+  //
+  // Guard: cliSessionId may be null when CLI handoff crashed
+  // (transcriptStatus='crashed'). Only walk when both cliSessionId and
+  // processName are present; otherwise the path is invalid.
+  const subagentRollup =
+    typeof manifest.cliSessionId === 'string' &&
+    manifest.cliSessionId.length > 0 &&
+    typeof manifest.processName === 'string' &&
+    manifest.processName.length > 0
+      ? await aggregateSubagents(
+          path.join(
+            sessionDir,
+            '.claude',
+            'projects',
+            `-sessions-${manifest.processName}`,
+            manifest.cliSessionId,
+            'subagents',
+          ),
+        )
+      : undefined;
+
+  // Merge parent + subagent aggregates so downstream consumers see a single
+  // session-wide rollup. Tool counts come from disjoint transcripts (parent
+  // vs. subagent files) and add cleanly. Token totals follow the same merge
+  // — `audit.modelUsage` may or may not already include subagent tokens in
+  // a given session; either way summing here over-attributes at worst, and
+  // the standalone `subagentRollup` field below keeps the breakdown
+  // inspectable for callers that need to disambiguate.
+  const parentTokens = modelUsageToTokens(audit.modelUsage);
+  const mergedTokens = subagentRollup
+    ? sumTokens(parentTokens, subagentRollup.totalTokens)
+    : parentTokens;
+  const tokensHasAny =
+    mergedTokens.input > 0 ||
+    mergedTokens.output > 0 ||
+    mergedTokens.cacheCreation > 0 ||
+    mergedTokens.cacheRead > 0;
+  const mergedTools = subagentRollup ? sumHistograms(toolUses, subagentRollup.topTools) : toolUses;
+  const hasTools = Object.keys(mergedTools).length > 0;
 
   const modelsUsedArr = audit.modelUsage !== undefined ? Object.keys(audit.modelUsage) : [];
-  const modelsUsed: readonly string[] = modelsUsedArr.length > 0 ? modelsUsedArr : [manifest.model];
+  const baseModels: readonly string[] = modelsUsedArr.length > 0 ? modelsUsedArr : [manifest.model];
+  const modelsUsed: readonly string[] = subagentRollup
+    ? uniqueModels(baseModels, subagentRollup.modelsUsed)
+    : baseModels;
 
   // Build entry via R4 conditional-spread template.
   const entry: UnifiedSessionEntry = {
@@ -464,7 +632,8 @@ async function processCoworkManifest(
     ...(audit.assistantTurns > 0 ? { assistantTurns: audit.assistantTurns } : {}),
     ...(modelsUsed.length > 0 ? { modelsUsed } : {}),
     cwd: manifest.cwd,
-    ...(hasTools ? { topTools: toolUses } : {}),
+    ...(tokensHasAny ? { tokenTotals: mergedTokens } : {}),
+    ...(hasTools ? { topTools: mergedTools } : {}),
     // Cached manifest file mtime — drives the incremental-rescan
     // fast path. Updated every time we (re)process the manifest.
     ...(currentMtime > 0 ? { sourceMtimeMs: currentMtime } : {}),
@@ -474,6 +643,19 @@ async function processCoworkManifest(
     transcriptStatus,
     manifestPath: toPosixRelative(manifestOutAbs, outDir),
     // auditPath: omitted (Q1)
+    // Cowork manifest fields previously dropped — exposed for /chat answers.
+    ...(manifest.userSelectedFolders
+      ? { userSelectedFolders: manifest.userSelectedFolders }
+      : {}),
+    ...(manifest.slashCommands ? { slashCommands: manifest.slashCommands } : {}),
+    ...(manifest.enabledMcpTools
+      ? { enabledMcpTools: coerceMcpToolFlags(manifest.enabledMcpTools) }
+      : {}),
+    ...(typeof manifest.error === 'string' && manifest.error.length > 0
+      ? { errorMessage: manifest.error }
+      : {}),
+    ...(userTextSamples.length > 0 ? { userTextSamples } : {}),
+    ...(subagentRollup ? { subagentRollup } : {}),
   };
 
   return { entry, transcriptCopied, reused: false };

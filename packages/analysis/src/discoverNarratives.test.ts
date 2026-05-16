@@ -99,4 +99,27 @@ describe('discoverNarratives', () => {
     expect(r.narratives).toHaveLength(0);
     expect(r.projectSentiment.get('proj_q')).toBe('neutral');
   });
+
+  it('clusters on userTextSamples in addition to title+preview+summary', () => {
+    // Two sessions whose titles are sentiment-neutral but whose
+    // userTextSamples carry strong positive sentiment. Without the T6
+    // widening, neither session would score positive and no narrative
+    // would emit. With the widening, both score positive and the
+    // narrative shows up.
+    const sessions = [
+      mkSession('a', {
+        title: 'check this',
+        userTextSamples: ['that worked perfectly, tests pass'],
+      }),
+      mkSession('b', {
+        title: 'check this',
+        userTextSamples: ['shipped the fix, everything green'],
+      }),
+    ];
+    const projects = [mkProject('proj_widen', ['a', 'b'])];
+    const r = discoverNarratives(sessions, projects);
+    const narr = r.narratives.find((n) => n.sentiment === 'positive');
+    expect(narr).toBeDefined();
+    expect(narr?.sessionIds).toEqual(expect.arrayContaining(['a', 'b']));
+  });
 });
