@@ -31,6 +31,7 @@ import {
   CommandMode,
   TimelineMode,
   DetailMode,
+  ChatMode,
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
@@ -102,6 +103,13 @@ const HASH_PROJECT_PREFIX = '#project/';
 const HASH_TOPICS = '#topics';
 const HASH_TOPIC_PREFIX = '#topic/';
 const HASH_PRACTICE = '#practice';
+const HASH_CHAT = '#chat';
+// One-time flag: when absent (i.e. a returning user pre-chat-page never
+// stored it), the default landing remains the prior `command` mode so
+// existing bookmarks don't suddenly land somewhere unfamiliar. Fresh
+// installs (`hasExistingChatArchState()` false) bypass this gate and
+// land on `chat` directly.
+const CHAT_DEFAULT_OPT_IN_KEY = 'chat-arch:chat-default-mode-acked-v1';
 const DEMO_BANNER_DISMISSED_KEY = 'chat-arch:demo-banner-dismissed';
 const BOOT_SEEN_KEY = 'chat-arch:boot-seen';
 const SORT_BY_KEY = 'chat-arch:sort-by';
@@ -184,6 +192,49 @@ function readPracticeHash(): boolean {
   return window.location.hash === HASH_PRACTICE;
 }
 
+/** Chat has no detail dimension at the viewer level — the chat-list lives inside the surface. */
+function readChatHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_CHAT;
+}
+
+/**
+ * Pick the landing mode when no explicit hash is set. Per the chat-page
+ * v3 plan: fresh installs land on `chat` (the new primary surface);
+ * existing users — anyone who's set ANY `chat-arch:` localStorage key,
+ * indicating prior use of the viewer — keep landing on `command` so
+ * their muscle memory holds. They can opt in to chat-as-default by
+ * setting `CHAT_DEFAULT_OPT_IN_KEY` (a future preferences UI exposes
+ * this; for now it's a manual escape hatch). The gate is local-only —
+ * a returning user can't be force-rerouted by a remote flag.
+ */
+function defaultLandingMode(): Mode {
+  if (typeof window === 'undefined') return 'command';
+  try {
+    if (window.localStorage.getItem(CHAT_DEFAULT_OPT_IN_KEY) === '1') return 'chat';
+  } catch {
+    // localStorage policy-locked — fall through to install heuristic
+  }
+  // hasExistingChatArchState is declared below; we duplicate its
+  // logic inline here to avoid the temporal-dead-zone foot-gun at
+  // useState init time (the function is hoisted but lives below in the
+  // file and the linter rightly flags out-of-order calls). Keep the
+  // probe behaviorally identical.
+  let hasState = false;
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith('chat-arch:')) {
+        hasState = true;
+        break;
+      }
+    }
+  } catch {
+    // policy-locked → treat as fresh install
+  }
+  return hasState ? 'command' : 'chat';
+}
+
 /** Topics counterpart to readProjectsHash — same contract / same pattern. */
 function readTopicsHash(): { surface: 'topics' | null; selectedTopicId: string | null } {
   if (typeof window === 'undefined') return { surface: null, selectedTopicId: null };
@@ -252,14 +303,16 @@ export function ChatArchViewer({
   // --- UI state ---
   const [mode, setMode] = useState<Mode>(() => {
     // v2 spec §5.1 / §5.2 / §5.4: prefer the URL hash so deep-link
-    // entries land in the right surface. Falls through to SESSIONS
-    // (`command` mode) when the hash is absent or unrecognized.
+    // entries land in the right surface. Falls through to the
+    // default-landing heuristic (fresh installs → `chat`, returning
+    // users → `command`) when no hash is recognized.
+    if (readChatHash()) return 'chat';
     const proj = readProjectsHash();
     if (proj.surface === 'projects') return 'projects';
     const top = readTopicsHash();
     if (top.surface === 'topics') return 'topics';
     if (readPracticeHash()) return 'practice';
-    return 'command';
+    return defaultLandingMode();
   });
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     () => readProjectsHash().selectedProjectId,
@@ -574,6 +627,7 @@ export function ChatArchViewer({
       setSelectedProjectId(proj.selectedProjectId);
       setSelectedTopicId(top.selectedTopicId);
       const onPractice = readPracticeHash();
+      const onChat = readChatHash();
       if (id) {
         setMode('detail');
       } else if (proj.surface === 'projects') {
@@ -582,6 +636,8 @@ export function ChatArchViewer({
         setMode('topics');
       } else if (onPractice) {
         setMode('practice');
+      } else if (onChat) {
+        setMode('chat');
       } else {
         // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
         // `#constellation` bookmark would otherwise sit in the URL
@@ -610,7 +666,8 @@ export function ChatArchViewer({
             prev === 'detail' ||
             prev === 'projects' ||
             prev === 'topics' ||
-            prev === 'practice'
+            prev === 'practice' ||
+            prev === 'chat'
           ) {
             const stashed = priorModeBeforeDetailRef.current;
             if (prev === 'detail' && stashed) {
@@ -2176,7 +2233,12 @@ export function ChatArchViewer({
     baseMode === 'projects' ||
     baseMode === 'topics' ||
     baseMode === 'practice' ||
-    baseMode === 'corrections';
+    baseMode === 'corrections' ||
+    // Chat is its own surface — it manages its own sidebar (chat list),
+    // its own input bar, and doesn't consume the shared session-filter
+    // chrome. Add to isV2Surface so UpperPanel/MidBar/FilterBar hide
+    // the way they do for the other self-contained modes.
+    baseMode === 'chat';
 
   const activeManifest = manifest!;
 
@@ -2405,6 +2467,15 @@ export function ChatArchViewer({
               if (m === 'practice') {
                 if (typeof window !== 'undefined') {
                   window.history.pushState(null, '', HASH_PRACTICE);
+                }
+              }
+              // Chat-page §3: CHAT is its own self-contained surface.
+              // The chat-list lives inside the surface; the only
+              // routable state at the viewer level is "are we on the
+              // chat page or not?", so the single hash is enough.
+              if (m === 'chat') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_CHAT);
                 }
               }
               setMode(m);
@@ -2657,6 +2728,16 @@ export function ChatArchViewer({
                               `${HASH_PROJECT_PREFIX}${encodeURIComponent(id)}`,
                             );
                           }
+                        }}
+                      />
+                    ) : baseMode === 'chat' ? (
+                      <ChatMode
+                        onSelectSession={(id) => {
+                          // Citation clickthrough lands in DetailMode;
+                          // BACK should restore CHAT, not the default
+                          // command mode. Same trick CORRECTIONS uses.
+                          setPriorModeBeforeDetail('chat');
+                          onSelect(id);
                         }}
                       />
                     ) : null}

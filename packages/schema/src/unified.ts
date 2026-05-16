@@ -79,6 +79,10 @@ export interface UnifiedSessionEntry {
    *
    * Populating this in the manifest avoids forcing the viewer to eager-fetch
    * per-session chunks for card previews (~11 MB saved at 1033 sessions).
+   *
+   * For analysis-grade input (e.g. discoverNarratives clustering),
+   * `userTextSamples` carries longer multi-turn excerpts in addition to
+   * this 200-char preview.
    */
   preview: string | null;
 
@@ -297,9 +301,10 @@ export interface UnifiedSessionEntry {
    *   - 'ok'      — transcript was copied (transcriptPath present).
    *   - 'crashed' — upstream session metadata was incomplete (e.g.
    *                 Cowork CLI handoff failed: no `cliSessionId`, often
-   *                 with an `error` field set on the source manifest).
-   *                 User-side prompts may still exist in audit.jsonl —
-   *                 future recovery work can mine those.
+   *                 with an `error` field set on the source manifest —
+   *                 mirrored on the entry as `errorMessage` in verbose
+   *                 form). User-side prompts may still exist in
+   *                 audit.jsonl — future recovery work can mine those.
    *   - 'missing' — pointers were complete but the transcript file
    *                 wasn't on disk at scan time (deleted, aborted, or
    *                 cleaned up by the upstream tool between session end
@@ -316,6 +321,49 @@ export interface UnifiedSessionEntry {
 
   /** Output-relative path to the Cowork audit log. */
   auditPath?: string;
+
+  // ---- Analysis-grade enrichments ----
+
+  /**
+   * Up to 5 user-turn excerpts (≤400 chars each), captured AFTER the
+   * preview-source turn so they don't double-count with `preview`.
+   * Populated by all sources (local + cloud).
+   * Analysis pipelines (e.g. discoverNarratives) read this for richer
+   * clustering input than the 200-char preview alone. The viewer ignores
+   * this field — it's an analysis-grade input, not a display string.
+   */
+  userTextSamples?: readonly string[];
+
+  /** Cowork-only: host folders mounted into the VM workspace. */
+  userSelectedFolders?: readonly string[];
+
+  /** Cowork-only: skill/command IDs available to the session. Source-name match. */
+  slashCommands?: readonly string[];
+
+  /** Cowork-only: MCP tools enabled at session start. Source-name + shape match. */
+  enabledMcpTools?: Readonly<Record<string, boolean>>;
+
+  /**
+   * Cowork-only: human-readable error message from the source manifest's
+   * `error` field. Complements `transcriptStatus` (categorical) with the
+   * verbose form. Renamed to `errorMessage` to avoid name-collision risk
+   * with any consumer's idiomatic `entry.error` slot.
+   */
+  errorMessage?: string;
+
+  /**
+   * Subagent rollup, populated by `aggregateSubagents` for Cowork and host
+   * CLI sources. Absent when the session had no subagent fan-out.
+   * `tokenTotals`/`topTools`/`modelsUsed` on the entry are merged values
+   * (parent + subagents); this field keeps the subagent-only breakdown
+   * inspectable.
+   */
+  subagentRollup?: {
+    count: number;
+    totalTokens: TokenTotals;
+    modelsUsed: readonly string[];
+    topTools: Readonly<Record<string, number>>;
+  };
 }
 
 export interface SessionManifest {

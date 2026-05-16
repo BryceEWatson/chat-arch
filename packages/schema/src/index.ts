@@ -10,3 +10,4 @@ export * from './pattern.js';
 export * from './correction.js';
 export * from './applied-improvement.js';
 export * from './configDocument.js';
+export * from './chat.js';

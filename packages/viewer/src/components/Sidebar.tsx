@@ -74,8 +74,15 @@ interface NavGroup {
 // clicking a session card, not a top-level mode.
 const NAV: readonly NavGroup[] = [
   {
+    // CHAT joins the FIX RULES group because asking the corpus for its
+    // own patterns / opportunities IS a practice-correction primitive —
+    // distinct from the BROWSE group (which navigates the corpus by
+    // hand) and the ANALYTICS group (descriptive roll-ups). Placing it
+    // leftmost in the rail also surfaces the "ask your archive" verb
+    // first on every fresh load.
     group: 'FIX RULES',
     items: [
+      { mode: 'chat', label: 'CHAT', short: 'CHT' },
       { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
       { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
     ],
@@ -98,6 +105,7 @@ const NAV: readonly NavGroup[] = [
 // the FIX RULES → BROWSE → ANALYTICS reading order from the vertical
 // rail so muscle memory carries across viewports.
 const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
+  { mode: 'chat', label: 'CHAT', short: 'CHT' },
   { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
   { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
   { mode: 'command', label: 'SESSIONS', short: 'SES' },

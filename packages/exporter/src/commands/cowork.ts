@@ -18,9 +18,10 @@ export async function runCoworkSubcommand(argv: readonly string[]): Promise<numb
   if (values.help) {
     logger.info(
       'chat-arch cowork [--out <dir>]\n\n' +
-        '  Walk %APPDATA%\\Claude\\local-agent-mode-sessions and claude-code-sessions,\n' +
-        '  produce a unified cowork-sessions.json and copy manifests + transcripts.\n' +
-        '  Default --out: <repo-root>/apps/standalone/public/chat-arch-data',
+        '  Walk %APPDATA%\\Claude\\local-agent-mode-sessions and claude-code-sessions\n' +
+        '  (both are Cowork-shaped per Anthropic\'s rename — refs claude-code#29373,\n' +
+        '  #27463) and produce a unified cowork-sessions.json + copied manifests +\n' +
+        '  transcripts. Default --out: <repo-root>/apps/standalone/public/chat-arch-data',
     );
     return 0;
   }

@@ -235,7 +235,11 @@ describe('Sidebar — Phase 4 hosted refocus (correctionsAvailable=false)', () =
       />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
+    // CHT stays in the bar regardless of correctionsAvailable — chat is
+    // independent of the corrections data dependency. COR is the only
+    // pill the Phase 4 hosted-refocus filter drops.
     expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'CHT',
       'PRC',
       'SES',
       'PRJ',
@@ -257,8 +261,8 @@ describe('Sidebar (horizontal variant)', () => {
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
     // 5 mode pills (Phase 3 cut ANL/constellation and CST/cost):
-    // COR, PRC, SES, PRJ, TOP.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
+    // CHT, COR, PRC, SES, PRJ, TOP — CHT added by the chat-page ship.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
   });
 
   it('shows only the short label in horizontal pills, in the new order', () => {
@@ -266,9 +270,9 @@ describe('Sidebar (horizontal variant)', () => {
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(5);
+    expect(pillShorts.length).toBe(6);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['COR', 'PRC', 'SES', 'PRJ', 'TOP']);
+    expect(texts).toEqual(['CHT', 'COR', 'PRC', 'SES', 'PRJ', 'TOP']);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -283,6 +287,7 @@ describe('Sidebar (horizontal variant)', () => {
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
     expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
+      'CHT',
       'COR',
       'PRC',
       'SES',
@@ -309,7 +314,7 @@ describe('Sidebar (horizontal variant)', () => {
     expect(onSelectMode).toHaveBeenCalledWith('topics');
   });
 
-  it('keeps all 5 pills visible regardless of analyticsCollapsed (collapse is vertical-only)', () => {
+  it('keeps all pills visible regardless of analyticsCollapsed (collapse is vertical-only)', () => {
     const { container } = render(
       <Sidebar
         mode="command"
@@ -319,6 +324,7 @@ describe('Sidebar (horizontal variant)', () => {
         onToggleAnalyticsCollapsed={() => {}}
       />,
     );
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(5);
+    // CHT, COR, PRC, SES, PRJ, TOP — six pills total in horizontal mode.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
   });
 });

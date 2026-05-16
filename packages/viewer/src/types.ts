@@ -82,7 +82,14 @@ export type Mode =
   /** v2 spec §5.4: PRACTICE four-lens adversarial audit dashboard. */
   | 'practice'
   /** Correction-mining surface: clustered patterns + proposed CLAUDE.md upgrades. */
-  | 'corrections';
+  | 'corrections'
+  /**
+   * Agentic Q&A + opportunity-finding over the corpus. The "chat with
+   * your archive" surface — drives `/api/chat-answer`, which spawns the
+   * local Claude Code CLI against the `chat-answer` skill. Driven by
+   * `#chat` hash.
+   */
+  | 'chat';
 
 /** Generic async-fetch state. Used uniformly for manifest + drill-in fetches. */
 export type FetchState<T> =
@@ -151,6 +158,11 @@ export const MODE_COLOR: Record<Mode, string> = {
   topics: 'var(--lcars-ice)',
   practice: 'var(--lcars-violet)',
   corrections: 'var(--lcars-peach)',
+  // Chat picks up the design-system's sunflower yellow at chrome level
+  // (matches "talk to it" affordance — the user's primary verb for this
+  // surface) — distinct from the projects accent so the active-mode dot
+  // doesn't blur the two.
+  chat: 'var(--lcars-sunflower)',
 };
 
 /**

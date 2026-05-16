@@ -29,20 +29,26 @@ describe('cowork integration (fixture appdata → outDir)', () => {
       appDataClaudeRoot: FIXTURE_APPDATA,
     });
 
-    // Output file exists and is parseable.
+    // Output file exists and is parseable. Envelope shape since the
+    // cache-bust envelope was introduced.
     const file = path.join(outDir, 'cowork-sessions.json');
     const parsed = JSON.parse(await readFile(file, 'utf8'));
-    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toMatchObject({ __exporterVersion: expect.any(String) });
+    expect(Array.isArray(parsed.entries)).toBe(true);
 
     // Manifest copies landed in the right subdirs with the R3 naming.
+    // Both AppData roots now feed the Cowork pipeline (Anthropic rename),
+    // so the two former-Desktop-CLI fixtures land in manifests/cowork/ too.
     const coworkManifests = await readdir(path.join(outDir, 'manifests', 'cowork'));
-    expect(coworkManifests).toHaveLength(4); // corrupt skipped
+    expect(coworkManifests).toHaveLength(6); // 4 + 2; corrupt skipped
     expect(coworkManifests.every((n) => /^local_[0-9a-f-]+\.json$/.test(n))).toBe(true);
 
     const cliManifests = await readdir(path.join(outDir, 'manifests', 'cli-desktop'));
-    expect(cliManifests).toHaveLength(2);
+    expect(cliManifests).toHaveLength(0); // walker removed
 
     // Transcripts: mid + new + scheduled (3); old had no cliSessionId.
+    // claude-code-sessions/ fixtures lack `processName`, so no transcript
+    // copies for them.
     const transcripts = await readdir(path.join(outDir, 'local-transcripts', 'cowork'));
     expect(transcripts).toHaveLength(3);
 
