@@ -7,6 +7,7 @@ import { runCliExport } from '../sources/cli.js';
 import { runCloudExport } from '../sources/cloud.js';
 import { mergeSources } from '../merge.js';
 import { runAnalysis } from '../analysis/index.js';
+import { runEmbed } from '../embeddings/index.js';
 import { findRepoRoot } from '../lib/repo-root.js';
 import { validateEntries } from '../lib/validate-entry.js';
 import { logger } from '../lib/logger.js';
@@ -193,6 +194,29 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
       `analysis phase failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
     );
     return 1;
+  }
+
+  // Phase 6+: embedding pass (v2 §4). Fail-soft — a missing Ollama
+  // service must NOT fail the whole rescan. The driver logs its own
+  // skip line + warn; we only translate unexpected throws to a single
+  // warn line so the user can still inspect manifest.json after.
+  try {
+    const embedStart = Date.now();
+    const embedResult = await runEmbed({
+      outDir,
+      manifest: merged,
+      onlyChanged: true,
+    });
+    if (embedResult.skippedReason === undefined) {
+      logger.info(
+        `embeddings complete in ${Date.now() - embedStart} ms — ` +
+          `embedded=${embedResult.embedded} reused=${embedResult.reused} skipped=${embedResult.skipped}`,
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      `embeddings phase soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return 0;

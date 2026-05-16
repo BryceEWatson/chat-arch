@@ -19,9 +19,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
+import type {
+  ContinuumHealth,
+  SessionManifest,
+  UnifiedSessionEntry,
+} from '@chat-arch/schema';
 import { logger } from '../lib/logger.js';
 import {
+  buildContinuumHealth,
   buildDuplicatesFile,
   buildZombiesFile,
   discoverProjects,
@@ -52,6 +57,7 @@ export interface RunAnalysisResult {
     topics: string;
     narratives: string;
     correctionCandidates: string;
+    continuumHealth: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -71,7 +77,7 @@ export interface RunAnalysisResult {
  * gate reuse on a version match — when the on-disk entry shape
  * changes, all prior caches self-invalidate on next rescan.
  */
-export const EXPORTER_VERSION = '0.10.0';
+export const EXPORTER_VERSION = '1.0.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -232,6 +238,7 @@ export async function runAnalysis(
           'topics.json',
           'narratives.json',
           'correction-candidates.json',
+          'continuum-health.json',
         ],
       },
     },
@@ -252,6 +259,22 @@ export async function runAnalysis(
   await writeFile(metaPath, JSON.stringify(metaFile, null, 2) + '\n', 'utf8');
   logger.info(`analysis: meta.json written (runId=${exporterRunId})`);
 
+  // ---- Continuum health ----
+  const priorHealth = await readPriorContinuumHealth(analysisDir);
+  const health = buildContinuumHealth(manifest, priorHealth, {
+    now,
+    scanSucceeded: true,
+  });
+  const continuumHealthPath = path.join(analysisDir, 'continuum-health.json');
+  await writeFile(
+    continuumHealthPath,
+    JSON.stringify(health, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(
+    `analysis: continuum-health.json — ${health.consecutiveSuccesses} consecutive successes, ${health.warnings.length} warnings`,
+  );
+
   return {
     analysisDir,
     files: {
@@ -262,6 +285,7 @@ export async function runAnalysis(
       topics: topicsPath,
       narratives: narrativesPath,
       correctionCandidates: correctionCandidatesPath,
+      continuumHealth: continuumHealthPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -356,6 +380,22 @@ async function readFirstHumanText(
     return entry.preview ?? null;
   } catch {
     return entry.preview ?? null;
+  }
+}
+
+/**
+ * Read the prior `continuum-health.json` sidecar. Returns null when the
+ * file is absent or unparseable — first scans and bundles imported fresh
+ * from someone else's machine both legitimately have no prior state.
+ */
+async function readPriorContinuumHealth(
+  analysisDir: string,
+): Promise<ContinuumHealth | null> {
+  try {
+    const raw = await readFile(path.join(analysisDir, 'continuum-health.json'), 'utf8');
+    return JSON.parse(raw) as ContinuumHealth;
+  } catch {
+    return null;
   }
 }
 
