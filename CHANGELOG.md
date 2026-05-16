@@ -14,6 +14,45 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-05-16
+
+### Added
+
+- **chat-arch v2 — instrumented AI collaboration loop.** Single PR
+  delivering the four-layer stack (B/A/F/D) defined in
+  `research/v2-instrumented-loop.md`. Wave 1 (foundation) headlines:
+  - **Embeddings substrate** (§4). Local Ollama with
+    `nomic-embed-text` (768-dim) drives every layer above the
+    foundation. New `analysis/embeddings.bin` (concatenated LE
+    float32) + `analysis/embeddings.meta.json` (sessionId → byte
+    offset). Incremental — sessions whose `sourceMtimeMs` is
+    unchanged reuse their prior vector. Fail-soft when Ollama is
+    unreachable: warn-once + skip, never block the rescan. New
+    `pnpm exporter embed [--only-changed|--no-only-changed]
+    [--model] [--base-url]` sub-command. Auto-runs at the tail of
+    `pnpm exporter all`.
+  - **`UnifiedSessionEntry.discoveryScore?: number`** (0–1) on
+    schemaVersion 4. Computed offline from token intensity, tool
+    diversity, correction-applied-after, and gitBranch → PR overlap.
+    Drives blog-draft candidate selection.
+  - **`schemaVersion` bumped to 4.** v1/v2/v3 manifests still parse
+    (back-compat AC); `analysisSidecars` grows pointer slots for
+    every new v2 sidecar (embeddings, continuum-health, semantic
+    duplicates, audit-claims/results/summary, upgrade-outcomes,
+    blog-candidates, blog-drafts index).
+  - **`analysis/continuum-health.json`** (§5 B.1 / B.2). Per-source
+    capture-rate warnings, `consecutiveSuccesses` streak, and
+    `entriesByStatus` distribution. Surfaced in the viewer footer
+    + the daily brief's "Continuum health" section. Documented
+    nightly-scan routine for the `schedule` skill at
+    `_planning/v2-wave1-schedule.md`.
+
+### Changed
+
+- `EXPORTER_VERSION` bumped from `0.10.0` → `1.0.0`. Trips
+  per-source cache-bust on next rescan (every cached entry is
+  re-emitted under the new schema).
+
 ## [0.10.0] — 2026-05-15
 
 ### Added

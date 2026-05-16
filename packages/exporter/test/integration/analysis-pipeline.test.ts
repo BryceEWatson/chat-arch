@@ -137,6 +137,7 @@ describe('Phase 6 analysis pipeline integration', () => {
         'topics.json',
         'narratives.json',
         'correction-candidates.json',
+        'continuum-health.json',
       ].sort(),
     );
     // Phase 6 does not populate the `local` tier.
