@@ -309,12 +309,20 @@ export interface UnifiedSessionEntry {
    *                 wasn't on disk at scan time (deleted, aborted, or
    *                 cleaned up by the upstream tool between session end
    *                 and exporter scan).
+   *   - 'pruned'  — entry was reconstructed from `sessions-index.json`
+   *                 metadata (`firstPrompt`, `messageCount`, etc.) for
+   *                 a session whose transcript Anthropic's CLI has
+   *                 already deleted. The session is real but the
+   *                 conversation body is gone forever. `userTurns` is a
+   *                 best-effort estimate from `messageCount`; tokens /
+   *                 tool histograms are absent.
    *
    * Drives the SCANNED panel's split note ("X missing on disk · Y CLI
-   * crashed") so the user can tell apart recoverable-but-not-recovered
-   * errors from genuinely-gone transcripts.
+   * crashed · Z pruned") so the user can tell apart recoverable-but-not-
+   * recovered errors from genuinely-gone transcripts and from pre-pruned
+   * historical records.
    */
-  transcriptStatus?: 'ok' | 'crashed' | 'missing';
+  transcriptStatus?: 'ok' | 'crashed' | 'missing' | 'pruned';
 
   /** Output-relative path to the source manifest (Cowork, Desktop-CLI only). */
   manifestPath?: string;
