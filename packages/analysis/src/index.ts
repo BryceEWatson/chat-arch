@@ -144,3 +144,8 @@ export {
 } from './detectCorrectionCandidates.js';
 
 export { clusterByThreshold } from './clusterRules.js';
+
+export {
+  buildContinuumHealth,
+  type BuildContinuumHealthOptions,
+} from './continuumHealth.js';
