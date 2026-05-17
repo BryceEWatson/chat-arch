@@ -5,6 +5,7 @@ import { runCloudSubcommand } from './commands/cloud.js';
 import { runAllSubcommand } from './commands/all.js';
 import { runAnalyzeSubcommand } from './commands/analyze.js';
 import { runEmbedSubcommand } from './commands/embed.js';
+import { runGenerateDraftsSubcommand } from './commands/generateDrafts.js';
 import { logger } from './lib/logger.js';
 
 const USAGE = `\
@@ -26,6 +27,11 @@ Subcommands:
   embed    Re-run the v2 embedding pass (Ollama + nomic-embed-text) against
            an existing manifest.json. Writes analysis/embeddings.bin +
            analysis/embeddings.meta.json. Fail-soft on missing Ollama.
+  generate-drafts
+           Materialize blog post drafts from the analysis/blog-drafts/
+           *.prompt.md scaffolds via the Anthropic API. Writes the
+           final markdown next to each scaffold so the F-audit pass
+           and Today page surface verdicts. Requires ANTHROPIC_API_KEY.
 
 Options:
   -h, --help   Print help for the selected subcommand (or this usage).
@@ -63,6 +69,9 @@ async function main(): Promise<void> {
       break;
     case 'embed':
       code = await runEmbedSubcommand(subArgs);
+      break;
+    case 'generate-drafts':
+      code = await runGenerateDraftsSubcommand(subArgs);
       break;
     default:
       logger.error(`unknown subcommand "${sub}"`);
