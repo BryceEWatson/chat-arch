@@ -110,6 +110,24 @@ import '@fontsource/jetbrains-mono/600.css';
         letter-spacing: 0.14em;
         line-height: 1.6;
       }
+      /* Demo region visual differentiation. The peach DEMO badge
+         alone is too easy to miss when a page mixes real and demo
+         sections side-by-side (Priya persona-eval finding #2:
+         AUDIT CONCERNS rendering REAL data sat next to a demo
+         WORKSHOP LOOP with no visual cue distinguishing them).
+         Subtle peach left-rule + tint flags the demo region without
+         shouting; the badge remains the explicit signal. */
+      .today__hero-demo,
+      .today__row-demo {
+        position: relative;
+        padding-left: 12px;
+        border-left: 3px solid rgba(255, 153, 51, 0.55);
+        background: linear-gradient(
+          90deg,
+          rgba(255, 153, 51, 0.06) 0%,
+          rgba(255, 153, 51, 0) 60%
+        );
+      }
       /* sr-only — visually hidden but read by screen readers. Lifted
          from the canonical accessibility utility class. Reused by the
          demo regions to announce "Example data, not your data" so
