@@ -98,6 +98,17 @@ export default defineConfig({
   vite: {
     server: {
       headers: crossOriginIsolationHeaders,
+      // The v2 analysis sidecars (embeddings.bin ~1.6 MB, audit-claims.json
+      // ~600 KB, audit-results.json ~800 KB, briefs/, blog-drafts/) live
+      // under public/chat-arch-data/. Vite's default chokidar watcher
+      // walks all of public/ on startup and re-stats on every change,
+      // which on Windows can blow past the per-process file-handle ceiling
+      // (EMFILE). These files are read at request time by the SSR loaders
+      // anyway — a manual reload is the right UX after a rescan, not a
+      // hot-reload storm — so we exclude the whole tree from the watcher.
+      watch: {
+        ignored: ['**/public/chat-arch-data/**'],
+      },
     },
     preview: {
       headers: crossOriginIsolationHeaders,
