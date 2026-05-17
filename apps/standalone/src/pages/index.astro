@@ -1,17 +1,105 @@
 ---
+// v2 §FD.1: TODAY page replaces the legacy viewer index. Server-renders
+// the latest daily brief from analysis/briefs/YYYY-MM-DD.md + offers
+// drill-in links to the new chrome surfaces. The legacy viewer landing
+// moved to /sessions.
+export const prerender = false;
+
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { ChatArchViewer } from '@chat-arch/viewer';
-import '@chat-arch/viewer/style.css';
+import TodayNav from '../components/TodayNav.astro';
+import { readLatestBrief, readContinuumHealth } from '../lib/readSidecars.ts';
+
+const brief = await readLatestBrief();
+const health = await readContinuumHealth();
 ---
-<BaseLayout title="Chat Archaeologist">
-  <main>
-    <ChatArchViewer client:load />
-    {/*
-      Hint paragraph removed — it lived below the viewer and pushed the
-      document 50+px past the viewport, creating a vestigial scrollbar
-      on the empty state. The viewer's own ErrorState copy already
-      covers the same "run the exporter / upload / load demo" guidance,
-      so the trailing hint was duplicative anyway.
-    */}
+<BaseLayout title="Chat Archaeologist — Today">
+  <TodayNav current="TODAY" />
+  <main class="today">
+    <header class="today__header">
+      <h1>TODAY</h1>
+      {brief !== null ? (
+        <p class="today__date">Brief generated for {brief.date}</p>
+      ) : (
+        <p class="today__date today__date--empty">
+          No daily brief on disk yet. Run <code>pnpm exporter all</code> (or
+          hit RESCAN on /sessions) and reload this page.
+        </p>
+      )}
+    </header>
+
+    <section class="today__brief">
+      {brief !== null ? (
+        <pre>{brief.markdown}</pre>
+      ) : (
+        <pre class="today__brief--empty">{
+          'No brief generated yet. The brief generator runs as the tail of `pnpm exporter all`. See `research/v2-wave1-schedule.md` for the nightly routine.'
+        }</pre>
+      )}
+    </section>
+
+    <section class="today__drilldown">
+      <h2>DRILL IN</h2>
+      <ul>
+        <li><a href="/audit">/audit</a> — every F-layer claim verdict against the corpus</li>
+        <li><a href="/health">/health</a> — continuum-health snapshot ({
+          health !== null
+            ? `${health.consecutiveSuccesses} consecutive successes, ${health.warnings.length} warning(s)`
+            : 'no health snapshot yet'
+        })</li>
+        <li><a href="/blog-drafts">/blog-drafts</a> — auto-selected blog candidates + F-audited drafts</li>
+        <li><a href="/projects">/projects</a> — project-shaped sessions index</li>
+        <li><a href="/topics">/topics</a> — emergent topic clusters</li>
+        <li><a href="/sessions">/sessions</a> — legacy session browser</li>
+      </ul>
+    </section>
   </main>
 </BaseLayout>
+
+<style>
+  main.today {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+    color: #FFCC99;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .today__header h1 {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 32px;
+    margin: 0 0 4px;
+  }
+  .today__date { font-size: 13px; color: #FFCC9999; margin: 0 0 24px; }
+  .today__date--empty code {
+    background: #FFCC9911;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .today__brief pre {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9922;
+    padding: 16px 20px;
+    border-radius: 4px;
+    color: #FFCC99;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+  .today__brief--empty { color: #FFCC9966; font-style: italic; }
+  .today__drilldown { margin-top: 36px; }
+  .today__drilldown h2 {
+    font-family: 'Antonio', sans-serif;
+    font-size: 16px;
+    letter-spacing: 0.1em;
+    color: #FFCC99;
+    margin: 0 0 12px;
+  }
+  .today__drilldown ul { list-style: none; padding: 0; margin: 0; }
+  .today__drilldown li { padding: 6px 0; font-size: 14px; color: #FFCC99cc; }
+  .today__drilldown a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
+  .today__drilldown a:hover { border-bottom-style: solid; }
+</style>
