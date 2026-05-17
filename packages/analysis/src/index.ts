@@ -149,3 +149,50 @@ export {
   buildContinuumHealth,
   type BuildContinuumHealthOptions,
 } from './continuumHealth.js';
+
+export {
+  DEFAULT_DISCOVERY_WEIGHTS,
+  DEFAULT_TOKEN_INTENSITY_CAP,
+  DEFAULT_TOOL_DIVERSITY_CAP,
+  computeDiscoveryScore,
+  scoreManifest,
+  type AppliedImprovementLite,
+  type DiscoveryScoreContext,
+  type DiscoveryScoreOptions,
+  type DiscoveryScoreResult,
+  type DiscoveryScoreWeights,
+} from './discoveryScore.js';
+
+export {
+  AUDIT_CONFIG_VERSION,
+  CLAIM_PATTERNS,
+  DEFAULT_VERIFIER_WINDOWS,
+  PUSHBACK_PATTERNS,
+  SURROUNDING_CONTEXT_CHARS,
+  type ClaimPattern,
+  type VerifierWindows,
+} from './auditConfig.js';
+
+export {
+  extractClaims,
+  type AssistantMessage,
+  type ExtractClaimsResult,
+} from './auditClaims.js';
+
+export {
+  DEFAULT_SEMANTIC_DUP_THRESHOLD,
+  buildSemanticDuplicates,
+  type BuildSemanticDuplicatesOptions,
+  type SemanticDupInput,
+} from './duplicatesSemantic.js';
+
+export {
+  discoverTopicsLocal,
+  type DiscoverTopicsLocalOptions,
+  type DiscoverTopicsLocalResult,
+} from './discoverTopicsLocal.js';
+
+export {
+  buildUpgradeOutcomes,
+  type BuildUpgradeOutcomesOptions,
+} from './upgradeOutcomes.js';

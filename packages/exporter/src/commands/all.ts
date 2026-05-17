@@ -7,6 +7,7 @@ import { runCliExport } from '../sources/cli.js';
 import { runCloudExport } from '../sources/cloud.js';
 import { mergeSources } from '../merge.js';
 import { runAnalysis } from '../analysis/index.js';
+import { runSemanticAnalysis } from '../analysis/semanticAnalysis.js';
 import { runEmbed } from '../embeddings/index.js';
 import { findRepoRoot } from '../lib/repo-root.js';
 import { validateEntries } from '../lib/validate-entry.js';
@@ -216,6 +217,30 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   } catch (err) {
     logger.warn(
       `embeddings phase soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // Wave 2: semantic analysis layer (discovery scores, F.1 claims,
+  // semantic dedup, local topics, upgrade outcomes). Rewrites the
+  // manifest in place to populate discoveryScore on every eligible
+  // entry. Fail-soft so a missing transcript or partial embedding
+  // sidecar doesn't poison the run.
+  try {
+    const semStart = Date.now();
+    const semResult = await runSemanticAnalysis({ outDir, manifest: merged });
+    logger.info(
+      `semantic-analysis complete in ${Date.now() - semStart} ms — ` +
+        `discovery_scored=${semResult.counts.discoveryScored} ` +
+        `discovery_high=${semResult.counts.discoveryHighScored} ` +
+        `sem_dup_clusters=${semResult.counts.semanticDupClusters} ` +
+        `local_topics=${semResult.counts.topicsLocal} ` +
+        `audit_claims=${semResult.counts.auditClaims} ` +
+        `upgrade_outcomes=${semResult.counts.upgradeOutcomes} ` +
+        `embeddings_avail=${semResult.embeddingsAvailable}`,
+    );
+  } catch (err) {
+    logger.warn(
+      `semantic-analysis soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
