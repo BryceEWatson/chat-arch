@@ -1,9 +1,18 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import TodayNav from '../components/TodayNav.astro';
 import { ChatArchViewer } from '@chat-arch/viewer';
 import '@chat-arch/viewer/style.css';
 ---
 <BaseLayout title="Chat Archaeologist — Practice">
+  {/*
+    Hosts the PRACTICE four-lens dashboard inside the viewer island.
+    `compact` TodayNav strip mirrors the other viewer-island pages
+    (/sessions /projects /topics) — it gives users a path back to
+    TODAY / AUDIT / HEALTH / DRAFTS without double-stacking the
+    viewer's own `.lcars-top-bar` title pill.
+  */}
+  <TodayNav current="PRACTICE" compact />
   <script is:inline>
     if (typeof window !== 'undefined' && window.location.hash !== '#practice') {
       window.history.replaceState(null, '', window.location.pathname + '#practice');

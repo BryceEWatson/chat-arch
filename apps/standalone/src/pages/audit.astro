@@ -1,8 +1,15 @@
 ---
+// LCARS chrome (post-unify): wraps `.lcars-root` and reuses the
+// viewer's tokens/class shapes so the page reads as the same
+// product as `/sessions` `/projects` `/topics`. Status badges remap
+// to the four named LCARS accents (ice / peach / violet) per spec
+// §3 — green/red RGB tints retired.
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TodayNav from '../components/TodayNav.astro';
+import SectionBar from '../components/SectionBar.astro';
+import '@chat-arch/viewer/style.css';
 import { readAuditResults, readAuditSummary } from '../lib/readSidecars.ts';
 
 const results = await readAuditResults();
@@ -91,188 +98,418 @@ const claimTypes = [
 ---
 <BaseLayout title="Chat Archaeologist — Audit">
   <TodayNav current="AUDIT" />
-  <main class="audit">
-    <h1>AUDIT</h1>
-    {results === null ? (
-      <p class="audit__empty">
-        No <code>analysis/audit-results.json</code> on disk. Run
-        <code>pnpm exporter all</code> and reload.
-      </p>
-    ) : (
-      <>
-        <section class="audit__totals">
-          <span><strong>{results.totals.pass}</strong> pass</span>
-          <span><strong>{results.totals.fail}</strong> fail</span>
-          <span><strong>{results.totals.inconclusive}</strong> inconclusive</span>
-          {summary && summary.topFailureClaimTypes.length > 0 ? (
-            <span class="audit__top-fail">
-              top failures: {summary.topFailureClaimTypes
-                .map((t) => `${t.claimType} (${(t.failRate * 100).toFixed(0)}%)`)
-                .join(', ')}
+  <div class="lcars-root audit-root">
+    <main class="audit">
+      <h1>AUDIT</h1>
+      {results === null ? (
+        <p class="audit__empty">
+          No <code>analysis/audit-results.json</code> on disk. Run
+          <code>pnpm exporter all</code> and reload.
+        </p>
+      ) : (
+        <>
+          <section class="audit__totals">
+            <span class="audit__total audit__total--pass">
+              <strong>{results.totals.pass}</strong> pass
             </span>
-          ) : null}
-        </section>
-
-        {concernClusters.length > 0 ? (
-          <section class="audit__concerns">
-            <h2>TOP CONCERNS · {concernClusters.length} clusters</h2>
-            <p class="audit__concerns-hint">
-              Failures grouped by claim type, ranked by count. Each cluster's top sessions are the
-              ones most worth investigating — they accumulated the most fail verdicts of this kind.
-              Use the filter row below to drill into any one cluster.
-            </p>
-            <ul class="audit__concerns-list">
-              {concernClusters.map((c) => (
-                <li>
-                  <div class="audit__concerns-head">
-                    <code class="audit__concerns-type">{c.claimType}</code>
-                    <span class="audit__concerns-count">{c.failCount} fail{c.failCount === 1 ? '' : 's'}</span>
-                    <a class="audit__concerns-drill" href={`?outcome=fail&claimType=${c.claimType}`}>filter below →</a>
-                  </div>
-                  {c.topSessions.length > 0 ? (
-                    <ul class="audit__concerns-sessions">
-                      {c.topSessions.map((s) => (
-                        <li>
-                          <code>[SID:{s.sessionId.slice(0, 8)}…]</code>
-                          <span class="audit__concerns-x">{s.failsInSession}× </span>
-                          <span class="audit__concerns-span">"{s.sampleSpan.slice(0, 60)}"</span>
-                          <span class="audit__concerns-reason">— {s.sampleReason.slice(0, 80)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <span class="audit__total audit__total--fail">
+              <strong>{results.totals.fail}</strong> fail
+            </span>
+            <span class="audit__total audit__total--inconc">
+              <strong>{results.totals.inconclusive}</strong> inconclusive
+            </span>
+            {summary && summary.topFailureClaimTypes.length > 0 ? (
+              <span class="audit__top-fail">
+                top failures: {summary.topFailureClaimTypes
+                  .map((t) => `${t.claimType} (${(t.failRate * 100).toFixed(0)}%)`)
+                  .join(', ')}
+              </span>
+            ) : null}
           </section>
-        ) : null}
 
-        <form method="get" class="audit__filters">
-          <label>outcome
-            <select name="outcome">
-              <option value="all" selected={outcomeParam === 'all'}>all</option>
-              <option value="pass" selected={outcomeParam === 'pass'}>pass</option>
-              <option value="fail" selected={outcomeParam === 'fail'}>fail</option>
-              <option value="inconclusive" selected={outcomeParam === 'inconclusive'}>inconclusive</option>
-            </select>
-          </label>
-          <label>claim type
-            <select name="claimType">
-              {claimTypes.map((ct) => (
-                <option value={ct} selected={ct === claimTypeParam}>{ct}</option>
-              ))}
-            </select>
-          </label>
-          <label>session id contains
-            <input type="text" name="project" value={projectParam} placeholder="optional substring" />
-          </label>
-          <button type="submit">apply</button>
-        </form>
+          {concernClusters.length > 0 ? (
+            <>
+              <SectionBar label={`TOP CONCERNS · ${concernClusters.length} clusters`} tone="peach" />
+              <section class="audit__concerns">
+                <p class="audit__concerns-hint">
+                  Failures grouped by claim type, ranked by count. Each cluster's top sessions are the
+                  ones most worth investigating — they accumulated the most fail verdicts of this kind.
+                  Use the filter row below to drill into any one cluster.
+                </p>
+                <ul class="audit__concerns-list">
+                  {concernClusters.map((c) => (
+                    <li>
+                      <div class="audit__concerns-head">
+                        <code class="audit__concerns-type">{c.claimType}</code>
+                        <span class="audit__concerns-count">{c.failCount} fail{c.failCount === 1 ? '' : 's'}</span>
+                        <a class="audit__concerns-drill" href={`?outcome=fail&claimType=${c.claimType}`}>filter below →</a>
+                      </div>
+                      {c.topSessions.length > 0 ? (
+                        <ul class="audit__concerns-sessions">
+                          {c.topSessions.map((s) => (
+                            <li>
+                              <code>[SID:{s.sessionId.slice(0, 8)}…]</code>
+                              <span class="audit__concerns-x">{s.failsInSession}× </span>
+                              <span class="audit__concerns-span">"{s.sampleSpan.slice(0, 60)}"</span>
+                              <span class="audit__concerns-reason">— {s.sampleReason.slice(0, 80)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </>
+          ) : null}
 
-        <p class="audit__count">{displayed.length} result(s) · page {page} / {totalPages}</p>
+          <SectionBar label="FILTERS" tone="butterscotch" />
+          <form method="get" class="audit__filters">
+            <label>outcome
+              <select name="outcome">
+                <option value="all" selected={outcomeParam === 'all'}>all</option>
+                <option value="pass" selected={outcomeParam === 'pass'}>pass</option>
+                <option value="fail" selected={outcomeParam === 'fail'}>fail</option>
+                <option value="inconclusive" selected={outcomeParam === 'inconclusive'}>inconclusive</option>
+              </select>
+            </label>
+            <label>claim type
+              <select name="claimType">
+                {claimTypes.map((ct) => (
+                  <option value={ct} selected={ct === claimTypeParam}>{ct}</option>
+                ))}
+              </select>
+            </label>
+            <label>session id contains
+              <input type="text" name="project" value={projectParam} placeholder="optional substring" />
+            </label>
+            <button type="submit" class="audit__apply">apply</button>
+          </form>
 
-        <table class="audit__table">
-          <thead>
-            <tr>
-              <th>outcome</th>
-              <th>claim type</th>
-              <th>session</th>
-              <th>line</th>
-              <th>span</th>
-              <th>reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slice.map((r) => (
+          <p class="audit__count">{displayed.length} result(s) · page {page} / {totalPages}</p>
+
+          <table class="audit__table">
+            <thead>
               <tr>
-                <td><span class={badgeClass(r.outcome)}>{r.outcome}</span></td>
-                <td><code>{r.claimType}</code></td>
-                <td><code>{r.sessionId}</code></td>
-                <td>{r.lineNumber}</td>
-                <td class="audit__span">{r.span}</td>
-                <td class="audit__reason">{r.reason}</td>
+                <th>outcome</th>
+                <th>claim type</th>
+                <th>session</th>
+                <th>line</th>
+                <th>span</th>
+                <th>reason</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {slice.map((r) => (
+                <tr>
+                  <td><span class={badgeClass(r.outcome)}>{r.outcome}</span></td>
+                  <td><code>{r.claimType}</code></td>
+                  <td><code>{r.sessionId}</code></td>
+                  <td>{r.lineNumber}</td>
+                  <td class="audit__span">{r.span}</td>
+                  <td class="audit__reason">{r.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-        <nav class="audit__pager">
-          {page > 1 ? (
-            <a href={`?page=${page - 1}&outcome=${outcomeParam}&claimType=${claimTypeParam}&project=${encodeURIComponent(projectParam)}`}>← prev</a>
-          ) : <span class="audit__pager--disabled">← prev</span>}
-          <span>page {page} / {totalPages}</span>
-          {page < totalPages ? (
-            <a href={`?page=${page + 1}&outcome=${outcomeParam}&claimType=${claimTypeParam}&project=${encodeURIComponent(projectParam)}`}>next →</a>
-          ) : <span class="audit__pager--disabled">next →</span>}
-        </nav>
-      </>
-    )}
-  </main>
+          <nav class="audit__pager">
+            {page > 1 ? (
+              <a href={`?page=${page - 1}&outcome=${outcomeParam}&claimType=${claimTypeParam}&project=${encodeURIComponent(projectParam)}`}>← prev</a>
+            ) : <span class="audit__pager--disabled">← prev</span>}
+            <span>page {page} / {totalPages}</span>
+            {page < totalPages ? (
+              <a href={`?page=${page + 1}&outcome=${outcomeParam}&claimType=${claimTypeParam}&project=${encodeURIComponent(projectParam)}`}>next →</a>
+            ) : <span class="audit__pager--disabled">next →</span>}
+          </nav>
+        </>
+      )}
+    </main>
+  </div>
 </BaseLayout>
 
 <style>
+  .audit-root { padding: 0; }
   main.audit {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 32px 24px 64px;
-    color: #FFCC99;
-    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 24px 24px 64px;
+    color: var(--lcars-text);
+    font-family: var(--lcars-font-prose);
   }
   main.audit h1 {
-    font-family: 'Antonio', sans-serif;
+    font-family: var(--lcars-font-chrome);
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.16em;
     font-size: 32px;
     margin: 0 0 16px;
+    color: var(--lcars-sunflower);
   }
   .audit__empty code {
-    background: #FFCC9911;
+    background: rgba(255, 204, 153, 0.08);
+    color: var(--lcars-ice);
     padding: 1px 6px;
+    border: 1px solid rgba(255, 204, 153, 0.1);
     border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--lcars-font-mono);
   }
-  .audit__totals { display: flex; gap: 24px; font-size: 14px; margin-bottom: 16px; }
-  .audit__totals strong { font-family: 'Antonio', sans-serif; color: #FFCC99; }
-  .audit__top-fail { color: #FFCC9999; }
-  .audit__filters { display: flex; gap: 16px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
-  .audit__filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #FFCC9999; }
-  .audit__filters select, .audit__filters input {
-    background: #0a0a0a; color: #FFCC99; border: 1px solid #FFCC9933; padding: 4px 8px; font-family: inherit;
+
+  /* Totals strip — counts colored by outcome role per spec §3
+     status alias map (pass→ice, fail→peach, inconc→violet). */
+  .audit__totals {
+    display: flex;
+    gap: 24px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    color: var(--lcars-butterscotch);
   }
-  .audit__filters button {
-    background: #FFCC99; color: #0a0a0a; border: none; padding: 6px 16px; font-family: 'Antonio', sans-serif;
-    letter-spacing: 0.08em; cursor: pointer;
+  .audit__total strong {
+    font-family: var(--lcars-font-chrome);
+    font-size: 18px;
+    letter-spacing: 0.06em;
   }
-  .audit__count { font-size: 12px; color: #FFCC9999; margin: 0 0 8px; }
-  .audit__table {
-    width: 100%; border-collapse: collapse; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  .audit__total--pass strong { color: var(--lcars-ice); }
+  .audit__total--fail strong { color: var(--lcars-peach); }
+  .audit__total--inconc strong { color: var(--lcars-violet); }
+  .audit__top-fail { color: var(--lcars-butterscotch); }
+
+  /* Concerns panel — bg-1 surface with 3px peach left-rule (matches
+     `.lcars-rescan-banner--error` pattern, spec §6.7). */
+  .audit__concerns {
+    margin: 0 0 24px;
+    padding: 14px 18px;
+    background: var(--lcars-bg-1);
+    border: 1px solid var(--lcars-divider);
+    border-left: 3px solid var(--lcars-peach);
+    border-radius: 0 8px 8px 0;
   }
-  .audit__table th, .audit__table td {
-    text-align: left; padding: 6px 10px; border-bottom: 1px solid #FFCC9922; vertical-align: top;
+  .audit__concerns-hint {
+    font-size: 12px;
+    color: var(--lcars-butterscotch);
+    margin: 0 0 12px;
+    line-height: 1.5;
   }
-  .audit__table th { color: #FFCC9999; font-weight: 600; font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; }
-  .audit__span { color: #FFCC99; max-width: 240px; }
-  .audit__reason { color: #FFCC99cc; max-width: 360px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
-  .badge--pass { background: #4caf5044; color: #88e088; }
-  .badge--fail { background: #c0393944; color: #f08080; }
-  .badge--inconc { background: #ffaa3344; color: #ffd680; }
-  .audit__pager { margin-top: 16px; display: flex; gap: 24px; font-size: 13px; color: #FFCC99cc; }
-  .audit__pager a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
-  .audit__pager--disabled { color: #FFCC9944; }
-  .audit__concerns { margin: 20px 0; padding: 16px 20px; background: #0a0a0a; border: 1px solid #FFCC9944; border-radius: 4px; }
-  .audit__concerns h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.12em; font-size: 14px; margin: 0 0 8px; color: #FFCC99; }
-  .audit__concerns-hint { font-size: 12px; color: #FFCC9999; margin: 0 0 12px; line-height: 1.5; }
   .audit__concerns-list { list-style: none; padding: 0; margin: 0; }
-  .audit__concerns-list > li { padding: 10px 0; border-bottom: 1px solid #FFCC9922; }
+  .audit__concerns-list > li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--lcars-divider);
+  }
   .audit__concerns-list > li:last-child { border-bottom: none; }
   .audit__concerns-head { display: flex; align-items: baseline; gap: 12px; }
-  .audit__concerns-type { font-family: 'JetBrains Mono', monospace; color: #ffd680; font-size: 12px; }
-  .audit__concerns-count { font-family: 'Antonio', sans-serif; color: #FFCC99; font-size: 14px; }
-  .audit__concerns-drill { color: #FFCC99; font-size: 11px; text-decoration: none; border-bottom: 1px dashed #FFCC9955; margin-left: auto; }
-  .audit__concerns-sessions { list-style: none; padding: 4px 0 0 12px; margin: 0; }
-  .audit__concerns-sessions li { padding: 3px 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FFCC99cc; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-  .audit__concerns-x { color: #ffd680; }
-  .audit__concerns-span { color: #FFCC99; }
-  .audit__concerns-reason { color: #FFCC9999; }
+  .audit__concerns-type {
+    font-family: var(--lcars-font-mono);
+    color: var(--lcars-peach);
+    font-size: 12px;
+    background: rgba(255, 153, 51, 0.08);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 153, 51, 0.15);
+  }
+  .audit__concerns-count {
+    font-family: var(--lcars-font-chrome);
+    color: var(--lcars-sunflower);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+  }
+  .audit__concerns-drill {
+    color: var(--lcars-sunflower);
+    font-size: 11px;
+    text-decoration: none;
+    border-bottom: 1px dashed var(--lcars-butterscotch);
+    margin-left: auto;
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.1em;
+  }
+  .audit__concerns-drill:hover {
+    color: var(--lcars-ice);
+    border-bottom-color: var(--lcars-ice);
+  }
+  .audit__concerns-sessions {
+    list-style: none;
+    padding: 4px 0 0 12px;
+    margin: 0;
+  }
+  .audit__concerns-sessions li {
+    padding: 3px 0;
+    font-family: var(--lcars-font-mono);
+    font-size: 11px;
+    color: var(--lcars-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .audit__concerns-sessions code {
+    color: var(--lcars-ice);
+    background: rgba(153, 204, 255, 0.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .audit__concerns-x { color: var(--lcars-peach); }
+  .audit__concerns-span { color: var(--lcars-text); }
+  .audit__concerns-reason { color: var(--lcars-butterscotch); }
+
+  /* Filter row — selects/inputs use bg surface + divider border;
+     apply button is a butterscotch pill matching today__btn. */
+  .audit__filters {
+    display: flex;
+    gap: 16px;
+    align-items: end;
+    margin: 12px 0 16px;
+    flex-wrap: wrap;
+  }
+  .audit__filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--lcars-butterscotch);
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .audit__filters select,
+  .audit__filters input {
+    background: var(--lcars-bg-1);
+    color: var(--lcars-text);
+    border: 1px solid var(--lcars-divider);
+    padding: 6px 8px;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
+    border-radius: 4px;
+    min-width: 140px;
+  }
+  .audit__filters select:focus,
+  .audit__filters input:focus {
+    outline: none;
+    border-color: var(--lcars-sunflower);
+  }
+  .audit__apply {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 14px;
+    background: rgba(255, 204, 153, 0.12);
+    color: var(--lcars-butterscotch);
+    border: 1.5px solid var(--lcars-butterscotch);
+    border-radius: 14px;
+    font-family: var(--lcars-font-chrome);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    padding-bottom: 2px;
+    cursor: pointer;
+    transition: background 120ms, color 120ms;
+  }
+  .audit__apply:hover,
+  .audit__apply:focus-visible {
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+    outline: none;
+  }
+
+  .audit__count {
+    font-size: 12px;
+    color: var(--lcars-butterscotch);
+    margin: 0 0 8px;
+    font-family: var(--lcars-font-mono);
+  }
+
+  .audit__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: var(--lcars-font-mono);
+  }
+  .audit__table th,
+  .audit__table td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--lcars-divider);
+    vertical-align: top;
+  }
+  .audit__table th {
+    color: var(--lcars-bg);
+    background: var(--lcars-butterscotch);
+    font-weight: 700;
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-size: 10px;
+    padding: 6px 10px;
+    line-height: 1;
+  }
+  .audit__table th:first-child { border-radius: 10px 0 0 10px; }
+  .audit__table th:last-child { border-radius: 0 10px 10px 0; }
+  .audit__table tbody tr:hover {
+    background: var(--lcars-bg-1);
+  }
+  .audit__table code {
+    color: var(--lcars-ice);
+    background: rgba(153, 204, 255, 0.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .audit__span {
+    color: var(--lcars-text);
+    max-width: 240px;
+  }
+  .audit__reason {
+    color: var(--lcars-butterscotch);
+    max-width: 360px;
+  }
+
+  /* Status badges remapped to the four named LCARS accents per
+     spec §3 status alias map. Border + foreground color carry the
+     state (mirrors `.lcars-semantic-chip` pattern, spec §6.8) — no
+     RGB green/red. */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 0 10px 10px 0;
+    font-size: 10px;
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    border: 1px solid;
+  }
+  .badge--pass {
+    color: var(--lcars-ice);
+    border-color: var(--lcars-ice);
+    background: rgba(153, 204, 255, 0.1);
+  }
+  .badge--fail {
+    color: var(--lcars-peach);
+    border-color: var(--lcars-peach);
+    background: rgba(255, 153, 51, 0.1);
+  }
+  .badge--inconc {
+    color: var(--lcars-violet);
+    border-color: var(--lcars-violet);
+    background: rgba(204, 153, 204, 0.1);
+  }
+
+  .audit__pager {
+    margin-top: 16px;
+    display: flex;
+    gap: 24px;
+    font-size: 13px;
+    color: var(--lcars-butterscotch);
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.1em;
+  }
+  .audit__pager a {
+    color: var(--lcars-sunflower);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--lcars-butterscotch);
+  }
+  .audit__pager a:hover {
+    color: var(--lcars-ice);
+    border-bottom-color: var(--lcars-ice);
+  }
+  .audit__pager--disabled { color: var(--lcars-dim); }
 </style>

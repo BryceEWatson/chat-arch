@@ -10,7 +10,13 @@
 // peach-on-hover) plus the sidebar item's three-letter abbreviation
 // prefix (`CHT CHAT`, `COR CORRECTIONS`, etc.) so the visual vocabulary
 // is identical regardless of which surface you land on first.
-const { current } = Astro.props as { current: string };
+// `compact` suppresses the dot + "CHAT ARCHAEOLOGIST" title block.
+// On the viewer pages (`/sessions` `/projects` `/topics` `/practice`)
+// the React viewer renders its own `.lcars-top-bar` with the same
+// dot + title, so showing both stacks two identical title pills.
+// Compact mode keeps just the nav pills, sized to read as a
+// secondary cross-surface strip below the viewer's primary top bar.
+const { current, compact = false } = Astro.props as { current: string; compact?: boolean };
 const links: { href: string; short: string; label: string }[] = [
   { href: '/', short: 'TDY', label: 'TODAY' },
   { href: '/audit', short: 'AUD', label: 'AUDIT' },
@@ -19,11 +25,16 @@ const links: { href: string; short: string; label: string }[] = [
   { href: '/sessions', short: 'SES', label: 'SESSIONS' },
   { href: '/projects', short: 'PRJ', label: 'PROJECTS' },
   { href: '/topics', short: 'TOP', label: 'TOPICS' },
+  { href: '/practice', short: 'PRC', label: 'PRACTICE' },
 ];
 ---
-<nav class="today-nav" aria-label="Primary surfaces">
-  <span class="today-nav__dot" aria-hidden="true"></span>
-  <span class="today-nav__title">CHAT&nbsp;ARCHAEOLOGIST</span>
+<nav class={`today-nav ${compact ? 'today-nav--compact' : ''}`} aria-label="Primary surfaces">
+  {!compact ? (
+    <>
+      <span class="today-nav__dot" aria-hidden="true"></span>
+      <span class="today-nav__title">CHAT&nbsp;ARCHAEOLOGIST</span>
+    </>
+  ) : null}
   <ul class="today-nav__links">
     {links.map((l) => (
       <li>
@@ -123,5 +134,25 @@ const links: { href: string; short: string; label: string }[] = [
   @media (max-width: 700px) {
     .today-nav__item-label { display: none; }
     .today-nav__item { padding: 8px 10px; }
+  }
+  /* Compact mode — no dot + title, smaller padding. Sits *below*
+     the viewer's full top-bar on /sessions /projects /topics
+     /practice as a secondary cross-surface strip. Reading order:
+     primary top-bar (viewer) → compact TodayNav (cross-surface
+     pills) → sidebar + content. The strip itself stays on-brand
+     (butterscotch underline + sunflower-muted pills) so it reads as
+     part of the same chrome system. */
+  .today-nav--compact {
+    padding: 6px 12px;
+    gap: 0;
+    border-radius: 0 12px 12px 0;
+    margin: 4px 0 0;
+  }
+  .today-nav--compact .today-nav__links {
+    justify-content: flex-start;
+  }
+  .today-nav--compact .today-nav__item {
+    padding: 6px 12px;
+    font-size: 10px;
   }
 </style>

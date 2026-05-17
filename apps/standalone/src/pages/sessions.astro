@@ -11,9 +11,10 @@ import '@chat-arch/viewer/style.css';
     is the long-form session browser. The viewer's hash-state is reset
     pre-hydration so a fresh visit lands on SESSIONS rather than the
     last-used surface. TodayNav strip on top per the same back-link
-    rationale as /projects.astro.
+    rationale as /projects.astro — `compact` to avoid double-stacking
+    the title pill (the viewer's own top-bar carries the dot + title).
   */}
-  <TodayNav current="SESSIONS" />
+  <TodayNav current="SESSIONS" compact />
   <script is:inline>
     if (typeof window !== 'undefined' && window.location.hash !== '#sessions') {
       window.history.replaceState(null, '', window.location.pathname + '#sessions');

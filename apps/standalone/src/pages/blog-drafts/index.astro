@@ -1,8 +1,15 @@
 ---
+// LCARS chrome (post-unify): wraps `.lcars-root` and uses LCARS
+// tokens. Pills remap to spec §3 status alias colors — prompt
+// scaffold → butterscotch (the "in-progress" role), final draft →
+// ice (the "open-PR / verified" role) — and use the half-pill
+// `0 14px 14px 0` geometry that defines the system.
 export const prerender = false;
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import TodayNav from '../../components/TodayNav.astro';
+import SectionBar from '../../components/SectionBar.astro';
+import '@chat-arch/viewer/style.css';
 import { listBlogDraftSlugs, readBlogCandidates } from '../../lib/readSidecars.ts';
 
 const slugs = await listBlogDraftSlugs();
@@ -12,54 +19,133 @@ for (const c of candidates?.candidates ?? []) candidateMap.set(c.id, c);
 ---
 <BaseLayout title="Chat Archaeologist — Blog Drafts">
   <TodayNav current="DRAFTS" />
-  <main class="drafts">
-    <h1>BLOG DRAFTS</h1>
-    {slugs.length === 0 ? (
-      <p class="drafts__empty">
-        No drafts on disk. The blog-candidate selector runs as part of
-        <code>pnpm exporter all</code>; top candidates land at
-        <code>analysis/blog-drafts/&#123;slug&#125;.prompt.md</code>. Invoke the
-        chat-answer skill in draft mode to produce the final markdown.
-      </p>
-    ) : (
-      <ul class="drafts__list">
-        {slugs.map((s) => {
-          const candidateId = s.slug.split('-').slice(-2).join('-');
-          const cand = candidateMap.get(`blog-candidate-${candidateId.split('-')[1] ?? '0'}`);
-          return (
-            <li>
-              <a href={`/blog-drafts/${s.slug}`}>
-                <span class={s.isPrompt ? 'drafts__pill drafts__pill--prompt' : 'drafts__pill drafts__pill--final'}>
-                  {s.isPrompt ? 'prompt' : 'draft'}
-                </span>
-                <code>{s.slug}</code>
-              </a>
-              {cand ? (
-                <p class="drafts__meta">
-                  score {cand.score.toFixed(3)} · {cand.clusterSessionIds.length} session(s) ·
-                  span {cand.spanDays.toFixed(1)}d ·
-                  novelty {cand.noveltyScore.toFixed(2)}
-                  {cand.meanAuditPassRate !== null ? ` · audit ${(cand.meanAuditPassRate * 100).toFixed(0)}%` : ''}
-                </p>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-    )}
-  </main>
+  <div class="lcars-root drafts-root">
+    <main class="drafts">
+      <h1>BLOG DRAFTS</h1>
+      {slugs.length === 0 ? (
+        <p class="drafts__empty">
+          No drafts on disk. The blog-candidate selector runs as part of
+          <code>pnpm exporter all</code>; top candidates land at
+          <code>analysis/blog-drafts/&#123;slug&#125;.prompt.md</code>. Invoke the
+          chat-answer skill in draft mode to produce the final markdown.
+        </p>
+      ) : (
+        <>
+          <SectionBar label={`${slugs.length} DRAFT${slugs.length === 1 ? '' : 'S'} ON DISK`} tone="ice" />
+          <ul class="drafts__list">
+            {slugs.map((s) => {
+              const candidateId = s.slug.split('-').slice(-2).join('-');
+              const cand = candidateMap.get(`blog-candidate-${candidateId.split('-')[1] ?? '0'}`);
+              return (
+                <li>
+                  <a href={`/blog-drafts/${s.slug}`}>
+                    <span class={s.isPrompt ? 'drafts__pill drafts__pill--prompt' : 'drafts__pill drafts__pill--final'}>
+                      {s.isPrompt ? 'PROMPT' : 'DRAFT'}
+                    </span>
+                    <code class="drafts__slug">{s.slug}</code>
+                  </a>
+                  {cand ? (
+                    <p class="drafts__meta">
+                      score <span class="drafts__meta-val">{cand.score.toFixed(3)}</span> ·
+                      <span class="drafts__meta-val"> {cand.clusterSessionIds.length}</span> session(s) ·
+                      span <span class="drafts__meta-val">{cand.spanDays.toFixed(1)}d</span> ·
+                      novelty <span class="drafts__meta-val">{cand.noveltyScore.toFixed(2)}</span>
+                      {cand.meanAuditPassRate !== null ? (
+                        <>
+                          {' · audit '}
+                          <span class="drafts__meta-val">{(cand.meanAuditPassRate * 100).toFixed(0)}%</span>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </main>
+  </div>
 </BaseLayout>
 
 <style>
-  main.drafts { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: #FFCC99; font-family: 'IBM Plex Sans', sans-serif; }
-  main.drafts h1 { font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; font-size: 28px; margin: 0 0 16px; }
-  .drafts__empty code { background: #FFCC9911; padding: 1px 6px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; }
+  .drafts-root { padding: 0; }
+  main.drafts {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 24px 64px;
+    color: var(--lcars-text);
+    font-family: var(--lcars-font-prose);
+  }
+  main.drafts h1 {
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.16em;
+    font-size: 28px;
+    margin: 0 0 16px;
+    color: var(--lcars-sunflower);
+    font-weight: 700;
+  }
+  .drafts__empty {
+    color: var(--lcars-text);
+    line-height: 1.6;
+  }
+  .drafts__empty code {
+    background: rgba(255, 204, 153, 0.08);
+    color: var(--lcars-ice);
+    padding: 1px 6px;
+    border: 1px solid rgba(255, 204, 153, 0.1);
+    border-radius: 3px;
+    font-family: var(--lcars-font-mono);
+  }
+
   .drafts__list { list-style: none; padding: 0; margin: 0; }
-  .drafts__list li { padding: 12px 0; border-bottom: 1px solid #FFCC9922; }
-  .drafts__list a { color: #FFCC99; text-decoration: none; display: inline-flex; align-items: center; gap: 12px; }
-  .drafts__list code { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
-  .drafts__pill { padding: 2px 8px; border-radius: 3px; font-size: 11px; letter-spacing: 0.08em; }
-  .drafts__pill--prompt { background: #ffaa3344; color: #ffd680; }
-  .drafts__pill--final { background: #4caf5044; color: #88e088; }
-  .drafts__meta { font-size: 12px; color: #FFCC9999; margin: 4px 0 0; padding-left: 60px; font-family: 'JetBrains Mono', monospace; }
+  .drafts__list li {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--lcars-divider);
+  }
+  .drafts__list a {
+    color: var(--lcars-sunflower);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .drafts__list a:hover .drafts__slug {
+    color: var(--lcars-ice);
+  }
+  .drafts__slug {
+    font-family: var(--lcars-font-mono);
+    font-size: 13px;
+    color: var(--lcars-sunflower);
+  }
+
+  /* Pill remapped to spec §3 status alias map and half-pill geometry
+     (`border-radius: 0 14px 14px 0`). butterscotch carries the
+     in-progress / prompt-scaffold role; ice carries the verified /
+     final-draft role. */
+  .drafts__pill {
+    padding: 3px 12px 3px 8px;
+    border-radius: 0 14px 14px 0;
+    font-family: var(--lcars-font-chrome);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    font-weight: 700;
+    color: var(--lcars-bg);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding-bottom: 2px; /* Antonio baseline correction */
+  }
+  .drafts__pill--prompt { background: var(--lcars-butterscotch); }
+  .drafts__pill--final { background: var(--lcars-ice); }
+
+  .drafts__meta {
+    font-size: 12px;
+    color: var(--lcars-butterscotch);
+    margin: 4px 0 0;
+    padding-left: 86px;
+    font-family: var(--lcars-font-mono);
+  }
+  .drafts__meta-val { color: var(--lcars-ice); }
 </style>

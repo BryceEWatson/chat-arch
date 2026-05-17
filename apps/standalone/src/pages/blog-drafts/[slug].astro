@@ -1,8 +1,15 @@
 ---
+// LCARS chrome (post-unify): wraps `.lcars-root` and uses LCARS
+// tokens. F-audit verdict pass/fail markers remap to spec §3
+// status alias colors (ice for pass, peach for fail). Notice
+// strip uses the rescan-banner pattern (butterscotch left-rule,
+// spec §6.7) — the "demo" / non-error chrome role.
 export const prerender = false;
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import TodayNav from '../../components/TodayNav.astro';
+import SectionBar from '../../components/SectionBar.astro';
+import '@chat-arch/viewer/style.css';
 import { readBlogDraft, readAuditResults } from '../../lib/readSidecars.ts';
 
 const slug = Astro.params.slug ?? '';
@@ -62,87 +69,223 @@ const overallRate = overallTotal === 0 ? 0 : overallPass / overallTotal;
 ---
 <BaseLayout title={draft !== null ? `Draft — ${slug}` : 'Draft not found'}>
   <TodayNav current="DRAFTS" />
-  <main class="draft">
-    <p class="draft__crumb"><a href="/blog-drafts">← all drafts</a></p>
-    <h1>{slug || '(no slug)'}</h1>
+  <div class="lcars-root draft-root">
+    <main class="draft">
+      <p class="draft__crumb"><a href="/blog-drafts">← all drafts</a></p>
+      <h1>{slug || '(no slug)'}</h1>
 
-    {draft === null ? (
-      <p class="draft__empty">
-        No draft found at <code>analysis/blog-drafts/{slug}.md</code> (or
-        <code>{slug}.prompt.md</code>). Run a rescan first.
-      </p>
-    ) : (
-      <>
-        {draft.isPrompt ? (
-          <p class="draft__notice">
-            ⚠ This is the prompt scaffold, not the final draft. Invoke the
-            chat-answer skill in draft mode against the member sessions
-            below, then drop the produced markdown alongside this file as
-            <code>{slug}.md</code>. A rescan will pick it up.
-          </p>
-        ) : (
-          <section class="draft__audit">
-            <h2>F-AUDIT VERDICT</h2>
-            <p>
-              <strong>{(overallRate * 100).toFixed(0)}%</strong> claim-pass
-              rate ({overallPass}/{overallTotal} verified, {overallFail} failed,
-              {overallInc} inconclusive across {auditRows.length} cited session(s)).
-              {overallRate >= 0.8 ? (
-                <span class="draft__pass"> ✓ passes 80% bar</span>
-              ) : (
-                <span class="draft__fail"> ✗ below 80% bar</span>
-              )}
-            </p>
-            {auditRows.length > 0 ? (
-              <table class="draft__audit-table">
-                <thead><tr><th>session</th><th>pass</th><th>fail</th><th>inconc</th><th>rate</th></tr></thead>
-                <tbody>
-                  {auditRows.map((r) => (
-                    <tr>
-                      <td><code>{r.sessionId}</code></td>
-                      <td>{r.pass}</td>
-                      <td>{r.fail}</td>
-                      <td>{r.inconclusive}</td>
-                      <td>{(r.passRate * 100).toFixed(0)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p class="draft__no-cites">No audit data for the cited sessions yet.</p>
-            )}
+      {draft === null ? (
+        <p class="draft__empty">
+          No draft found at <code>analysis/blog-drafts/{slug}.md</code> (or
+          <code>{slug}.prompt.md</code>). Run a rescan first.
+        </p>
+      ) : (
+        <>
+          {draft.isPrompt ? (
+            <div class="draft__notice">
+              <span class="draft__notice-tag">PROMPT</span>
+              <span class="draft__notice-body">
+                This is the prompt scaffold, not the final draft. Invoke the
+                chat-answer skill in draft mode against the member sessions
+                below, then drop the produced markdown alongside this file as
+                <code>{slug}.md</code>. A rescan will pick it up.
+              </span>
+            </div>
+          ) : (
+            <>
+              <SectionBar label="F-AUDIT VERDICT" tone={overallRate >= 0.8 ? 'ice' : 'peach'} />
+              <section class="draft__audit">
+                <p class="draft__audit-summary">
+                  <strong>{(overallRate * 100).toFixed(0)}%</strong> claim-pass
+                  rate ({overallPass}/{overallTotal} verified, {overallFail} failed,
+                  {overallInc} inconclusive across {auditRows.length} cited session(s)).
+                  {overallRate >= 0.8 ? (
+                    <span class="draft__pass"> ✓ passes 80% bar</span>
+                  ) : (
+                    <span class="draft__fail"> ✗ below 80% bar</span>
+                  )}
+                </p>
+                {auditRows.length > 0 ? (
+                  <table class="draft__audit-table">
+                    <thead><tr><th>session</th><th>pass</th><th>fail</th><th>inconc</th><th>rate</th></tr></thead>
+                    <tbody>
+                      {auditRows.map((r) => (
+                        <tr>
+                          <td><code>{r.sessionId}</code></td>
+                          <td class="draft__num draft__num--pass">{r.pass}</td>
+                          <td class="draft__num draft__num--fail">{r.fail}</td>
+                          <td class="draft__num draft__num--inconc">{r.inconclusive}</td>
+                          <td><strong>{(r.passRate * 100).toFixed(0)}%</strong></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p class="draft__no-cites">No audit data for the cited sessions yet.</p>
+                )}
+              </section>
+            </>
+          )}
+
+          <SectionBar label={draft.isPrompt ? 'DRAFT PROMPT' : 'DRAFT'} tone="butterscotch" />
+          <section class="draft__body">
+            <pre>{draft.markdown}</pre>
           </section>
-        )}
-
-        <section class="draft__body">
-          <h2>{draft.isPrompt ? 'DRAFT PROMPT' : 'DRAFT'}</h2>
-          <pre>{draft.markdown}</pre>
-        </section>
-      </>
-    )}
-  </main>
+        </>
+      )}
+    </main>
+  </div>
 </BaseLayout>
 
 <style>
-  main.draft { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: #FFCC99; font-family: 'IBM Plex Sans', sans-serif; }
-  main.draft h1 { font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 24px; margin: 0 0 16px; word-break: break-all; }
-  main.draft h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; font-size: 14px; color: #FFCC99; margin: 20px 0 8px; }
-  .draft__crumb a { color: #FFCC99cc; text-decoration: none; font-size: 12px; }
-  .draft__notice { background: #ffaa3322; border: 1px solid #ffaa3388; padding: 12px 16px; border-radius: 4px; color: #ffd680; }
-  .draft__notice code { background: #00000044; padding: 1px 4px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; }
-  .draft__audit { margin-top: 16px; }
-  .draft__pass { color: #88e088; }
-  .draft__fail { color: #f08080; }
-  .draft__audit-table { border-collapse: collapse; margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-  .draft__audit-table th, .draft__audit-table td { padding: 4px 12px; text-align: left; border-bottom: 1px solid #FFCC9922; }
-  .draft__no-cites { color: #FFCC9999; font-style: italic; }
+  .draft-root { padding: 0; }
+  main.draft {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 24px 64px;
+    color: var(--lcars-text);
+    font-family: var(--lcars-font-prose);
+  }
+  main.draft h1 {
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.12em;
+    font-size: 24px;
+    margin: 0 0 16px;
+    word-break: break-all;
+    color: var(--lcars-sunflower);
+    font-weight: 700;
+  }
+  .draft__crumb a {
+    color: var(--lcars-butterscotch);
+    text-decoration: none;
+    font-size: 12px;
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.1em;
+  }
+  .draft__crumb a:hover {
+    color: var(--lcars-ice);
+  }
+  .draft__empty code {
+    background: rgba(255, 204, 153, 0.08);
+    color: var(--lcars-ice);
+    padding: 1px 6px;
+    border: 1px solid rgba(255, 204, 153, 0.1);
+    border-radius: 3px;
+    font-family: var(--lcars-font-mono);
+  }
+
+  /* Notice strip — rescan-banner pattern (spec §6.7): bg-1 surface
+     with 3px butterscotch left-rule, semantic-chip tag at the start. */
+  .draft__notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: var(--lcars-bg-1);
+    border: 1px solid var(--lcars-divider);
+    border-left: 4px solid var(--lcars-butterscotch);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 8px 8px 0;
+    color: var(--lcars-text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .draft__notice-tag {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 8px 2px;
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+    font-family: var(--lcars-font-chrome);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    border-radius: 0 9px 9px 0;
+    margin-top: 1px;
+  }
+  .draft__notice-body { flex: 1 1 auto; }
+  .draft__notice code {
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--lcars-ice);
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
+  }
+
+  .draft__audit { margin-bottom: 8px; }
+  .draft__audit-summary {
+    font-family: var(--lcars-font-prose);
+    color: var(--lcars-text);
+    margin: 8px 0;
+  }
+  .draft__audit-summary strong {
+    font-family: var(--lcars-font-chrome);
+    font-size: 18px;
+    color: var(--lcars-sunflower);
+    letter-spacing: 0.06em;
+  }
+  .draft__pass {
+    color: var(--lcars-ice);
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.1em;
+    font-size: 12px;
+  }
+  .draft__fail {
+    color: var(--lcars-peach);
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.1em;
+    font-size: 12px;
+  }
+  .draft__audit-table {
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
+    width: 100%;
+  }
+  .draft__audit-table th {
+    text-align: left;
+    padding: 6px 12px;
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+    font-family: var(--lcars-font-chrome);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 10px;
+    line-height: 1;
+  }
+  .draft__audit-table th:first-child { border-radius: 10px 0 0 10px; }
+  .draft__audit-table th:last-child { border-radius: 0 10px 10px 0; }
+  .draft__audit-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--lcars-divider);
+    color: var(--lcars-text);
+  }
+  .draft__audit-table code {
+    color: var(--lcars-ice);
+    background: rgba(153, 204, 255, 0.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .draft__num--pass { color: var(--lcars-ice); }
+  .draft__num--fail { color: var(--lcars-peach); }
+  .draft__num--inconc { color: var(--lcars-violet); }
+  .draft__no-cites {
+    color: var(--lcars-butterscotch);
+    font-style: italic;
+    font-size: 13px;
+  }
   .draft__body pre {
-    background: #0a0a0a;
-    border: 1px solid #FFCC9922;
+    background: var(--lcars-bg-1);
+    border: 1px solid var(--lcars-divider);
     padding: 16px 20px;
-    border-radius: 4px;
-    color: #FFCC99;
-    font-family: 'JetBrains Mono', monospace;
+    border-radius: 6px;
+    color: var(--lcars-text);
+    font-family: var(--lcars-font-mono);
     font-size: 13px;
     line-height: 1.7;
     overflow-x: auto;

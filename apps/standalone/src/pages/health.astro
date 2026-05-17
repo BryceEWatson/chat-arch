@@ -1,8 +1,13 @@
 ---
-export const prerender = false;
-
+// LCARS chrome (post-unify): wraps `.lcars-root` and reuses the
+// viewer's tokens/class shapes. Section headers use SectionBar
+// (mid-bar, spec §6.6). Metric tiles get the `.lcars-session-card`-
+// style left-rule treatment. Warnings panel uses the rescan-banner
+// pattern (peach left-rule, spec §6.7) when warnings are present.
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TodayNav from '../components/TodayNav.astro';
+import SectionBar from '../components/SectionBar.astro';
+import '@chat-arch/viewer/style.css';
 import { readContinuumHealth } from '../lib/readSidecars.ts';
 
 const health = await readContinuumHealth();
@@ -13,103 +18,213 @@ function fmtPct(v: number): string {
 ---
 <BaseLayout title="Chat Archaeologist — Health">
   <TodayNav current="HEALTH" />
-  <main class="health">
-    <h1>CONTINUUM HEALTH</h1>
-    {health === null ? (
-      <p class="health__empty">
-        No <code>analysis/continuum-health.json</code> on disk yet. Run a
-        rescan and reload.
-      </p>
-    ) : (
-      <>
-        <section class="health__top">
-          <div class="health__metric">
-            <span class="health__metric-label">consecutive successes</span>
-            <span class="health__metric-value">{health.consecutiveSuccesses}</span>
-          </div>
-          <div class="health__metric">
-            <span class="health__metric-label">last scan</span>
-            <span class="health__metric-value">{health.lastScanAt}</span>
-          </div>
-          <div class="health__metric">
-            <span class="health__metric-label">last successful scan</span>
-            <span class="health__metric-value">{health.lastSuccessfulScanAt ?? '—'}</span>
-          </div>
-          <div class="health__metric">
-            <span class="health__metric-label">new since last scan</span>
-            <span class="health__metric-value">{health.newSessionsSinceLast}</span>
-          </div>
-        </section>
+  <div class="lcars-root health-root">
+    <main class="health">
+      <h1>CONTINUUM HEALTH</h1>
+      {health === null ? (
+        <p class="health__empty">
+          No <code>analysis/continuum-health.json</code> on disk yet. Run a
+          rescan and reload.
+        </p>
+      ) : (
+        <>
+          <SectionBar label="SNAPSHOT" tone="butterscotch" />
+          <section class="health__top">
+            <div class="health__metric" style="--metric-color: var(--lcars-ice)">
+              <span class="health__metric-label">consecutive successes</span>
+              <span class="health__metric-value">{health.consecutiveSuccesses}</span>
+            </div>
+            <div class="health__metric" style="--metric-color: var(--lcars-sunflower)">
+              <span class="health__metric-label">last scan</span>
+              <span class="health__metric-value health__metric-value--small">{health.lastScanAt}</span>
+            </div>
+            <div class="health__metric" style="--metric-color: var(--lcars-sunflower)">
+              <span class="health__metric-label">last successful scan</span>
+              <span class="health__metric-value health__metric-value--small">{health.lastSuccessfulScanAt ?? '—'}</span>
+            </div>
+            <div class="health__metric" style="--metric-color: var(--lcars-violet)">
+              <span class="health__metric-label">new since last scan</span>
+              <span class="health__metric-value">{health.newSessionsSinceLast}</span>
+            </div>
+          </section>
 
-        <section class="health__row">
-          <h2>SOURCES SCANNED</h2>
-          <p>{health.sourcesScanned.join(', ')}</p>
-        </section>
+          <SectionBar label="SOURCES SCANNED" tone="ice" />
+          <section class="health__row">
+            <p>{health.sourcesScanned.join(', ')}</p>
+          </section>
 
-        <section class="health__row">
-          <h2>ENTRIES BY STATUS</h2>
-          <table class="health__table">
-            <tbody>
-              <tr><th>ok</th><td>{health.entriesByStatus.ok}</td></tr>
-              <tr><th>missing</th><td>{health.entriesByStatus.missing}</td></tr>
-              <tr><th>crashed</th><td>{health.entriesByStatus.crashed}</td></tr>
-              <tr><th>pruned</th><td>{health.entriesByStatus.pruned}</td></tr>
-            </tbody>
-          </table>
-        </section>
+          <SectionBar label="ENTRIES BY STATUS" tone="ice" />
+          <section class="health__row">
+            <table class="health__table">
+              <tbody>
+                <tr><th>ok</th><td><code>{health.entriesByStatus.ok}</code></td></tr>
+                <tr><th>missing</th><td><code>{health.entriesByStatus.missing}</code></td></tr>
+                <tr><th>crashed</th><td><code>{health.entriesByStatus.crashed}</code></td></tr>
+                <tr><th>pruned</th><td><code>{health.entriesByStatus.pruned}</code></td></tr>
+              </tbody>
+            </table>
+          </section>
 
-        <section class="health__row">
-          <h2>WARNINGS {health.warnings.length === 0 ? '(none)' : `(${health.warnings.length})`}</h2>
-          {health.warnings.length === 0 ? (
-            <p class="health__nowarn">All sources under threshold.</p>
-          ) : (
-            <ul>
-              {health.warnings.map((w) => (
-                <li>
-                  <code>{w.source}</code> · {w.kind} =
-                  {' '}<strong>{typeof w.value === 'number' ? (w.kind.includes('rate') ? fmtPct(w.value) : w.value) : String(w.value)}</strong>
-                  {' '}(threshold {w.kind.includes('rate') ? fmtPct(w.threshold) : w.threshold})
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </>
-    )}
-  </main>
+          <SectionBar
+            label={`WARNINGS ${health.warnings.length === 0 ? '(none)' : `(${health.warnings.length})`}`}
+            tone={health.warnings.length === 0 ? 'sunflower' : 'peach'}
+          />
+          <section class={`health__row ${health.warnings.length > 0 ? 'health__row--warning' : ''}`}>
+            {health.warnings.length === 0 ? (
+              <p class="health__nowarn">All sources under threshold.</p>
+            ) : (
+              <ul>
+                {health.warnings.map((w) => (
+                  <li>
+                    <code>{w.source}</code> · {w.kind} =
+                    {' '}<strong>{typeof w.value === 'number' ? (w.kind.includes('rate') ? fmtPct(w.value) : w.value) : String(w.value)}</strong>
+                    {' '}(threshold {w.kind.includes('rate') ? fmtPct(w.threshold) : w.threshold})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
+    </main>
+  </div>
 </BaseLayout>
 
 <style>
+  .health-root { padding: 0; }
   main.health {
     max-width: 880px;
     margin: 0 auto;
-    padding: 32px 24px 64px;
-    color: #FFCC99;
-    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 24px 24px 64px;
+    color: var(--lcars-text);
+    font-family: var(--lcars-font-prose);
   }
   main.health h1 {
-    font-family: 'Antonio', sans-serif;
+    font-family: var(--lcars-font-chrome);
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.16em;
     font-size: 28px;
-    margin: 0 0 24px;
+    margin: 0 0 16px;
+    color: var(--lcars-sunflower);
   }
   .health__empty code {
-    background: #FFCC9911;
+    background: rgba(255, 204, 153, 0.08);
+    color: var(--lcars-ice);
     padding: 1px 6px;
+    border: 1px solid rgba(255, 204, 153, 0.1);
     border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--lcars-font-mono);
   }
-  .health__top { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 32px; }
-  .health__metric { background: #0a0a0a; border: 1px solid #FFCC9933; padding: 12px 16px; border-radius: 4px; min-width: 200px; }
-  .health__metric-label { display: block; font-size: 11px; color: #FFCC9999; letter-spacing: 0.08em; }
-  .health__metric-value { display: block; font-size: 18px; font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
-  .health__row h2 { font-family: 'Antonio', sans-serif; font-size: 14px; letter-spacing: 0.1em; color: #FFCC99; margin: 20px 0 8px; }
-  .health__row p { font-family: 'JetBrains Mono', monospace; font-size: 13px; margin: 0; }
-  .health__table { border-collapse: collapse; }
-  .health__table th { text-align: left; padding: 4px 16px 4px 0; color: #FFCC9999; font-weight: 400; font-family: 'JetBrains Mono', monospace; }
-  .health__table td { padding: 4px 0; font-family: 'JetBrains Mono', monospace; }
-  .health__nowarn { color: #88e088; }
-  .health__row ul { padding-left: 18px; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
-  .health__row li { padding: 4px 0; color: #FFCC99cc; }
+
+  .health__top {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  /* Metric tile — mirrors `.lcars-session-card`: bg surface, 3px
+     left rule in `--metric-color`, half-pill right-corner radius. */
+  .health__metric {
+    --metric-color: var(--lcars-sunflower);
+    background: var(--lcars-bg);
+    border: 1px solid var(--lcars-divider);
+    border-left: 3px solid var(--metric-color);
+    padding: 12px 14px;
+    border-radius: 0 10px 10px 0;
+    transition: transform 120ms, background 120ms;
+  }
+  .health__metric:hover {
+    background: var(--lcars-bg-1);
+    transform: translateY(-1px);
+  }
+  .health__metric-label {
+    display: block;
+    font-family: var(--lcars-font-chrome);
+    font-size: 10px;
+    color: var(--lcars-butterscotch);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .health__metric-value {
+    display: block;
+    font-family: var(--lcars-font-chrome);
+    font-size: 28px;
+    line-height: 1.1;
+    margin-top: 6px;
+    color: var(--metric-color);
+    font-weight: 700;
+  }
+  .health__metric-value--small {
+    font-family: var(--lcars-font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--lcars-text);
+  }
+
+  .health__row { margin: 0 0 12px; }
+  .health__row p {
+    font-family: var(--lcars-font-mono);
+    font-size: 13px;
+    margin: 0;
+    color: var(--lcars-text);
+  }
+  /* Warnings panel reuses the rescan-banner error pattern (peach
+     left-rule, bg-1 surface), spec §6.7. */
+  .health__row--warning {
+    padding: 12px 16px;
+    background: var(--lcars-bg-1);
+    border: 1px solid var(--lcars-divider);
+    border-left: 3px solid var(--lcars-peach);
+    border-radius: 0 8px 8px 0;
+  }
+  .health__row--warning ul {
+    padding-left: 18px;
+    font-family: var(--lcars-font-mono);
+    font-size: 13px;
+    margin: 0;
+  }
+  .health__row--warning li {
+    padding: 4px 0;
+    color: var(--lcars-text);
+  }
+  .health__row--warning code {
+    color: var(--lcars-peach);
+    background: rgba(255, 153, 51, 0.08);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .health__row--warning strong {
+    color: var(--lcars-peach);
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.06em;
+  }
+  .health__table {
+    border-collapse: collapse;
+    margin: 0;
+  }
+  .health__table th {
+    text-align: left;
+    padding: 4px 18px 4px 0;
+    color: var(--lcars-butterscotch);
+    font-weight: 700;
+    font-family: var(--lcars-font-chrome);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .health__table td {
+    padding: 4px 0;
+    font-family: var(--lcars-font-mono);
+  }
+  .health__table code {
+    color: var(--lcars-ice);
+    font-size: 13px;
+  }
+  .health__nowarn {
+    color: var(--lcars-ice);
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.1em;
+    font-size: 12px;
+  }
 </style>

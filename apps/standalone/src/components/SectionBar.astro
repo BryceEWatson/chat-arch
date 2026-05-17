@@ -1,0 +1,50 @@
+---
+// LCARS mid-bar section header — a solid 22-26px chrome strip with
+// black Antonio caps label. Mirrors `.lcars-mid-bar` from
+// packages/viewer/src/styles.css (spec §6.6). Used as the section
+// header on the new v2-instrumented-loop pages so that headers read
+// as chrome rather than as plain prose <h2> caps.
+//
+// Props:
+//   label    — the header text (will be tracked-caps Antonio).
+//   tone     — palette role: 'butterscotch' (default), 'ice', 'peach',
+//              'violet', 'sunflower'. Maps to the LCARS named accents.
+//   id       — optional element id for in-page anchors.
+//   as       — the heading tag to render (h2 by default). Kept
+//              semantic — visual chrome doesn't excuse skipping
+//              heading levels.
+interface Props {
+  label: string;
+  tone?: 'butterscotch' | 'ice' | 'peach' | 'violet' | 'sunflower';
+  id?: string;
+  as?: 'h1' | 'h2' | 'h3';
+}
+const { label, tone = 'butterscotch', id, as = 'h2' } = Astro.props;
+const toneVar = `var(--lcars-${tone})`;
+const Tag = as;
+---
+<Tag id={id} class="lcars-mid-bar lcars-mid-bar--section" style={`background: ${toneVar};`}>
+  <span class="lcars-mid-bar__label">{label}</span>
+</Tag>
+<style>
+  /* Page-level mid-bar variant: full width, a touch taller than the
+     viewer's mid-bar (which sits inside a packed sidebar column),
+     and a top margin so it spaces sections. The radius matches the
+     LCARS pill rule (`13px` desktop, `10px` mobile) from the canonical
+     class.
+
+     The component reuses the viewer's `.lcars-mid-bar` class for the
+     base treatment, so dark-mode tokens, height stepping, and label
+     typography come for free. This style block only adds the page-
+     level layout concerns (margins, full width) that the original
+     class doesn't claim. */
+  .lcars-mid-bar.lcars-mid-bar--section {
+    margin: 28px 0 12px;
+    width: 100%;
+  }
+  /* The first mid-bar after the page <h1> gets less top margin —
+     the h1's own bottom margin already provides the separation. */
+  :global(h1) + .lcars-mid-bar.lcars-mid-bar--section {
+    margin-top: 16px;
+  }
+</style>

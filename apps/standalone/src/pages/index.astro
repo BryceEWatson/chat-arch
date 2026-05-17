@@ -4,10 +4,21 @@
 // CLAUDE.md / skills. Prove the loop closed." The hero panel is the
 // workshop-loop status (corrections to apply, applies made, loop
 // closure rate). Audit concerns + brief content are demoted below.
+//
+// LCARS chrome (post-unify): the page wraps in `.lcars-root` and
+// imports the viewer's canonical stylesheet so every `--lcars-*`
+// token resolves the same way it does on `/sessions` `/projects`
+// `/topics`. Section headers use the SectionBar mid-bar component
+// (mirrors `.lcars-mid-bar`, spec §6.6). Metric tiles use the
+// canonical 3px left-rule pattern from `.lcars-session-card`
+// (spec §6.4) — `--metric-color` is the per-tile role accent
+// (butterscotch / ice / peach / sunflower).
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TodayNav from '../components/TodayNav.astro';
+import SectionBar from '../components/SectionBar.astro';
+import '@chat-arch/viewer/style.css';
 import {
   listBlogDraftSlugs,
   readContinuumHealth,
@@ -34,183 +45,188 @@ const workshopEmpty =
 ---
 <BaseLayout title="Chat Archaeologist — Today">
   <TodayNav current="TODAY" />
-  <main class="today">
-    <header class="today__header">
-      <h1>TODAY</h1>
-      <p class="today__date">
-        {new Date(NOW).toISOString().slice(0, 10)}
-        {brief !== null ? <span class="today__chip">brief at {brief.date}</span> : null}
-      </p>
-      <div class="today__actions">
-        <button id="action-rescan" type="button">RESCAN</button>
-        <button id="action-mine" type="button">MINE CORRECTIONS</button>
-        <button id="action-brief" type="button">REGEN BRIEF</button>
-        <span id="action-status" class="today__action-status"></span>
-      </div>
-    </header>
-
-    {/* ======================= WORKSHOP LOOP ======================= */}
-    <section class="today__hero">
-      <h2>WORKSHOP LOOP</h2>
-      {workshopEmpty ? (
-        <div class="today__empty">
-          <p><strong>No mined patterns yet.</strong> chat-arch has detected
-            <code>{1549}</code> correction candidates via heuristic recall, but
-            the <code>/mine-corrections</code> skill hasn't classified them into
-            actionable patterns yet.</p>
-          <p>
-            <strong>To populate the loop:</strong> from a fresh Claude Code session in this repo, run
-            <code>/mine-corrections</code>. It LLM-classifies the candidates,
-            clusters them, and emits <code>analysis/corrections.json</code>
-            with proposed CLAUDE.md / skill upgrades. Reload this page after.
-          </p>
-          <p class="today__empty-note">
-            The MINE CORRECTIONS button above tries the same via
-            <code>/api/mine-corrections</code> — currently broken on Windows
-            (CLI spawn quoting bug). Use the slash-command path until the
-            endpoint is patched.
-          </p>
-        </div>
-      ) : (
-        <div class="today__hero-grid">
-          <div class="today__metric today__metric--big">
-            <span class="today__metric-label">to APPLY</span>
-            <span class="today__metric-value">{workshop.unappliedPatternCount}</span>
-            <span class="today__metric-sub">new patterns waiting for review</span>
-          </div>
-          <div class="today__metric">
-            <span class="today__metric-label">applied total</span>
-            <span class="today__metric-value">{workshop.appliedPatternCount}</span>
-            <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
-          </div>
-          <div class={`today__metric ${workshop.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
-            <span class="today__metric-label">still recurring</span>
-            <span class="today__metric-value">{workshop.recurringAfterApplyCount}</span>
-            <span class="today__metric-sub">
-              {workshop.recurringAfterApplyCount > 0
-                ? 'rules patched but Claude still breaks them'
-                : 'no patched rule recurring'}
-            </span>
-          </div>
-          <div class="today__metric">
-            <span class="today__metric-label">loop closure</span>
-            <span class="today__metric-value">
-              {workshop.loopClosureRate === null
-                ? '—'
-                : `${(workshop.loopClosureRate * 100).toFixed(0)}%`}
-            </span>
-            <span class="today__metric-sub">
-              {workshop.loopClosureRate === null
-                ? 'no observed windows yet'
-                : 'patches that stuck (no recurrence in window)'}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {workshop.topUnapplied.length > 0 ? (
-        <div class="today__queue">
-          <h3>NEXT TO REVIEW · top {workshop.topUnapplied.length} by confidence</h3>
-          <ul>
-            {workshop.topUnapplied.map((p) => (
-              <li>
-                <span class="today__confidence">
-                  {(p.confidence * 100).toFixed(0)}%
-                </span>
-                <span class="today__rule">{p.canonicalRule}</span>
-                <span class="today__scope">
-                  ({p.occurrenceCount}× · scope={p.scope.kind})
-                </span>
-                <a href={`/sessions#corrections`}>review →</a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {workshop.recentApplies.length > 0 ? (
-        <div class="today__applies">
-          <h3>RECENT APPLIES</h3>
-          <ul>
-            {workshop.recentApplies.map((a) => (
-              <li>
-                <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
-                · {a.ruleSummary}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </section>
-
-    {/* ======================= DRAFTS READY ======================= */}
-    <section class="today__row">
-      <h2>BLOG DRAFTS</h2>
-      {drafts.length === 0 ? (
-        <p class="today__row-empty">
-          No drafts yet. The blog candidate selector ran but produced no
-          drafts because the <code>discoveryScore</code> threshold wasn't
-          met (or the chat-answer skill hasn't been invoked against the
-          prompt scaffolds). See <a href="/blog-drafts">/blog-drafts</a>.
+  <div class="lcars-root today-root">
+    <main class="today">
+      <header class="today__header">
+        <h1>TODAY</h1>
+        <p class="today__date">
+          <code class="today__date-code">{new Date(NOW).toISOString().slice(0, 10)}</code>
+          {brief !== null ? <span class="today__chip">brief at {brief.date}</span> : null}
         </p>
-      ) : (
+        <div class="today__actions">
+          <button id="action-rescan" class="today__btn" type="button">RESCAN</button>
+          <button id="action-mine" class="today__btn" type="button">MINE CORRECTIONS</button>
+          <button id="action-brief" class="today__btn" type="button">REGEN BRIEF</button>
+          <span id="action-status" class="today__action-status"></span>
+        </div>
+      </header>
+
+      {/* ======================= WORKSHOP LOOP ======================= */}
+      <SectionBar label="WORKSHOP LOOP" tone="butterscotch" />
+      <section class="today__hero">
+        {workshopEmpty ? (
+          <div class="today__empty">
+            <p><strong>No mined patterns yet.</strong> chat-arch has detected
+              <code>{1549}</code> correction candidates via heuristic recall, but
+              the <code>/mine-corrections</code> skill hasn't classified them into
+              actionable patterns yet.</p>
+            <p>
+              <strong>To populate the loop:</strong> from a fresh Claude Code session in this repo, run
+              <code>/mine-corrections</code>. It LLM-classifies the candidates,
+              clusters them, and emits <code>analysis/corrections.json</code>
+              with proposed CLAUDE.md / skill upgrades. Reload this page after.
+            </p>
+            <p class="today__empty-note">
+              The MINE CORRECTIONS button above tries the same via
+              <code>/api/mine-corrections</code> — currently broken on Windows
+              (CLI spawn quoting bug). Use the slash-command path until the
+              endpoint is patched.
+            </p>
+          </div>
+        ) : (
+          <div class="today__hero-grid">
+            <div class="today__metric today__metric--big" style="--metric-color: var(--lcars-butterscotch)">
+              <span class="today__metric-label">to APPLY</span>
+              <span class="today__metric-value">{workshop.unappliedPatternCount}</span>
+              <span class="today__metric-sub">new patterns waiting for review</span>
+            </div>
+            <div class="today__metric" style="--metric-color: var(--lcars-ice)">
+              <span class="today__metric-label">applied total</span>
+              <span class="today__metric-value">{workshop.appliedPatternCount}</span>
+              <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
+            </div>
+            <div
+              class={`today__metric ${workshop.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}
+              style={`--metric-color: ${workshop.recurringAfterApplyCount > 0 ? 'var(--lcars-peach)' : 'var(--lcars-sunflower)'}`}
+            >
+              <span class="today__metric-label">still recurring</span>
+              <span class="today__metric-value">{workshop.recurringAfterApplyCount}</span>
+              <span class="today__metric-sub">
+                {workshop.recurringAfterApplyCount > 0
+                  ? 'rules patched but Claude still breaks them'
+                  : 'no patched rule recurring'}
+              </span>
+            </div>
+            <div class="today__metric" style="--metric-color: var(--lcars-violet)">
+              <span class="today__metric-label">loop closure</span>
+              <span class="today__metric-value">
+                {workshop.loopClosureRate === null
+                  ? '—'
+                  : `${(workshop.loopClosureRate * 100).toFixed(0)}%`}
+              </span>
+              <span class="today__metric-sub">
+                {workshop.loopClosureRate === null
+                  ? 'no observed windows yet'
+                  : 'patches that stuck (no recurrence in window)'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {workshop.topUnapplied.length > 0 ? (
+          <div class="today__queue">
+            <h3>NEXT TO REVIEW · top {workshop.topUnapplied.length} by confidence</h3>
+            <ul>
+              {workshop.topUnapplied.map((p) => (
+                <li>
+                  <span class="today__confidence">
+                    {(p.confidence * 100).toFixed(0)}%
+                  </span>
+                  <span class="today__rule">{p.canonicalRule}</span>
+                  <span class="today__scope">
+                    ({p.occurrenceCount}× · scope={p.scope.kind})
+                  </span>
+                  <a href={`/sessions#corrections`}>review →</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {workshop.recentApplies.length > 0 ? (
+          <div class="today__applies">
+            <h3>RECENT APPLIES</h3>
+            <ul>
+              {workshop.recentApplies.map((a) => (
+                <li>
+                  <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
+                  · {a.ruleSummary}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
+
+      {/* ======================= DRAFTS READY ======================= */}
+      <SectionBar label="BLOG DRAFTS" tone="ice" />
+      <section class="today__row">
+        {drafts.length === 0 ? (
+          <p class="today__row-empty">
+            No drafts yet. The blog candidate selector ran but produced no
+            drafts because the <code>discoveryScore</code> threshold wasn't
+            met (or the chat-answer skill hasn't been invoked against the
+            prompt scaffolds). See <a href="/blog-drafts">/blog-drafts</a>.
+          </p>
+        ) : (
+          <p class="today__row-summary">
+            <a href="/blog-drafts">
+              {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+            </a>
+          </p>
+        )}
+      </section>
+
+      {/* ======================= AUDIT CONCERNS (demoted) ======================= */}
+      <SectionBar label={`AUDIT CONCERNS · top ${concerns.length}`} tone="peach" />
+      <section class="today__row">
+        {concerns.length === 0 ? (
+          <p class="today__row-empty">No F-layer concerns surfaced yet.</p>
+        ) : (
+          <ul class="today__concerns">
+            {concerns.map((c) => (
+              <li>
+                <code class="today__concern-type">{c.claimType}</code>
+                <span class="today__concern-span">claimed "{c.span}"</span>
+                <span class="today__concern-reason">— {c.reason}</span>
+                <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <p class="today__row-summary">
-          <a href="/blog-drafts">
-            {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
-          </a>
+          <a href="/audit">full audit table →</a>
         </p>
-      )}
-    </section>
+      </section>
 
-    {/* ======================= AUDIT CONCERNS (demoted) ======================= */}
-    <section class="today__row">
-      <h2>AUDIT CONCERNS · top {concerns.length}</h2>
-      {concerns.length === 0 ? (
-        <p class="today__row-empty">No F-layer concerns surfaced yet.</p>
-      ) : (
-        <ul class="today__concerns">
-          {concerns.map((c) => (
-            <li>
-              <code class="today__concern-type">{c.claimType}</code>
-              <span class="today__concern-span">claimed "{c.span}"</span>
-              <span class="today__concern-reason">— {c.reason}</span>
-              <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p class="today__row-summary">
-        <a href="/audit">full audit table →</a>
-      </p>
-    </section>
+      {/* ======================= CORPUS HEALTH (footer-y) ======================= */}
+      <SectionBar label="CORPUS HEALTH" tone="sunflower" />
+      <section class="today__row today__row--footer">
+        {health === null ? (
+          <p>No continuum snapshot.</p>
+        ) : (
+          <p>
+            <code>{health.consecutiveSuccesses}</code> consecutive successful scans ·
+            {' '}<code>{health.entriesByStatus.ok}</code> ok ·
+            {' '}<code>{health.entriesByStatus.missing}</code> missing ·
+            {' '}<code>{health.entriesByStatus.crashed}</code> crashed ·
+            {' '}<code>{health.entriesByStatus.pruned}</code> pruned
+            {health.warnings.length > 0 ? (
+              <span class="today__warn"> · {health.warnings.length} warning(s)</span>
+            ) : null}
+            {' · '}<a href="/health">/health →</a>
+          </p>
+        )}
+      </section>
 
-    {/* ======================= CORPUS HEALTH (footer-y) ======================= */}
-    <section class="today__row today__row--footer">
-      <h2>CORPUS HEALTH</h2>
-      {health === null ? (
-        <p>No continuum snapshot.</p>
-      ) : (
-        <p>
-          <code>{health.consecutiveSuccesses}</code> consecutive successful scans ·
-          {' '}<code>{health.entriesByStatus.ok}</code> ok ·
-          {' '}<code>{health.entriesByStatus.missing}</code> missing ·
-          {' '}<code>{health.entriesByStatus.crashed}</code> crashed ·
-          {' '}<code>{health.entriesByStatus.pruned}</code> pruned
-          {health.warnings.length > 0 ? (
-            <span class="today__warn"> · {health.warnings.length} warning(s)</span>
-          ) : null}
-          {' · '}<a href="/health">/health →</a>
-        </p>
-      )}
-    </section>
-
-    {brief !== null ? (
-      <details class="today__raw">
-        <summary>raw daily brief markdown</summary>
-        <pre>{brief.markdown}</pre>
-      </details>
-    ) : null}
-  </main>
+      {brief !== null ? (
+        <details class="today__raw">
+          <summary>raw daily brief markdown</summary>
+          <pre>{brief.markdown}</pre>
+        </details>
+      ) : null}
+    </main>
+  </div>
 
   <script is:inline>
     // Wire the action buttons. Each POSTs to the corresponding API
@@ -220,7 +236,8 @@ const workshopEmpty =
     function setStatus(text, isError) {
       if (!status) return;
       status.textContent = text;
-      status.style.color = isError ? '#f08080' : '#88e088';
+      // Ice for success, peach for error — staying on-palette.
+      status.style.color = isError ? '#ff9933' : '#99ccff';
     }
     async function callApi(url, header, label) {
       setStatus(`${label}…`, false);
@@ -253,114 +270,319 @@ const workshopEmpty =
 </BaseLayout>
 
 <style>
+  /* The page wraps in `.lcars-root` so `--lcars-*` tokens resolve.
+     Override the `.lcars-root` default 8–12px padding here — the
+     TodayNav already provides the chrome strip, and the page wants
+     a wider centered content column rather than the viewer's full-
+     bleed grid layout. */
+  .today-root {
+    padding: 0;
+  }
   main.today {
     max-width: 960px;
     margin: 0 auto;
-    padding: 32px 24px 64px;
-    color: #FFCC99;
-    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 24px 24px 64px;
+    color: var(--lcars-text);
+    font-family: var(--lcars-font-prose);
   }
   .today__header h1 {
-    font-family: 'Antonio', sans-serif;
+    font-family: var(--lcars-font-chrome);
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.16em;
     font-size: 32px;
     margin: 0 0 4px;
+    color: var(--lcars-sunflower);
   }
   .today__date {
-    font-size: 13px; color: #FFCC9999; margin: 0 0 16px;
-    display: flex; align-items: center; gap: 12px;
+    font-size: 13px;
+    color: var(--lcars-butterscotch);
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .today__date-code {
+    font-family: var(--lcars-font-mono);
+    color: var(--lcars-ice);
+    font-size: 12px;
   }
   .today__chip {
-    background: #FFCC9911; padding: 2px 8px; border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    /* Sunflower-muted (#d9ad82) pre-composited bg with black text —
+       same role + contrast pattern as the LCARS sidebar item. */
+    background: var(--lcars-sunflower-muted);
+    color: var(--lcars-bg);
+    padding: 2px 10px;
+    /* Half-pill rounded on the right edge only — the signature LCARS
+       chip shape. */
+    border-radius: 0 14px 14px 0;
+    font-family: var(--lcars-font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
   }
-  .today__actions { display: flex; gap: 12px; align-items: center; margin-bottom: 32px; }
-  .today__actions button {
-    background: #FFCC99; color: #0a0a0a; border: none; padding: 8px 16px;
-    font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 12px;
-    cursor: pointer; border-radius: 2px;
+  .today__actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
   }
-  .today__actions button:hover { background: #ffd680; }
-  .today__action-status { font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+  /* Action button mirrors `.lcars-top-bar__source-btn` on the mobile-
+     tier dark top bar: butterscotch border + butterscotch text on a
+     translucent sunflower fill, 14px four-corner radius. Hover fills
+     butterscotch with black text — the canonical LCARS pill swap. */
+  .today__btn {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 14px;
+    background: rgba(255, 204, 153, 0.12);
+    color: var(--lcars-butterscotch);
+    border: 1.5px solid var(--lcars-butterscotch);
+    border-radius: 14px;
+    font-family: var(--lcars-font-chrome);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    padding-bottom: 2px; /* Antonio baseline correction, see spec §5 */
+    cursor: pointer;
+    transition: background 120ms, color 120ms;
+  }
+  .today__btn:hover,
+  .today__btn:focus-visible {
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+    outline: none;
+  }
+  .today__action-status {
+    font-size: 12px;
+    font-family: var(--lcars-font-mono);
+    color: var(--lcars-ice);
+  }
 
+  /* Hero panel — `bg-1` card surface with `divider` hairline. Surface
+     stepping (bg → bg-1) carries the hierarchy per spec §8; no
+     drop shadows. */
   .today__hero {
-    border: 1px solid #FFCC9944;
-    background: linear-gradient(180deg, #0a0a0a, #050505);
-    padding: 24px;
-    border-radius: 4px;
-    margin-bottom: 32px;
-  }
-  .today__hero h2 {
-    font-family: 'Antonio', sans-serif; letter-spacing: 0.12em;
-    font-size: 14px; color: #FFCC99; margin: 0 0 16px;
+    background: var(--lcars-bg-1);
+    border: 1px solid var(--lcars-divider);
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 8px;
   }
   .today__hero-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px; margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
   }
+  /* Metric tile mirrors `.lcars-session-card` (spec §6.4) — 3px left
+     accent in `--metric-color`, `bg-1` surface, half-pill rounding on
+     the right corners. Hover lifts with translateY, never a shadow. */
   .today__metric {
-    background: #0a0a0a; border: 1px solid #FFCC9933; padding: 16px;
-    border-radius: 3px; display: flex; flex-direction: column;
+    --metric-color: var(--lcars-sunflower);
+    background: var(--lcars-bg);
+    border: 1px solid var(--lcars-divider);
+    border-left: 3px solid var(--metric-color);
+    padding: 12px 14px;
+    border-radius: 0 10px 10px 0;
+    display: flex;
+    flex-direction: column;
+    transition: transform 120ms, background 120ms;
   }
-  .today__metric--big { border-color: #FFCC9988; }
-  .today__metric--warn { border-color: #ffaa3388; }
-  .today__metric--warn .today__metric-value { color: #ffd680; }
-  .today__metric-label { font-size: 11px; color: #FFCC9999; letter-spacing: 0.08em; }
+  .today__metric:hover {
+    background: var(--lcars-bg-2);
+    transform: translateY(-1px);
+  }
+  .today__metric--big {
+    border-left-width: 4px;
+  }
+  .today__metric-label {
+    font-family: var(--lcars-font-chrome);
+    font-size: 10px;
+    color: var(--lcars-butterscotch);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
   .today__metric-value {
-    font-family: 'Antonio', sans-serif; font-size: 36px; line-height: 1.1;
-    margin: 6px 0; color: #FFCC99;
+    font-family: var(--lcars-font-chrome);
+    font-size: 36px;
+    line-height: 1.1;
+    margin: 4px 0;
+    color: var(--metric-color);
+    font-weight: 700;
   }
-  .today__metric-sub { font-size: 11px; color: #FFCC9999; }
-
-  .today__empty { color: #FFCC99cc; font-size: 14px; line-height: 1.6; }
-  .today__empty code { background: #FFCC9911; padding: 1px 6px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-  .today__empty-note { font-size: 12px; color: #FFCC9999; font-style: italic; margin-top: 12px; }
-
-  .today__queue, .today__applies { margin-top: 16px; }
-  .today__queue h3, .today__applies h3 {
-    font-family: 'Antonio', sans-serif; font-size: 12px; letter-spacing: 0.1em;
-    color: #FFCC9999; margin: 0 0 8px;
+  .today__metric-sub {
+    font-size: 11px;
+    color: var(--lcars-butterscotch);
+    font-family: var(--lcars-font-prose);
   }
-  .today__queue ul, .today__applies ul {
-    list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+
+  .today__empty {
+    color: var(--lcars-text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .today__empty code,
+  .today__row code {
+    background: rgba(255, 204, 153, 0.08);
+    color: var(--lcars-ice);
+    padding: 1px 6px;
+    border: 1px solid rgba(255, 204, 153, 0.1);
+    border-radius: 3px;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
+  }
+  .today__empty-note {
+    font-size: 12px;
+    color: var(--lcars-butterscotch);
+    font-style: italic;
+    margin-top: 12px;
+  }
+
+  .today__queue,
+  .today__applies {
+    margin-top: 16px;
+  }
+  .today__queue h3,
+  .today__applies h3 {
+    font-family: var(--lcars-font-chrome);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    color: var(--lcars-butterscotch);
+    margin: 0 0 8px;
+    text-transform: uppercase;
+  }
+  .today__queue ul,
+  .today__applies ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
   }
   .today__queue li {
-    padding: 6px 0; border-bottom: 1px solid #FFCC9922;
-    display: flex; align-items: baseline; gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--lcars-divider);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
   }
-  .today__queue li:last-child { border-bottom: none; }
-  .today__confidence { color: #FFCC99; font-weight: 600; min-width: 40px; }
-  .today__rule { flex: 1; color: #FFCC99cc; }
-  .today__scope { color: #FFCC9999; font-size: 11px; }
-  .today__queue a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
-  .today__applies li { padding: 4px 0; color: #FFCC99cc; }
-  .today__applies code { color: #FFCC9999; }
-
-  .today__row { margin-bottom: 28px; }
-  .today__row--footer { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #FFCC9933; }
-  .today__row h2 {
-    font-family: 'Antonio', sans-serif; font-size: 13px; letter-spacing: 0.12em;
-    color: #FFCC99; margin: 0 0 8px;
+  .today__queue li:last-child {
+    border-bottom: none;
   }
-  .today__row code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FFCC99; }
-  .today__row-empty { color: #FFCC9999; font-size: 13px; }
-  .today__row-summary { font-size: 13px; }
-  .today__row-summary a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
+  .today__confidence {
+    color: var(--lcars-ice);
+    font-weight: 700;
+    min-width: 44px;
+  }
+  .today__rule {
+    flex: 1;
+    color: var(--lcars-text);
+  }
+  .today__scope {
+    color: var(--lcars-butterscotch);
+    font-size: 11px;
+  }
+  .today__queue a {
+    color: var(--lcars-sunflower);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--lcars-butterscotch);
+  }
+  .today__queue a:hover {
+    color: var(--lcars-ice);
+    border-bottom-color: var(--lcars-ice);
+  }
+  .today__applies li {
+    padding: 4px 0;
+    color: var(--lcars-text);
+  }
+  .today__applies code {
+    color: var(--lcars-ice);
+  }
 
-  .today__concerns { list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-  .today__concerns li { padding: 4px 0; color: #FFCC99cc; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-  .today__concern-type { color: #ffd680; font-size: 11px; }
-  .today__concern-span { color: #FFCC99; }
-  .today__concern-reason { color: #FFCC9999; }
-  .today__concern-sid { color: #FFCC9966; font-size: 11px; }
-  .today__warn { color: #ffd680; }
+  .today__row {
+    margin-bottom: 8px;
+  }
+  .today__row--footer {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+  .today__row-empty {
+    color: var(--lcars-butterscotch);
+    font-size: 13px;
+  }
+  .today__row-summary {
+    font-size: 13px;
+  }
+  .today__row-summary a {
+    color: var(--lcars-sunflower);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--lcars-butterscotch);
+  }
+  .today__row-summary a:hover {
+    color: var(--lcars-ice);
+    border-bottom-color: var(--lcars-ice);
+  }
 
-  .today__raw { margin-top: 32px; font-size: 12px; color: #FFCC9999; }
-  .today__raw summary { cursor: pointer; padding: 6px 0; font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; }
+  .today__concerns {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
+  }
+  .today__concerns li {
+    padding: 4px 0;
+    color: var(--lcars-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .today__concern-type {
+    color: var(--lcars-peach);
+    font-size: 11px;
+  }
+  .today__concern-span {
+    color: var(--lcars-text);
+  }
+  .today__concern-reason {
+    color: var(--lcars-butterscotch);
+  }
+  .today__concern-sid {
+    color: var(--lcars-dim);
+    font-size: 11px;
+  }
+  .today__warn {
+    color: var(--lcars-peach);
+  }
+
+  .today__raw {
+    margin-top: 32px;
+    font-size: 12px;
+    color: var(--lcars-butterscotch);
+  }
+  .today__raw summary {
+    cursor: pointer;
+    padding: 6px 0;
+    font-family: var(--lcars-font-chrome);
+    letter-spacing: 0.16em;
+    color: var(--lcars-sunflower);
+  }
   .today__raw pre {
-    background: #0a0a0a; border: 1px solid #FFCC9922; padding: 12px 16px;
-    margin-top: 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;
-    font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap;
+    background: var(--lcars-bg-1);
+    border: 1px solid var(--lcars-divider);
+    padding: 12px 16px;
+    margin-top: 8px;
+    border-radius: 6px;
+    font-family: var(--lcars-font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    color: var(--lcars-text);
   }
 </style>
