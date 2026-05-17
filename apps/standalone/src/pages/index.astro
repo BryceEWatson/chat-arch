@@ -10,10 +10,16 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import {
   listBlogDraftSlugs,
   readContinuumHealth,
+  readCorrectionCandidatesCount,
   readLatestBrief,
   readTopAuditConcerns,
   readWorkshopStatus,
 } from '../lib/readSidecars.ts';
+import {
+  makeDemoBlogDraftSlugs,
+  makeDemoTopAuditConcerns,
+  makeDemoWorkshopStatus,
+} from '../lib/demoFixtures.ts';
 
 const NOW = Date.now();
 const workshop = await readWorkshopStatus(NOW);
@@ -21,15 +27,29 @@ const concerns = await readTopAuditConcerns(5);
 const drafts = await listBlogDraftSlugs();
 const brief = await readLatestBrief();
 const health = await readContinuumHealth();
+const candidateCount = await readCorrectionCandidatesCount();
 
-const draftFinals = drafts.filter((d) => !d.isPrompt).length;
-const draftPrompts = drafts.filter((d) => d.isPrompt).length;
-
-// Empty-state copy varies depending on which upstream skill hasn't run.
+// Empty-state detection: which surfaces have no real data to render.
+// When empty, we substitute the populated structure with demo values
+// (memory: feedback_positioning_by_features). Each demo region is
+// wrapped in an aria-labelled <section> + sr-only span so assistive
+// tech announces "example data, not your data" before reading values,
+// and carries a visible .demo-badge for sighted users.
 const workshopEmpty =
   workshop.unappliedPatternCount === 0 &&
   workshop.appliedPatternCount === 0 &&
   workshop.recurringAfterApplyCount === 0;
+const draftsEmpty = drafts.length === 0;
+const concernsEmpty = concerns.length === 0;
+
+// View binding — when a surface is empty, swap in the demo. Same JSX
+// renders against either source; the demo path adds the badge + sr-only.
+const wsView = workshopEmpty ? makeDemoWorkshopStatus() : workshop;
+const draftsView = draftsEmpty ? makeDemoBlogDraftSlugs() : drafts;
+const concernsView = concernsEmpty ? makeDemoTopAuditConcerns() : concerns;
+
+const draftFinals = draftsView.filter((d) => !d.isPrompt).length;
+const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
 ---
 <BaseLayout title="Chat Archaeologist — Today" current="TODAY">
   <main class="today">
@@ -49,68 +69,101 @@ const workshopEmpty =
 
     {/* ======================= WORKSHOP LOOP ======================= */}
     <section class="today__hero">
-      <h2>WORKSHOP LOOP</h2>
       {workshopEmpty ? (
-        <div class="today__empty">
-          <p><strong>No mined patterns yet.</strong> chat-arch has detected
-            <code>{1549}</code> correction candidates via heuristic recall, but
-            the <code>/mine-corrections</code> skill hasn't classified them into
-            actionable patterns yet.</p>
-          <p>
-            <strong>To populate the loop:</strong> from a fresh Claude Code session in this repo, run
-            <code>/mine-corrections</code>. It LLM-classifies the candidates,
-            clusters them, and emits <code>analysis/corrections.json</code>
-            with proposed CLAUDE.md / skill upgrades. Reload this page after.
-          </p>
-          <p class="today__empty-note">
-            The MINE CORRECTIONS button above tries the same via
-            <code>/api/mine-corrections</code> — currently broken on Windows
-            (CLI spawn quoting bug). Use the slash-command path until the
-            endpoint is patched.
-          </p>
-        </div>
+        <section
+          class="today__hero-demo"
+          aria-label="Example data — your real WORKSHOP LOOP populates after running /mine-corrections"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <h2>
+            WORKSHOP LOOP
+            <span class="demo-badge">DEMO</span>
+            {candidateCount > 0 ? (
+              <small class="today__hero-truth">
+                · <code>{candidateCount.toLocaleString()}</code> candidates indexed
+              </small>
+            ) : null}
+          </h2>
+          <div class="today__hero-grid">
+            <div class="today__metric today__metric--big">
+              <span class="today__metric-label">to APPLY</span>
+              <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
+              <span class="today__metric-sub">new patterns waiting for review</span>
+            </div>
+            <div class="today__metric">
+              <span class="today__metric-label">applied total</span>
+              <span class="today__metric-value">{wsView.appliedPatternCount}</span>
+              <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
+            </div>
+            <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
+              <span class="today__metric-label">still recurring</span>
+              <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
+              <span class="today__metric-sub">
+                {wsView.recurringAfterApplyCount > 0
+                  ? 'rules patched but Claude still breaks them'
+                  : 'no patched rule recurring'}
+              </span>
+            </div>
+            <div class="today__metric">
+              <span class="today__metric-label">loop closure</span>
+              <span class="today__metric-value">
+                {wsView.loopClosureRate === null
+                  ? '—'
+                  : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
+              </span>
+              <span class="today__metric-sub">
+                {wsView.loopClosureRate === null
+                  ? 'no observed windows yet'
+                  : 'patches that stuck (no recurrence in window)'}
+              </span>
+            </div>
+          </div>
+        </section>
       ) : (
-        <div class="today__hero-grid">
-          <div class="today__metric today__metric--big">
-            <span class="today__metric-label">to APPLY</span>
-            <span class="today__metric-value">{workshop.unappliedPatternCount}</span>
-            <span class="today__metric-sub">new patterns waiting for review</span>
+        <>
+          <h2>WORKSHOP LOOP</h2>
+          <div class="today__hero-grid">
+            <div class="today__metric today__metric--big">
+              <span class="today__metric-label">to APPLY</span>
+              <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
+              <span class="today__metric-sub">new patterns waiting for review</span>
+            </div>
+            <div class="today__metric">
+              <span class="today__metric-label">applied total</span>
+              <span class="today__metric-value">{wsView.appliedPatternCount}</span>
+              <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
+            </div>
+            <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
+              <span class="today__metric-label">still recurring</span>
+              <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
+              <span class="today__metric-sub">
+                {wsView.recurringAfterApplyCount > 0
+                  ? 'rules patched but Claude still breaks them'
+                  : 'no patched rule recurring'}
+              </span>
+            </div>
+            <div class="today__metric">
+              <span class="today__metric-label">loop closure</span>
+              <span class="today__metric-value">
+                {wsView.loopClosureRate === null
+                  ? '—'
+                  : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
+              </span>
+              <span class="today__metric-sub">
+                {wsView.loopClosureRate === null
+                  ? 'no observed windows yet'
+                  : 'patches that stuck (no recurrence in window)'}
+              </span>
+            </div>
           </div>
-          <div class="today__metric">
-            <span class="today__metric-label">applied total</span>
-            <span class="today__metric-value">{workshop.appliedPatternCount}</span>
-            <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
-          </div>
-          <div class={`today__metric ${workshop.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
-            <span class="today__metric-label">still recurring</span>
-            <span class="today__metric-value">{workshop.recurringAfterApplyCount}</span>
-            <span class="today__metric-sub">
-              {workshop.recurringAfterApplyCount > 0
-                ? 'rules patched but Claude still breaks them'
-                : 'no patched rule recurring'}
-            </span>
-          </div>
-          <div class="today__metric">
-            <span class="today__metric-label">loop closure</span>
-            <span class="today__metric-value">
-              {workshop.loopClosureRate === null
-                ? '—'
-                : `${(workshop.loopClosureRate * 100).toFixed(0)}%`}
-            </span>
-            <span class="today__metric-sub">
-              {workshop.loopClosureRate === null
-                ? 'no observed windows yet'
-                : 'patches that stuck (no recurrence in window)'}
-            </span>
-          </div>
-        </div>
+        </>
       )}
 
-      {workshop.topUnapplied.length > 0 ? (
+      {wsView.topUnapplied.length > 0 ? (
         <div class="today__queue">
-          <h3>NEXT TO REVIEW · top {workshop.topUnapplied.length} by confidence</h3>
+          <h3>NEXT TO REVIEW · top {wsView.topUnapplied.length} by confidence</h3>
           <ul>
-            {workshop.topUnapplied.map((p) => (
+            {wsView.topUnapplied.map((p) => (
               <li>
                 <span class="today__confidence">
                   {(p.confidence * 100).toFixed(0)}%
@@ -126,11 +179,11 @@ const workshopEmpty =
         </div>
       ) : null}
 
-      {workshop.recentApplies.length > 0 ? (
+      {wsView.recentApplies.length > 0 ? (
         <div class="today__applies">
           <h3>RECENT APPLIES</h3>
           <ul>
-            {workshop.recentApplies.map((a) => (
+            {wsView.recentApplies.map((a) => (
               <li>
                 <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
                 · {a.ruleSummary}
@@ -144,13 +197,19 @@ const workshopEmpty =
     {/* ======================= DRAFTS READY ======================= */}
     <section class="today__row">
       <h2>BLOG DRAFTS</h2>
-      {drafts.length === 0 ? (
-        <p class="today__row-empty">
-          No drafts yet. The blog candidate selector ran but produced no
-          drafts because the <code>discoveryScore</code> threshold wasn't
-          met (or the chat-answer skill hasn't been invoked against the
-          prompt scaffolds). See <a href="/blog-drafts">/blog-drafts</a>.
-        </p>
+      {draftsEmpty ? (
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real BLOG DRAFTS populate after the candidate selector emits any"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <p class="today__row-summary">
+            <span class="demo-badge">DEMO</span>
+            <a href="/blog-drafts">
+              {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+            </a>
+          </p>
+        </section>
       ) : (
         <p class="today__row-summary">
           <a href="/blog-drafts">
@@ -162,12 +221,28 @@ const workshopEmpty =
 
     {/* ======================= AUDIT CONCERNS (demoted) ======================= */}
     <section class="today__row">
-      <h2>AUDIT CONCERNS · top {concerns.length}</h2>
-      {concerns.length === 0 ? (
-        <p class="today__row-empty">No F-layer concerns surfaced yet.</p>
+      <h2>AUDIT CONCERNS · top {concernsView.length}</h2>
+      {concernsEmpty ? (
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real AUDIT CONCERNS populate after the F-layer verifier runs"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <span class="demo-badge">DEMO</span>
+          <ul class="today__concerns">
+            {concernsView.map((c) => (
+              <li>
+                <code class="today__concern-type">{c.claimType}</code>
+                <span class="today__concern-span">claimed "{c.span}"</span>
+                <span class="today__concern-reason">— {c.reason}</span>
+                <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : (
         <ul class="today__concerns">
-          {concerns.map((c) => (
+          {concernsView.map((c) => (
             <li>
               <code class="today__concern-type">{c.claimType}</code>
               <span class="today__concern-span">claimed "{c.span}"</span>

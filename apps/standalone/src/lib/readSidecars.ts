@@ -60,6 +60,20 @@ export async function readCorrections(): Promise<CorrectionsFile | null> {
   return readJson<CorrectionsFile>(path.join(analysisDir(), 'corrections.json'));
 }
 
+/**
+ * Count of heuristic-recall correction candidates on disk. Used by the
+ * TODAY page's WORKSHOP LOOP empty branch to render "the heuristic has
+ * detected N candidates" — a real signal that something ran on this
+ * machine, distinct from the demo grid that surrounds it. Returns 0
+ * when the file is absent (hosted build, or no scan yet).
+ */
+export async function readCorrectionCandidatesCount(): Promise<number> {
+  const file = await readJson<{ corrections?: readonly unknown[] }>(
+    path.join(analysisDir(), 'correction-candidates.json'),
+  );
+  return file?.corrections?.length ?? 0;
+}
+
 export async function readUpgradeOutcomes(): Promise<UpgradeOutcomesFile | null> {
   return readJson<UpgradeOutcomesFile>(path.join(analysisDir(), 'upgrade-outcomes.json'));
 }

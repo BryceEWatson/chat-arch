@@ -92,6 +92,39 @@ import '@fontsource/jetbrains-mono/600.css';
       .app-shell--no-sidebar {
         display: block;
       }
+      /* DEMO badge — peach pill, sits top-right of the panel/section
+         being demo'd. Same accent as the destructive DATA chip on
+         the sidebar, signals "this is not your data." Aria/screen-
+         reader signaling is on the wrapping <section aria-label=…>;
+         this badge is the visual half of the pair. */
+      .demo-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        background: #FF9933;
+        color: #000000;
+        border-radius: 0 8px 8px 0;
+        font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        line-height: 1.6;
+      }
+      /* sr-only — visually hidden but read by screen readers. Lifted
+         from the canonical accessibility utility class. Reused by the
+         demo regions to announce "Example data, not your data" so
+         assistive tech doesn't confuse the demo for real values. */
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
     </style>
   </head>
   <body>
