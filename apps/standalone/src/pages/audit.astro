@@ -1,0 +1,189 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import TodayNav from '../components/TodayNav.astro';
+import { readAuditResults, readAuditSummary } from '../lib/readSidecars.ts';
+
+const results = await readAuditResults();
+const summary = await readAuditSummary();
+
+const outcomeParam = (Astro.url.searchParams.get('outcome') ?? 'all') as
+  | 'all'
+  | 'pass'
+  | 'fail'
+  | 'inconclusive';
+const claimTypeParam = Astro.url.searchParams.get('claimType') ?? 'all';
+const projectParam = Astro.url.searchParams.get('project') ?? '';
+
+const filtered = (results?.results ?? []).filter((r) => {
+  if (outcomeParam !== 'all' && r.outcome !== outcomeParam) return false;
+  if (claimTypeParam !== 'all' && r.claimType !== claimTypeParam) return false;
+  return true;
+});
+
+const visibleProject = projectParam.trim();
+const displayed = visibleProject
+  ? filtered.filter((r) => r.sessionId.includes(visibleProject))
+  : filtered;
+
+const page = Math.max(1, Number.parseInt(Astro.url.searchParams.get('page') ?? '1', 10) || 1);
+const pageSize = 50;
+const totalPages = Math.max(1, Math.ceil(displayed.length / pageSize));
+const start = (page - 1) * pageSize;
+const slice = displayed.slice(start, start + pageSize);
+
+function badgeClass(o: string): string {
+  if (o === 'pass') return 'badge badge--pass';
+  if (o === 'fail') return 'badge badge--fail';
+  return 'badge badge--inconc';
+}
+
+const claimTypes = [
+  'all',
+  'fix-claim',
+  'tests-pass-claim',
+  'verification-claim',
+  'addition-claim',
+  'build-pass-claim',
+  'completion-claim',
+];
+---
+<BaseLayout title="Chat Archaeologist — Audit">
+  <TodayNav current="AUDIT" />
+  <main class="audit">
+    <h1>AUDIT</h1>
+    {results === null ? (
+      <p class="audit__empty">
+        No <code>analysis/audit-results.json</code> on disk. Run
+        <code>pnpm exporter all</code> and reload.
+      </p>
+    ) : (
+      <>
+        <section class="audit__totals">
+          <span><strong>{results.totals.pass}</strong> pass</span>
+          <span><strong>{results.totals.fail}</strong> fail</span>
+          <span><strong>{results.totals.inconclusive}</strong> inconclusive</span>
+          {summary && summary.topFailureClaimTypes.length > 0 ? (
+            <span class="audit__top-fail">
+              top failures: {summary.topFailureClaimTypes
+                .map((t) => `${t.claimType} (${(t.failRate * 100).toFixed(0)}%)`)
+                .join(', ')}
+            </span>
+          ) : null}
+        </section>
+
+        <form method="get" class="audit__filters">
+          <label>outcome
+            <select name="outcome">
+              <option value="all" selected={outcomeParam === 'all'}>all</option>
+              <option value="pass" selected={outcomeParam === 'pass'}>pass</option>
+              <option value="fail" selected={outcomeParam === 'fail'}>fail</option>
+              <option value="inconclusive" selected={outcomeParam === 'inconclusive'}>inconclusive</option>
+            </select>
+          </label>
+          <label>claim type
+            <select name="claimType">
+              {claimTypes.map((ct) => (
+                <option value={ct} selected={ct === claimTypeParam}>{ct}</option>
+              ))}
+            </select>
+          </label>
+          <label>session id contains
+            <input type="text" name="project" value={projectParam} placeholder="optional substring" />
+          </label>
+          <button type="submit">apply</button>
+        </form>
+
+        <p class="audit__count">{displayed.length} result(s) · page {page} / {totalPages}</p>
+
+        <table class="audit__table">
+          <thead>
+            <tr>
+              <th>outcome</th>
+              <th>claim type</th>
+              <th>session</th>
+              <th>line</th>
+              <th>span</th>
+              <th>reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slice.map((r) => (
+              <tr>
+                <td><span class={badgeClass(r.outcome)}>{r.outcome}</span></td>
+                <td><code>{r.claimType}</code></td>
+                <td><code>{r.sessionId}</code></td>
+                <td>{r.lineNumber}</td>
+                <td class="audit__span">{r.span}</td>
+                <td class="audit__reason">{r.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <nav class="audit__pager">
+          {page > 1 ? (
+            <a href={`?page=${page - 1}&outcome=${outcomeParam}&claimType=${claimTypeParam}&project=${encodeURIComponent(projectParam)}`}>← prev</a>
+          ) : <span class="audit__pager--disabled">← prev</span>}
+          <span>page {page} / {totalPages}</span>
+          {page < totalPages ? (
+            <a href={`?page=${page + 1}&outcome=${outcomeParam}&claimType=${claimTypeParam}&project=${encodeURIComponent(projectParam)}`}>next →</a>
+          ) : <span class="audit__pager--disabled">next →</span>}
+        </nav>
+      </>
+    )}
+  </main>
+</BaseLayout>
+
+<style>
+  main.audit {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+    color: #FFCC99;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  main.audit h1 {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 32px;
+    margin: 0 0 16px;
+  }
+  .audit__empty code {
+    background: #FFCC9911;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .audit__totals { display: flex; gap: 24px; font-size: 14px; margin-bottom: 16px; }
+  .audit__totals strong { font-family: 'Antonio', sans-serif; color: #FFCC99; }
+  .audit__top-fail { color: #FFCC9999; }
+  .audit__filters { display: flex; gap: 16px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+  .audit__filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #FFCC9999; }
+  .audit__filters select, .audit__filters input {
+    background: #0a0a0a; color: #FFCC99; border: 1px solid #FFCC9933; padding: 4px 8px; font-family: inherit;
+  }
+  .audit__filters button {
+    background: #FFCC99; color: #0a0a0a; border: none; padding: 6px 16px; font-family: 'Antonio', sans-serif;
+    letter-spacing: 0.08em; cursor: pointer;
+  }
+  .audit__count { font-size: 12px; color: #FFCC9999; margin: 0 0 8px; }
+  .audit__table {
+    width: 100%; border-collapse: collapse; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  }
+  .audit__table th, .audit__table td {
+    text-align: left; padding: 6px 10px; border-bottom: 1px solid #FFCC9922; vertical-align: top;
+  }
+  .audit__table th { color: #FFCC9999; font-weight: 600; font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; }
+  .audit__span { color: #FFCC99; max-width: 240px; }
+  .audit__reason { color: #FFCC99cc; max-width: 360px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+  .badge--pass { background: #4caf5044; color: #88e088; }
+  .badge--fail { background: #c0393944; color: #f08080; }
+  .badge--inconc { background: #ffaa3344; color: #ffd680; }
+  .audit__pager { margin-top: 16px; display: flex; gap: 24px; font-size: 13px; color: #FFCC99cc; }
+  .audit__pager a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
+  .audit__pager--disabled { color: #FFCC9944; }
+</style>

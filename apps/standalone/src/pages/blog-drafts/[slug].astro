@@ -1,0 +1,151 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TodayNav from '../../components/TodayNav.astro';
+import { readBlogDraft, readAuditResults } from '../../lib/readSidecars.ts';
+
+const slug = Astro.params.slug ?? '';
+// Conservative slug sanitization — defeats path traversal even though
+// readBlogDraft asserts containment internally.
+const safe = /^[A-Za-z0-9._-]{1,200}$/.test(slug) ? slug : '';
+const draft = safe === '' ? null : await readBlogDraft(safe);
+const audit = await readAuditResults();
+
+// Pull every [SID:...] citation out of the draft body so the page can
+// render an inline F-audit verdict per cited session.
+const citations = new Set<string>();
+if (draft !== null) {
+  const re = /\[SID:([A-Za-z0-9_-]+)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(draft.markdown)) !== null) {
+    if (m[1]) citations.add(m[1]);
+  }
+}
+
+interface SessionAuditRow {
+  sessionId: string;
+  totalClaims: number;
+  pass: number;
+  fail: number;
+  inconclusive: number;
+  passRate: number;
+}
+
+const auditRows: SessionAuditRow[] = [];
+if (audit !== null) {
+  const acc = new Map<string, { pass: number; fail: number; inconclusive: number }>();
+  for (const r of audit.results) {
+    if (!citations.has(r.sessionId)) continue;
+    const slot = acc.get(r.sessionId) ?? { pass: 0, fail: 0, inconclusive: 0 };
+    slot[r.outcome] += 1;
+    acc.set(r.sessionId, slot);
+  }
+  for (const [sessionId, slot] of acc) {
+    const total = slot.pass + slot.fail + slot.inconclusive;
+    auditRows.push({
+      sessionId,
+      totalClaims: total,
+      pass: slot.pass,
+      fail: slot.fail,
+      inconclusive: slot.inconclusive,
+      passRate: total === 0 ? 0 : slot.pass / total,
+    });
+  }
+}
+
+const overallPass = auditRows.reduce((a, r) => a + r.pass, 0);
+const overallFail = auditRows.reduce((a, r) => a + r.fail, 0);
+const overallInc = auditRows.reduce((a, r) => a + r.inconclusive, 0);
+const overallTotal = overallPass + overallFail + overallInc;
+const overallRate = overallTotal === 0 ? 0 : overallPass / overallTotal;
+---
+<BaseLayout title={draft !== null ? `Draft — ${slug}` : 'Draft not found'}>
+  <TodayNav current="DRAFTS" />
+  <main class="draft">
+    <p class="draft__crumb"><a href="/blog-drafts">← all drafts</a></p>
+    <h1>{slug || '(no slug)'}</h1>
+
+    {draft === null ? (
+      <p class="draft__empty">
+        No draft found at <code>analysis/blog-drafts/{slug}.md</code> (or
+        <code>{slug}.prompt.md</code>). Run a rescan first.
+      </p>
+    ) : (
+      <>
+        {draft.isPrompt ? (
+          <p class="draft__notice">
+            ⚠ This is the prompt scaffold, not the final draft. Invoke the
+            chat-answer skill in draft mode against the member sessions
+            below, then drop the produced markdown alongside this file as
+            <code>{slug}.md</code>. A rescan will pick it up.
+          </p>
+        ) : (
+          <section class="draft__audit">
+            <h2>F-AUDIT VERDICT</h2>
+            <p>
+              <strong>{(overallRate * 100).toFixed(0)}%</strong> claim-pass
+              rate ({overallPass}/{overallTotal} verified, {overallFail} failed,
+              {overallInc} inconclusive across {auditRows.length} cited session(s)).
+              {overallRate >= 0.8 ? (
+                <span class="draft__pass"> ✓ passes 80% bar</span>
+              ) : (
+                <span class="draft__fail"> ✗ below 80% bar</span>
+              )}
+            </p>
+            {auditRows.length > 0 ? (
+              <table class="draft__audit-table">
+                <thead><tr><th>session</th><th>pass</th><th>fail</th><th>inconc</th><th>rate</th></tr></thead>
+                <tbody>
+                  {auditRows.map((r) => (
+                    <tr>
+                      <td><code>{r.sessionId}</code></td>
+                      <td>{r.pass}</td>
+                      <td>{r.fail}</td>
+                      <td>{r.inconclusive}</td>
+                      <td>{(r.passRate * 100).toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p class="draft__no-cites">No audit data for the cited sessions yet.</p>
+            )}
+          </section>
+        )}
+
+        <section class="draft__body">
+          <h2>{draft.isPrompt ? 'DRAFT PROMPT' : 'DRAFT'}</h2>
+          <pre>{draft.markdown}</pre>
+        </section>
+      </>
+    )}
+  </main>
+</BaseLayout>
+
+<style>
+  main.draft { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: #FFCC99; font-family: 'IBM Plex Sans', sans-serif; }
+  main.draft h1 { font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 24px; margin: 0 0 16px; word-break: break-all; }
+  main.draft h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; font-size: 14px; color: #FFCC99; margin: 20px 0 8px; }
+  .draft__crumb a { color: #FFCC99cc; text-decoration: none; font-size: 12px; }
+  .draft__notice { background: #ffaa3322; border: 1px solid #ffaa3388; padding: 12px 16px; border-radius: 4px; color: #ffd680; }
+  .draft__notice code { background: #00000044; padding: 1px 4px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; }
+  .draft__audit { margin-top: 16px; }
+  .draft__pass { color: #88e088; }
+  .draft__fail { color: #f08080; }
+  .draft__audit-table { border-collapse: collapse; margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .draft__audit-table th, .draft__audit-table td { padding: 4px 12px; text-align: left; border-bottom: 1px solid #FFCC9922; }
+  .draft__no-cites { color: #FFCC9999; font-style: italic; }
+  .draft__body pre {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9922;
+    padding: 16px 20px;
+    border-radius: 4px;
+    color: #FFCC99;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+</style>
