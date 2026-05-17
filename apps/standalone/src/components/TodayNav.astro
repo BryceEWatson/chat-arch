@@ -1,0 +1,63 @@
+---
+// Simple top-strip nav for the v2 chrome pages. The legacy viewer
+// surfaces (/sessions, /projects, /topics) still own their own
+// navigation; this strip is the entry-point chrome that lets a user
+// move between the new TODAY / AUDIT / HEALTH / DRAFTS surfaces.
+const { current } = Astro.props as { current: string };
+const links: { href: string; label: string }[] = [
+  { href: '/', label: 'TODAY' },
+  { href: '/audit', label: 'AUDIT' },
+  { href: '/health', label: 'HEALTH' },
+  { href: '/blog-drafts', label: 'DRAFTS' },
+  { href: '/sessions', label: 'SESSIONS' },
+  { href: '/projects', label: 'PROJECTS' },
+  { href: '/topics', label: 'TOPICS' },
+];
+---
+<nav class="today-nav">
+  <span class="today-nav__brand">CHAT-ARCH v2</span>
+  <ul class="today-nav__links">
+    {links.map((l) => (
+      <li class={l.label === current ? 'is-current' : ''}>
+        <a href={l.href}>{l.label}</a>
+      </li>
+    ))}
+  </ul>
+</nav>
+<style>
+  .today-nav {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 12px 24px;
+    background: #0a0a0a;
+    border-bottom: 1px solid #FFCC9933;
+    font-family: 'Antonio', sans-serif;
+  }
+  .today-nav__brand {
+    color: #FFCC99;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 14px;
+  }
+  .today-nav__links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 16px;
+  }
+  .today-nav__links a {
+    color: #FFCC9988;
+    text-decoration: none;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    transition: color 0.12s ease;
+  }
+  .today-nav__links a:hover { color: #FFCC99; }
+  .today-nav__links .is-current a {
+    color: #FFCC99;
+    border-bottom: 1px solid #FFCC99;
+    padding-bottom: 2px;
+  }
+</style>
