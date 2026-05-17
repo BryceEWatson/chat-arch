@@ -16,6 +16,46 @@ const outcomeParam = (Astro.url.searchParams.get('outcome') ?? 'all') as
 const claimTypeParam = Astro.url.searchParams.get('claimType') ?? 'all';
 const projectParam = Astro.url.searchParams.get('project') ?? '';
 
+// Compute clustered "top concerns" — group fails by claim type, count
+// per-session fails for each group, surface the strongest 1-2 sample
+// SIDs per claim type. Lets the user act on the SIGNAL (which patterns
+// recur most) rather than scanning the 800-row firehose.
+interface ConcernCluster {
+  claimType: string;
+  failCount: number;
+  topSessions: { sessionId: string; failsInSession: number; sampleSpan: string; sampleReason: string }[];
+}
+const concernClusters: ConcernCluster[] = (() => {
+  const fails = (results?.results ?? []).filter((r) => r.outcome === 'fail');
+  const byType = new Map<string, typeof fails>();
+  for (const f of fails) {
+    const list = byType.get(f.claimType);
+    if (list === undefined) byType.set(f.claimType, [f]);
+    else list.push(f);
+  }
+  const clusters: ConcernCluster[] = [];
+  for (const [claimType, list] of byType) {
+    const perSession = new Map<string, typeof list>();
+    for (const f of list) {
+      const sl = perSession.get(f.sessionId);
+      if (sl === undefined) perSession.set(f.sessionId, [f]);
+      else sl.push(f);
+    }
+    const topSessions = Array.from(perSession.entries())
+      .map(([sessionId, sf]) => ({
+        sessionId,
+        failsInSession: sf.length,
+        sampleSpan: sf[0]?.span ?? '',
+        sampleReason: sf[0]?.reason ?? '',
+      }))
+      .sort((a, b) => b.failsInSession - a.failsInSession)
+      .slice(0, 2);
+    clusters.push({ claimType, failCount: list.length, topSessions });
+  }
+  clusters.sort((a, b) => b.failCount - a.failCount);
+  return clusters;
+})();
+
 const filtered = (results?.results ?? []).filter((r) => {
   if (outcomeParam !== 'all' && r.outcome !== outcomeParam) return false;
   if (claimTypeParam !== 'all' && r.claimType !== claimTypeParam) return false;
@@ -72,6 +112,40 @@ const claimTypes = [
             </span>
           ) : null}
         </section>
+
+        {concernClusters.length > 0 ? (
+          <section class="audit__concerns">
+            <h2>TOP CONCERNS · {concernClusters.length} clusters</h2>
+            <p class="audit__concerns-hint">
+              Failures grouped by claim type, ranked by count. Each cluster's top sessions are the
+              ones most worth investigating — they accumulated the most fail verdicts of this kind.
+              Use the filter row below to drill into any one cluster.
+            </p>
+            <ul class="audit__concerns-list">
+              {concernClusters.map((c) => (
+                <li>
+                  <div class="audit__concerns-head">
+                    <code class="audit__concerns-type">{c.claimType}</code>
+                    <span class="audit__concerns-count">{c.failCount} fail{c.failCount === 1 ? '' : 's'}</span>
+                    <a class="audit__concerns-drill" href={`?outcome=fail&claimType=${c.claimType}`}>filter below →</a>
+                  </div>
+                  {c.topSessions.length > 0 ? (
+                    <ul class="audit__concerns-sessions">
+                      {c.topSessions.map((s) => (
+                        <li>
+                          <code>[SID:{s.sessionId.slice(0, 8)}…]</code>
+                          <span class="audit__concerns-x">{s.failsInSession}× </span>
+                          <span class="audit__concerns-span">"{s.sampleSpan.slice(0, 60)}"</span>
+                          <span class="audit__concerns-reason">— {s.sampleReason.slice(0, 80)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <form method="get" class="audit__filters">
           <label>outcome
@@ -186,4 +260,19 @@ const claimTypes = [
   .audit__pager { margin-top: 16px; display: flex; gap: 24px; font-size: 13px; color: #FFCC99cc; }
   .audit__pager a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
   .audit__pager--disabled { color: #FFCC9944; }
+  .audit__concerns { margin: 20px 0; padding: 16px 20px; background: #0a0a0a; border: 1px solid #FFCC9944; border-radius: 4px; }
+  .audit__concerns h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.12em; font-size: 14px; margin: 0 0 8px; color: #FFCC99; }
+  .audit__concerns-hint { font-size: 12px; color: #FFCC9999; margin: 0 0 12px; line-height: 1.5; }
+  .audit__concerns-list { list-style: none; padding: 0; margin: 0; }
+  .audit__concerns-list > li { padding: 10px 0; border-bottom: 1px solid #FFCC9922; }
+  .audit__concerns-list > li:last-child { border-bottom: none; }
+  .audit__concerns-head { display: flex; align-items: baseline; gap: 12px; }
+  .audit__concerns-type { font-family: 'JetBrains Mono', monospace; color: #ffd680; font-size: 12px; }
+  .audit__concerns-count { font-family: 'Antonio', sans-serif; color: #FFCC99; font-size: 14px; }
+  .audit__concerns-drill { color: #FFCC99; font-size: 11px; text-decoration: none; border-bottom: 1px dashed #FFCC9955; margin-left: auto; }
+  .audit__concerns-sessions { list-style: none; padding: 4px 0 0 12px; margin: 0; }
+  .audit__concerns-sessions li { padding: 3px 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FFCC99cc; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+  .audit__concerns-x { color: #ffd680; }
+  .audit__concerns-span { color: #FFCC99; }
+  .audit__concerns-reason { color: #FFCC9999; }
 </style>
