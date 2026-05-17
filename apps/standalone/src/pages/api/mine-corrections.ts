@@ -612,16 +612,6 @@ function runClaudeOnce(
   };
 
   return new Promise<SpawnOutcome>((resolvePromise) => {
-    // shell:true on Windows so `claude.cmd` resolves without us
-    // hardcoding the extension — same pattern rescan.ts uses for
-    // pnpm.cmd.
-    // shell:true on Windows means cmd.exe re-parses the joined argv string,
-    // so a multi-word prompt with leading slash + flags must be quoted or
-    // claude will see each flag as its own option. Wrap the prompt in quotes
-    // and escape any embedded double-quotes so the entire slash-command line
-    // reaches claude as a single arg.
-    const isWin = process.platform === 'win32';
-    const promptArg = isWin ? `"${prompt.replace(/"/g, '\\"')}"` : prompt;
     // Pre-authorize the tools the skill needs so it doesn't stall on
     // per-tool approval prompts in headless mode. Whitelist (not full
     // bypass) keeps the spawn under tool-level scrutiny: only Read /
@@ -629,18 +619,49 @@ function runClaudeOnce(
     // Risk is bounded by this endpoint's CSRF gate (local origin only)
     // and the skill's project-local write scope.
     const allowedTools = 'Read Write Edit Bash Task Glob Grep';
-    const child = spawn(
-      'claude',
-      ['--allowedTools', allowedTools, '-p', promptArg],
-      {
+    const isWin = process.platform === 'win32';
+
+    // Windows quoting fix (2026-05-17): the prior approach pre-wrapped
+    // the prompt in escaped quotes AND used `spawn('claude', [...args],
+    // { shell: true })`. On Windows, Node's shell:true joins those args
+    // into a single command line that cmd.exe then re-parses — and the
+    // pre-wrapped quotes on `promptArg` combined with Node's own
+    // automatic quoting around the resolved `claude.exe` path produced
+    // a malformed cmd line: `'"C:\...claude.exe"' is not recognized as
+    // an internal or external command`. The fix: build the entire cmd
+    // line ourselves and pass it as a single-string command with
+    // shell:true so Node doesn't add any quoting of its own. JSON.
+    // stringify produces a JSON-string that's valid cmd-quoted syntax
+    // for our inputs (no embedded backslash-only paths).
+    let child: ReturnType<typeof spawn>;
+    if (isWin) {
+      // The bare `claude` filename on PATH (typical npm-global install
+      // via nvm4w) is a Unix-style script with `#!/usr/bin/env node` —
+      // cmd.exe can't execute it directly and tries the resolved
+      // `claude.exe` path with quotes that cmd then parses as part of
+      // the command name (the load-bearing failure mode). Forcing
+      // `claude.cmd` (the npm-emitted Windows batch shim) routes the
+      // launch through Node correctly. The shim itself handles the
+      // claude.exe spawn with proper Windows quoting.
+      const cmdLine =
+        `claude.cmd --allowedTools ${JSON.stringify(allowedTools)} ` +
+        `-p ${JSON.stringify(prompt)}`;
+      child = spawn('cmd.exe', ['/d', '/s', '/c', cmdLine], {
         cwd: repoRoot(),
         env: process.env,
-        shell: isWin,
-        // Detach stdin so claude's "no stdin data received in 3s" probe
-        // resolves immediately.
         stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+      });
+    } else {
+      child = spawn(
+        'claude',
+        ['--allowedTools', allowedTools, '-p', prompt],
+        {
+          cwd: repoRoot(),
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+    }
 
     let stdoutBuf = '';
     let stderrBuf = '';
@@ -675,10 +696,14 @@ function runClaudeOnce(
       return lastFragment;
     };
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    // stdio: ['ignore', 'pipe', 'pipe'] above guarantees stdout/stderr
+    // are present at runtime; spawn's return type narrows them to
+    // possibly-null for the general case, so a non-null assertion is
+    // load-bearing for TypeScript but a no-op at runtime.
+    child.stdout!.on('data', (chunk: Buffer) => {
       stdoutBuf = drain(stdoutBuf, chunk.toString('utf8'), 'stdout', stdoutFull);
     });
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr!.on('data', (chunk: Buffer) => {
       stderrBuf = drain(stderrBuf, chunk.toString('utf8'), 'stderr', stderrFull);
     });
 
