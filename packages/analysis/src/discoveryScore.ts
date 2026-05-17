@@ -43,11 +43,20 @@ export interface DiscoveryScoreWeights {
   gitBranchOverlap: number;
 }
 
+/**
+ * Default weights. Re-tuned after the first real-corpus run revealed
+ * that without an applied-improvements ledger (the common state on a
+ * fresh chat-arch install — the mine-corrections skill is opt-in) the
+ * scorer was unreachable at the 0.7 candidate threshold. The current
+ * split lets intrinsic token + tool signals drive a high-signal
+ * session up to ~0.80 alone; the application + branch signals stack
+ * on top when available. Sum is 1.0.
+ */
 export const DEFAULT_DISCOVERY_WEIGHTS: DiscoveryScoreWeights = {
-  tokenIntensity: 0.3,
-  toolDiversity: 0.25,
-  correctionAppliedAfter: 0.25,
-  gitBranchOverlap: 0.2,
+  tokenIntensity: 0.45,
+  toolDiversity: 0.35,
+  correctionAppliedAfter: 0.1,
+  gitBranchOverlap: 0.1,
 };
 
 /**

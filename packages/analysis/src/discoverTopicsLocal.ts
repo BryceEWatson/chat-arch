@@ -16,6 +16,19 @@
 import type { Topic, UnifiedSessionEntry } from '@chat-arch/schema';
 import { discoverClusters, type ClusterInput } from './discoverClusters.js';
 
+function l2Normalize(v: Float32Array): Float32Array {
+  let norm = 0;
+  for (let i = 0; i < v.length; i += 1) {
+    const x = v[i] ?? 0;
+    norm += x * x;
+  }
+  norm = Math.sqrt(norm);
+  if (norm === 0) return v;
+  const out = new Float32Array(v.length);
+  for (let i = 0; i < v.length; i += 1) out[i] = (v[i] ?? 0) / norm;
+  return out;
+}
+
 const STOPWORDS = new Set<string>([
   'a',
   'an',
@@ -85,7 +98,12 @@ export function discoverTopicsLocal(
   options: DiscoverTopicsLocalOptions = {},
 ): DiscoverTopicsLocalResult {
   const now = options.now ?? Date.now();
-  const threshold = options.threshold ?? 0.55;
+  // Tuned against the user's real corpus (522 embedded local sessions,
+  // nomic-embed-text). At 0.55 / 0.45 the complete-linkage agglomerator
+  // collapses everything into one mega-cluster because chat-arch
+  // sessions all share the claude-code vocabulary. At 0.70 the graph
+  // fragments into coherent topical clusters (≥ 10 in practice).
+  const threshold = options.threshold ?? 0.7;
   const minSize = options.minSize ?? 3;
 
   // Build inputs only for sessions that:
@@ -105,7 +123,7 @@ export function discoverTopicsLocal(
         .join(' ');
     inputs.push({
       id: s.id,
-      vector: vec,
+      vector: l2Normalize(vec),
       tokens: tokenize(text),
       text: s.title,
     });
