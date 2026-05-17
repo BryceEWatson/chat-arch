@@ -104,6 +104,12 @@ const HASH_TOPICS = '#topics';
 const HASH_TOPIC_PREFIX = '#topic/';
 const HASH_PRACTICE = '#practice';
 const HASH_CHAT = '#chat';
+const HASH_CORRECTIONS = '#corrections';
+// Action hash — opens the DataPanel modal and strips itself so a
+// back-nav / reload doesn't re-fire the open. Mirrors the standalone
+// app's `/sessions#data` deep-link from the AppSidebar SYSTEM > DATA
+// pill — without a handler here the pill is a dead link.
+const HASH_DATA = '#data';
 // One-time flag: when absent (i.e. a returning user pre-chat-page never
 // stored it), the default landing remains the prior `command` mode so
 // existing bookmarks don't suddenly land somewhere unfamiliar. Fresh
@@ -196,6 +202,18 @@ function readPracticeHash(): boolean {
 function readChatHash(): boolean {
   if (typeof window === 'undefined') return false;
   return window.location.hash === HASH_CHAT;
+}
+
+/** Same shape as readChatHash — flat boolean surface entry. */
+function readCorrectionsHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_CORRECTIONS;
+}
+
+/** Action hash — open the DataPanel modal. Stripped after firing. */
+function readDataHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_DATA;
 }
 
 /**
@@ -307,11 +325,15 @@ export function ChatArchViewer({
     // default-landing heuristic (fresh installs → `chat`, returning
     // users → `command`) when no hash is recognized.
     if (readChatHash()) return 'chat';
+    if (readCorrectionsHash()) return 'corrections';
     const proj = readProjectsHash();
     if (proj.surface === 'projects') return 'projects';
     const top = readTopicsHash();
     if (top.surface === 'topics') return 'topics';
     if (readPracticeHash()) return 'practice';
+    // #data is an action hash, not a surface mode — it opens the
+    // DataPanel via the sync useEffect and strips itself. Mode falls
+    // through to defaultLandingMode so the underlying page is sane.
     return defaultLandingMode();
   });
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
@@ -628,6 +650,20 @@ export function ChatArchViewer({
       setSelectedTopicId(top.selectedTopicId);
       const onPractice = readPracticeHash();
       const onChat = readChatHash();
+      const onCorrections = readCorrectionsHash();
+      // #data is an action, not a surface — open the panel and strip
+      // the hash so a back-nav / reload doesn't re-fire the open. Done
+      // BEFORE the unrecognized-hash branch below so the strip doesn't
+      // race with that path.
+      if (readDataHash()) {
+        setDataPanelOpen(true);
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + window.location.search,
+        );
+        return;
+      }
       if (id) {
         setMode('detail');
       } else if (proj.surface === 'projects') {
@@ -638,6 +674,8 @@ export function ChatArchViewer({
         setMode('practice');
       } else if (onChat) {
         setMode('chat');
+      } else if (onCorrections) {
+        setMode('corrections');
       } else {
         // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
         // `#constellation` bookmark would otherwise sit in the URL
@@ -667,7 +705,8 @@ export function ChatArchViewer({
             prev === 'projects' ||
             prev === 'topics' ||
             prev === 'practice' ||
-            prev === 'chat'
+            prev === 'chat' ||
+            prev === 'corrections'
           ) {
             const stashed = priorModeBeforeDetailRef.current;
             if (prev === 'detail' && stashed) {

@@ -137,6 +137,21 @@ describe('AppSidebar — render contract', () => {
     expect(topSlice).toMatch(/app-sidebar__today/);
   });
 
+  it('renders a footer with a VIEW SOURCE / repo link (trust real-estate)', () => {
+    // Sidebar.tsx in the viewer had a footer RepoLink chip; without one
+    // here, drive-by visitors (Priya) and trust-checkers (David) lose
+    // the "view source to verify" affordance the moment they leave the
+    // empty-state TrustStrip on /. Anchor it in the sidebar so it's
+    // always reachable.
+    const footerIx = html.indexOf('app-sidebar__footer');
+    expect(footerIx).toBeGreaterThan(-1);
+    const footerSlice = html.slice(footerIx);
+    expect(footerSlice).toMatch(/href="https:\/\/github\.com\/BryceEWatson\/chat-arch"/);
+    // Either VIEW SOURCE or SOURCE — whichever the chip uses, ensure
+    // the user-visible text exists.
+    expect(footerSlice).toMatch(/SOURCE/);
+  });
+
   it('renders a collapse toggle button with keyboard semantics', () => {
     expect(html).toMatch(/class="[^"]*app-sidebar__toggle/);
     // Either a real <button> or role=button + tabindex=0.

@@ -123,6 +123,25 @@ const isActive = (item: NavItem): boolean =>
       </div>
     ))}
   </div>
+  {/*
+    Footer slot — VIEW SOURCE chip. The viewer's prior `Sidebar.tsx`
+    carried a RepoLink in its footer; without one here drive-by
+    visitors lose the "view source to verify" affordance once they
+    leave the empty-state TrustStrip. Anchor it inside the sidebar so
+    it's always reachable, never collapses to a 3-letter glyph (kept
+    visible even when the rest of the rail collapses).
+  */}
+  <div class="app-sidebar__footer">
+    <a
+      class="app-sidebar__source"
+      href="https://github.com/BryceEWatson/chat-arch"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <span class="app-sidebar__source-short" aria-hidden="true">SRC</span>
+      <span class="app-sidebar__source-label">VIEW SOURCE ↗</span>
+    </a>
+  </div>
 </aside>
 
 <script>
@@ -395,5 +414,52 @@ const isActive = (item: NavItem): boolean =>
   .app-sidebar[data-collapsed='true'] .app-sidebar__header {
     justify-content: center;
     padding: 0 4px 8px;
+  }
+
+  /* Footer slot — VIEW SOURCE chip pinned to the bottom of the rail.
+     `margin-top: auto` pushes it down regardless of how short the nav
+     body is. Hairline butterscotch border, transparent fill, butter-
+     scotch text — quiet but legible, doesn't compete with active pills. */
+  .app-sidebar__footer {
+    margin-top: auto;
+    padding: 12px 10px 4px;
+  }
+  .app-sidebar__source {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--lcars-butterscotch);
+    border-radius: 12px;
+    color: var(--lcars-butterscotch);
+    text-decoration: none;
+    font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    transition: background 80ms linear, color 80ms linear;
+  }
+  .app-sidebar__source:hover,
+  .app-sidebar__source:focus-visible {
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+    outline: none;
+  }
+  .app-sidebar__source-short {
+    font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    opacity: 0.85;
+  }
+  /* In collapsed mode, the chip narrows to just the SRC mono badge —
+     stays visible (Priya/David's trust real-estate intent) but takes
+     no extra width. */
+  .app-sidebar[data-collapsed='true'] .app-sidebar__source-label {
+    display: none;
+  }
+  .app-sidebar[data-collapsed='true'] .app-sidebar__source {
+    padding: 6px;
+    justify-content: center;
   }
 </style>
