@@ -2,7 +2,6 @@
 export const prerender = false;
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import TodayNav from '../../components/TodayNav.astro';
 import { listBlogDraftSlugs, readBlogCandidates } from '../../lib/readSidecars.ts';
 
 const slugs = await listBlogDraftSlugs();
@@ -10,8 +9,7 @@ const candidates = await readBlogCandidates();
 const candidateMap = new Map<string, (typeof candidates extends null ? never : NonNullable<typeof candidates>['candidates'][number])>();
 for (const c of candidates?.candidates ?? []) candidateMap.set(c.id, c);
 ---
-<BaseLayout title="Chat Archaeologist — Blog Drafts">
-  <TodayNav current="DRAFTS" />
+<BaseLayout title="Chat Archaeologist — Blog Drafts" current="DRAFTS">
   <main class="drafts">
     <h1>BLOG DRAFTS</h1>
     {slugs.length === 0 ? (

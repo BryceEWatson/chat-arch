@@ -2,7 +2,6 @@
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
-import TodayNav from '../components/TodayNav.astro';
 import { readAuditResults, readAuditSummary } from '../lib/readSidecars.ts';
 
 const results = await readAuditResults();
@@ -89,8 +88,7 @@ const claimTypes = [
   'completion-claim',
 ];
 ---
-<BaseLayout title="Chat Archaeologist — Audit">
-  <TodayNav current="AUDIT" />
+<BaseLayout title="Chat Archaeologist — Audit" current="AUDIT">
   <main class="audit">
     <h1>AUDIT</h1>
     {results === null ? (

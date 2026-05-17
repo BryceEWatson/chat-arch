@@ -7,7 +7,6 @@
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
-import TodayNav from '../components/TodayNav.astro';
 import {
   listBlogDraftSlugs,
   readContinuumHealth,
@@ -32,8 +31,7 @@ const workshopEmpty =
   workshop.appliedPatternCount === 0 &&
   workshop.recurringAfterApplyCount === 0;
 ---
-<BaseLayout title="Chat Archaeologist — Today">
-  <TodayNav current="TODAY" />
+<BaseLayout title="Chat Archaeologist — Today" current="TODAY">
   <main class="today">
     <header class="today__header">
       <h1>TODAY</h1>

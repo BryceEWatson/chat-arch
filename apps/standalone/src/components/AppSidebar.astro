@@ -1,0 +1,399 @@
+---
+// App-wide vertical LEFT sidebar. Replaces the horizontal TodayNav
+// strip. TODAY sits in its own distinguished top section above the
+// four LCARS-style groups (WORKSHOP / TRACK / BROWSE / SYSTEM); the
+// DATA item is a panel trigger that links into the viewer's hash
+// router (#data → DataPanel modal in ChatArchViewer.tsx). CHAT and
+// CORRECTIONS share the same hash-routing pattern (/sessions#chat,
+// /sessions#corrections).
+//
+// Collapse: expanded by default desktop, auto-collapsed below 900px,
+// user-toggleable, persisted in localStorage. The pure state logic
+// lives in ../scripts/appSidebarCollapse.ts so it can be unit-tested
+// without JSDOM; the bundled script block below imports those
+// helpers and binds them to window.
+//
+// LCARS tokens are inlined as literals (sunflower / sunflower-muted /
+// butterscotch / peach) because BaseLayout does not pull in the
+// viewer's styles.css.
+interface NavItem {
+  href: string;
+  short: string;
+  label: string;
+}
+interface NavGroup {
+  label: string;
+  items: readonly NavItem[];
+}
+const { current } = Astro.props as { current?: string };
+// TODAY rendered standalone above the groups — its own section, full
+// sunflower, divider below.
+const TODAY: NavItem = { href: '/', short: 'TDY', label: 'TODAY' };
+// DATA also rendered separately at the SYSTEM group's tail — it's a
+// panel trigger (never marked active) styled with peach accent.
+const DATA: NavItem = { href: '/sessions#data', short: 'DAT', label: 'DATA' };
+const groups: readonly NavGroup[] = [
+  {
+    label: 'WORKSHOP',
+    items: [
+      { href: '/sessions#chat', short: 'CHT', label: 'CHAT' },
+      { href: '/sessions#corrections', short: 'COR', label: 'CORRECTIONS' },
+      { href: '/practice', short: 'PRC', label: 'PRACTICE' },
+    ],
+  },
+  {
+    label: 'TRACK',
+    items: [
+      // TODAY lives ABOVE the groups now — removed from TRACK.
+      { href: '/audit', short: 'AUD', label: 'AUDIT' },
+      { href: '/health', short: 'HLT', label: 'HEALTH' },
+      { href: '/blog-drafts', short: 'DFT', label: 'DRAFTS' },
+    ],
+  },
+  {
+    label: 'BROWSE',
+    items: [
+      { href: '/sessions', short: 'SES', label: 'SESSIONS' },
+      { href: '/projects', short: 'PRJ', label: 'PROJECTS' },
+      { href: '/topics', short: 'TOP', label: 'TOPICS' },
+    ],
+  },
+  {
+    label: 'SYSTEM',
+    items: [
+      { href: '/design-system', short: 'DSY', label: 'DESIGN SYSTEM' },
+      // DATA pushed in here so the SYSTEM group renders its own DATA
+      // anchor with the panel-trigger styling — never active.
+      DATA,
+    ],
+  },
+];
+const isActive = (item: NavItem): boolean =>
+  item.label === current && item.label !== 'DATA';
+---
+<aside class="app-sidebar" data-collapsed="false" aria-label="Primary">
+  <div class="app-sidebar__header">
+    <span class="app-sidebar__brand-dot" aria-hidden="true"></span>
+    <span class="app-sidebar__brand-title">CHAT&nbsp;ARCH</span>
+    <button
+      type="button"
+      class="app-sidebar__toggle"
+      aria-expanded="true"
+      aria-controls="app-sidebar-body"
+      aria-label="Toggle sidebar"
+    >
+      <span class="app-sidebar__toggle-icon" aria-hidden="true">«</span>
+    </button>
+  </div>
+
+  <div class="app-sidebar__body" id="app-sidebar-body">
+    <div class="app-sidebar__top">
+      <a
+        class={`app-sidebar__item app-sidebar__today${isActive(TODAY) ? ' app-sidebar__item--active' : ''}`}
+        href={TODAY.href}
+        aria-current={isActive(TODAY) ? 'page' : undefined}
+      >
+        <span class="app-sidebar__item-short">{TODAY.short}</span>
+        <span class="app-sidebar__item-label">{TODAY.label}</span>
+      </a>
+    </div>
+    <div class="app-sidebar__divider" aria-hidden="true"></div>
+
+    {groups.map((g) => (
+      <div class="app-sidebar__group">
+        <div class="app-sidebar__group-label" aria-hidden="true">{g.label}</div>
+        <ul class="app-sidebar__list">
+          {g.items.map((item) => {
+            const active = isActive(item);
+            const isData = item.label === 'DATA';
+            return (
+              <li>
+                <a
+                  class={`app-sidebar__item${active ? ' app-sidebar__item--active' : ''}${isData ? ' app-sidebar__item--data' : ''}`}
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  <span class="app-sidebar__item-short">{item.short}</span>
+                  <span class="app-sidebar__item-label">{item.label}</span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    ))}
+  </div>
+</aside>
+
+<script>
+  import {
+    MOBILE_MEDIA,
+    STORAGE_KEY,
+    attachCollapse,
+    initialCollapsedFor,
+    readStoredCollapsed,
+  } from '../scripts/appSidebarCollapse.ts';
+
+  // Boot order:
+  //   1. Read localStorage for the persisted preference.
+  //   2. Check matchMedia for the mobile breakpoint — forces collapsed
+  //      on first paint regardless of stored preference.
+  //   3. Apply data-collapsed pre-paint by mutating the element.
+  //   4. Wire the toggle click + the matchMedia change listener.
+  //
+  // localStorage is the source of truth for an explicit user toggle —
+  // an explicit toggle on a wide viewport persists; resizing to mobile
+  // forces collapsed without overwriting that preference; resizing
+  // back to wide restores the stored preference.
+  (function boot() {
+    const root = document.querySelector('.app-sidebar');
+    if (!(root instanceof HTMLElement)) return;
+    const toggleBtn = root.querySelector('.app-sidebar__toggle');
+    const stored = readStoredCollapsed(window.localStorage);
+    const mql = window.matchMedia(MOBILE_MEDIA);
+    const initial = initialCollapsedFor({ stored, mobile: mql.matches });
+    const ctrl = attachCollapse(
+      root,
+      window.localStorage,
+      toggleBtn instanceof HTMLElement ? toggleBtn : null,
+    );
+    // Don't persist the initial application — only the user's explicit
+    // toggle should write to storage. Calling set with persist:false
+    // applies the attribute without touching the storage key, leaving
+    // a stored 'false' intact across mobile resizes.
+    ctrl.set(initial, { persist: false });
+
+    if (toggleBtn instanceof HTMLElement) {
+      toggleBtn.addEventListener('click', () => ctrl.toggle());
+    }
+
+    // matchMedia.change — auto-collapse when crossing the breakpoint
+    // downward, restore stored preference when crossing upward.
+    const onMqlChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) {
+        ctrl.set(true, { persist: false });
+      } else {
+        ctrl.set(readStoredCollapsed(window.localStorage), { persist: false });
+      }
+    };
+    // Modern browsers — addEventListener; Safari < 14 — addListener.
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onMqlChange);
+    } else {
+      mql.addListener(onMqlChange);
+    }
+
+    // storage event — keep multiple tabs in sync if a sibling toggles.
+    window.addEventListener('storage', (e) => {
+      if (e.key !== STORAGE_KEY) return;
+      ctrl.set(e.newValue === 'true', { persist: false });
+    });
+  })();
+</script>
+
+<style>
+  /* LCARS tokens inlined — BaseLayout does not load the viewer's
+     styles.css, so we declare the same literals here to keep the
+     sidebar visually native on every page. */
+  .app-sidebar {
+    --lcars-bg: #000000;
+    --lcars-sunflower: #ffcc99;
+    --lcars-sunflower-muted: #d9ad82;
+    --lcars-butterscotch: #dd9944;
+    --lcars-peach: #ff9933;
+    --lcars-ice: #99ccff;
+
+    background: var(--lcars-bg);
+    color: var(--lcars-sunflower);
+    border-right: 3px solid var(--lcars-butterscotch);
+    border-radius: 0 16px 16px 0;
+    font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+    padding: 10px 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 100vh;
+    box-sizing: border-box;
+    /* Width owned by BaseLayout's grid template; the sidebar fills
+       its column. */
+    width: 100%;
+  }
+  .app-sidebar__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px 8px;
+  }
+  .app-sidebar__brand-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--lcars-sunflower);
+    flex: 0 0 auto;
+  }
+  .app-sidebar__brand-title {
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    color: var(--lcars-sunflower);
+    font-weight: 700;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    line-height: 1;
+    padding-bottom: 2px;
+  }
+  .app-sidebar__toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--lcars-butterscotch);
+    background: transparent;
+    color: var(--lcars-butterscotch);
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: background 80ms linear, color 80ms linear;
+  }
+  .app-sidebar__toggle:hover,
+  .app-sidebar__toggle:focus-visible {
+    background: var(--lcars-butterscotch);
+    color: var(--lcars-bg);
+    outline: none;
+  }
+  .app-sidebar__toggle-icon {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .app-sidebar[data-collapsed='true'] .app-sidebar__toggle-icon {
+    /* Flip the chevron to point right when collapsed. */
+    transform: rotate(180deg);
+  }
+
+  .app-sidebar__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* TODAY top section — full sunflower (not muted), taller pill, own
+     divider beneath. */
+  .app-sidebar__top {
+    padding: 4px 0 0;
+  }
+  .app-sidebar__today {
+    background: var(--lcars-sunflower) !important;
+    color: var(--lcars-bg) !important;
+    padding: 12px 12px 12px 14px !important;
+    font-size: 13px;
+  }
+  .app-sidebar__today:hover,
+  .app-sidebar__today:focus-visible {
+    background: var(--lcars-butterscotch) !important;
+    color: var(--lcars-bg) !important;
+  }
+  .app-sidebar__today.app-sidebar__item--active {
+    background: var(--lcars-sunflower) !important;
+    color: var(--lcars-bg) !important;
+    box-shadow: inset 4px 0 0 0 var(--lcars-peach);
+  }
+  .app-sidebar__divider {
+    height: 3px;
+    background: var(--lcars-butterscotch);
+    margin: 6px 0;
+    border-radius: 0 2px 2px 0;
+  }
+
+  .app-sidebar__group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-top: 4px;
+  }
+  .app-sidebar__group-label {
+    font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    color: var(--lcars-butterscotch);
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 10px;
+    line-height: 1;
+  }
+  .app-sidebar__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .app-sidebar__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 8px 12px;
+    background: var(--lcars-sunflower-muted);
+    color: var(--lcars-bg);
+    text-decoration: none;
+    border-radius: 0 18px 18px 0;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    line-height: 1;
+    transition: background 80ms linear;
+  }
+  .app-sidebar__item:hover,
+  .app-sidebar__item:focus-visible {
+    background: var(--lcars-sunflower);
+    outline: none;
+  }
+  .app-sidebar__item--active {
+    background: var(--lcars-sunflower);
+    color: var(--lcars-bg);
+  }
+  .app-sidebar__item--data {
+    background: var(--lcars-peach);
+    color: var(--lcars-bg);
+  }
+  .app-sidebar__item--data:hover,
+  .app-sidebar__item--data:focus-visible {
+    background: #ffaa55;
+  }
+  .app-sidebar__item-short {
+    font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    flex: 0 0 auto;
+  }
+  .app-sidebar__item-label {
+    font-weight: 700;
+    letter-spacing: 0.14em;
+  }
+
+  /* Collapsed state — labels off, only 3-letter shorts visible. The
+     pill geometry stays so the column still reads as LCARS. */
+  .app-sidebar[data-collapsed='true'] .app-sidebar__item-label,
+  .app-sidebar[data-collapsed='true'] .app-sidebar__brand-title,
+  .app-sidebar[data-collapsed='true'] .app-sidebar__group-label {
+    display: none;
+  }
+  .app-sidebar[data-collapsed='true'] .app-sidebar__item {
+    justify-content: center;
+    padding: 9px 4px;
+    gap: 0;
+  }
+  .app-sidebar[data-collapsed='true'] .app-sidebar__today {
+    padding: 11px 4px !important;
+  }
+  .app-sidebar[data-collapsed='true'] .app-sidebar__item-short {
+    opacity: 1;
+    font-size: 11px;
+  }
+  .app-sidebar[data-collapsed='true'] .app-sidebar__header {
+    justify-content: center;
+    padding: 0 4px 8px;
+  }
+</style>

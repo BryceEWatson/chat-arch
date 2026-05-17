@@ -2,7 +2,6 @@
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
-import TodayNav from '../components/TodayNav.astro';
 import { readContinuumHealth } from '../lib/readSidecars.ts';
 
 const health = await readContinuumHealth();
@@ -11,8 +10,7 @@ function fmtPct(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 ---
-<BaseLayout title="Chat Archaeologist — Health">
-  <TodayNav current="HEALTH" />
+<BaseLayout title="Chat Archaeologist — Health" current="HEALTH">
   <main class="health">
     <h1>CONTINUUM HEALTH</h1>
     {health === null ? (

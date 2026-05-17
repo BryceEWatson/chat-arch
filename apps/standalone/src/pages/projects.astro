@@ -1,10 +1,10 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import TodayNav from '../components/TodayNav.astro';
+import HideViewerSidebar from '../components/HideViewerSidebar.astro';
 import { ChatArchViewer } from '@chat-arch/viewer';
 import '@chat-arch/viewer/style.css';
 ---
-<BaseLayout title="Chat Archaeologist — Projects">
+<BaseLayout title="Chat Archaeologist — Projects" current="PROJECTS">
   {/*
     v2 spec §5.1 / decision D3: PROJECTS index lives at /projects.
     The single React island still owns surface state via window.location.hash;
@@ -12,14 +12,12 @@ import '@chat-arch/viewer/style.css';
     on mount instead of falling back to SESSIONS. Idempotent — a refresh
     on /projects re-asserts the hash without changing history.
 
-    The TodayNav strip is added on top so navigation between the new
-    v2-instrumented-loop chrome (TODAY / AUDIT / HEALTH / DRAFTS) and
-    the legacy LCARS viewer surfaces works in both directions —
-    otherwise clicking PROJECTS from the new pages stranded users here
-    with no path back. The strip lives ABOVE the viewer's full-height
-    chrome so it doesn't collide with the LCARS elbow geometry.
+    AppSidebar is rendered by BaseLayout. The viewer's own L-sidebar
+    is hidden via HideViewerSidebar so the page has a single vertical
+    rail — otherwise the AppSidebar and the viewer's LCARS sidebar
+    would stack as two competing nav columns.
   */}
-  <TodayNav current="PROJECTS" />
+  <HideViewerSidebar />
   <script is:inline>
     if (typeof window !== 'undefined' && window.location.hash !== '#projects') {
       window.history.replaceState(null, '', window.location.pathname + '#projects');

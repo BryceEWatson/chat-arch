@@ -2,7 +2,6 @@
 export const prerender = false;
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import TodayNav from '../../components/TodayNav.astro';
 import { readBlogDraft, readAuditResults } from '../../lib/readSidecars.ts';
 
 const slug = Astro.params.slug ?? '';
@@ -60,8 +59,7 @@ const overallInc = auditRows.reduce((a, r) => a + r.inconclusive, 0);
 const overallTotal = overallPass + overallFail + overallInc;
 const overallRate = overallTotal === 0 ? 0 : overallPass / overallTotal;
 ---
-<BaseLayout title={draft !== null ? `Draft — ${slug}` : 'Draft not found'}>
-  <TodayNav current="DRAFTS" />
+<BaseLayout title={draft !== null ? `Draft — ${slug}` : 'Draft not found'} current="DRAFTS">
   <main class="draft">
     <p class="draft__crumb"><a href="/blog-drafts">← all drafts</a></p>
     <h1>{slug || '(no slug)'}</h1>
