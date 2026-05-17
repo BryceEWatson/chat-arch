@@ -1,63 +1,127 @@
 ---
-// Simple top-strip nav for the v2 chrome pages. The legacy viewer
-// surfaces (/sessions, /projects, /topics) still own their own
-// navigation; this strip is the entry-point chrome that lets a user
-// move between the new TODAY / AUDIT / HEALTH / DRAFTS surfaces.
+// Top-strip nav for the v2 chrome surfaces, styled to match the LCARS
+// chrome the viewer ships on /sessions / /projects / /topics so the two
+// systems read as one product. Inlines the LCARS tokens (sunflower,
+// butterscotch, sunflower-muted, fonts) so the strip looks native even
+// on the new pages that don't load the viewer's full styles.css.
+//
+// Each item mirrors the sidebar item geometry (`background:
+// --lcars-sunflower-muted`, `border-radius: 0 14px 14px 0`, black text,
+// peach-on-hover) plus the sidebar item's three-letter abbreviation
+// prefix (`CHT CHAT`, `COR CORRECTIONS`, etc.) so the visual vocabulary
+// is identical regardless of which surface you land on first.
 const { current } = Astro.props as { current: string };
-const links: { href: string; label: string }[] = [
-  { href: '/', label: 'TODAY' },
-  { href: '/audit', label: 'AUDIT' },
-  { href: '/health', label: 'HEALTH' },
-  { href: '/blog-drafts', label: 'DRAFTS' },
-  { href: '/sessions', label: 'SESSIONS' },
-  { href: '/projects', label: 'PROJECTS' },
-  { href: '/topics', label: 'TOPICS' },
+const links: { href: string; short: string; label: string }[] = [
+  { href: '/', short: 'TDY', label: 'TODAY' },
+  { href: '/audit', short: 'AUD', label: 'AUDIT' },
+  { href: '/health', short: 'HLT', label: 'HEALTH' },
+  { href: '/blog-drafts', short: 'DFT', label: 'DRAFTS' },
+  { href: '/sessions', short: 'SES', label: 'SESSIONS' },
+  { href: '/projects', short: 'PRJ', label: 'PROJECTS' },
+  { href: '/topics', short: 'TOP', label: 'TOPICS' },
 ];
 ---
-<nav class="today-nav">
-  <span class="today-nav__brand">CHAT-ARCH v2</span>
+<nav class="today-nav" aria-label="Primary surfaces">
+  <span class="today-nav__dot" aria-hidden="true"></span>
+  <span class="today-nav__title">CHAT&nbsp;ARCHAEOLOGIST</span>
   <ul class="today-nav__links">
     {links.map((l) => (
-      <li class={l.label === current ? 'is-current' : ''}>
-        <a href={l.href}>{l.label}</a>
+      <li>
+        <a class={`today-nav__item ${l.label === current ? 'today-nav__item--active' : ''}`} href={l.href}>
+          <span class="today-nav__item-short">{l.short}</span>
+          <span class="today-nav__item-label">{l.label}</span>
+        </a>
       </li>
     ))}
   </ul>
 </nav>
 <style>
   .today-nav {
+    /* Mirror lcars-top-bar geometry: black background, 3px butterscotch
+       underline, rounded right corner. Slightly tighter padding than the
+       viewer's top-bar since this strip carries nav only, not search +
+       title + tier indicator. */
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 24px;
-    padding: 12px 24px;
-    background: #0a0a0a;
-    border-bottom: 1px solid #FFCC9933;
-    font-family: 'Antonio', sans-serif;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #000000; /* --lcars-bg */
+    border-bottom: 3px solid #dd9944; /* --lcars-butterscotch */
+    border-radius: 0 16px 16px 0;
+    font-family: 'Antonio', 'Oswald', 'Impact', sans-serif; /* --lcars-font-chrome */
   }
-  .today-nav__brand {
-    color: #FFCC99;
+  .today-nav__dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffcc99; /* --lcars-sunflower */
+    flex: 0 0 auto;
+  }
+  .today-nav__title {
+    font-size: 15px;
+    letter-spacing: 0.16em;
+    color: #ffcc99;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    font-size: 14px;
+    white-space: nowrap;
+    /* Match lcars-top-bar__title baseline-correction trick. */
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    line-height: 1;
+    padding-bottom: 3px;
   }
   .today-nav__links {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    gap: 16px;
+    flex: 1 1 auto;
+    justify-content: flex-end;
   }
-  .today-nav__links a {
-    color: #FFCC9988;
+  .today-nav__item {
+    /* Mirror .lcars-sidebar__item: muted sunflower bg, dark text, gap +
+       abbreviation prefix, rounded right corner. Black text on muted
+       sunflower lands 10.25:1 WCAG per the viewer's accessibility note. */
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: #d9ad82; /* --lcars-sunflower-muted */
+    color: #000000;
+    border-radius: 0 14px 14px 0;
     text-decoration: none;
-    font-size: 13px;
-    letter-spacing: 0.08em;
-    transition: color 0.12s ease;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    line-height: 1;
+    transition: background 80ms linear;
   }
-  .today-nav__links a:hover { color: #FFCC99; }
-  .today-nav__links .is-current a {
-    color: #FFCC99;
-    border-bottom: 1px solid #FFCC99;
-    padding-bottom: 2px;
+  .today-nav__item:hover,
+  .today-nav__item:focus-visible {
+    background: #ffcc99; /* --lcars-sunflower */
+    outline: none;
+  }
+  .today-nav__item--active {
+    background: #ff9933; /* --lcars-peach */
+    color: #000000;
+  }
+  .today-nav__item-short {
+    font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace; /* --lcars-font-mono */
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+  }
+  .today-nav__item-label {
+    font-weight: 700;
+    letter-spacing: 0.14em;
+  }
+  @media (max-width: 700px) {
+    .today-nav__item-label { display: none; }
+    .today-nav__item { padding: 8px 10px; }
   }
 </style>
