@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import TodayNav from '../components/TodayNav.astro';
 import { ChatArchViewer } from '@chat-arch/viewer';
 import '@chat-arch/viewer/style.css';
 ---
@@ -9,8 +10,10 @@ import '@chat-arch/viewer/style.css';
     bookmarks keep working. `/` now renders the Today page; `/sessions`
     is the long-form session browser. The viewer's hash-state is reset
     pre-hydration so a fresh visit lands on SESSIONS rather than the
-    last-used surface.
+    last-used surface. TodayNav strip on top per the same back-link
+    rationale as /projects.astro.
   */}
+  <TodayNav current="SESSIONS" />
   <script is:inline>
     if (typeof window !== 'undefined' && window.location.hash !== '#sessions') {
       window.history.replaceState(null, '', window.location.pathname + '#sessions');
