@@ -26,6 +26,12 @@ import type {
   AppliedImprovement,
   AppliedImprovementsFile,
   AuditClaim,
+  AuditResult,
+  AuditResultsFile,
+  AuditSummary,
+  BlogCandidatesFile,
+  ContinuumHealth,
+  CorrectionsFile,
   EmbeddingMeta,
   SessionManifest,
   UnifiedSessionEntry,
@@ -34,14 +40,19 @@ import type {
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
 import {
+  buildBlogCandidates,
+  buildDailyBrief,
   buildSemanticDuplicates,
   buildUpgradeOutcomes,
   discoverTopicsLocal,
   extractClaims,
   scoreManifest,
+  verifySessions,
   type AppliedImprovementLite,
   type AssistantMessage,
   type DuplicatesFile,
+  type TimelineEvent,
+  type VerifySessionInput,
 } from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
 
@@ -59,8 +70,12 @@ export interface RunSemanticAnalysisResult {
     duplicatesSemantic: string;
     topicsAppended: string;
     auditClaims: string;
+    auditResults: string;
+    auditSummary: string;
     upgradeOutcomes: string;
     discoveryScores: string;
+    blogCandidates: string;
+    dailyBrief: string;
   };
   counts: {
     discoveryScored: number;
@@ -68,7 +83,11 @@ export interface RunSemanticAnalysisResult {
     semanticDupClusters: number;
     topicsLocal: number;
     auditClaims: number;
+    auditPass: number;
+    auditFail: number;
+    auditInconclusive: number;
     upgradeOutcomes: number;
+    blogCandidates: number;
   };
   embeddingsAvailable: boolean;
 }
@@ -235,6 +254,169 @@ async function readAssistantMessages(
   return out;
 }
 
+/**
+ * Walk a transcript and emit the full timeline (assistant, user,
+ * tool_use, tool_result events) for the F.2 verifier. Returns [] on
+ * any error — broken transcripts cost the verifier visibility, not
+ * the run.
+ */
+async function readTimeline(
+  entry: UnifiedSessionEntry,
+  outDir: string,
+): Promise<TimelineEvent[]> {
+  if (entry.transcriptPath === undefined) return [];
+  const baseDir = path.resolve(outDir);
+  const abs = path.resolve(baseDir, entry.transcriptPath);
+  const rel = path.relative(baseDir, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return [];
+
+  let raw: string;
+  try {
+    raw = await readFile(abs, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const out: TimelineEvent[] = [];
+
+  if (entry.source === 'cloud') {
+    let j: { chat_messages?: Array<{ sender?: string; text?: string }> };
+    try {
+      j = JSON.parse(raw) as typeof j;
+    } catch {
+      return [];
+    }
+    let lineNumber = 1;
+    for (const m of j.chat_messages ?? []) {
+      const t = typeof m.text === 'string' ? m.text : '';
+      if (m.sender === 'assistant' && t !== '') {
+        out.push({ kind: 'assistant', lineNumber, text: t });
+      } else if (m.sender === 'human' && t !== '') {
+        out.push({ kind: 'user', lineNumber, text: t });
+      }
+      lineNumber += 1;
+    }
+    // Cloud transcripts don't surface tool_use/tool_result discretely
+    // in chat_messages; the verifier degrades to 'inconclusive' for
+    // most claim types on cloud sessions. That's expected — cloud is
+    // a chat surface, not an agent surface.
+    return out;
+  }
+
+  const lines = raw.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (line === '') continue;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj === null || typeof obj !== 'object') continue;
+    const rec = obj as Record<string, unknown>;
+    const type = rec['type'];
+
+    if (type === 'user') {
+      const msg = rec['message'];
+      if (msg !== null && typeof msg === 'object') {
+        const content = (msg as Record<string, unknown>)['content'];
+        if (typeof content === 'string' && content !== '') {
+          out.push({ kind: 'user', lineNumber: i + 1, text: content });
+        } else if (Array.isArray(content)) {
+          for (const part of content) {
+            if (part !== null && typeof part === 'object') {
+              const p = part as Record<string, unknown>;
+              if (p['type'] === 'text' && typeof p['text'] === 'string') {
+                out.push({ kind: 'user', lineNumber: i + 1, text: p['text'] });
+              } else if (p['type'] === 'tool_result') {
+                const c = p['content'];
+                const text =
+                  typeof c === 'string'
+                    ? c
+                    : Array.isArray(c)
+                      ? c
+                          .map((x) =>
+                            x !== null && typeof x === 'object' && typeof (x as Record<string, unknown>)['text'] === 'string'
+                              ? (x as Record<string, unknown>)['text']
+                              : '',
+                          )
+                          .join('\n')
+                      : '';
+                out.push({
+                  kind: 'tool_result',
+                  lineNumber: i + 1,
+                  text: String(text),
+                  isError: p['is_error'] === true,
+                });
+              }
+            }
+          }
+        }
+      }
+    } else if (type === 'assistant') {
+      const msg = rec['message'];
+      if (msg !== null && typeof msg === 'object') {
+        const content = (msg as Record<string, unknown>)['content'];
+        if (typeof content === 'string' && content !== '') {
+          out.push({ kind: 'assistant', lineNumber: i + 1, text: content });
+        } else if (Array.isArray(content)) {
+          const textParts: string[] = [];
+          for (const part of content) {
+            if (part !== null && typeof part === 'object') {
+              const p = part as Record<string, unknown>;
+              if (p['type'] === 'text' && typeof p['text'] === 'string') {
+                textParts.push(p['text']);
+              } else if (p['type'] === 'tool_use') {
+                const name = typeof p['name'] === 'string' ? p['name'] : '';
+                const input =
+                  p['input'] !== null && typeof p['input'] === 'object'
+                    ? (p['input'] as Record<string, unknown>)
+                    : {};
+                out.push({ kind: 'tool_use', lineNumber: i + 1, name, input });
+              }
+            }
+          }
+          if (textParts.length > 0) {
+            out.push({ kind: 'assistant', lineNumber: i + 1, text: textParts.join('\n') });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+async function loadCorrections(analysisDir: string): Promise<CorrectionsFile | null> {
+  try {
+    const raw = await readFile(path.join(analysisDir, 'corrections.json'), 'utf8');
+    return JSON.parse(raw) as CorrectionsFile;
+  } catch {
+    return null;
+  }
+}
+
+async function loadContinuumHealth(analysisDir: string): Promise<ContinuumHealth | null> {
+  try {
+    const raw = await readFile(path.join(analysisDir, 'continuum-health.json'), 'utf8');
+    return JSON.parse(raw) as ContinuumHealth;
+  } catch {
+    return null;
+  }
+}
+
+function isoDate(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
 export async function runSemanticAnalysis(
   options: RunSemanticAnalysisOptions,
 ): Promise<RunSemanticAnalysisResult> {
@@ -385,14 +567,174 @@ export async function runSemanticAnalysis(
   await writeFile(upgradePath, JSON.stringify(upgradeOutcomes, null, 2) + '\n', 'utf8');
   logger.info(`semantic: upgrade-outcomes.json — ${upgradeOutcomes.outcomes.length} outcomes`);
 
+  // ---- Wave 3: F.2 evidence verifier ----
+  // Group claims by session and walk each session's timeline once.
+  const claimsBySession = new Map<string, AuditClaim[]>();
+  for (const c of allClaims) {
+    const list = claimsBySession.get(c.sessionId);
+    if (list === undefined) claimsBySession.set(c.sessionId, [c]);
+    else list.push(c);
+  }
+  const entryById = new Map<string, UnifiedSessionEntry>();
+  for (const e of updatedSessions) entryById.set(e.id, e);
+
+  const verifyInputs: VerifySessionInput[] = [];
+  for (const [sessionId, claims] of claimsBySession) {
+    const entry = entryById.get(sessionId);
+    if (entry === undefined) continue;
+    const timeline = await readTimeline(entry, options.outDir);
+    const projectKey = entry.projectId ?? entry.project;
+    verifyInputs.push({
+      sessionId,
+      timeline,
+      claims,
+      ...(projectKey !== undefined ? { projectKey } : {}),
+    });
+  }
+  const verifyResult = verifySessions(verifyInputs, now);
+  const auditResultsFile: AuditResultsFile = {
+    version: 1,
+    generatedAt: now,
+    totals: verifyResult.summary.totals,
+    results: verifyResult.results,
+  };
+  const auditResultsPath = path.join(analysisDir, 'audit-results.json');
+  await writeFile(
+    auditResultsPath,
+    JSON.stringify(auditResultsFile, null, 2) + '\n',
+    'utf8',
+  );
+  const auditSummaryPath = path.join(analysisDir, 'audit-summary.json');
+  await writeFile(
+    auditSummaryPath,
+    JSON.stringify(verifyResult.summary, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(
+    `semantic: audit-results.json — pass=${verifyResult.summary.totals.pass} ` +
+      `fail=${verifyResult.summary.totals.fail} inconclusive=${verifyResult.summary.totals.inconclusive}`,
+  );
+
+  // ---- Wave 3: blog candidate selector ----
+  const sessionPassRate = new Map<string, number>();
+  // Pre-aggregate per-session pass rate over the verifier results.
+  {
+    const perSession = new Map<string, { pass: number; total: number }>();
+    for (const r of verifyResult.results) {
+      const slot = perSession.get(r.sessionId) ?? { pass: 0, total: 0 };
+      slot.total += 1;
+      if (r.outcome === 'pass') slot.pass += 1;
+      perSession.set(r.sessionId, slot);
+    }
+    for (const [sid, { pass, total }] of perSession) {
+      sessionPassRate.set(sid, total === 0 ? 0 : pass / total);
+    }
+  }
+
+  const blogCandidates: BlogCandidatesFile = embeddingsAvailable
+    ? buildBlogCandidates(updatedSessions, vectorMap, {
+        sessionAuditPassRate: sessionPassRate,
+        now,
+      })
+    : {
+        version: 1,
+        generatedAt: now,
+        clusterThreshold: 0.78,
+        discoveryScoreThreshold: 0.7,
+        candidates: [],
+      };
+  const blogCandidatesPath = path.join(analysisDir, 'blog-candidates.json');
+  await writeFile(
+    blogCandidatesPath,
+    JSON.stringify(blogCandidates, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(`semantic: blog-candidates.json — ${blogCandidates.candidates.length} candidates`);
+
+  // Emit draft-prompt notes for the top 3 candidates (the chat-answer
+  // skill consumes these). Drafts themselves require an LLM pass; per
+  // spec Blog.2 the user runs the chat-answer skill in draft mode
+  // against this prompt to produce the markdown. The exporter does NOT
+  // call the LLM directly to keep the all-pipeline offline-able.
+  const draftsDir = path.join(analysisDir, 'blog-drafts');
+  await mkdir(draftsDir, { recursive: true });
+  const top = blogCandidates.candidates.slice(0, 3);
+  for (const cand of top) {
+    const slug = `${isoDate(now)}-${slugify(cand.workingTitle)}-${cand.id}`;
+    const promptPath = path.join(draftsDir, `${slug}.prompt.md`);
+    const memberLines = cand.clusterSessionIds.map((sid) => {
+      const e = entryById.get(sid);
+      return e === undefined
+        ? `- [SID:${sid}] (entry not found)`
+        : `- [SID:${sid}] · ${e.title} · ${new Date(e.startedAt).toISOString().slice(0, 10)} · discoveryScore=${(e.discoveryScore ?? 0).toFixed(2)}`;
+    });
+    const lines = [
+      `# Blog draft prompt — ${cand.workingTitle}`,
+      '',
+      `Candidate id: ${cand.id}`,
+      `Cluster score: ${cand.score.toFixed(3)} (mean discovery=${cand.meanDiscoveryScore.toFixed(2)}, span=${cand.spanDays.toFixed(1)}d, novelty=${cand.noveltyScore.toFixed(2)})`,
+      cand.meanAuditPassRate !== null
+        ? `Mean F-audit pass rate over cluster: ${(cand.meanAuditPassRate * 100).toFixed(0)}%`
+        : 'Mean F-audit pass rate: n/a',
+      '',
+      '## Member sessions',
+      ...memberLines,
+      '',
+      '## How to generate',
+      '',
+      'Invoke the chat-answer skill in draft mode against the member sessions above. The skill should:',
+      '',
+      '- Read each [SID:...] session in full.',
+      '- Identify the through-line that makes them a single story.',
+      '- Draft a markdown blog post with inline [SID:...] citations.',
+      "- Match the user's voice (sample posts cached at brycewatson.com/blog).",
+      '',
+      'Drop the resulting markdown next to this file as',
+      `\`analysis/blog-drafts/${slug}.md\` and the F-audit pass will pick it up on the next rescan.`,
+    ];
+    await writeFile(promptPath, lines.join('\n') + '\n', 'utf8');
+  }
+  logger.info(`semantic: wrote ${top.length} blog-draft prompt(s) to ${draftsDir}`);
+
+  // ---- Wave 3: daily brief ----
+  const corrections = await loadCorrections(analysisDir);
+  const continuumHealth = await loadContinuumHealth(analysisDir);
+  const briefDate = isoDate(now);
+  const briefDir = path.join(analysisDir, 'briefs');
+  await mkdir(briefDir, { recursive: true });
+  const brief = buildDailyBrief({
+    date: briefDate,
+    now,
+    patterns: corrections?.patterns ?? [],
+    upgradeOutcomes: upgradeOutcomes.outcomes,
+    blogDrafts: [],
+    auditResults: verifyResult.results,
+    auditSummary: verifyResult.summary,
+    continuumHealth,
+  });
+  const briefPath = path.join(briefDir, `${briefDate}.md`);
+  await writeFile(briefPath, brief.markdown, 'utf8');
+  logger.info(
+    `semantic: briefs/${briefDate}.md — patterns=${brief.counts.patternsShifted} ` +
+      `upgrades=${brief.counts.upgradesShown} drafts=${brief.counts.blogDraftsShown} ` +
+      `concerns=${brief.counts.auditConcernsShown}`,
+  );
+
+  // void the unused AuditSummary symbol so the import is meaningful.
+  void (null as unknown as AuditSummary | null);
+
   return {
     manifestPath,
     files: {
       duplicatesSemantic: dupPath,
       topicsAppended: topicsPath,
       auditClaims: auditClaimsPath,
+      auditResults: auditResultsPath,
+      auditSummary: auditSummaryPath,
       upgradeOutcomes: upgradePath,
       discoveryScores: discoveryScoresPath,
+      blogCandidates: blogCandidatesPath,
+      dailyBrief: briefPath,
     },
     counts: {
       discoveryScored: scoreMap.size,
@@ -400,7 +742,11 @@ export async function runSemanticAnalysis(
       semanticDupClusters: dupFile.clusters.length,
       topicsLocal: topicsLocal.topics.length,
       auditClaims: allClaims.length,
+      auditPass: verifyResult.summary.totals.pass,
+      auditFail: verifyResult.summary.totals.fail,
+      auditInconclusive: verifyResult.summary.totals.inconclusive,
       upgradeOutcomes: upgradeOutcomes.outcomes.length,
+      blogCandidates: blogCandidates.candidates.length,
     },
     embeddingsAvailable,
   };

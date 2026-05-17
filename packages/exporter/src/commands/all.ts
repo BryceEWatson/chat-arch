@@ -235,7 +235,10 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
         `sem_dup_clusters=${semResult.counts.semanticDupClusters} ` +
         `local_topics=${semResult.counts.topicsLocal} ` +
         `audit_claims=${semResult.counts.auditClaims} ` +
+        `audit_pass=${semResult.counts.auditPass} ` +
+        `audit_fail=${semResult.counts.auditFail} ` +
         `upgrade_outcomes=${semResult.counts.upgradeOutcomes} ` +
+        `blog_candidates=${semResult.counts.blogCandidates} ` +
         `embeddings_avail=${semResult.embeddingsAvailable}`,
     );
   } catch (err) {

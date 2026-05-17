@@ -196,3 +196,28 @@ export {
   buildUpgradeOutcomes,
   type BuildUpgradeOutcomesOptions,
 } from './upgradeOutcomes.js';
+
+export {
+  verifyOneClaim,
+  verifySessions,
+  type TimelineEvent,
+  type VerifyClaimsOptions,
+  type VerifyResult,
+  type VerifySessionInput,
+} from './auditEvidence.js';
+
+export {
+  buildDailyBrief,
+  type BriefThresholds,
+  type DailyBriefInputs,
+  type DailyBriefResult,
+} from './dailyBrief.js';
+
+export {
+  DEFAULT_BLOG_CLUSTER_THRESHOLD,
+  DEFAULT_BLOG_DISCOVERY_THRESHOLD,
+  DEFAULT_MIN_CLUSTER_SIZE,
+  DEFAULT_NARRATIVE_ARC_DAYS,
+  buildBlogCandidates,
+  type BuildBlogCandidatesOptions,
+} from './blogCandidates.js';
