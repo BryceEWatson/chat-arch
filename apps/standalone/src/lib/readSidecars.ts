@@ -13,10 +13,12 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  AppliedImprovementsFile,
   AuditResultsFile,
   AuditSummary,
   BlogCandidatesFile,
   ContinuumHealth,
+  CorrectionPattern,
   CorrectionsFile,
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
@@ -60,6 +62,144 @@ export async function readCorrections(): Promise<CorrectionsFile | null> {
 
 export async function readUpgradeOutcomes(): Promise<UpgradeOutcomesFile | null> {
   return readJson<UpgradeOutcomesFile>(path.join(analysisDir(), 'upgrade-outcomes.json'));
+}
+
+export async function readAppliedImprovements(): Promise<AppliedImprovementsFile | null> {
+  return readJson<AppliedImprovementsFile>(
+    path.join(analysisDir(), 'applied-improvements.json'),
+  );
+}
+
+/**
+ * Workshop-loop snapshot — the load-bearing data the Today page leads
+ * with. Computed at request time so a freshly-completed mine-corrections
+ * run reflects immediately.
+ */
+export interface WorkshopStatus {
+  /** Patterns mined but not yet APPLY'd by the user. */
+  unappliedPatternCount: number;
+  /** Patterns whose top-confidence upgrade already shipped. */
+  appliedPatternCount: number;
+  /** Patterns the F-layer / heuristic detects RECURRING after apply. */
+  recurringAfterApplyCount: number;
+  /** New-since-N-days bucket — "what's worth looking at this week". */
+  newThisWeekCount: number;
+  /** Top-confidence unapplied patterns the user might tackle next. */
+  topUnapplied: readonly CorrectionPattern[];
+  /** Most-recent applied improvements, newest first (cap 5). */
+  recentApplies: readonly { id: string; ruleSummary: string; appliedAt: number }[];
+  /** Aggregate "loop closure" rate — closed / total where outcomes exist. */
+  loopClosureRate: number | null;
+}
+
+const WORKSHOP_RECENCY_DAYS = 7;
+const WORKSHOP_TOP_N = 5;
+
+export async function readWorkshopStatus(now: number = Date.now()): Promise<WorkshopStatus> {
+  const corrections = await readCorrections();
+  const applied = await readAppliedImprovements();
+  const outcomes = await readUpgradeOutcomes();
+
+  const patterns = corrections?.patterns ?? [];
+  const recencyCutoff = now - WORKSHOP_RECENCY_DAYS * 24 * 3600 * 1000;
+
+  const appliedPatternIds = new Set<string>();
+  for (const a of applied?.entries ?? []) appliedPatternIds.add(a.patternId);
+
+  let unapplied: CorrectionPattern[] = [];
+  let appliedCount = 0;
+  let recurringAfterApply = 0;
+  let newThisWeek = 0;
+  for (const p of patterns) {
+    if (appliedPatternIds.has(p.id)) {
+      appliedCount += 1;
+      if (p.recurringPostApplication) recurringAfterApply += 1;
+    } else {
+      unapplied.push(p);
+    }
+    if (p.lastSeen >= recencyCutoff) newThisWeek += 1;
+  }
+  unapplied = [...unapplied].sort((a, b) => b.confidence - a.confidence);
+  const topUnapplied = unapplied.slice(0, WORKSHOP_TOP_N);
+
+  const recentApplies = (applied?.entries ?? [])
+    .slice()
+    .sort((a, b) => b.appliedAt - a.appliedAt)
+    .slice(0, WORKSHOP_TOP_N)
+    .map((a) => ({ id: a.id, ruleSummary: a.ruleSummary, appliedAt: a.appliedAt }));
+
+  // Loop closure: of outcomes that have BOTH before and after metrics with
+  // any signal, how many show recurred === false?
+  let closed = 0;
+  let totalWithSignal = 0;
+  for (const o of outcomes?.outcomes ?? []) {
+    if (o.observedSessionIds.length === 0) continue;
+    totalWithSignal += 1;
+    if (!o.recurred) closed += 1;
+  }
+  const loopClosureRate = totalWithSignal === 0 ? null : closed / totalWithSignal;
+
+  return {
+    unappliedPatternCount: unapplied.length,
+    appliedPatternCount: appliedCount,
+    recurringAfterApplyCount: recurringAfterApply,
+    newThisWeekCount: newThisWeek,
+    topUnapplied,
+    recentApplies,
+    loopClosureRate,
+  };
+}
+
+/**
+ * Top-N audit failures clustered loosely by claim type — the "audit
+ * concerns" demoted section on the Today page wants a SHORT list of
+ * strongest signals, not the 1194-row table that lives on /audit.
+ */
+export interface TopAuditConcern {
+  sessionId: string;
+  span: string;
+  reason: string;
+  claimType: string;
+  lineNumber: number;
+}
+
+export async function readTopAuditConcerns(limit: number = 5): Promise<TopAuditConcern[]> {
+  const results = await readAuditResults();
+  if (results === null) return [];
+  const fails = results.results
+    .filter((r) => r.outcome === 'fail')
+    // Prefer fix-claim + tests-pass-claim failures — those are the most
+    // surprising overstated-completion signal vs. e.g. addition-claim
+    // (which often misses Edit/Write that happened in a different turn).
+    .sort((a, b) => {
+      const order: Record<string, number> = {
+        'fix-claim': 0,
+        'tests-pass-claim': 1,
+        'build-pass-claim': 2,
+        'completion-claim': 3,
+        'verification-claim': 4,
+        'addition-claim': 5,
+      };
+      return (order[a.claimType] ?? 9) - (order[b.claimType] ?? 9);
+    });
+  // De-duplicate by (sessionId, claimType) so one chatty session doesn't
+  // dominate the top list.
+  const seen = new Set<string>();
+  const picks: TopAuditConcern[] = [];
+  for (const r of fails) {
+    const key = `${r.sessionId}::${r.claimType}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picks.push({
+      sessionId: r.sessionId,
+      span: r.span,
+      reason: r.reason,
+      claimType: r.claimType,
+      lineNumber: r.lineNumber,
+    });
+    if (picks.length >= limit) break;
+  }
+  return picks;
 }
 
 /**
