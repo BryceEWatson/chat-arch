@@ -139,8 +139,12 @@ export {
 } from './kmeansCluster.js';
 
 export {
+  CORRECTION_LFS,
   HEURISTIC_RECALL_VERSION,
+  computeLfFiringStats,
   detectCorrectionCandidates,
+  runLabelingFunction,
+  type LabelingFunction,
   type TurnPair,
 } from './detectCorrectionCandidates.js';
 
