@@ -247,7 +247,15 @@ export async function buildPlaybookCandidatesFile(
 
     const audit = computeAudit(hits, auditByLine, window);
     const occurrence = hits.length;
-    const score = hasAuditSignal && audit.passRate > 0
+    // Score branches on whether this pattern's hits actually had any
+    // downstream audit claims fall into their windows — NOT on whether
+    // the pass-rate is > 0. A pattern with audit overlap and 0% pass
+    // must sink to ~0, not silently fall back to raw occurrence. The
+    // kernel's docstring promises that "patterns that don't correlate
+    // with pass-verdicts surface with a 0% score and rank below the
+    // real methods"; this is the line that has to keep that promise.
+    const auditTotal = audit.pass + audit.fail + audit.inconclusive;
+    const score = hasAuditSignal && auditTotal > 0
       ? occurrence * audit.passRate
       : occurrence;
 
@@ -363,12 +371,12 @@ function computeAudit(
  *   - JSONL transcripts (cli-direct, cli-desktop, cowork): 1-based
  *     index into the line-split file. Matches audit-results.json's
  *     convention.
- *   - Cloud JSON transcripts: 1-based ordinal within `chat_messages[]`.
- *     Cloud doesn't have transcript line numbers in the audit sense;
- *     this approximation collides with how the audit pipeline keys
- *     cloud claims. If the audit join produces zeros for cloud
- *     sessions, that's the mismatch — fixable in a follow-up once
- *     audit-results lands on main.
+ *   - Cloud JSON transcripts: 1-based ordinal within `chat_messages[]`,
+ *     incrementing on every entry regardless of sender/skip. Verified
+ *     to match the audit pipeline's cloud convention (a sibling
+ *     iteration over the same array that increments on every step).
+ *     A coupled regression test should land alongside the audit
+ *     pipeline when it merges to main.
  */
 async function parseTranscript(
   entry: UnifiedSessionEntry,

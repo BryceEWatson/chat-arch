@@ -111,4 +111,19 @@ describe('detectPlaybookCandidates — admitted noise / filters', () => {
     const planFirstHits = hits.filter((h) => h.patternKey === 'plan-first');
     expect(planFirstHits.length).toBe(1);
   });
+
+  it('emits multiple hits when one turn invokes multiple distinct families', () => {
+    // Defensive: the per-family `break` must not collapse hits ACROSS
+    // families. A turn invoking both first-principles AND adversarial-
+    // review should produce two hits, one per family.
+    const hits = detectPlaybookCandidates([
+      turn(
+        0,
+        "Let's go back to first principles, then run an adversarial review team on the resulting plan.",
+      ),
+    ]);
+    const keys = hits.map((h) => h.patternKey).sort();
+    expect(keys).toContain('first-principles');
+    expect(keys).toContain('adversarial-review');
+  });
 });

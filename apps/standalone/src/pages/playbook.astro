@@ -32,23 +32,27 @@ function fmtSid(sid: string): string {
     <header class="playbook__header">
       <h1>PLAYBOOK</h1>
       <p class="playbook__lede">
-        Methods I've actually used — recurring prompt phrasings invoked
-        mid-session that produced verified outcomes. Positive counterpart
-        to CORRECTIONS: that surface mines pushback against the AI; this
-        one mines the verbs I reach for to steer it well. Ranked by
-        occurrence × downstream pass-rate when audit data is present;
-        by raw occurrence otherwise.
+        Candidate methods — recurring prompt phrasings the detector
+        found in your user turns. Positive counterpart to CORRECTIONS:
+        that surface mines pushback against the AI; this one mines
+        the verbs you reach for when you're steering it. The catalogue
+        is a 9-family regex and substring matches admit noise. When
+        F-layer audit data is present, ranking weights each pattern
+        by downstream pass-rate — a correlation in the next-5 audit
+        claims within the same session, not proof of causation.
+        Without audit data, ranking is by raw occurrence; read
+        critically.
       </p>
     </header>
 
     {playbook === null ? (
       <section class="playbook__empty">
-        <h2>No playbook candidates yet</h2>
+        <h2>Sidecar not yet written</h2>
         <p>
-          The detector writes <code>analysis/playbook-candidates.json</code>{' '}
-          on every scan. Click <strong>SCAN LOCAL</strong> from the DATA
-          panel — the exporter runs this stage automatically as part of{' '}
-          <code>all</code>.
+          <code>analysis/playbook-candidates.json</code> isn't on disk
+          (or failed to parse). Click <strong>SCAN LOCAL</strong> from
+          the DATA panel — the exporter writes this sidecar
+          automatically as part of <code>all</code>.
         </p>
       </section>
     ) : playbook.patterns.length === 0 ? (
@@ -96,6 +100,125 @@ function fmtSid(sid: string): string {
           </div>
         </section>
 
+        <section class="playbook__draft">
+          <button id="playbook-copy-md" type="button" class="playbook__copy">
+            COPY AS MARKDOWN
+          </button>
+          <span id="playbook-copy-feedback" class="playbook__copy-feedback" aria-live="polite"></span>
+          <p class="playbook__draft-hint">
+            Serializes the ranked list as markdown — pattern label,
+            description, occurrence/sessions/pass-rate, one excerpt per
+            pattern with its <code>[SID:…]</code> cite. Paste into a draft
+            and edit down.
+          </p>
+        </section>
+
+        <script
+          is:inline
+          type="application/json"
+          id="playbook-data"
+          set:html={
+            // Defensive escape: JSON.stringify does NOT escape '<' (so a
+            // user-corpus excerpt containing literal '</script>' would
+            // close this tag and inject the remainder as live HTML), nor
+            // U+2028 / U+2029 (which JS treats as line terminators
+            // inside string literals — a real foot-gun in <script>
+            // blocks). Escape all three to their \u forms; JSON.parse on
+            // the consumer side decodes them transparently.
+            JSON.stringify({
+              hasAuditSignal: playbook.hasAuditSignal,
+              patterns: playbook.patterns.map((p) => ({
+                patternKey: p.patternKey,
+                label: p.label,
+                description: p.description,
+                occurrenceCount: p.occurrenceCount,
+                sessionCount: p.sessionIds.length,
+                audit: {
+                  pass: p.audit.pass,
+                  fail: p.audit.fail,
+                  inconclusive: p.audit.inconclusive,
+                  passRate: p.audit.passRate,
+                },
+                firstHit: p.hits[0]
+                  ? {
+                      sessionId: p.hits[0].sessionId,
+                      phrase: p.hits[0].phrase,
+                      excerpt: p.hits[0].excerpt,
+                    }
+                  : null,
+              })),
+            })
+              .split('<').join('\\u003c')
+              .split(' ').join('\\u2028')
+              .split(' ').join('\\u2029')
+          }
+        />
+
+        <script is:inline>
+          (() => {
+            const btn = document.getElementById('playbook-copy-md');
+            const feedback = document.getElementById('playbook-copy-feedback');
+            const dataEl = document.getElementById('playbook-data');
+            if (!btn || !feedback || !dataEl) return;
+            let data;
+            try {
+              data = JSON.parse(dataEl.textContent || '{}');
+            } catch {
+              feedback.textContent = 'failed to parse data';
+              return;
+            }
+            function fmtPct(r) { return Math.round(r * 100) + '%'; }
+            function buildMarkdown() {
+              const lines = [];
+              lines.push('# Methods playbook draft');
+              lines.push('');
+              lines.push(
+                data.hasAuditSignal
+                  ? '_Ranked by occurrence × downstream-pass-rate (correlation, not causation)._'
+                  : '_No audit signal — ranked by raw occurrence. Read critically before quoting._',
+              );
+              lines.push('');
+              data.patterns.forEach((p, i) => {
+                lines.push('## ' + (i + 1) + '. ' + p.label);
+                lines.push('');
+                lines.push(p.description);
+                lines.push('');
+                const auditTotal = p.audit.pass + p.audit.fail + p.audit.inconclusive;
+                const stat =
+                  '**Invoked ' + p.occurrenceCount + 'x across ' +
+                  p.sessionCount + ' session' +
+                  (p.sessionCount === 1 ? '' : 's') + '**' +
+                  (data.hasAuditSignal && auditTotal > 0
+                    ? ' · pass in next-5 audit claims: ' + fmtPct(p.audit.passRate) +
+                      ' (' + p.audit.pass + '/' + auditTotal + ')'
+                    : ' · no audit signal yet');
+                lines.push(stat);
+                lines.push('');
+                if (p.firstHit) {
+                  lines.push('> "' + p.firstHit.excerpt.replace(/\n+/g, ' ') + '"');
+                  lines.push('>');
+                  lines.push(
+                    '> — phrase `' + p.firstHit.phrase + '` · [SID:' +
+                    p.firstHit.sessionId.slice(0, 8) + '…]',
+                  );
+                  lines.push('');
+                }
+              });
+              return lines.join('\n');
+            }
+            btn.addEventListener('click', async () => {
+              const md = buildMarkdown();
+              try {
+                await navigator.clipboard.writeText(md);
+                feedback.textContent = 'copied · ' + md.length + ' chars';
+                setTimeout(() => { feedback.textContent = ''; }, 4000);
+              } catch {
+                feedback.textContent = 'clipboard write failed';
+              }
+            });
+          })();
+        </script>
+
         <ol class="playbook__list">
           {playbook.patterns.map((p, idx) => (
             <li class="playbook__row">
@@ -121,9 +244,9 @@ function fmtSid(sid: string): string {
                       {fmtPct(p.audit.passRate)}
                     </span>
                     <span class="playbook__stat-label">
-                      downstream pass{' '}
+                      pass in next-5 audit claims{' '}
                       <small>
-                        ({p.audit.pass}/{p.audit.pass + p.audit.fail + p.audit.inconclusive})
+                        ({p.audit.pass}/{p.audit.pass + p.audit.fail + p.audit.inconclusive}; correlation, not causation)
                       </small>
                     </span>
                   </span>
@@ -251,6 +374,51 @@ function fmtSid(sid: string): string {
     margin-top: 4px;
   }
 
+  .playbook__draft {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    background: #0a0a0a;
+    border: 1px dashed #FFCC9944;
+    border-radius: 3px;
+  }
+  .playbook__copy {
+    font-family: 'Antonio', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: #FFCC99;
+    background: #FFCC9911;
+    border: 1px solid #FFCC9955;
+    padding: 8px 14px;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .playbook__copy:hover {
+    background: #FFCC9922;
+    border-color: #FFCC9988;
+  }
+  .playbook__copy-feedback {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #FFCC99;
+  }
+  .playbook__draft-hint {
+    font-size: 11px;
+    color: #FFCC9999;
+    margin: 0;
+    flex: 1 1 280px;
+    min-width: 0;
+  }
+  .playbook__draft-hint code {
+    background: #FFCC9911;
+    padding: 0 4px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
   .playbook__list {
     list-style: none;
     padding: 0;
@@ -262,7 +430,7 @@ function fmtSid(sid: string): string {
   .playbook__row {
     background: #0a0a0a;
     border: 1px solid #FFCC9933;
-    border-left: 3px solid rgba(136, 224, 136, 0.45);
+    border-left: 3px solid rgba(255, 204, 153, 0.35);
     border-radius: 4px;
     padding: 18px 20px;
   }
@@ -329,7 +497,10 @@ function fmtSid(sid: string): string {
     font-size: 10px;
   }
   .playbook__stat--rate .playbook__stat-num {
-    color: #88e088;
+    /* Amber, not green — the lede explicitly disclaims causation;
+     * green chrome reads as "verified good" which the data does not
+     * support. Reserve the green pass-color for future causal signals. */
+    color: #FFCC99;
   }
   .playbook__stat--unavailable .playbook__stat-num {
     color: #FFCC9966;
@@ -345,7 +516,8 @@ function fmtSid(sid: string): string {
   .playbook__bar-fill {
     display: block;
     height: 100%;
-    background: rgba(136, 224, 136, 0.55);
+    /* Amber tone to match the stat-num decision above. */
+    background: rgba(255, 204, 153, 0.55);
   }
 
   .playbook__excerpts {
@@ -381,8 +553,9 @@ function fmtSid(sid: string): string {
     margin-right: 6px;
   }
   .playbook__phrase {
-    color: #88e088;
+    color: #FFCC99;
     font-size: 12px;
+    font-weight: 600;
   }
   .playbook__excerpt blockquote {
     color: #FFCC99cc;
