@@ -207,6 +207,21 @@ export {
 } from './duplicatesSemantic.js';
 
 export {
+  DEFAULT_NUM_PERM,
+  buildMinhashDuplicates,
+  buildPermutationCoefficients,
+  buildSignature as buildMinhashSignature,
+  estimateJaccard,
+  murmurhash3_32,
+  shingles,
+  type BuildMinhashDuplicatesOptions,
+  type DuplicatesMinhashCluster,
+  type DuplicatesMinhashFile,
+  type MinhashInput,
+  type MinhashSignature,
+} from './duplicatesMinhash.js';
+
+export {
   discoverTopicsLocal,
   type DiscoverTopicsLocalOptions,
   type DiscoverTopicsLocalResult,
