@@ -142,4 +142,8 @@ export type { EmbedOneOptions, EmbedBatchOptions } from './ollama.js';
 
 export { V2_DEFAULT_EMBEDDING_MODEL } from './model.js';
 export { runEmbed, type RunEmbedOptions, type RunEmbedResult } from './embedDriver.js';
-export { buildEmbeddingInput } from './buildEmbeddingInput.js';
+export {
+  DEFAULT_CHUNK_CHARS,
+  buildEmbeddingInput,
+  buildEmbeddingInputChunks,
+} from './buildEmbeddingInput.js';

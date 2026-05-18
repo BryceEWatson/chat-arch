@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { UnifiedSessionEntry } from '@chat-arch/schema';
-import { buildEmbeddingInput } from './buildEmbeddingInput.js';
+import {
+  DEFAULT_CHUNK_CHARS,
+  buildEmbeddingInput,
+  buildEmbeddingInputChunks,
+} from './buildEmbeddingInput.js';
 
 function makeEntry(overrides: Partial<UnifiedSessionEntry> = {}): UnifiedSessionEntry {
   const base: UnifiedSessionEntry = {
@@ -86,5 +90,76 @@ describe('buildEmbeddingInput', () => {
       preview: null,
     }) as UnifiedSessionEntry;
     expect(buildEmbeddingInput(entry)).toBe('');
+  });
+});
+
+describe('buildEmbeddingInputChunks', () => {
+  it('returns a single chunk when total content fits inside maxCharsPerChunk', () => {
+    const entry = makeEntry({
+      title: 'short title',
+      preview: 'short preview',
+    });
+    const chunks = buildEmbeddingInputChunks(entry);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toBe('short title\n\nshort preview');
+  });
+
+  it('splits long content into multiple ≤ maxCharsPerChunk chunks', () => {
+    // 5000 chars of word-like content. At maxCharsPerChunk=1800, expect
+    // ≥ 3 chunks (5000 / 1800 ≈ 2.78), and every chunk must respect the
+    // cap.
+    const words = ('lorem '.repeat(1000)).trim();
+    const entry = makeEntry({
+      title: 'long session',
+      preview: words,
+    });
+    const chunks = buildEmbeddingInputChunks(entry);
+    expect(chunks.length).toBeGreaterThanOrEqual(3);
+    for (const c of chunks) {
+      expect(c.length).toBeLessThanOrEqual(DEFAULT_CHUNK_CHARS);
+    }
+  });
+
+  it('returns empty array when entry has no signal-bearing content', () => {
+    const entry = makeEntry({ title: '   ', preview: null }) as UnifiedSessionEntry;
+    const chunks = buildEmbeddingInputChunks(entry);
+    expect(chunks).toEqual([]);
+  });
+
+  it('avoids mid-word cuts by backing up to the last word boundary', () => {
+    // A long single line of space-separated tokens. None of the chunks
+    // should contain a half-word right before the join — i.e., each
+    // chunk should end at a whitespace boundary unless the chunk hit
+    // the hard-cut fallback (only possible if there's no space in the
+    // back-up window, which our fixture avoids).
+    const words = ('abc '.repeat(700)).trim(); // 2800 chars of "abc abc abc..."
+    const entry = makeEntry({ title: 't', preview: words });
+    const chunks = buildEmbeddingInputChunks(entry, 1000);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (let i = 0; i < chunks.length - 1; i += 1) {
+      const c = chunks[i] as string;
+      const lastChar = c[c.length - 1];
+      // Each non-final chunk should end on a complete token (the last
+      // char is part of "abc", not a stray "a" or "ab").
+      expect(['c', 'b']).toContain(lastChar);
+    }
+  });
+
+  it('preserves total content across chunks (no silent truncation)', () => {
+    const words = ('hello '.repeat(800)).trim();
+    const entry = makeEntry({ title: 't', preview: words });
+    const chunks = buildEmbeddingInputChunks(entry, 1000);
+    const tokensInChunks = chunks
+      .map((c) => c.split(/\s+/).filter((x) => x === 'hello').length)
+      .reduce((a, b) => a + b, 0);
+    expect(tokensInChunks).toBe(800);
+  });
+
+  it('honors a custom maxCharsPerChunk', () => {
+    const entry = makeEntry({ title: 't', preview: 'word '.repeat(500).trim() });
+    const small = buildEmbeddingInputChunks(entry, 500);
+    const large = buildEmbeddingInputChunks(entry, 5000);
+    expect(small.length).toBeGreaterThan(large.length);
+    expect(large.length).toBe(1);
   });
 });
