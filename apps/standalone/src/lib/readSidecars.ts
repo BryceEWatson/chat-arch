@@ -20,6 +20,7 @@ import type {
   ContinuumHealth,
   CorrectionPattern,
   CorrectionsFile,
+  PlaybookCandidatesFile,
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
 
@@ -104,6 +105,15 @@ export async function readCorrectionCandidatesSummary(): Promise<CorrectionCandi
 
 export async function readUpgradeOutcomes(): Promise<UpgradeOutcomesFile | null> {
   return readJson<UpgradeOutcomesFile>(path.join(analysisDir(), 'upgrade-outcomes.json'));
+}
+
+export async function readPlaybookCandidates(): Promise<PlaybookCandidatesFile | null> {
+  const file = await readJson<PlaybookCandidatesFile>(
+    path.join(analysisDir(), 'playbook-candidates.json'),
+  );
+  if (file === null) return null;
+  if (file.version !== 1) return null;
+  return file;
 }
 
 export async function readAppliedImprovements(): Promise<AppliedImprovementsFile | null> {

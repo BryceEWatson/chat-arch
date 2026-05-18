@@ -59,8 +59,8 @@ export function TrustStrip({ variant = 'landing' }: TrustStripProps = {}) {
         36 MB embedding model from <code>huggingface.co</code> on first use
         (cached after) — no transcript content is uploaded. (2) The optional{' '}
         <em>Chat</em> page invokes your local Claude Code CLI, which forwards
-        your question and the corpus excerpts the agent reads to Anthropic's
-        API under your existing account (you'll see a disclosure on first
+        your question and the corpus excerpts the agent reads to Anthropic&apos;s
+        API under your existing account (you&apos;ll see a disclosure on first
         send). Parsing, mining, audit, and analysis stay local.
       </div>
     </aside>

@@ -16,7 +16,7 @@
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { readPlaybookCandidates } from '../lib/readPlaybook.ts';
+import { readPlaybookCandidates } from '../lib/readSidecars.ts';
 
 const playbook = await readPlaybookCandidates();
 
@@ -27,7 +27,7 @@ function fmtSid(sid: string): string {
   return sid.slice(0, 8);
 }
 ---
-<BaseLayout title="Chat Archaeologist — Playbook">
+<BaseLayout title="Chat Archaeologist — Playbook" current="PLAYBOOK">
   <main class="playbook">
     <header class="playbook__header">
       <h1>PLAYBOOK</h1>
