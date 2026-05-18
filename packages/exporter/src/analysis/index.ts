@@ -35,6 +35,7 @@ import {
   type DuplicateInput,
 } from '@chat-arch/analysis';
 import { buildCorrectionsCandidatesFile } from './corrections.js';
+import { buildPlaybookCandidatesFile } from './playbook.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -58,6 +59,7 @@ export interface RunAnalysisResult {
     narratives: string;
     correctionCandidates: string;
     continuumHealth: string;
+    playbookCandidates: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -69,6 +71,8 @@ export interface RunAnalysisResult {
     topics: number;
     narratives: number;
     correctionCandidates: number;
+    playbookPatterns: number;
+    playbookHits: number;
   };
 }
 
@@ -77,7 +81,7 @@ export interface RunAnalysisResult {
  * gate reuse on a version match — when the on-disk entry shape
  * changes, all prior caches self-invalidate on next rescan.
  */
-export const EXPORTER_VERSION = '1.0.0';
+export const EXPORTER_VERSION = '1.1.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -219,6 +223,23 @@ export async function runAnalysis(
     `analysis: correction-candidates.json — ${correctionsResult.correctionsFile.corrections.length} candidates from ${correctionsResult.scannedSessions} sessions (${correctionsResult.missingTranscripts} missing transcripts)`,
   );
 
+  // ---- Methods playbook (stage-1 heuristic) ----
+  // Positive counterpart to corrections — recurring user-turn phrasings
+  // (e.g. "go back to first principles", "use an adversarial review
+  // team") that the viewer's /playbook surface ranks by occurrence ×
+  // downstream pass-rate. The skill-driven encoding flow (export as
+  // prompt snippet / CLAUDE.md verb) is deferred to a follow-up PR.
+  const playbookResult = await buildPlaybookCandidatesFile(manifest, {
+    outDir: options.outDir,
+    now,
+  });
+  const playbookCandidatesPath = path.join(analysisDir, 'playbook-candidates.json');
+  await writeFile(
+    playbookCandidatesPath,
+    JSON.stringify(playbookResult.file, null, 2) + '\n',
+    'utf8',
+  );
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -239,6 +260,7 @@ export async function runAnalysis(
           'narratives.json',
           'correction-candidates.json',
           'continuum-health.json',
+          'playbook-candidates.json',
         ],
       },
     },
@@ -253,6 +275,8 @@ export async function runAnalysis(
       topics: topicsResult.topics.length,
       narratives: narrativesResult.narratives.length,
       correctionCandidates: correctionsResult.correctionsFile.corrections.length,
+      playbookPatterns: playbookResult.file.patterns.length,
+      playbookHits: playbookResult.totalHits,
     },
   };
   const metaPath = path.join(analysisDir, 'meta.json');
@@ -286,6 +310,7 @@ export async function runAnalysis(
       narratives: narrativesPath,
       correctionCandidates: correctionCandidatesPath,
       continuumHealth: continuumHealthPath,
+      playbookCandidates: playbookCandidatesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -295,6 +320,8 @@ export async function runAnalysis(
       topics: topicsResult.topics.length,
       narratives: narrativesResult.narratives.length,
       correctionCandidates: correctionsResult.correctionsFile.corrections.length,
+      playbookPatterns: playbookResult.file.patterns.length,
+      playbookHits: playbookResult.totalHits,
     },
   };
 }

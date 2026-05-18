@@ -143,6 +143,14 @@ export {
   type TurnPair,
 } from './detectCorrectionCandidates.js';
 
+export {
+  PLAYBOOK_HEURISTIC_VERSION,
+  PLAYBOOK_PATTERN_META,
+  detectPlaybookCandidates,
+  type PlaybookTurnInput,
+  type PlaybookKernelHit,
+} from './detectPlaybookCandidates.js';
+
 export { clusterByThreshold } from './clusterRules.js';
 
 export {
