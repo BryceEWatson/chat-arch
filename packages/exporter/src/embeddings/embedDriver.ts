@@ -24,12 +24,20 @@ import type {
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
 import { logger } from '../lib/logger.js';
-import { isOllamaAvailable, embedOne } from './ollama.js';
+import { isOllamaAvailable } from './ollama.js';
+import { embed } from './index.js';
 import { buildEmbeddingInput } from './buildEmbeddingInput.js';
 import { V2_DEFAULT_EMBEDDING_MODEL } from './model.js';
 
 const NOMIC_DIMENSIONS = 768;
 const DEFAULT_CONCURRENCY = 4;
+/**
+ * Default per-request batch size. Mirrors the orchestrator's default
+ * (`DEFAULT_BATCH_SIZE` in `embeddings/index.ts`), restated here so the
+ * driver's options are self-documenting and don't require callers to
+ * cross-reference the orchestrator module.
+ */
+const DEFAULT_BATCH_SIZE = 16;
 
 export interface RunEmbedOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -43,6 +51,13 @@ export interface RunEmbedOptions {
   /** Override Date.now() for tests. */
   now?: number;
   concurrency?: number;
+  /**
+   * Texts per Ollama `/api/embed` request. Default 16. Pass `1` to
+   * force the legacy per-text `/api/embeddings` path (one HTTP call
+   * per session) — useful for old Ollama installs and for diagnostic
+   * comparisons.
+   */
+  batchSize?: number;
 }
 
 export type EmbedSkippedReason = 'ollama-unavailable' | 'no-sessions';
@@ -234,31 +249,40 @@ export async function runEmbed(opts: RunEmbedOptions): Promise<RunEmbedResult> {
       `${plans.length - toEmbedIndices.length} reused) model=${model}`,
   );
 
-  // ---- Embed pass (bounded concurrency) ----
+  // ---- Embed pass (batched via the orchestrator) ----
+  // Gather every plan that needs embedding into one texts array, hand
+  // it to `embed()` which batches via Ollama's /api/embed (default 16
+  // texts per request) with `concurrency` batches in flight. The
+  // orchestrator gracefully falls back to per-text /api/embeddings if
+  // /api/embed isn't supported by the user's Ollama install, so the
+  // driver doesn't need a separate compatibility code path.
   const newVectors = new Map<number, Float32Array>();
-  let nextWork = 0;
   let embedded = 0;
   const t0 = Date.now();
 
-  async function worker(): Promise<void> {
-    while (true) {
-      const w = nextWork++;
-      if (w >= toEmbedIndices.length) return;
-      const idx = toEmbedIndices[w] as number;
-      const plan = plans[idx] as Plan;
-      const oneOpts: { model: string; baseUrl?: string } =
-        opts.baseUrl !== undefined ? { model, baseUrl: opts.baseUrl } : { model };
-      const vec = await embedOne(plan.eligible.input, oneOpts);
-      newVectors.set(idx, vec);
+  if (toEmbedIndices.length > 0) {
+    const batchSize = Math.max(1, opts.batchSize ?? DEFAULT_BATCH_SIZE);
+    const texts = toEmbedIndices.map((idx) => (plans[idx] as Plan).eligible.input);
+    const embedOpts: {
+      model: string;
+      concurrency: number;
+      batchSize: number;
+      baseUrl?: string;
+    } = { model, concurrency, batchSize };
+    if (opts.baseUrl !== undefined) embedOpts.baseUrl = opts.baseUrl;
+    const vectors = await embed(texts, embedOpts);
+    for (let k = 0; k < toEmbedIndices.length; k += 1) {
+      const planIdx = toEmbedIndices[k] as number;
+      const vec = vectors[k];
+      if (vec === undefined) {
+        throw new Error(
+          `embeddings: orchestrator returned no vector for batch slot ${k} (input length=${texts.length})`,
+        );
+      }
+      newVectors.set(planIdx, vec);
       embedded += 1;
     }
   }
-
-  const workers: Promise<void>[] = [];
-  for (let w = 0; w < Math.min(concurrency, toEmbedIndices.length); w++) {
-    workers.push(worker());
-  }
-  await Promise.all(workers);
 
   if (toEmbedIndices.length > 0) {
     logger.info(`embeddings: embedded ${embedded} vector(s) in ${Date.now() - t0}ms`);
