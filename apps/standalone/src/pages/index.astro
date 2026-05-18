@@ -10,7 +10,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import {
   listBlogDraftSlugs,
   readContinuumHealth,
-  readCorrectionCandidatesCount,
+  readCorrectionCandidatesSummary,
   readLatestBrief,
   readTopAuditConcerns,
   readWorkshopStatus,
@@ -27,18 +27,33 @@ const concerns = await readTopAuditConcerns(5);
 const drafts = await listBlogDraftSlugs();
 const brief = await readLatestBrief();
 const health = await readContinuumHealth();
-const candidateCount = await readCorrectionCandidatesCount();
+const candidatesSummary = await readCorrectionCandidatesSummary();
+const candidateCount = candidatesSummary?.candidateCount ?? 0;
 
-// Empty-state detection: which surfaces have no real data to render.
-// When empty, we substitute the populated structure with demo values
-// (memory: feedback_positioning_by_features). Each demo region is
-// wrapped in an aria-labelled <section> + sr-only span so assistive
-// tech announces "example data, not your data" before reading values,
-// and carries a visible .demo-badge for sighted users.
-const workshopEmpty =
-  workshop.unappliedPatternCount === 0 &&
-  workshop.appliedPatternCount === 0 &&
-  workshop.recurringAfterApplyCount === 0;
+// 3-state detection for the WORKSHOP LOOP hero:
+//   (1) workshopMined — corrections.json has patterns OR applied-improvements
+//       has entries. Real workshop status renders normally.
+//   (2) workshopJustScanned — the exporter has populated
+//       `correction-candidates.json` (candidateCount > 0) but mining
+//       hasn't run yet, so workshop counts are all 0. This is the
+//       "scan done, mine next" state — render a real-data card with
+//       a clear CTA to MINE CORRECTIONS, NOT the demo grid (the demo
+//       reads as "your scan didn't work" when the real story is
+//       "your scan worked, now run mining").
+//   (3) workshopUnscanned — neither candidates nor patterns exist
+//       (fresh install / hosted demo / brand-new clone). Demo grid
+//       fires with full DEMO badge + aria-label.
+// Memory: feedback_positioning_by_features — show the loop in motion,
+// don't describe it. The (2) state previously fell through to (3),
+// which was actively confusing once we'd verified the scan ran.
+const workshopHasPatterns =
+  workshop.unappliedPatternCount > 0 ||
+  workshop.appliedPatternCount > 0 ||
+  workshop.recurringAfterApplyCount > 0;
+const workshopJustScanned = !workshopHasPatterns && candidateCount > 0;
+const workshopUnscanned = !workshopHasPatterns && candidateCount === 0;
+// Demo grid only fires for the truly-unscanned case now.
+const workshopEmpty = workshopUnscanned;
 const draftsEmpty = drafts.length === 0;
 const concernsEmpty = concerns.length === 0;
 
@@ -68,131 +83,128 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     </header>
 
     {/* ======================= WORKSHOP LOOP ======================= */}
-    <section class="today__hero">
-      {workshopEmpty ? (
-        <section
-          class="today__hero-demo"
-          aria-label="Example data — your real WORKSHOP LOOP populates after running /mine-corrections"
-        >
+    {/* Three states:
+          (a) workshopJustScanned — real data exists (candidates from
+              exporter) but mining hasn't classified them yet. Render
+              a real-data card pointing at MINE CORRECTIONS. NO demo
+              badge, NO fake metrics.
+          (b) workshopEmpty (unscanned) — fresh install / hosted demo.
+              Demo modifier + DEMO badge + aria-label + sr-only.
+          (c) mined — render real workshop status with normal chrome. */}
+    {workshopJustScanned ? (
+      <section
+        class="today__hero today__hero--scanned"
+        aria-label="Scan complete — mine corrections next to populate the workshop loop"
+      >
+        <h2>
+          WORKSHOP LOOP
+          <span class="today__hero-status">· SCAN COMPLETE · MINE NEXT</span>
+        </h2>
+        <p class="today__hero-lede">
+          The exporter found{' '}
+          <code>{candidateCount.toLocaleString()}</code> correction candidate{candidateCount === 1 ? '' : 's'}
+          {candidatesSummary && candidatesSummary.sessionsScanned > 0 ? (
+            <>
+              {' '}across <code>{candidatesSummary.sessionsScanned.toLocaleString()}</code> of{' '}
+              <code>{candidatesSummary.sessionsInManifest.toLocaleString()}</code> sessions
+            </>
+          ) : null}
+          . Click <strong>MINE CORRECTIONS</strong> to classify them into patterns — each pattern is a
+          CLAUDE.md / skill / agent fix you can review and APPLY.
+        </p>
+        <p class="today__hero-cta">
+          <button id="action-mine-cta" type="button" class="today__hero-cta-btn">
+            MINE CORRECTIONS →
+          </button>
+          <span class="today__hero-cta-hint">
+            Typically 1–3 minutes depending on candidate count.
+          </span>
+        </p>
+      </section>
+    ) : (
+      <section
+        class={`today__hero${workshopEmpty ? ' today__hero--demo' : ''}`}
+        aria-label={workshopEmpty
+          ? 'Example data — your real WORKSHOP LOOP populates after running /mine-corrections'
+          : undefined}
+      >
+        {workshopEmpty ? (
           <span class="sr-only">Example data, not your data:</span>
-          <h2>
-            WORKSHOP LOOP
-            <span class="demo-badge">DEMO</span>
-            {candidateCount > 0 ? (
-              <small class="today__hero-truth">
-                · <code>{candidateCount.toLocaleString()}</code> correction candidates indexed
-              </small>
-            ) : null}
-          </h2>
-          <div class="today__hero-grid">
-            <div class="today__metric today__metric--big">
-              <span class="today__metric-label">to APPLY</span>
-              <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
-              <span class="today__metric-sub">new patterns waiting for review</span>
-            </div>
-            <div class="today__metric">
-              <span class="today__metric-label">applied total</span>
-              <span class="today__metric-value">{wsView.appliedPatternCount}</span>
-              <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
-            </div>
-            <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
-              <span class="today__metric-label">still recurring</span>
-              <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
-              <span class="today__metric-sub">
-                {wsView.recurringAfterApplyCount > 0
-                  ? 'rules patched but Claude still breaks them'
-                  : 'no patched rule recurring'}
-              </span>
-            </div>
-            <div class="today__metric">
-              <span class="today__metric-label">loop closure</span>
-              <span class="today__metric-value">
-                {wsView.loopClosureRate === null
-                  ? '—'
-                  : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
-              </span>
-              <span class="today__metric-sub">
-                {wsView.loopClosureRate === null
-                  ? 'no observed windows yet'
-                  : 'patches that stuck (no recurrence in window)'}
-              </span>
-            </div>
+        ) : null}
+        <h2>
+          WORKSHOP LOOP
+          {workshopEmpty ? <span class="demo-badge">DEMO</span> : null}
+        </h2>
+        <div class="today__hero-grid">
+          <div class="today__metric today__metric--big">
+            <span class="today__metric-label">to APPLY</span>
+            <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
+            <span class="today__metric-sub">new patterns waiting for review</span>
           </div>
-        </section>
-      ) : (
-        <>
-          <h2>WORKSHOP LOOP</h2>
-          <div class="today__hero-grid">
-            <div class="today__metric today__metric--big">
-              <span class="today__metric-label">to APPLY</span>
-              <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
-              <span class="today__metric-sub">new patterns waiting for review</span>
-            </div>
-            <div class="today__metric">
-              <span class="today__metric-label">applied total</span>
-              <span class="today__metric-value">{wsView.appliedPatternCount}</span>
-              <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
-            </div>
-            <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
-              <span class="today__metric-label">still recurring</span>
-              <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
-              <span class="today__metric-sub">
-                {wsView.recurringAfterApplyCount > 0
-                  ? 'rules patched but Claude still breaks them'
-                  : 'no patched rule recurring'}
-              </span>
-            </div>
-            <div class="today__metric">
-              <span class="today__metric-label">loop closure</span>
-              <span class="today__metric-value">
-                {wsView.loopClosureRate === null
-                  ? '—'
-                  : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
-              </span>
-              <span class="today__metric-sub">
-                {wsView.loopClosureRate === null
-                  ? 'no observed windows yet'
-                  : 'patches that stuck (no recurrence in window)'}
-              </span>
-            </div>
+          <div class="today__metric">
+            <span class="today__metric-label">applied total</span>
+            <span class="today__metric-value">{wsView.appliedPatternCount}</span>
+            <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
           </div>
-        </>
-      )}
-
-      {wsView.topUnapplied.length > 0 ? (
-        <div class="today__queue">
-          <h3>NEXT TO REVIEW · top {wsView.topUnapplied.length} by confidence</h3>
-          <ul>
-            {wsView.topUnapplied.map((p) => (
-              <li>
-                <span class="today__confidence">
-                  {(p.confidence * 100).toFixed(0)}%
-                </span>
-                <span class="today__rule">{p.canonicalRule}</span>
-                <span class="today__scope">
-                  ({p.occurrenceCount}× · scope={p.scope.kind})
-                </span>
-                <a href={`/sessions#corrections`}>review →</a>
-              </li>
-            ))}
-          </ul>
+          <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
+            <span class="today__metric-label">still recurring</span>
+            <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
+            <span class="today__metric-sub">
+              {wsView.recurringAfterApplyCount > 0
+                ? 'rules patched but Claude still breaks them'
+                : 'no patched rule recurring'}
+            </span>
+          </div>
+          <div class="today__metric">
+            <span class="today__metric-label">loop closure</span>
+            <span class="today__metric-value">
+              {wsView.loopClosureRate === null
+                ? '—'
+                : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
+            </span>
+            <span class="today__metric-sub">
+              {wsView.loopClosureRate === null
+                ? 'no observed windows yet'
+                : 'patches that stuck (no recurrence in window)'}
+            </span>
+          </div>
         </div>
-      ) : null}
 
-      {wsView.recentApplies.length > 0 ? (
-        <div class="today__applies">
-          <h3>RECENT APPLIES</h3>
-          <ul>
-            {wsView.recentApplies.map((a) => (
-              <li>
-                <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
-                · {a.ruleSummary}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </section>
+        {wsView.topUnapplied.length > 0 ? (
+          <div class="today__queue">
+            <h3>NEXT TO REVIEW · top {wsView.topUnapplied.length} by confidence</h3>
+            <ul>
+              {wsView.topUnapplied.map((p) => (
+                <li>
+                  <span class="today__confidence">
+                    {(p.confidence * 100).toFixed(0)}%
+                  </span>
+                  <span class="today__rule">{p.canonicalRule}</span>
+                  <span class="today__scope">
+                    ({p.occurrenceCount}× · scope={p.scope.kind})
+                  </span>
+                  <a href={`/sessions#corrections`}>review →</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {wsView.recentApplies.length > 0 ? (
+          <div class="today__applies">
+            <h3>RECENT APPLIES</h3>
+            <ul>
+              {wsView.recentApplies.map((a) => (
+                <li>
+                  <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
+                  · {a.ruleSummary}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
+    )}
 
     {/* ======================= DRAFTS READY ======================= */}
     <section class="today__row">
@@ -319,6 +331,12 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     document.getElementById('action-mine')?.addEventListener('click', () => {
       callApi('/api/mine-corrections', 'chat-arch-mine-corrections', 'mine corrections');
     });
+    // Same target as #action-mine — the in-hero "MINE NEXT" CTA on the
+    // scanned-but-not-mined hero state. Sharing the handler keeps the
+    // two entry points behaviorally identical.
+    document.getElementById('action-mine-cta')?.addEventListener('click', () => {
+      callApi('/api/mine-corrections', 'chat-arch-mine-corrections', 'mine corrections');
+    });
     document.getElementById('action-brief')?.addEventListener('click', () => {
       callApi('/api/regen-brief', 'chat-arch-regen-brief', 'regen brief');
     });
@@ -363,6 +381,83 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     padding: 24px;
     border-radius: 4px;
     margin-bottom: 32px;
+  }
+  /* Demo modifier on the WHOLE hero section — the peach left-rule +
+     subtle horizontal tint mirror the .today__hero-demo / .today__row-demo
+     treatment defined in BaseLayout, but layered ON TOP of the hero's
+     dark vertical gradient (two stacked backgrounds) so the section
+     keeps its dark fill instead of being replaced by a peach wash. */
+  .today__hero--demo {
+    padding-left: 12px;
+    border-left: 3px solid rgba(255, 153, 51, 0.55);
+    background:
+      linear-gradient(90deg, rgba(255, 153, 51, 0.06) 0%, rgba(255, 153, 51, 0) 60%),
+      linear-gradient(180deg, #0a0a0a, #050505);
+  }
+  /* Scanned-but-not-mined modifier. Different cue from --demo (which
+     warns "fake values"): a sunflower-gold left-rule + tint signals
+     "real data, action required" — the visual conveys "you're in the
+     loop, your next move is MINE." Mirrors the demo's two-gradient
+     layering so the hero keeps its dark fill. */
+  .today__hero--scanned {
+    padding-left: 12px;
+    border-left: 3px solid rgba(255, 204, 153, 0.6);
+    background:
+      linear-gradient(90deg, rgba(255, 204, 153, 0.05) 0%, rgba(255, 204, 153, 0) 60%),
+      linear-gradient(180deg, #0a0a0a, #050505);
+  }
+  .today__hero-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #FFCC99cc;
+    letter-spacing: 0.08em;
+    margin-left: 8px;
+    font-weight: normal;
+  }
+  .today__hero-lede {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #FFCC99cc;
+    margin: 0 0 16px;
+  }
+  .today__hero-lede code {
+    background: #FFCC9911;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #FFCC99;
+  }
+  .today__hero-lede strong {
+    color: #FFCC99;
+    font-weight: 700;
+  }
+  .today__hero-cta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0;
+    flex-wrap: wrap;
+  }
+  .today__hero-cta-btn {
+    background: #FFCC99;
+    color: #0a0a0a;
+    border: none;
+    padding: 10px 20px;
+    font-family: 'Antonio', sans-serif;
+    letter-spacing: 0.1em;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .today__hero-cta-btn:hover {
+    background: #ffd680;
+  }
+  .today__hero-cta-hint {
+    font-size: 11px;
+    color: #FFCC9999;
+    font-style: italic;
   }
   .today__hero h2 {
     font-family: 'Antonio', sans-serif; letter-spacing: 0.12em;

@@ -74,6 +74,34 @@ export async function readCorrectionCandidatesCount(): Promise<number> {
   return file?.corrections?.length ?? 0;
 }
 
+/**
+ * Read both the candidate count AND the scan-stats summary in a single
+ * file read. Drives the TODAY page's "scanned but not mined" state:
+ * after `pnpm exporter all` runs, `correction-candidates.json` has
+ * 100s of raw heuristic-recall items, but `corrections.json` is still
+ * absent because the mine-corrections skill hasn't run. The page can
+ * render a real-data card ("N candidates from M of K sessions · MINE
+ * CORRECTIONS to classify") instead of demo metrics. Returns null when
+ * the file is absent.
+ */
+export interface CorrectionCandidatesSummary {
+  candidateCount: number;
+  sessionsScanned: number;
+  sessionsInManifest: number;
+}
+export async function readCorrectionCandidatesSummary(): Promise<CorrectionCandidatesSummary | null> {
+  const file = await readJson<{
+    corrections?: readonly unknown[];
+    scanStats?: { sessionsScanned?: number; sessionsInManifest?: number };
+  }>(path.join(analysisDir(), 'correction-candidates.json'));
+  if (file === null) return null;
+  return {
+    candidateCount: file.corrections?.length ?? 0,
+    sessionsScanned: file.scanStats?.sessionsScanned ?? 0,
+    sessionsInManifest: file.scanStats?.sessionsInManifest ?? 0,
+  };
+}
+
 export async function readUpgradeOutcomes(): Promise<UpgradeOutcomesFile | null> {
   return readJson<UpgradeOutcomesFile>(path.join(analysisDir(), 'upgrade-outcomes.json'));
 }
