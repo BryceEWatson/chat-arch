@@ -89,6 +89,12 @@ export {
 } from './discoverClusters.js';
 
 export {
+  discoverClustersDbscan,
+  type DiscoverClustersDbscanOptions,
+  type DiscoverClustersDbscanResult,
+} from './discoverClustersDbscan.js';
+
+export {
   reduceOutliers,
   type ReduceOutliersAssignment,
   type ReduceOutliersLabelEntry,
