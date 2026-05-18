@@ -193,6 +193,7 @@ export {
   buildSemanticDuplicates,
   type BuildSemanticDuplicatesOptions,
   type SemanticDupInput,
+  type SemanticDupLinkage,
 } from './duplicatesSemantic.js';
 
 export {

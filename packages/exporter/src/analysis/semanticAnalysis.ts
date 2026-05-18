@@ -592,6 +592,13 @@ export async function runSemanticAnalysis(
   const dupFile: DuplicatesSemanticFile = embeddingsAvailable
     ? buildSemanticDuplicates(dupInputs, {
         excludePairs: exactPairs,
+        // Complete-linkage avoids the single-linkage chaining bug
+        // (A~B~C~D collapsing into one mega-cluster even when cos(A,D)
+        // is well below threshold). At 1k sessions the wall-clock cost
+        // is indistinguishable; at 10k+ it's the difference between a
+        // trustable dedup view and a noisy one. See module header on
+        // `duplicatesSemantic.ts` for the linkage tradeoff.
+        linkage: 'complete',
         now,
       })
     : {

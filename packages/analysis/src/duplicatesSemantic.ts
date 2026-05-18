@@ -1,10 +1,34 @@
 /**
  * Semantic-duplicate clustering — spec §7 acceptance #3.
  *
- * Pairs the embedding sidecar with a single-linkage cosine clustering
- * pass. Distinct from `duplicates.exact.json` (first-human-text hash);
+ * Pairs the embedding sidecar with a cosine-similarity clustering pass.
+ * Distinct from `duplicates.exact.json` (first-human-text hash);
  * semantic dedup catches sessions that ask the same thing in different
  * words.
+ *
+ * Linkage choice — single vs complete:
+ *
+ *   `single` (default, the original implementation): any pair above
+ *     threshold links its members; connected components are the clusters.
+ *     Fast, simple, and historically what this module emitted. The
+ *     well-known downside (Stanford IR Book, §17.3) is *chaining*:
+ *     A~B at 0.92, B~C at 0.92, C~D at 0.92 transitively merges A and D
+ *     even if cos(A,D) is only 0.80. At small N this rarely bites; at
+ *     10k+ sessions it produces visible mega-clusters.
+ *
+ *   `complete`: a candidate merge is only accepted when *every* cross-
+ *     cluster pair stays above threshold. Compact, non-transitive
+ *     clusters that match the user's intuition of "these really are
+ *     near-duplicates of each other." Adds an O(N) per-merge link-cost
+ *     check on top of the N² similarity build, so wall-clock at small
+ *     N is similar; at large N the merge loop is the dominant term and
+ *     stays under the O(N³) worst case in practice because most pairs
+ *     fall below threshold.
+ *
+ * New callers should prefer `complete` unless they specifically want the
+ * permissive chaining of the union-find path (e.g. for "show me anything
+ * remotely related" exploration). Default stays `single` to preserve
+ * existing sidecar contents byte-for-byte until a caller opts in.
  *
  * Pure. Browser-safe. The caller provides the vectors (Float32Array per
  * sessionId) — the Node I/O shell reads `analysis/embeddings.bin` +
@@ -18,6 +42,8 @@ import type {
 import { cosineSimilarityNormalized } from './classifyByEmbedding.js';
 
 export const DEFAULT_SEMANTIC_DUP_THRESHOLD = 0.92;
+
+export type SemanticDupLinkage = 'single' | 'complete';
 
 export interface SemanticDupInput {
   /** UnifiedSessionEntry.id of one session, plus its embedding. */
@@ -35,6 +61,12 @@ export interface BuildSemanticDuplicatesOptions {
    * keys with sessionIdA < sessionIdB lexicographically.
    */
   excludePairs?: ReadonlySet<string>;
+  /**
+   * How to group passing pairs into clusters. Default `'single'`
+   * preserves the original union-find behaviour. See module header for
+   * why `'complete'` is the recommended choice for new callers.
+   */
+  linkage?: SemanticDupLinkage;
   /** Override Date.now() for tests. */
   now?: number;
 }
@@ -61,31 +93,15 @@ function pairKey(a: string, b: string): string {
 }
 
 /**
- * Single-pass O(N^2) pairwise cosine; at the user's corpus scale (≤ ~2k
- * embedded sessions × 768 dims) this is ~4M dot products — sub-second.
- * Vectors are pre-normalized so each comparison is one dot product.
- *
- * Groups via union-find: any pair above threshold links its members; the
- * resulting connected components are the clusters. Skips clusters of size
- * < 2 (singleton sessions aren't duplicates).
+ * Single-linkage grouping via union-find. Any cross-pair above threshold
+ * unions its two members. Returns one Set of member indices per cluster.
  */
-export function buildSemanticDuplicates(
-  inputs: readonly SemanticDupInput[],
-  options: BuildSemanticDuplicatesOptions = {},
-): DuplicatesSemanticFile {
-  const threshold = options.threshold ?? DEFAULT_SEMANTIC_DUP_THRESHOLD;
-  const exclude = options.excludePairs ?? new Set<string>();
-  const now = options.now ?? Date.now();
-
-  // Normalize once.
-  const normalized: { sessionId: string; vector: Float32Array }[] = inputs.map((i) => ({
-    sessionId: i.sessionId,
-    vector: normalize(i.vector),
-  }));
-
-  // Union-find scaffolding.
-  const parent: number[] = normalized.map((_, i) => i);
-  function find(x: number): number {
+function singleLinkageGroups(
+  passingPairs: ReadonlyArray<{ a: number; b: number }>,
+  totalMembers: number,
+): number[][] {
+  const parent: number[] = Array.from({ length: totalMembers }, (_, i) => i);
+  const find = (x: number): number => {
     let cur = x;
     while (parent[cur] !== cur) {
       const next = parent[cur] as number;
@@ -93,17 +109,135 @@ export function buildSemanticDuplicates(
       cur = parent[cur] as number;
     }
     return cur;
-  }
-  function union(a: number, b: number): void {
+  };
+  for (const { a, b } of passingPairs) {
     const ra = find(a);
     const rb = find(b);
     if (ra !== rb) parent[ra] = rb;
   }
+  const byRoot = new Map<number, number[]>();
+  for (let i = 0; i < totalMembers; i += 1) {
+    const r = find(i);
+    const list = byRoot.get(r);
+    if (list === undefined) byRoot.set(r, [i]);
+    else list.push(i);
+  }
+  return [...byRoot.values()];
+}
 
-  // Per-pair similarities, kept for centroid + mean-sim computation.
-  // Map from componentRoot → list of {a, b, sim}.
+/**
+ * Complete-linkage grouping. Starts with every member as its own
+ * cluster. At each step finds the cluster pair whose *minimum* cross-
+ * member similarity is highest and merges them — but only if that
+ * minimum still beats `threshold` (otherwise stop). Equivalent to the
+ * `discoverClusters.completeLinkageClusters` kernel; inlined here to
+ * avoid a public-API expansion and keep this module self-contained.
+ */
+function completeLinkageGroups(
+  vectors: ReadonlyArray<Float32Array>,
+  passingPairs: ReadonlyArray<{ a: number; b: number; sim: number }>,
+  threshold: number,
+): number[][] {
+  const n = vectors.length;
+  if (n === 0) return [];
+
+  // simMatrix[i,j] lookup; pairs not in `passingPairs` are below
+  // threshold and will never satisfy complete-linkage anyway, so we
+  // can record them as -Infinity (any merge containing them is dead).
+  const simKey = (i: number, j: number): number => (i < j ? i * n + j : j * n + i);
+  const sim = new Float32Array(n * n);
+  // Sentinel: -Infinity not representable in Float32; use a very-negative
+  // number that any real cosine (≤ 1) trivially exceeds. NaN is also
+  // unsafe because the min() reduction would propagate. -2 works:
+  // cosine ≥ -1 always.
+  sim.fill(-2);
+  for (const p of passingPairs) sim[simKey(p.a, p.b)] = p.sim;
+
+  // Active cluster list (each is a list of original member indices).
+  const clusters: number[][] = Array.from({ length: n }, (_, i) => [i]);
+  const activeIds: number[] = clusters.map((_, i) => i);
+
+  // Cache the min-pair-similarity between each active pair, refreshed
+  // on every merge that touched one of them.
+  const linkSim = new Map<string, number>();
+  const linkKey = (a: number, b: number): string => (a < b ? `${a},${b}` : `${b},${a}`);
+  const computeLink = (a: number, b: number): number => {
+    const ma = clusters[a] as number[];
+    const mb = clusters[b] as number[];
+    let minSim = Infinity;
+    for (const x of ma) {
+      for (const y of mb) {
+        const s = sim[simKey(x, y)] as number;
+        if (s < minSim) minSim = s;
+      }
+    }
+    return minSim;
+  };
+  for (let a = 0; a < activeIds.length; a += 1) {
+    for (let b = a + 1; b < activeIds.length; b += 1) {
+      const idA = activeIds[a] as number;
+      const idB = activeIds[b] as number;
+      linkSim.set(linkKey(idA, idB), sim[simKey(idA, idB)] as number);
+    }
+  }
+
+  while (true) {
+    let bestSim = -Infinity;
+    let bestA = -1;
+    let bestB = -1;
+    for (let a = 0; a < activeIds.length; a += 1) {
+      for (let b = a + 1; b < activeIds.length; b += 1) {
+        const idA = activeIds[a] as number;
+        const idB = activeIds[b] as number;
+        const s = linkSim.get(linkKey(idA, idB));
+        if (s !== undefined && s > bestSim) {
+          bestSim = s;
+          bestA = idA;
+          bestB = idB;
+        }
+      }
+    }
+    if (bestSim < threshold || bestA === -1) break;
+
+    // Merge B into A.
+    const merged = [
+      ...(clusters[bestA] as number[]),
+      ...(clusters[bestB] as number[]),
+    ];
+    clusters[bestA] = merged;
+    clusters[bestB] = [];
+    activeIds.splice(activeIds.indexOf(bestB), 1);
+
+    for (let k = 0; k < activeIds.length; k += 1) {
+      const idK = activeIds[k] as number;
+      if (idK === bestA) continue;
+      linkSim.delete(linkKey(bestA, idK));
+      linkSim.delete(linkKey(bestB, idK));
+      linkSim.set(linkKey(bestA, idK), computeLink(bestA, idK));
+    }
+  }
+
+  return activeIds.map((id) => clusters[id] as number[]);
+}
+
+export function buildSemanticDuplicates(
+  inputs: readonly SemanticDupInput[],
+  options: BuildSemanticDuplicatesOptions = {},
+): DuplicatesSemanticFile {
+  const threshold = options.threshold ?? DEFAULT_SEMANTIC_DUP_THRESHOLD;
+  const exclude = options.excludePairs ?? new Set<string>();
+  const linkage: SemanticDupLinkage = options.linkage ?? 'single';
+  const now = options.now ?? Date.now();
+
+  // Normalize once.
+  const normalized: { sessionId: string; vector: Float32Array }[] = inputs.map((i) => ({
+    sessionId: i.sessionId,
+    vector: normalize(i.vector),
+  }));
+  const vectors = normalized.map((n) => n.vector);
+
+  // O(N²) pairwise — collect everything above threshold (and not excluded).
   const pairs: Array<{ a: number; b: number; sim: number }> = [];
-
   for (let i = 0; i < normalized.length; i += 1) {
     const ni = normalized[i];
     if (ni === undefined) continue;
@@ -114,22 +248,18 @@ export function buildSemanticDuplicates(
       const sim = cosineSimilarityNormalized(ni.vector, nj.vector);
       if (sim < threshold) continue;
       pairs.push({ a: i, b: j, sim });
-      union(i, j);
     }
   }
 
-  // Bucket member indices by root, then build clusters.
-  const byRoot = new Map<number, number[]>();
-  for (let i = 0; i < normalized.length; i += 1) {
-    const r = find(i);
-    const list = byRoot.get(r);
-    if (list === undefined) byRoot.set(r, [i]);
-    else list.push(i);
-  }
+  // Linkage-specific grouping.
+  const groups =
+    linkage === 'complete'
+      ? completeLinkageGroups(vectors, pairs, threshold)
+      : singleLinkageGroups(pairs, normalized.length);
 
   const clusters: DuplicatesSemanticCluster[] = [];
   let nextId = 0;
-  for (const [root, members] of byRoot) {
+  for (const members of groups) {
     if (members.length < 2) continue;
     const memberSet = new Set<number>(members);
     const memberPairs = pairs.filter((p) => memberSet.has(p.a) && memberSet.has(p.b));
@@ -145,7 +275,7 @@ export function buildSemanticDuplicates(
       degree.set(p.a, (degree.get(p.a) ?? 0) + p.sim);
       degree.set(p.b, (degree.get(p.b) ?? 0) + p.sim);
     }
-    let bestIndex = members[0] ?? root;
+    let bestIndex = members[0] as number;
     let bestScore = -Infinity;
     for (const m of members) {
       const d = degree.get(m) ?? 0;
