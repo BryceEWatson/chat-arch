@@ -98,6 +98,7 @@ export {
 
 export {
   computeCoherence,
+  type CoherenceMetric,
   type CoherenceOptions,
   type CoherenceScores,
 } from './coherence.js';
