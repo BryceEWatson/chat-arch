@@ -18,7 +18,10 @@
     "test:visual:ui": "playwright test --ui --config tests/visual/playwright.config.ts",
     "dev": "pnpm --filter @chat-arch/standalone dev",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "label:corrections": "node scripts/label.mjs corrections",
+    "label:playbook": "node scripts/label.mjs playbook",
+    "label:threshold": "node scripts/label.mjs threshold"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
