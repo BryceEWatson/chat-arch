@@ -39,6 +39,12 @@ const groups: readonly NavGroup[] = [
       { href: '/sessions#chat', short: 'CHT', label: 'CHAT' },
       { href: '/sessions#corrections', short: 'COR', label: 'CORRECTIONS' },
       { href: '/practice', short: 'PRC', label: 'PRACTICE' },
+      // RESULTS — cross-corpus outcomes view: claim-pass rate by
+      // project / claim type / session, plus loop-closure rollup.
+      // Lives in WORKSHOP (not TRACK) because it's a workshop verb —
+      // observe what's working across all your chats so you can act on
+      // it — rather than a passive monitoring surface.
+      { href: '/results', short: 'RES', label: 'RESULTS' },
     ],
   },
   {
@@ -371,13 +377,21 @@ const isActive = (item: NavItem): boolean =>
     background: var(--lcars-sunflower);
     color: var(--lcars-bg);
   }
+  /* DATA — destructive panel trigger, NEVER an active nav state. The
+     prior filled-peach treatment competed visually with the active
+     item's gold fill (peach is more saturated than sunflower) so the
+     rail kept reading as "DATA is selected." Outline-only chip keeps
+     the destructive cue without claiming the selected slot; hover
+     fills with peach so the affordance is unambiguous on intent. */
   .app-sidebar__item--data {
-    background: var(--lcars-peach);
-    color: var(--lcars-bg);
+    background: transparent;
+    color: var(--lcars-peach);
+    box-shadow: inset 0 0 0 2px var(--lcars-peach);
   }
   .app-sidebar__item--data:hover,
   .app-sidebar__item--data:focus-visible {
-    background: #ffaa55;
+    background: var(--lcars-peach);
+    color: var(--lcars-bg);
   }
   .app-sidebar__item-short {
     font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
