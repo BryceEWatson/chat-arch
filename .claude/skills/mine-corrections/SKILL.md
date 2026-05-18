@@ -24,6 +24,7 @@ Parse from the user's message. Defaults in brackets.
 - `--no-llm` [false] — skip stages 2, 4 (proposal LLM); useful for dry runs and CI.
 - `--reclassify` [false] — re-process already-classified corrections (default skips them).
 - `--self-consistency <K>` [3] — self-consistency vote count for borderline classifications. Set to `1` to disable (single-shot, cheaper, more flip-prone). Higher values cost proportionally more on the borderline subset only.
+- `--audit-recall <N>` [0] — when N > 0, run the adversarial recall audit (Stage 1.5) on N random user turns that did NOT fire any heuristic. Reports an estimated false-negative rate so the user knows what fraction of corrections the regex stage is missing. 0 disables (default). 200 is the synthesis-recommended sample size — gives a ±7% standard error on the estimate at 95% confidence.
 
 ## Pipeline
 
@@ -109,6 +110,56 @@ Write the intermediate file `${dataDir}/analysis/_corrections-classified.json` (
   "pipeline": { "heuristicRecall": true, "llmClassification": true, "embeddingClustering": false, "claudeMdCrossCheck": false }
 }
 ```
+
+### Stage 1.5 — Adversarial recall audit (optional, gated by `--audit-recall N`)
+
+**Skip this entire stage when `--audit-recall` is 0 or absent.** Default off because it doubles Stage-1 token cost when enabled.
+
+Goal: estimate the false-negative rate of the heuristic recall stage. The regex pre-filter is recall-tuned but blind to its own misses — the dual-LLM audit (per Dual-LLM Adversarial Framework, 2025; TREC pool methodology) replaces the manual `scripts/audit-correction-recall.mjs` walkthrough with an automated estimate.
+
+1. **Identify non-firing user turns.** Walk `${dataDir}/manifest.json` for session ids, then for each session re-read the transcript (same paths as Stage 1 — `transcriptPath` on the entry, JSONL for CLI/Cowork, JSON for cloud). Extract user turns the same way the exporter does — but this time keep only the turns that DO NOT appear in `correction-candidates.json`. Those are the heuristic's silent rejections.
+
+   Use the manifest's `updatedAt` filter so the audit operates on the same time window as the rest of the run (`--window-days`, default 30).
+
+2. **Sample.** Random-sample N (= the `--audit-recall` value) of the non-firing turns. Use a fixed seed (e.g., `0xaud17`) so the audit is reproducible across reruns; the sample changes only when the underlying corpus or window does.
+
+3. **Classify the sample with a sub-agent.** Batch into groups of 20, dispatch `general-purpose` sub-agents with `model: "haiku"`. Cheap model is correct here — we're estimating a population rate, not making per-decision judgments. Run up to 4 batches in parallel.
+
+   Sub-agent prompt template:
+
+   ```
+   You are estimating how often a regex-based correction detector misses real corrections.
+
+   Each input is a user turn from a chat transcript that the regex did NOT flag as a correction. Decide whether it IS a correction-to-the-AI the regex should have caught:
+
+   - "correction": user pushes back on AI behavior, demands a different action, expresses frustration with prior output, repeats an instruction, or asks for a format/tone change. ANY actionable rule the assistant should follow next time.
+   - "not-correction": status update, new task, factual question, social filler, ambiguous fragment.
+
+   For each input, output ONLY:
+   {"id": "<turn id>", "is_correction": true|false, "confidence": 0.0-1.0, "reason": "<≤15 words>"}
+
+   Be conservative — only mark `true` when you'd bet on it. False positives here inflate the false-negative-rate estimate and mislead the heuristic-tuning loop.
+
+   Inputs:
+   <<NON_FIRING_TURNS>>
+   ```
+
+4. **Aggregate.** Count `is_correction: true AND confidence >= 0.7` as confirmed misses. Compute:
+
+   - `estimated_fn_rate = confirmed_misses / sample_size`
+   - 95% CI: `± 1.96 × sqrt(p·(1-p)/N)` where p = `estimated_fn_rate`, N = sample size.
+   - For each confirmed miss, capture its `sessionId`, `userTurnIndex`, `excerpt` (≤200 chars), and the LLM's `reason` — these become the seed list for the next regex-family expansion (HEURISTIC_RECALL_VERSION bump). Save to `${dataDir}/analysis/_recall-audit-misses.json`.
+
+5. **Status log.** Update with the result:
+
+   ```
+   recall audit: N=<sample> confirmed_misses=<K> estimated_fn_rate=<P>±<CI>
+   top miss categories (LLM reason buckets): ...
+   ```
+
+   If `estimated_fn_rate > 0.10`, log a `WARNING` recommending HEURISTIC_RECALL_VERSION bump — the heuristic is leaving meaningful recall on the floor.
+
+6. **Don't gate Stage 2 on this**: the audit is purely informational. Stage 2 onwards runs against the (possibly under-recalled) classifications regardless. The audit's value is feeding back into future regex expansion, not changing this run's output.
 
 ### Stage 2 — Config ingestion
 
@@ -318,7 +369,7 @@ When invoked with `--reclassify` OR when corrections.json already exists with ap
 ```json
 {
   "requestId": "<id or 'manual'>",
-  "status": "starting" | "classifying" | "ingesting-configs" | "embedding" | "clustering" | "proposing" | "tagging-topics" | "writing" | "complete" | "error",
+  "status": "starting" | "classifying" | "auditing-recall" | "ingesting-configs" | "embedding" | "clustering" | "proposing" | "tagging-topics" | "writing" | "complete" | "error",
   "progress": { "phase": "<current>", "current": N, "total": M },
   "startedAt": <ms>,
   "updatedAt": <ms>,
