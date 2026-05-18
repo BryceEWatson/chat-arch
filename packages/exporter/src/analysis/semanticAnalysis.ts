@@ -34,6 +34,7 @@ import type {
   CorrectionsFile,
   EmbeddingMeta,
   SessionManifest,
+  SessionSource,
   UnifiedSessionEntry,
   DuplicatesSemanticFile,
   Topic,
@@ -55,6 +56,7 @@ import {
   type VerifySessionInput,
 } from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
+import { countDefinedFields } from '../merge.js';
 
 export interface RunSemanticAnalysisOptions {
   outDir: string;
@@ -118,11 +120,33 @@ async function loadEmbeddings(analysisDir: string): Promise<LoadedEmbeddings | n
   return { meta, bin };
 }
 
-function buildVectorMap(loaded: LoadedEmbeddings): Map<string, Float32Array> {
+/**
+ * Build the (sessionId → vector) lookup used by downstream semantic kernels.
+ *
+ * The embeddings sidecar's primary key is `(source, sessionId)` — see
+ * `EmbeddingMetaEntry` — and a single id can appear in both `cli-direct`
+ * and `cli-desktop` entries pointing at the same underlying transcript.
+ * Keying the map by `sessionId` alone would let one source's vector
+ * overwrite the other's silently.
+ *
+ * The semantic-analysis caller has already collapsed manifest sessions
+ * to one entry per id (see `collapseByIdRicher`); the resulting
+ * `sourceById` map tells us which source's embedding to keep for each
+ * id. Embeddings whose source doesn't match the collapsed selection are
+ * skipped — the downstream sidecar formats are bare-id-keyed, so making
+ * sure each id resolves to ONE consistent vector is the correctness
+ * boundary that matters here.
+ */
+function buildVectorMap(
+  loaded: LoadedEmbeddings,
+  sourceById: ReadonlyMap<string, SessionSource>,
+): Map<string, Float32Array> {
   const out = new Map<string, Float32Array>();
   const stride = loaded.meta.dimensions * 4;
   for (const entry of loaded.meta.entries) {
     if (entry.offset < 0 || entry.offset + stride > loaded.bin.length) continue;
+    const selected = sourceById.get(entry.sessionId);
+    if (selected !== undefined && selected !== entry.source) continue;
     // Copy out into a fresh Float32Array to detach from the Buffer.
     const view = new Float32Array(loaded.meta.dimensions);
     for (let i = 0; i < loaded.meta.dimensions; i += 1) {
@@ -131,6 +155,38 @@ function buildVectorMap(loaded: LoadedEmbeddings): Map<string, Float32Array> {
     out.set(entry.sessionId, view);
   }
   return out;
+}
+
+/**
+ * Collapse the manifest's session list to ONE entry per `id`, picking the
+ * "richest" entry when multiple sources share an id. Uses the same richness
+ * metric as `mergeSources` (`countDefinedFields`) so the analysis stage
+ * agrees with the merge on which row carries the canonical content.
+ *
+ * Why we collapse for analysis but not in the manifest itself: the manifest
+ * is the authoritative ledger of every ingest path's view of a session
+ * (the schema's `(source, id)` primary key contract). Semantic analysis,
+ * however, writes bare-id-keyed sidecars (audit-claims, duplicates.semantic,
+ * topics) — if both views participate, each id resolves to two competing
+ * outcomes that the sidecar shape can't disambiguate. Two views of the
+ * same transcript should produce ONE analysis. The richer row wins so we
+ * don't drop fields that only the richer ingest path filled in.
+ */
+function collapseByIdRicher(
+  sessions: readonly UnifiedSessionEntry[],
+): { sessions: UnifiedSessionEntry[]; sourceById: Map<string, SessionSource> } {
+  const byId = new Map<string, UnifiedSessionEntry>();
+  for (const e of sessions) {
+    const existing = byId.get(e.id);
+    if (existing === undefined) {
+      byId.set(e.id, e);
+      continue;
+    }
+    if (countDefinedFields(e) >= countDefinedFields(existing)) byId.set(e.id, e);
+  }
+  const sourceById = new Map<string, SessionSource>();
+  for (const [id, e] of byId) sourceById.set(id, e.source);
+  return { sessions: [...byId.values()], sourceById };
 }
 
 async function loadAppliedImprovements(
@@ -196,7 +252,13 @@ async function readAssistantMessages(
 
   const out: AssistantMessage[] = [];
   if (entry.source === 'cloud') {
-    let j: { chat_messages?: Array<{ sender?: string; text?: string }> };
+    let j: {
+      chat_messages?: Array<{
+        sender?: string;
+        text?: string;
+        content?: unknown;
+      }>;
+    };
     try {
       j = JSON.parse(raw) as typeof j;
     } catch {
@@ -205,8 +267,32 @@ async function readAssistantMessages(
     const msgs = j.chat_messages ?? [];
     let lineNumber = 1;
     for (const m of msgs) {
-      if (m.sender === 'assistant' && typeof m.text === 'string' && m.text !== '') {
-        out.push({ lineNumber, text: m.text });
+      if (m.sender === 'assistant') {
+        // Prefer the flat `text` field when populated. Cloud exports
+        // sometimes leave `text` empty and put the message body into
+        // `content[]` blocks (each `{type:'text', text:'…'}`), the
+        // same shape the JSONL `content` arrays use below. Falling
+        // through to the block parser catches those sessions, which
+        // otherwise emit zero assistant messages and silently miss
+        // every claim they contain.
+        if (typeof m.text === 'string' && m.text !== '') {
+          out.push({ lineNumber, text: m.text });
+        } else if (Array.isArray(m.content)) {
+          const textParts: string[] = [];
+          for (const part of m.content) {
+            if (
+              part !== null &&
+              typeof part === 'object' &&
+              (part as Record<string, unknown>)['type'] === 'text'
+            ) {
+              const t = (part as Record<string, unknown>)['text'];
+              if (typeof t === 'string' && t !== '') textParts.push(t);
+            }
+          }
+          if (textParts.length > 0) {
+            out.push({ lineNumber, text: textParts.join('\n') });
+          }
+        }
       }
       lineNumber += 1;
     }
@@ -425,8 +511,20 @@ export async function runSemanticAnalysis(
   await mkdir(analysisDir, { recursive: true });
   const manifestPath = path.join(options.outDir, 'manifest.json');
 
+  // Collapse (source, id) duplicates to one entry per id for analysis
+  // purposes. The manifest itself keeps both rows (schema's primary key
+  // is `(source, id)`) — only the in-process semantic analysis works on
+  // the collapsed view so downstream bare-id-keyed sidecars don't get
+  // contradictory rows per id. `sourceById` lets `buildVectorMap` pick
+  // the embedding for the selected source.
+  const collapsed = collapseByIdRicher(options.manifest.sessions);
+  const analysisSessions = collapsed.sessions;
+
   const loaded = await loadEmbeddings(analysisDir);
-  const vectorMap = loaded !== null ? buildVectorMap(loaded) : new Map<string, Float32Array>();
+  const vectorMap =
+    loaded !== null
+      ? buildVectorMap(loaded, collapsed.sourceById)
+      : new Map<string, Float32Array>();
   const embeddingsAvailable = loaded !== null && vectorMap.size > 0;
 
   const applications = await loadAppliedImprovements(analysisDir);
@@ -436,7 +534,7 @@ export async function runSemanticAnalysis(
   const liteApps: AppliedImprovementLite[] = applications.map(
     (a): AppliedImprovementLite => ({ appliedAt: a.appliedAt }),
   );
-  const scoreMap = scoreManifest(options.manifest.sessions, liteApps, new Set<string>());
+  const scoreMap = scoreManifest(analysisSessions, liteApps, new Set<string>());
 
   // Rewrite manifest sessions with discoveryScore populated.
   const updatedSessions: UnifiedSessionEntry[] = options.manifest.sessions.map((e) => {
@@ -481,7 +579,10 @@ export async function runSemanticAnalysis(
   );
 
   // ---- Semantic dedup ----
-  const dupInputs = options.manifest.sessions
+  // Use the collapsed view so each id contributes ONE entry (and one
+  // vector) to dedup — otherwise two ingest views of the same transcript
+  // would always show up as a "duplicate" of themselves.
+  const dupInputs = analysisSessions
     .map((e) => {
       const v = vectorMap.get(e.id);
       return v === undefined ? null : { sessionId: e.id, vector: v };
@@ -507,7 +608,7 @@ export async function runSemanticAnalysis(
   // ---- Local-session topic extension ----
   const sessionToProject = options.sessionToProject ?? buildSessionToProject(options.manifest);
   const topicsLocal = embeddingsAvailable
-    ? discoverTopicsLocal(options.manifest.sessions, vectorMap, sessionToProject, { now })
+    ? discoverTopicsLocal(analysisSessions, vectorMap, sessionToProject, { now })
     : { topics: [] as Topic[], sessionToTopics: new Map<string, string[]>(), consideredCount: 0 };
 
   // Append local topics to the existing topics.json (the heuristic pass
@@ -534,9 +635,15 @@ export async function runSemanticAnalysis(
   );
 
   // ---- Audit claims (F.1) ----
+  // Walk the collapsed view so each id contributes ONE transcript's claims
+  // — extracting from both cli-direct and cli-desktop views of the same
+  // transcript would double-count and then mis-attribute on the verifier
+  // join. Output's `AuditClaim.source` records which ingest path the
+  // analysis used; the bare `sessionId` field is unambiguous now that
+  // each id resolves to a single analyzed entry.
   const allClaims: AuditClaim[] = [];
   let scannedTranscripts = 0;
-  for (const entry of options.manifest.sessions) {
+  for (const entry of analysisSessions) {
     if (entry.transcriptStatus === 'pruned') continue;
     const msgs = await readAssistantMessages(entry, options.outDir);
     if (msgs.length === 0) continue;
@@ -558,8 +665,11 @@ export async function runSemanticAnalysis(
   );
 
   // ---- Upgrade outcomes ----
+  // Use the collapsed view — outcome calculations count sessions per
+  // window, and two ingest views of the same session would inflate the
+  // counts.
   const upgradeOutcomes: UpgradeOutcomesFile = buildUpgradeOutcomes(
-    options.manifest.sessions,
+    analysisSessions,
     applications,
     { now },
   );
@@ -569,6 +679,9 @@ export async function runSemanticAnalysis(
 
   // ---- Wave 3: F.2 evidence verifier ----
   // Group claims by session and walk each session's timeline once.
+  // analysisSessions is already collapsed to one entry per id, and
+  // allClaims only contains claims extracted from those entries, so
+  // grouping by `c.sessionId` no longer crosses sources.
   const claimsBySession = new Map<string, AuditClaim[]>();
   for (const c of allClaims) {
     const list = claimsBySession.get(c.sessionId);
@@ -576,7 +689,20 @@ export async function runSemanticAnalysis(
     else list.push(c);
   }
   const entryById = new Map<string, UnifiedSessionEntry>();
-  for (const e of updatedSessions) entryById.set(e.id, e);
+  // Build entryById from the collapsed view but keep discoveryScore by
+  // joining against the full-manifest updatedSessions map (every id is
+  // present there with its score). This gives the verifier the right
+  // transcript path AND the score data the blog scorer needs later.
+  const updatedById = new Map<string, UnifiedSessionEntry>();
+  for (const e of updatedSessions) {
+    const existing = updatedById.get(e.id);
+    if (existing === undefined || countDefinedFields(e) >= countDefinedFields(existing)) {
+      updatedById.set(e.id, e);
+    }
+  }
+  for (const e of analysisSessions) {
+    entryById.set(e.id, updatedById.get(e.id) ?? e);
+  }
 
   const verifyInputs: VerifySessionInput[] = [];
   for (const [sessionId, claims] of claimsBySession) {
@@ -631,8 +757,15 @@ export async function runSemanticAnalysis(
     }
   }
 
+  // Blog candidates run on the collapsed view but with the discoveryScore-
+  // enriched entries (analysisSessions is the collapsed list before
+  // scoring; we re-resolve each id to its scored counterpart from
+  // updatedSessions so the cluster scorer sees the score field).
+  const scoredAnalysisSessions = analysisSessions.map(
+    (e) => updatedById.get(e.id) ?? e,
+  );
   const blogCandidates: BlogCandidatesFile = embeddingsAvailable
-    ? buildBlogCandidates(updatedSessions, vectorMap, {
+    ? buildBlogCandidates(scoredAnalysisSessions, vectorMap, {
         sessionAuditPassRate: sessionPassRate,
         now,
       })
