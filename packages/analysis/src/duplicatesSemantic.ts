@@ -6,6 +6,24 @@
  * semantic dedup catches sessions that ask the same thing in different
  * words.
  *
+ * Scale ceiling (2026-05 audit):
+ *
+ *   Pairwise cosine is O(N²) in the input length. Empirically (1k × 768
+ *   dims, mxbai-embed-large, V8): ~0.3s at N=1k, ~20s at N=10k, ~30min
+ *   at N=100k. The 1k regime is the current corpus; 10k is the
+ *   stretch target.
+ *
+ *   Future-proofing path when corpus crosses ~20k: replace the inner
+ *   pairwise loop with HNSW (Malkov & Yashunin 2018) top-k retrieval
+ *   thresholded at the cosine cutoff. Library survey (2026-05) ranked
+ *   pure-TS `hnsw` (npm, MIT) first — adequate at this scale, zero
+ *   native deps, browser-safe. `usearch` (prebuilt N-API binaries) is
+ *   the fallback if pure-JS perf becomes the bottleneck. Native
+ *   `hnswlib-node` (node-gyp) is rejected — breaks Windows CI.
+ *
+ *   Not done today because brute-force at 1k is <10ms and adds zero
+ *   dependency surface; HNSW would just be carrying weight.
+ *
  * Linkage choice — single vs complete:
  *
  *   `single` (default, the original implementation): any pair above

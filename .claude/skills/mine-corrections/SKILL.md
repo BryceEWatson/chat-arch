@@ -23,6 +23,7 @@ Parse from the user's message. Defaults in brackets.
 - `--max-sub-agents <N>` [40] — abort if the work plan would dispatch more than N sub-agents. Each batch of 20 candidates = 1 classification sub-agent; each cluster = 1 proposal sub-agent. The bound prevents a runaway window from quietly burning a chunk of your Claude Code plan usage.
 - `--no-llm` [false] — skip stages 2, 4 (proposal LLM); useful for dry runs and CI.
 - `--reclassify` [false] — re-process already-classified corrections (default skips them).
+- `--self-consistency <K>` [3] — self-consistency vote count for borderline classifications. Set to `1` to disable (single-shot, cheaper, more flip-prone). Higher values cost proportionally more on the borderline subset only.
 
 ## Pipeline
 
@@ -69,7 +70,34 @@ Inputs:
 
 Each sub-agent returns its JSON. Concatenate results. If any sub-agent fails or returns malformed JSON, retry once; if still bad, drop those candidates with a status message.
 
-After all batches: filter to `actionable: true` AND `confidence >= 0.6`. Update status: `"classified N of M, K kept after filter"`.
+#### Self-consistency vote on borderline cases
+
+After the first pass, **before applying the `confidence >= 0.6` filter**, identify the borderline subset:
+
+- `actionable: true` AND `0.5 <= confidence < 0.75`, OR
+- `actionable: false` AND `0.4 <= confidence < 0.65`
+
+Borderline cases are where Haiku flip-rate is highest (~10–20% rerun-to-rerun per Rating Roulette 2025; jury ensembles cut that to ~3% at K=3). High-confidence positives and low-confidence negatives stay as-is — re-running them costs token budget for no precision gain.
+
+If `--self-consistency` (default 3) is ≥ 2 AND the borderline set is non-empty:
+
+1. Re-classify the borderline subset `K - 1` additional times (so total samples = K). Use the same prompt template, the same sub-agent batching (groups of 20), the same `model: "haiku"`. Run the K-1 reruns in parallel — multiple Agent tool calls in a single message.
+2. For each borderline candidate, aggregate the K classifications:
+   - `actionable_final`: majority vote across K runs. Ties (only possible when K is even) break to `false` — drop the candidate rather than push noise to Stage 5.
+   - `kind_final`: mode of the K `kind` values among the runs that voted `actionable: true`. If tied or no `actionable: true` runs, mark `kind: "other"`.
+   - `distilledRule_final`: pick the rule from the first run that voted with the majority and supplied a non-empty rule.
+   - `confidence_final`: mean confidence across the K runs (regardless of vote direction). This makes the downstream `>= 0.6` filter operate on a more stable estimate.
+3. Replace each borderline candidate's classification with the aggregated `_final` fields.
+
+Then apply the `actionable: true` AND `confidence >= 0.6` filter as before.
+
+Log to status: `"self-consistency K=<K> ran on <N> borderline of <M> (<X>% flipped after vote)"` where "flipped" = candidates whose `actionable` changed between the first-pass and the majority vote. A high flip rate is the signal to investigate prompt quality before trusting downstream proposals.
+
+Skipping: pass `--self-consistency 1` (or via your runtime if you're not in an interactive context and want determinism). Single-shot saves ~30% on Stage 1 token cost at the price of higher precision drift across runs.
+
+#### Filter + write intermediate file
+
+After all batches (and self-consistency aggregation if enabled): filter to `actionable: true` AND `confidence >= 0.6`. Update status: `"classified N of M, K kept after filter"`.
 
 Write the intermediate file `${dataDir}/analysis/_corrections-classified.json` (the leading underscore signals "intermediate, not consumed by viewer"):
 
