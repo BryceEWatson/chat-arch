@@ -204,13 +204,36 @@ function streamExporter(
       if (stderrBuf.trim().length > 0) {
         send({ type: 'stderr', line: clampLine(stderrBuf.trim()) });
       }
+      // Spawn-level failures where the child exits with a non-zero code
+      // but never wrote a byte to stdout/stderr leave the client with no
+      // detail to render — the user sees "SCAN FAILED" with no message
+      // anywhere. Synthesize a useful tail in that case so the UI has
+      // something to show. The exit code is the strongest signal: on
+      // Windows, 3221225794 / 0xC0000142 = STATUS_DLL_INIT_FAILED, which
+      // typically means the spawned process couldn't initialize (Windows
+      // resource exhaustion, antivirus interception, stale PATH on the
+      // dev-server process). Restarting the dev server usually clears it.
+      const accumulatedStderr = stderr + extraStderr;
+      const noOutput = stdout.trim().length === 0 && accumulatedStderr.trim().length === 0;
+      let synthesizedStderr = '';
+      if (!ok && noOutput) {
+        const hexCode =
+          typeof exitCode === 'number' ? `0x${(exitCode >>> 0).toString(16).toUpperCase()}` : null;
+        const codeStr = hexCode !== null ? `${exitCode} (${hexCode})` : 'unknown';
+        const winHint =
+          process.platform === 'win32' && exitCode === 0xc0000142
+            ? ' Windows STATUS_DLL_INIT_FAILED — try restarting the dev server; if that fails, run the exporter manually in a terminal: `pnpm exporter run start all --no-cloud`.'
+            : '';
+        synthesizedStderr =
+          `ERROR: the exporter process exited with code ${codeStr} without writing any output.${winHint}`;
+      }
       send({
         type: 'done',
         ok,
         exitCode,
         durationMs: Date.now() - started,
         stdoutTail: tailBytes(stdout),
-        stderrTail: tailBytes(stderr + extraStderr),
+        stderrTail: tailBytes(accumulatedStderr + (synthesizedStderr ? '\n' + synthesizedStderr : '')),
         command: commandLine,
       });
       try {

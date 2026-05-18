@@ -2000,12 +2000,15 @@ export function ChatArchViewer({
     } else {
       // Prefer lines that mention ERROR (the exporter's structured
       // failure signal) over banner / WARN noise that precedes them.
-      const fallback = result.error ?? result.stderrTail ?? 'unknown error';
+      // `||` (not `??`) so an empty-string stderrTail falls through —
+      // a spawn-level failure where the child wrote zero bytes used to
+      // produce "Rescan failed: " with no detail.
+      const fallback = result.error || result.stderrTail || 'unknown error';
       const errorLines = fallback
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => /\bERROR\b/i.test(l));
-      const detail =
+      let detail =
         errorLines.length > 0
           ? errorLines.slice(0, 2).join(' · ')
           : fallback
@@ -2014,6 +2017,16 @@ export function ChatArchViewer({
               .filter(Boolean)
               .slice(-2)
               .join(' · ');
+      // Last-resort: even after filtering, the detail can come out empty
+      // (e.g. fallback was nothing but blank lines). Synthesize one from
+      // the exit code so the user has SOMETHING actionable.
+      if (detail.length === 0) {
+        const exitStr =
+          typeof result.exitCode === 'number'
+            ? ` (exit ${result.exitCode} / 0x${(result.exitCode >>> 0).toString(16).toUpperCase()})`
+            : '';
+        detail = `the exporter exited with no output${exitStr}`;
+      }
       const msg = `Rescan failed: ${detail}`;
       setRescanToast(msg);
       setRescanBanner({ kind: 'error', message: msg });
