@@ -607,6 +607,23 @@ function summarize(labels, fields) {
   return out;
 }
 
+// Wilson score 95% CI for a binomial proportion p̂ over n samples.
+// z = 1.96. Kept in sync with the TS copy in apps/standalone/src/
+// pages/api/calibrate.ts — that one is the unit-tested source of
+// truth.
+export function wilsonCI(pHat, n, z = 1.96) {
+  if (n <= 0) return { low: 0, high: 1 };
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const center = (pHat + z2 / (2 * n)) / denom;
+  const margin =
+    (z * Math.sqrt((pHat * (1 - pHat)) / n + z2 / (4 * n * n))) / denom;
+  return {
+    low: Math.max(0, center - margin),
+    high: Math.min(1, center + margin),
+  };
+}
+
 function printThresholdSweep(labels) {
   const values = Object.values(labels);
   if (values.length < 20) {
@@ -616,8 +633,11 @@ function printThresholdSweep(labels) {
   const sorted = values
     .filter((v) => typeof v.cos === 'number')
     .sort((a, b) => a.cos - b.cos);
-  // Sweep at 0.01-step thresholds and report precision @ threshold.
-  console.log(c('bold', '\nPrecision sweep (threshold → precision · recall):'));
+  // Sweep at 0.01-step thresholds and report precision @ threshold with
+  // Wilson 95% CI — small-n point estimates in the [0.85, 0.97] band
+  // are too noisy to interpret without a bound (Park et al. 2026 on
+  // cosine anisotropy in mxbai-embed-large made this acute).
+  console.log(c('bold', '\nPrecision sweep (threshold → precision [95% CI] · recall):'));
   for (let t = 0.85; t <= 0.97; t += 0.01) {
     const above = sorted.filter((v) => v.cos >= t);
     if (above.length === 0) continue;
@@ -626,8 +646,9 @@ function printThresholdSweep(labels) {
     const totalPos = sorted.filter((v) => v.nearDup === true).length;
     const precision = tp / total;
     const recall = totalPos > 0 ? tp / totalPos : 0;
+    const ci = wilsonCI(precision, total);
     console.log(
-      `  ${t.toFixed(2)}  ·  P=${precision.toFixed(2)} · R=${recall.toFixed(2)} · n=${above.length}`,
+      `  ${t.toFixed(2)}  ·  P=${precision.toFixed(2)} [${ci.low.toFixed(2)}–${ci.high.toFixed(2)}] · R=${recall.toFixed(2)} · n=${above.length}`,
     );
   }
 }

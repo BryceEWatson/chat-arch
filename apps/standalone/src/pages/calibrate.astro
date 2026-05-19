@@ -86,7 +86,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         <thead>
           <tr>
             <th>threshold</th>
-            <th>precision</th>
+            <th>precision [95% CI]</th>
             <th>recall</th>
             <th>n</th>
           </tr>
@@ -272,22 +272,31 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       const res = await fetch('/api/calibrate?action=sweep');
       const data = (await res.json()) as {
         ok: boolean;
-        sweep: Array<{ threshold: number; precision: number; recall: number; n: number }>;
+        sweep: Array<{
+          threshold: number;
+          precision: number;
+          ciLow: number;
+          ciHigh: number;
+          recall: number;
+          n: number;
+        }>;
       };
       const tbody = $('sweep-table').querySelector('tbody');
       if (tbody === null) return;
       tbody.innerHTML = '';
-      // Mark the highest-precision row that still has reasonable recall —
-      // a useful visual default for the "where does precision cross 0.95"
-      // question.
-      const targetIdx = data.sweep.findIndex((r) => r.precision >= 0.95 && r.n >= 5);
+      // Mark the highest-precision row whose CI lower bound clears 0.90
+      // (still has reasonable recall) — a useful visual default for the
+      // "where does precision *statistically* cross our quality bar"
+      // question. Using the lower bound (not the point estimate) so a
+      // 0.96-with-CI-of-[0.70,0.99] row doesn't masquerade as the answer.
+      const targetIdx = data.sweep.findIndex((r) => r.ciLow >= 0.9 && r.n >= 5);
       for (let i = 0; i < data.sweep.length; i++) {
         const r = data.sweep[i]!;
         const tr = document.createElement('tr');
         if (i === targetIdx) tr.classList.add('calibrate__sweep-row--target');
         tr.innerHTML =
           `<td>${r.threshold.toFixed(2)}</td>` +
-          `<td>${r.precision.toFixed(2)}</td>` +
+          `<td>${r.precision.toFixed(2)} [${r.ciLow.toFixed(2)}–${r.ciHigh.toFixed(2)}]</td>` +
           `<td>${r.recall.toFixed(2)}</td>` +
           `<td>${r.n}</td>`;
         tbody.appendChild(tr);
