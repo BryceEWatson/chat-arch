@@ -51,6 +51,7 @@ import {
   verifySessions,
   type AppliedImprovementLite,
   type AssistantMessage,
+  type CalibrationCurve,
   type DuplicatesFile,
   type TimelineEvent,
   type VerifySessionInput,
@@ -99,6 +100,28 @@ const DISCOVERY_SCORE_HIGH_THRESHOLD = 0.7;
 interface LoadedEmbeddings {
   meta: EmbeddingMeta;
   bin: Buffer;
+}
+
+async function loadCalibration(outDir: string): Promise<CalibrationCurve | undefined> {
+  const p = path.join(outDir, 'calibration.json');
+  try {
+    const raw = await readFile(p, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'schemaVersion' in parsed &&
+      'knots' in parsed &&
+      Array.isArray((parsed as { knots: unknown }).knots)
+    ) {
+      return parsed as CalibrationCurve;
+    }
+    return undefined;
+  } catch {
+    // Absent file is the cold-start path — fall back to literature
+    // threshold downstream. Not an error.
+    return undefined;
+  }
 }
 
 async function loadEmbeddings(analysisDir: string): Promise<LoadedEmbeddings | null> {
@@ -527,6 +550,18 @@ export async function runSemanticAnalysis(
       : new Map<string, Float32Array>();
   const embeddingsAvailable = loaded !== null && vectorMap.size > 0;
 
+  // Load the isotonic calibration curve produced by
+  // `scripts/fit-calibration.mjs`. Absent file → undefined → dedup
+  // falls back to the literature cosine threshold. This is the
+  // Park-et-al. 2026 anisotropy fix; see research/dedup-calibration-
+  // design.md.
+  const calibration = await loadCalibration(options.outDir);
+  if (calibration !== undefined) {
+    logger.info(
+      `semantic: calibration loaded — ${calibration.labelCount} labels, ${calibration.knots.length} knots`,
+    );
+  }
+
   const applications = await loadAppliedImprovements(analysisDir);
   const exactPairs = await loadExactDuplicates(analysisDir);
 
@@ -599,6 +634,7 @@ export async function runSemanticAnalysis(
         // trustable dedup view and a noisy one. See module header on
         // `duplicatesSemantic.ts` for the linkage tradeoff.
         linkage: 'complete',
+        ...(calibration !== undefined ? { calibration } : {}),
         now,
       })
     : {

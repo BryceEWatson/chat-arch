@@ -207,6 +207,17 @@ export {
 } from './duplicatesSemantic.js';
 
 export {
+  DEFAULT_P_NEAR_DUP_TARGET,
+  MIN_LABELS_FOR_FIT,
+  evaluateCalibration,
+  fitCalibration,
+  fitIsotonic,
+  type CalibrationCurve,
+  type CalibrationKnot,
+  type LabelPoint,
+} from './calibration.js';
+
+export {
   DEFAULT_NUM_PERM,
   buildMinhashDuplicates,
   buildPermutationCoefficients,

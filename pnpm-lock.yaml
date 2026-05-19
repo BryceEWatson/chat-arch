@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@chat-arch/analysis':
+        specifier: workspace:*
+        version: link:packages/analysis
       '@eslint/js':
         specifier: ^9.18.0
         version: 9.39.4

@@ -58,6 +58,11 @@ import type {
   DuplicatesSemanticFile,
 } from '@chat-arch/schema';
 import { cosineSimilarityNormalized } from './classifyByEmbedding.js';
+import {
+  DEFAULT_P_NEAR_DUP_TARGET,
+  evaluateCalibration,
+  type CalibrationCurve,
+} from './calibration.js';
 
 /**
  * Cosine threshold above which two sessions are considered near-
@@ -96,8 +101,26 @@ export interface SemanticDupInput {
 }
 
 export interface BuildSemanticDuplicatesOptions {
-  /** Cosine threshold (default 0.92 — tight; we want true near-dups, not topics). */
+  /**
+   * Raw cosine threshold (default DEFAULT_SEMANTIC_DUP_THRESHOLD).
+   * Ignored when `calibration` is provided — the calibrated path uses
+   * `pTarget` in probability space instead.
+   */
   threshold?: number;
+  /**
+   * Isotonic calibration curve mapping cos → P(near-duplicate). When
+   * present, pairs are accepted iff `evaluateCalibration(curve, cos)
+   * >= pTarget` (default 0.5). See packages/analysis/src/
+   * calibration.ts and research/dedup-calibration-design.md for the
+   * design rationale (Park et al. 2026 anisotropy fix).
+   */
+  calibration?: CalibrationCurve;
+  /**
+   * Target probability when calibration is in use (default 0.5 —
+   * "more likely than not"). Higher = fewer, more precise flags.
+   * Ignored when `calibration` is absent.
+   */
+  pTarget?: number;
   /**
    * Pairs that already appear together in `duplicates.exact.json` —
    * those are not "near-dup" by the spec's wording (they're exact dups,
@@ -134,6 +157,24 @@ function normalize(v: Float32Array): Float32Array {
 
 function pairKey(a: string, b: string): string {
   return a < b ? `${a}::${b}` : `${b}::${a}`;
+}
+
+/**
+ * Lowest cosine at which a calibration curve crosses `pTarget`. Used
+ * to feed the complete-linkage merge loop a sentinel raw-cosine cutoff
+ * — anything below this is guaranteed to fail `accept`, so the merge
+ * loop can keep its existing "best similarity < threshold → stop" API
+ * without bifurcating into a calibrated path.
+ *
+ * Walk the knots left-to-right; return the cos of the first knot whose
+ * `p >= pTarget`. If no knot meets the target, return Infinity so the
+ * merge loop terminates immediately.
+ */
+function minCosForTarget(curve: CalibrationCurve, pTarget: number): number {
+  for (const knot of curve.knots) {
+    if (knot.p >= pTarget) return knot.cos;
+  }
+  return Infinity;
 }
 
 /**
@@ -269,9 +310,31 @@ export function buildSemanticDuplicates(
   options: BuildSemanticDuplicatesOptions = {},
 ): DuplicatesSemanticFile {
   const threshold = options.threshold ?? DEFAULT_SEMANTIC_DUP_THRESHOLD;
+  const calibration = options.calibration;
+  const pTarget = options.pTarget ?? DEFAULT_P_NEAR_DUP_TARGET;
   const exclude = options.excludePairs ?? new Set<string>();
   const linkage: SemanticDupLinkage = options.linkage ?? 'single';
   const now = options.now ?? Date.now();
+
+  // Pair acceptance predicate. When a calibration curve is supplied,
+  // we threshold on calibrated P(near-dup), not raw cosine — this is
+  // the Park-et-al. anisotropy fix. Falls back to the cosine cutoff
+  // when no curve is present (cold start, or installs that opted out
+  // of auto-labeling).
+  const accept = (sim: number): boolean => {
+    if (calibration !== undefined) {
+      return evaluateCalibration(calibration, sim) >= pTarget;
+    }
+    return sim >= threshold;
+  };
+  // Linkage code paths still use a "threshold" sentinel for the
+  // complete-linkage merge loop. With calibration we feed it the
+  // lowest cosine whose calibrated P meets pTarget — anything below
+  // that is guaranteed to fail `accept`, so it's a sound shortcut
+  // that keeps the merge-loop API stable without bifurcating it.
+  const effectiveThreshold = calibration === undefined
+    ? threshold
+    : minCosForTarget(calibration, pTarget);
 
   // Normalize once.
   const normalized: { sessionId: string; vector: Float32Array }[] = inputs.map((i) => ({
@@ -290,7 +353,7 @@ export function buildSemanticDuplicates(
       if (nj === undefined) continue;
       if (exclude.has(pairKey(ni.sessionId, nj.sessionId))) continue;
       const sim = cosineSimilarityNormalized(ni.vector, nj.vector);
-      if (sim < threshold) continue;
+      if (!accept(sim)) continue;
       pairs.push({ a: i, b: j, sim });
     }
   }
@@ -298,7 +361,7 @@ export function buildSemanticDuplicates(
   // Linkage-specific grouping.
   const groups =
     linkage === 'complete'
-      ? completeLinkageGroups(vectors, pairs, threshold)
+      ? completeLinkageGroups(vectors, pairs, effectiveThreshold)
       : singleLinkageGroups(pairs, normalized.length);
 
   const clusters: DuplicatesSemanticCluster[] = [];

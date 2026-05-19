@@ -289,6 +289,31 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
     }
   }
 
+  // Wave 4: fit isotonic calibration from the (possibly just-updated)
+  // threshold labels. Pure local PAV, no network or auth. Skips
+  // silently when labels can't support a non-degenerate fit. The
+  // calibration applies starting from the NEXT scan's semantic-dedup
+  // pass — this scan's dedup output reflects the pre-fit state.
+  // Same-scan re-dedup is a future PR; deferred because the calibration
+  // surface is read by both the exporter and the viewer, so the file-
+  // on-disk model has to land first regardless.
+  const fitScriptPath = path.join(findRepoRoot(), 'scripts', 'fit-calibration.mjs');
+  const fitStart = Date.now();
+  try {
+    const code = await runChild('node', [fitScriptPath, '--data-dir', outDir]);
+    if (code === 0) {
+      logger.info(`fit-calibration complete in ${Date.now() - fitStart} ms`);
+    } else {
+      logger.warn(
+        `fit-calibration exited ${code} after ${Date.now() - fitStart} ms (continuing)`,
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      `fit-calibration soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   return 0;
 }
 
