@@ -282,6 +282,73 @@ export function stratifiedSample(
   return out;
 }
 
+export interface BucketStat extends BucketBound {
+  target: number;
+  alreadyLabeled: number;
+  deficit: number;
+}
+
+// Per-bucket stats from existing labels + target totals. The deficit
+// is what the labeler still needs to fill; alreadyLabeled is counted
+// from the on-disk labels store using each label's stored cosine.
+//
+// Labels whose cos falls outside the current band are ignored — they
+// don't count toward any bucket (the band changed since they were
+// labeled, so they're out-of-scope for this sweep).
+export function computeBucketStats(
+  labels: LabelStore['labels'],
+  band: [number, number],
+  strata: number,
+  n: number,
+): BucketStat[] {
+  const bounds = computeBucketBounds(band, strata);
+  const base = Math.floor(n / strata);
+  const remainder = n - base * strata;
+  const stats: BucketStat[] = bounds.map((b, i) => ({
+    ...b,
+    target: base + (i < remainder ? 1 : 0),
+    alreadyLabeled: 0,
+    deficit: 0,
+  }));
+  for (const l of Object.values(labels)) {
+    if (typeof l.cos !== 'number') continue;
+    if (l.cos < band[0] || l.cos > band[1]) continue;
+    const idx = bucketIndexFor(l.cos, band, strata);
+    stats[idx]!.alreadyLabeled += 1;
+  }
+  for (const s of stats) {
+    s.deficit = Math.max(0, s.target - s.alreadyLabeled);
+  }
+  return stats;
+}
+
+// Deficit-aware stratified sampling: each bucket draws only as many
+// unlabeled pairs as it still needs (target minus already-labeled).
+// Existing labels from a prior random pass are not discarded — they
+// count toward their bucket, and stratification fills the holes.
+export function stratifiedSampleDeficit(
+  unlabeledPairs: Pair[],
+  stats: BucketStat[],
+  band: [number, number],
+  strata: number,
+  seed: string,
+): Pair[] {
+  if (strata <= 1) {
+    const total = stats.reduce((sum, s) => sum + s.deficit, 0);
+    return sampleN(unlabeledPairs, total, seed);
+  }
+  const buckets: Pair[][] = Array.from({ length: strata }, () => []);
+  for (const p of unlabeledPairs) {
+    buckets[bucketIndexFor(p.cos, band, strata)]!.push(p);
+  }
+  const out: Pair[] = [];
+  for (let i = 0; i < strata; i++) {
+    const want = Math.min(stats[i]!.deficit, buckets[i]!.length);
+    out.push(...sampleN(buckets[i]!, want, `${seed}-bucket-${i}`));
+  }
+  return out;
+}
+
 // Wilson score 95% CI for a binomial proportion p̂ over n samples.
 // z = 1.96. Edge cases: n=0 returns [0,1] (no information); p̂=0 or 1
 // still yields a finite interval (Wilson is well-behaved at the
@@ -362,29 +429,42 @@ export const GET: APIRoute = async ({ request, url }) => {
     );
     try {
       const allPairs = await computeAllPairs(band);
-      const sampled = stratifiedSample(allPairs, n, band, strata, 'seed-threshold');
       const { store } = await loadLabels();
       const labeled = new Set(Object.keys(store.labels));
-      const unlabeled = sampled.filter((p) => !labeled.has(p.id));
-      const bucketBounds = computeBucketBounds(band, strata);
-      const bucketCounts = bucketBounds.map((b, i) => ({
-        lo: b.lo,
-        hi: b.hi,
-        isLast: b.isLast,
-        sampled: sampled.filter(
-          (p) => bucketIndexFor(p.cos, band, strata) === i,
-        ).length,
+      const stats = computeBucketStats(store.labels, band, strata, n);
+      const unlabeledPool = allPairs.filter((p) => !labeled.has(p.id));
+      const sampled = stratifiedSampleDeficit(
+        unlabeledPool,
+        stats,
+        band,
+        strata,
+        'seed-threshold',
+      );
+      const sampledPerBucket = new Array<number>(strata).fill(0);
+      for (const p of sampled) {
+        sampledPerBucket[bucketIndexFor(p.cos, band, strata)]! += 1;
+      }
+      const buckets = stats.map((s, i) => ({
+        lo: s.lo,
+        hi: s.hi,
+        isLast: s.isLast,
+        target: s.target,
+        alreadyLabeled: s.alreadyLabeled,
+        deficit: s.deficit,
+        sampled: sampledPerBucket[i] ?? 0,
       }));
+      const totalTarget = stats.reduce((sum, s) => sum + s.target, 0);
+      const totalAlready = stats.reduce((sum, s) => sum + s.alreadyLabeled, 0);
       return new Response(
         JSON.stringify({
           ok: true,
-          total: sampled.length,
-          labeledCount: sampled.length - unlabeled.length,
-          pairs: unlabeled,
+          total: totalTarget,
+          labeledCount: totalAlready,
+          pairs: sampled,
           completedAll: store.completed,
           band,
           strata,
-          buckets: bucketCounts,
+          buckets,
           poolSize: allPairs.length,
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },

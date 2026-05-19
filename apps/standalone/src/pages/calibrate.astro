@@ -187,6 +187,9 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     lo: number;
     hi: number;
     isLast: boolean;
+    target: number;
+    alreadyLabeled: number;
+    deficit: number;
     sampled: number;
   }
 
@@ -233,22 +236,27 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     }
   }
 
-  function renderBuckets(buckets: Bucket[], strata: number): void {
+  function renderBuckets(buckets: Bucket[], _strata: number): void {
     const legend = $('bucket-legend') as HTMLUListElement;
     legend.innerHTML = '';
     if (buckets.length === 0) {
       legend.hidden = true;
       return;
     }
-    // Even-split target — surface deficits visually so the user knows
-    // when a bucket is starving the sample (typical of cos > 0.97 on
-    // small corpora; some buckets just don't have many pairs).
-    const target = Math.floor(100 / strata);
+    // Per-bucket progress: "X/target labeled, deficit more needed".
+    // Highlights buckets that still need work and buckets the corpus
+    // can't fill (deficit > 0 but sampled < deficit — out of pairs).
     for (const b of buckets) {
       const li = document.createElement('li');
       const close = b.isLast ? ']' : ')';
-      li.textContent = `[${b.lo.toFixed(4)}, ${b.hi.toFixed(4)}${close}: ${b.sampled} sampled`;
-      if (b.sampled < target) li.classList.add('deficit');
+      const remaining = b.deficit;
+      let label = `[${b.lo.toFixed(4)}, ${b.hi.toFixed(4)}${close}: ${b.alreadyLabeled}/${b.target} labeled`;
+      if (remaining > 0) label += `, ${remaining} more needed`;
+      if (b.deficit > 0 && b.sampled < b.deficit) {
+        label += ` (corpus only has ${b.sampled})`;
+      }
+      li.textContent = label;
+      if (remaining > 0) li.classList.add('deficit');
       legend.appendChild(li);
     }
     legend.hidden = false;

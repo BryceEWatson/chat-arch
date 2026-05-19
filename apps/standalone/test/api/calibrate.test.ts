@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   bucketIndexFor,
   computeBucketBounds,
+  computeBucketStats,
   computeSweep,
   stratifiedSample,
+  stratifiedSampleDeficit,
   wilsonCI,
 } from '../../src/pages/api/calibrate.js';
 
@@ -141,6 +143,76 @@ describe('calibrate — stratified bucket sampling', () => {
     for (const p of sampled) perBucket[bucketIndexFor(p.cos, band, 4)]! += 1;
     expect(perBucket).toEqual([10, 10, 10, 2]);
     expect(sampled).toHaveLength(32);
+  });
+});
+
+describe('calibrate — deficit-aware stratified sampling honors existing labels', () => {
+  const band: [number, number] = [0.85, 1.0];
+  const bucketCenters = [0.87, 0.91, 0.94, 0.98];
+
+  function makePair(
+    id: string,
+    cos: number,
+  ): {
+    id: string;
+    a: string;
+    b: string;
+    aTitle: string;
+    bTitle: string;
+    aPreview: string;
+    bPreview: string;
+    cos: number;
+  } {
+    return { id, a: '', b: '', aTitle: '', bTitle: '', aPreview: '', bPreview: '', cos };
+  }
+
+  it('computeBucketStats counts labels by their stored cosine', () => {
+    // 5 labels in bucket 0, 10 in bucket 1, 0 in 2, 3 in 3.
+    const labels: Record<string, { nearDup: boolean; cos: number }> = {};
+    const supply = [5, 10, 0, 3];
+    for (let b = 0; b < 4; b++) {
+      for (let i = 0; i < supply[b]!; i++) {
+        labels[`b${b}-${i}`] = { nearDup: i % 2 === 0, cos: bucketCenters[b]! };
+      }
+    }
+    const stats = computeBucketStats(labels, band, 4, 40); // target=10/bucket
+    expect(stats.map((s) => s.alreadyLabeled)).toEqual([5, 10, 0, 3]);
+    expect(stats.map((s) => s.target)).toEqual([10, 10, 10, 10]);
+    expect(stats.map((s) => s.deficit)).toEqual([5, 0, 10, 7]);
+  });
+
+  it('ignores labels whose cos falls outside the current band', () => {
+    const labels: Record<string, { nearDup: boolean; cos: number }> = {
+      'in-band': { nearDup: true, cos: 0.9 },
+      'below-band': { nearDup: true, cos: 0.8 },
+      'above-band': { nearDup: true, cos: 1.1 },
+    };
+    const stats = computeBucketStats(labels, band, 4, 40);
+    expect(stats.reduce((sum, s) => sum + s.alreadyLabeled, 0)).toBe(1);
+  });
+
+  it('stratifiedSampleDeficit asks each bucket only for its deficit', () => {
+    // Bucket 1 is already full (deficit=0) → contributes 0 even if it
+    // has spare pairs. Bucket 3 has deficit=7 but corpus only supplies
+    // 3 → contributes 3 (caller sees the gap, doesn't silently fill).
+    const stats = [
+      { lo: 0.85, hi: 0.8875, isLast: false, target: 10, alreadyLabeled: 5, deficit: 5 },
+      { lo: 0.8875, hi: 0.925, isLast: false, target: 10, alreadyLabeled: 10, deficit: 0 },
+      { lo: 0.925, hi: 0.9625, isLast: false, target: 10, alreadyLabeled: 0, deficit: 10 },
+      { lo: 0.9625, hi: 1.0, isLast: true, target: 10, alreadyLabeled: 3, deficit: 7 },
+    ];
+    const supply = [50, 50, 50, 3];
+    const pool: Array<ReturnType<typeof makePair>> = [];
+    for (let b = 0; b < 4; b++) {
+      for (let i = 0; i < supply[b]!; i++) {
+        pool.push(makePair(`b${b}-${i}`, bucketCenters[b]!));
+      }
+    }
+    const sampled = stratifiedSampleDeficit(pool, stats, band, 4, 'seed');
+    const perBucket = [0, 0, 0, 0];
+    for (const p of sampled) perBucket[bucketIndexFor(p.cos, band, 4)]! += 1;
+    expect(perBucket).toEqual([5, 0, 10, 3]);
+    expect(sampled).toHaveLength(18);
   });
 });
 

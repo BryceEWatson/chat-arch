@@ -476,24 +476,31 @@ async function taskThreshold(opts) {
 
   const store = await loadLabels(labelsPath);
   const remaining = pairs.filter((p) => !store.labels[p.id]);
-  if (remaining.length === 0) {
-    console.log(c('green', `\nNo unlabeled pairs. ${store.completed} already labeled.\n`));
+  const stats = computeBucketStats(store.labels, [bandLo, bandHi], strata, n);
+  const totalDeficit = stats.reduce((sum, s) => sum + s.deficit, 0);
+  if (totalDeficit === 0) {
+    console.log(c('green', `\nAll bucket targets met. ${store.completed} labels on disk.\n`));
+    printBucketProgress(stats, []);
     printThresholdSweep(store.labels);
     return;
   }
-  const sampled = stratifiedSample(
+  const sampled = stratifiedSampleDeficit(
     remaining,
-    Math.min(n, remaining.length),
+    stats,
     [bandLo, bandHi],
     strata,
     'seed-threshold',
   );
+  // bucketBounds is the shape printBucketProgress wants for display,
+  // but stats has the extra fields (target/alreadyLabeled/deficit) it
+  // also needs. Pass stats directly.
+  void bucketBounds;
 
   console.log(
-    c('bold', `\nLabeling ${sampled.length} pairs in cos[${bandLo}, ${bandHi}), stratified into ${strata} buckets:`) +
+    c('bold', `\nLabeling ${sampled.length} new pairs (deficit) in cos[${bandLo}, ${bandHi}], stratified into ${strata} buckets:`) +
       ` Output: ${c('cyan', labelsPath)}`,
   );
-  printBucketLegend(bucketBounds, sampled);
+  printBucketProgress(stats, sampled);
   console.log();
 
   let i = 0;
@@ -641,20 +648,68 @@ export function stratifiedSample(pairs, n, band, strata, seed) {
   return out;
 }
 
-function printBucketLegend(bounds, sampled) {
-  // Show "[lo, hi): N sampled" per bucket so the labeler can see at
-  // a glance that they're working a representative mix rather than
-  // an uneven one (e.g. all the > 0.97 bucket would skew P upward).
+// Per-bucket stats from existing labels. Labels whose cos is outside
+// the current band are ignored — they don't count toward any bucket
+// in this sweep. Mirror of computeBucketStats in apps/standalone/src/
+// pages/api/calibrate.ts.
+export function computeBucketStats(labels, band, strata, n) {
+  const bounds = computeBucketBounds(band, strata);
+  const base = Math.floor(n / strata);
+  const remainder = n - base * strata;
+  const stats = bounds.map((b, i) => ({
+    ...b,
+    target: base + (i < remainder ? 1 : 0),
+    alreadyLabeled: 0,
+    deficit: 0,
+  }));
+  for (const l of Object.values(labels)) {
+    if (typeof l.cos !== 'number') continue;
+    if (l.cos < band[0] || l.cos > band[1]) continue;
+    const idx = bucketIndexFor(l.cos, band, strata);
+    stats[idx].alreadyLabeled += 1;
+  }
+  for (const s of stats) {
+    s.deficit = Math.max(0, s.target - s.alreadyLabeled);
+  }
+  return stats;
+}
+
+// Deficit-aware sample: only ask each bucket for what it still needs.
+export function stratifiedSampleDeficit(unlabeledPairs, stats, band, strata, seed) {
+  if (strata <= 1) {
+    const total = stats.reduce((sum, s) => sum + s.deficit, 0);
+    return sampleN(unlabeledPairs, total, seed);
+  }
+  const buckets = Array.from({ length: strata }, () => []);
+  for (const p of unlabeledPairs) {
+    buckets[bucketIndexFor(p.cos, band, strata)].push(p);
+  }
+  const out = [];
+  for (let i = 0; i < strata; i++) {
+    const want = Math.min(stats[i].deficit, buckets[i].length);
+    out.push(...sampleN(buckets[i], want, `${seed}-bucket-${i}`));
+  }
+  return out;
+}
+
+function printBucketProgress(stats, sampled) {
+  // Show "[lo, hi): X/target labeled, deficit more needed" per bucket
+  // so the labeler knows up front which buckets still need work and
+  // which the corpus can't fill (deficit > 0 but sampled < deficit).
   console.log(c('dim', '  buckets:'));
-  for (let i = 0; i < bounds.length; i++) {
-    const b = bounds[i];
-    const inBucket = sampled.filter(
-      (p) => p.cos >= b.lo && (b.isLast ? p.cos <= b.hi : p.cos < b.hi),
+  for (let i = 0; i < stats.length; i++) {
+    const s = stats[i];
+    const close = s.isLast ? ']' : ')';
+    const inBucketSampled = sampled.filter(
+      (p) => p.cos >= s.lo && (s.isLast ? p.cos <= s.hi : p.cos < s.hi),
     ).length;
-    const close = b.isLast ? ']' : ')';
-    console.log(
-      c('dim', `    [${b.lo.toFixed(4)}, ${b.hi.toFixed(4)}${close}: ${inBucket} sampled`),
-    );
+    let line = `    [${s.lo.toFixed(4)}, ${s.hi.toFixed(4)}${close}: ${s.alreadyLabeled}/${s.target} labeled`;
+    if (s.deficit > 0) line += `, ${s.deficit} more needed`;
+    if (s.deficit > 0 && inBucketSampled < s.deficit) {
+      line += ` (corpus only has ${inBucketSampled})`;
+    }
+    const color = s.deficit > 0 ? 'yellow' : 'dim';
+    console.log(c(color, line));
   }
 }
 
