@@ -129,14 +129,9 @@ When uncertain, prefer NOT — the cost of a false-positive duplicate (silently 
 
 You will receive title + preview for each side. The preview is truncated; judge on what's visible, do not speculate about content past the cutoff.
 
-OUTPUT — respond with a single JSON object matching this schema (no prose around it, no markdown fence, no commentary):
-{
-  "label": "near-duplicate" | "not",
-  "confidence": 0.0–1.0,
-  "reasoning": "one sentence, ≤200 chars"
-}
+OUTPUT — respond with a single JSON object matching the provided schema. Emit the fields IN ORDER — reasoning first (3-5 sentences working through the comparison), then confidence (0.0–1.0), then label ("near-duplicate" or "not"). The reasoning field is for chain-of-thought; use it to compare the two sessions explicitly before committing to a label.
 
-Examples:
+Examples (showing field order — reasoning first, label last):
 
 A: "Fix the auth middleware bug"  / "Getting 401 errors after the JWT refresh, here's the stack trace..."
 B: "401 errors on JWT refresh"    / "Hi - I'm seeing 401s come back when the access token rotates..."
@@ -153,14 +148,20 @@ B: "/review PR #52"               / "Review the changes on this branch..."
 // JSON schema passed to `claude --json-schema`. The CLI validates the
 // model's response against this; an invalid response surfaces as a
 // failed run we can retry.
+//
+// Field order matters: with autoregressive generation, the model emits
+// keys in declared order. `reasoning` first forces chain-of-thought
+// before the model commits to a label — the empirical 2025 study
+// (arXiv:2506.13639) shows κ improves when reasoning precedes the
+// final verdict. maxLength bumped from 200 → 500 to allow genuine CoT.
 const LABEL_SCHEMA = {
   type: 'object',
   properties: {
-    label: { type: 'string', enum: ['near-duplicate', 'not'] },
+    reasoning: { type: 'string', maxLength: 500 },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
-    reasoning: { type: 'string', maxLength: 200 },
+    label: { type: 'string', enum: ['near-duplicate', 'not'] },
   },
-  required: ['label', 'confidence', 'reasoning'],
+  required: ['reasoning', 'confidence', 'label'],
   additionalProperties: false,
 };
 const LABEL_SCHEMA_JSON = JSON.stringify(LABEL_SCHEMA);
@@ -396,17 +397,28 @@ function spawnClaudeJudge({ judge, prompt, timeoutMs }) {
   });
 }
 
-async function callJudge({ judge, pair, sessionsById, maxRetries, timeoutMs }) {
-  const a = sessionsById.get(pair.a);
-  const b = sessionsById.get(pair.b);
+async function callJudge({ judge, pair, sessionsById, maxRetries, timeoutMs, rng }) {
+  // A/B position randomization. Zheng et al. 2023 (MT-Bench) and Shi
+  // et al. 2024 (arXiv:2406.07791) name position bias as one of the
+  // three canonical LLM-judge failure modes. Without this fix, fixed
+  // A=session1/B=session2 order systematically biases verdicts on
+  // borderline pairs. Per-call coin flip is cheaper than
+  // swap-and-average and averages out the bias across the run.
+  const swap = rng() < 0.5;
+  const first = swap ? sessionsById.get(pair.b) : sessionsById.get(pair.a);
+  const second = swap ? sessionsById.get(pair.a) : sessionsById.get(pair.b);
+  // The cosine value is deliberately NOT included in the prompt. Lou
+  // et al. 2024 (arXiv:2412.06593) and the ICLR HCAIR 2026 anchoring
+  // paper (arXiv:2505.15392) both find that "don't be anchored by X"
+  // instructions don't neutralize anchoring — the number still shifts
+  // the verdict. Drop it entirely.
   const pairPayload =
     `Session A:\n` +
-    `  Title: ${truncate(a?.title ?? '(unknown)', 120)}\n` +
-    `  Preview: ${truncate(a?.preview ?? '', 800)}\n\n` +
+    `  Title: ${truncate(first?.title ?? '(unknown)', 120)}\n` +
+    `  Preview: ${truncate(first?.preview ?? '', 800)}\n\n` +
     `Session B:\n` +
-    `  Title: ${truncate(b?.title ?? '(unknown)', 120)}\n` +
-    `  Preview: ${truncate(b?.preview ?? '', 800)}\n\n` +
-    `Cosine similarity (mxbai-embed-large): ${pair.cos.toFixed(4)} — do not let this anchor your judgement; the whole point of this labeling pass is to calibrate it.`;
+    `  Title: ${truncate(second?.title ?? '(unknown)', 120)}\n` +
+    `  Preview: ${truncate(second?.preview ?? '', 800)}`;
   // Rubric goes in the user message (via stdin) rather than the
   // system prompt, so multi-line content never goes through cmd.exe
   // quoting. The short SYSTEM_PROMPT on the command line just pins
@@ -568,6 +580,11 @@ async function main() {
   let errors = 0;
   let totalCostUsd = 0;
 
+  // Position-randomization RNG. Math.random is fine here — the audit
+  // care is "averages out across the run," not reproducibility (each
+  // judge's per-pair A/B order is independent).
+  const rng = () => Math.random();
+
   let i = 0;
   await Promise.all(
     sampled.map(async (pair) => {
@@ -581,6 +598,7 @@ async function main() {
               sessionsById,
               maxRetries: opts.maxRetries,
               timeoutMs: opts.timeoutMs,
+              rng,
             }),
           ),
         );
