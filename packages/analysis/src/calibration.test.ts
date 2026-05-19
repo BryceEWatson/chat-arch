@@ -343,8 +343,13 @@ describe('evaluateCalibration — dispatches on method', () => {
 });
 
 describe('audit-corrected default constants', () => {
-  it('DEFAULT_P_NEAR_DUP_TARGET is 0.9 — precision-leaning per audit', () => {
-    expect(DEFAULT_P_NEAR_DUP_TARGET).toBe(0.9);
+  it('DEFAULT_P_NEAR_DUP_TARGET is 0.7 — empirical ceiling on this corpus', () => {
+    // 0.9 (the audit's recommendation) turned out to be unreachable on
+    // the chat-arch corpus + mxbai + dual-Claude-judge setup even after
+    // an active labeling pass: fitted Platt max P ≈ 0.74 at cos=1.0.
+    // 0.7 maps to cos ≈ 0.99, flags ~7-10 high-confidence pairs, and
+    // is documented inline as the corpus-specific ceiling.
+    expect(DEFAULT_P_NEAR_DUP_TARGET).toBe(0.7);
   });
 
   it('MIN_LABELS_FOR_FIT is 50, MIN_PER_CLASS_FOR_FIT is 10', () => {

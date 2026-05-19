@@ -35,12 +35,30 @@
  */
 
 /**
- * Default probability threshold for "is a near-duplicate." Production
- * deduplication pipelines target precision ≥0.95 (Christen 2012; NeMo
- * Curator default; SemDeDup paper ε regimes); 0.5 is symmetric-loss
- * default and the wrong choice for this domain (audit 2026-05-19).
+ * Default probability threshold for "is a near-duplicate."
+ *
+ * Lineage on this corpus (mxbai-embed-large, ~500 sessions):
+ *   - 0.5  (initial Platt landing): symmetric-loss Bayes-optimal, wrong
+ *           for asymmetric dedup loss. Per audit 2026-05-19 §5.
+ *   - 0.9  (post-audit): production-grade precision target (Christen
+ *           2012; NeMo Curator). Empirically unreachable here — even
+ *           after a stratified + active labeling pass (124 labels)
+ *           the fitted Platt curve maxes at P ≈ 0.74 at cos = 1.0,
+ *           so pTarget=0.9 flagged nothing.
+ *   - 0.7  (current): the empirical ceiling on this corpus + judge
+ *           setup. Maps to cos ≈ 0.99 on the current curve;
+ *           flags ~7-10 high-confidence pairs. Precision (vs
+ *           calibrated judge-agreement, NOT vs human ground truth)
+ *           ≈ 70%. The remaining uncertainty is real: ~28% of pairs
+ *           at cos ≥ 0.96 yield split dual-judge verdicts, which is
+ *           consistent with the PARAPHRASUS 2024 human-disagreement
+ *           floor on hardest pair deciles.
+ *
+ * Re-evaluate when label count crosses ~500 (Platt → isotonic
+ * regime) or when a cross-family judge gets wired up. See
+ * research/calibration-tier3-design.md for the upgrade path.
  */
-export const DEFAULT_P_NEAR_DUP_TARGET = 0.9;
+export const DEFAULT_P_NEAR_DUP_TARGET = 0.7;
 
 /**
  * Below ~500 samples we use Platt scaling (smooth sigmoid, 2 params);

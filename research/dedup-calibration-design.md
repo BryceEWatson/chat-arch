@@ -102,3 +102,69 @@ fingerprint, so toggling calibration or re-fitting invalidates exactly
 the dedup output without churning the rest of the pipeline. Same scoped
 pattern as `HEURISTIC_RECALL_VERSION` in
 `detectCorrectionCandidates.ts`.
+
+---
+
+## Learnings from the first two labeling passes (2026-05-19)
+
+The calibration pipeline shipped end-to-end and was exercised across
+two labeling passes (stratified 99-pair pass + active 80-pair pass)
+on the user's ~500-session corpus, mxbai-embed-large embedder, dual
+Claude-judge (Haiku 4.5 + Sonnet 4.6). Concrete findings worth
+recording for the next investigator:
+
+1. **Disagreement rate is high and stable**. Stratified 30/99 (30%),
+   active 22/80 (28%). The audit predicted Tier 2b prompt-bias fixes
+   (drop cosine anchor, A/B randomize, CoT-first schema) would drop
+   disagreement 5-10 pp — empirically the shift was within Wilson
+   noise. Best interpretation: the prior 30% was an *under-estimate*
+   inflated by shared judge biases; the bias fixes exposed the true
+   inter-judge floor, which is close to PARAPHRASUS-2024's reported
+   20-35% on hardest-decile paraphrase pairs. The fixes were still
+   the right call structurally; they just don't move the
+   dual-judge-agreement number on a corpus this small.
+
+2. **PAV at n=70 overfit visibly**. The first isotonic fit produced
+   6 knots with a huge plateau (P=0.175 across [0.85, 0.994]) and a
+   single jump to P=1.0 at cos≥0.994, dominated by 4-6 lone positives
+   at the high-cos end. Switching to Platt at n<500 (per
+   Niculescu-Mizil & Caruana 2005) produced a smooth, well-behaved
+   sigmoid that didn't overconfidently extrapolate from sparse high-
+   cos labels.
+
+3. **Active sampling paid off**. After 99 stratified labels, max P
+   at cos=1.0 was 0.42. After 80 active samples (concentrated in
+   [0.96, 1.0] where the curve passes through P≈0.5), max P jumped
+   to 0.74. That's a ~32-pp gain from a single 80-label pass; a
+   second stratified pass of comparable size would not have done
+   that.
+
+4. **pTarget=0.9 was empirically unreachable**. Production-dedup
+   precision targets of 0.95+ (Christen 2012; NeMo Curator) don't
+   survive contact with this corpus and judge setup. The fitted
+   curve max P plateaued at 0.74 — additional labels would push it
+   higher but with diminishing returns. We landed at **pTarget=0.7**
+   as the empirical ceiling, flagging ~7-10 cos≥0.99 pairs.
+
+5. **Active samples are not representative**. The active pass's
+   sample distribution was 100% in [0.96, 1.0] (all uncertainty
+   was at the top of the curve). Precision-sweeps over actively-
+   sampled labels are biased toward whatever band the curve happens
+   to be uncertain about. The audit doc §1 flagged this; we
+   accepted the bias for fit-quality gains and noted it inline. A
+   future PR could maintain two label sets (stratified for sweep
+   reporting, active for fitting).
+
+6. **Plan-usage cost was small**. The whole investigation —
+   stratified pass + active pass + multiple smoke tests — cost
+   roughly $10 plan-equivalent (Claude Code subscription, not out-
+   of-pocket). The cost ceiling for "label until pTarget=0.9 is
+   reachable" is probably 5-10× that. Whether it's worth spending
+   depends on whether someone uses the semantic-dedup view enough
+   to justify; current evidence suggests not.
+
+**Re-evaluate calibration when:**
+- Label count crosses ~500 (transitions Platt → isotonic regime).
+- A cross-family judge gets wired up (Tier 3 §3 — would shrink the
+  shared-bias floor and could pull dual-judge agreement up).
+- The corpus grows substantially or the embedding model is swapped.
