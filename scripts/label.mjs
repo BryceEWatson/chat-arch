@@ -775,9 +775,10 @@ function printThresholdSweep(labels) {
     .filter((v) => typeof v.cos === 'number')
     .sort((a, b) => a.cos - b.cos);
   // Sweep at 0.01-step thresholds and report precision @ threshold with
-  // Wilson 95% CI — small-n point estimates in the [0.85, 0.97] band
-  // are too noisy to interpret without a bound (Park et al. 2026 on
-  // cosine anisotropy in mxbai-embed-large made this acute).
+  // Wilson 95% CI — small-n point estimates in the [0.85, 1.0] band
+  // are too noisy to interpret without a bound; the residual cosine
+  // miscalibration documented in Tacheny 2026 (arXiv:2601.16907)
+  // amplifies that here.
   console.log(c('bold', '\nPrecision sweep (threshold → precision [95% CI] · recall):'));
   for (let t = 0.85; t <= 1.0 + 1e-9; t += 0.01) {
     const above = sorted.filter((v) => v.cos >= t);

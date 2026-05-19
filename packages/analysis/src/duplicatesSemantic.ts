@@ -108,11 +108,14 @@ export interface BuildSemanticDuplicatesOptions {
    */
   threshold?: number;
   /**
-   * Isotonic calibration curve mapping cos → P(near-duplicate). When
-   * present, pairs are accepted iff `evaluateCalibration(curve, cos)
-   * >= pTarget` (default 0.5). See packages/analysis/src/
-   * calibration.ts and research/dedup-calibration-design.md for the
-   * design rationale (Park et al. 2026 anisotropy fix).
+   * Probability calibration curve mapping cos → P(near-duplicate).
+   * When present, pairs are accepted iff `evaluateCalibration(curve,
+   * cos) >= pTarget`. See packages/analysis/src/calibration.ts and
+   * research/dedup-calibration-design.md for design rationale; the
+   * methodology audit in research/calibration-audit-2026-05-19.md
+   * covers why we calibrate at all (residual cosine miscalibration
+   * even on contrastively-trained sentence embedders, per Tacheny
+   * 2026 + Ethayarajh 2019).
    */
   calibration?: CalibrationCurve;
   /**

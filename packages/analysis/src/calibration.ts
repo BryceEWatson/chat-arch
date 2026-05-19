@@ -1,23 +1,37 @@
 /**
- * Isotonic-regression calibration for the cosine → P(near-duplicate)
- * map used by `duplicatesSemantic.ts`.
+ * Probability calibration for the cosine → P(near-duplicate) map used
+ * by `duplicatesSemantic.ts`.
  *
- * Background: Park et al. 2026 ("Calibrated Similarity for Reliable
- * Geometric Analysis") characterises the symptom we hit in 2026-05 on
- * mxbai-embed-large — absolute cosine is anisotropically compressed
- * into a narrow cone while rank order is preserved. A precision
- * sweep on labeled pairs plateaus inside that cone; no single cosine
- * threshold gives reliable precision. The remedy is to map cosine to
- * a calibrated probability via isotonic regression (PAV — Pool
- * Adjacent Violators) on the labeled pairs and threshold on
- * probability instead of raw cosine.
+ * Background: even contrastively-trained sentence embedders (mxbai-
+ * embed-large is trained with InfoNCE + AnglE loss on hard negatives)
+ * leave residual miscalibration in the absolute-cosine surface
+ * (Tacheny 2026, arXiv:2601.16907; Ethayarajh 2019 ACL D19-1006 for
+ * the canonical "narrow cone" framing on pre-contrastive models). On
+ * our corpus a precision sweep on labeled pairs in [0.85, 1.0]
+ * plateaus inside that residually-compressed region — no single
+ * cosine threshold gives reliable precision. The remedy is to map
+ * cosine to a calibrated probability and threshold on probability
+ * instead of raw cosine.
  *
- * This module is the calibration kernel: fit a monotone non-
- * decreasing step function from labels, evaluate it at any cosine,
- * extrapolate flat outside the labeled range. Pure / browser-safe.
+ * Two fits are supported, with auto-selection by sample size:
  *
- * See research/dedup-calibration-design.md for the on-disk shape,
- * cold-start behaviour, and cache-invalidation rationale.
+ *   - Platt scaling (sigmoid via logistic regression on labels). The
+ *     standard choice below ~200 samples per Niculescu-Mizil & Caruana
+ *     2005 — three parameters, smooth, doesn't overfit step functions
+ *     to noise the way PAV does at small n.
+ *   - PAV (Pool Adjacent Violators) isotonic regression. The standard
+ *     choice above ~1000 samples — non-parametric, recovers arbitrary
+ *     monotone shapes when labels are dense enough to support them.
+ *
+ * Both methods produce a curve evaluable at any cosine; flat
+ * extrapolation outside the labeled range (sklearn `IsotonicRegression
+ * (out_of_bounds='clip')` default — linear can yield p < 0 or p > 1).
+ *
+ * Pure / browser-safe.
+ *
+ * See research/dedup-calibration-design.md for the on-disk shape and
+ * research/calibration-audit-2026-05-19.md for the audit that
+ * triggered the Platt addition.
  */
 
 /** Default probability threshold for "is a near-duplicate". */

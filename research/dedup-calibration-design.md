@@ -1,10 +1,27 @@
-# Isotonic-regression calibration for semantic dedup (design — not built)
+# Probability calibration for semantic dedup (design)
 
-Park et al. 2026 shows mxbai-embed-large compresses absolute cosine into
-a narrow cone while preserving rank order — anisotropic miscalibration,
-not a tuning problem. If the next labeling pass still plateaus, we map
-raw cosine → P(near-dup) via isotonic regression (PAV) on the labels
-and threshold on calibrated probability instead.
+> Audit note (2026-05-19): an earlier draft of this doc cited
+> "Park et al. 2026" and described mxbai-embed-large's cosine as BERT-
+> style narrowly compressed. Both framings are wrong:
+> - The real paper is Tacheny 2026 (arXiv:2601.16907), not Park.
+> - mxbai is contrastively trained (InfoNCE on ~700M pairs + AnglE
+>   loss on hard negatives + Matryoshka) — exactly the SimCSE/AnglE-
+>   era fixes for narrow-cone anisotropy. Residual miscalibration
+>   exists but isn't severe.
+>
+> Calibration on labeled pairs is still justified — Tacheny 2026
+> formalises that *absolute* cosine is miscalibrated even when *rank*
+> is preserved — but the framing is "tightening absolute-value
+> interpretability on an already-contrastive model," not "fixing
+> severe anisotropy." See research/calibration-audit-2026-05-19.md.
+
+The labeling sweep on our corpus plateaus inside the high-cosine band:
+no single cosine threshold gives reliable precision. The remedy is to
+map cosine → P(near-dup) via a calibration curve and threshold on
+probability instead of raw cosine. At our current label count (~70)
+**Platt scaling** is the right fit method (Niculescu-Mizil & Caruana
+2005 — sigmoid wins below ~200 samples, isotonic above ~1000); the
+implementation auto-selects.
 
 ## On-disk location
 
@@ -15,11 +32,16 @@ Per-install, never checked in.
 ```jsonc
 {
   "schemaVersion": 1,
-  "method": "isotonic",
+  // "platt" below ~500 labels, "isotonic" above — auto-selected.
+  "method": "platt",
   "calibratedAt": 1747606800000,
   "labelCount": 92,
   "band": [0.85, 1.0],
-  // PAV output: monotone non-decreasing step function as (x, y) knots
+  // Same shape for both methods — a sorted (cos, p) sequence. For
+  // isotonic these are the PAV step boundaries; for Platt they're
+  // sampled from the fitted sigmoid at a fixed grid so the consumer
+  // doesn't have to know the underlying form. evaluateCalibration
+  // uses the knots either way; flat extrapolation outside the range.
   "knots": [
     { "cos": 0.85, "p": 0.05 },
     { "cos": 0.91, "p": 0.45 },

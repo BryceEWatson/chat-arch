@@ -550,11 +550,14 @@ export async function runSemanticAnalysis(
       : new Map<string, Float32Array>();
   const embeddingsAvailable = loaded !== null && vectorMap.size > 0;
 
-  // Load the isotonic calibration curve produced by
-  // `scripts/fit-calibration.mjs`. Absent file → undefined → dedup
-  // falls back to the literature cosine threshold. This is the
-  // Park-et-al. 2026 anisotropy fix; see research/dedup-calibration-
-  // design.md.
+  // Load the probability calibration curve produced by
+  // `scripts/fit-calibration.mjs` (Platt at small n, isotonic above
+  // ~500 labels). Absent file → undefined → dedup falls back to the
+  // literature cosine threshold. Motivation: residual absolute-cosine
+  // miscalibration even on contrastively-trained sentence embedders
+  // (Tacheny 2026 arXiv:2601.16907; Ethayarajh 2019 D19-1006). See
+  // research/dedup-calibration-design.md and the audit at
+  // research/calibration-audit-2026-05-19.md.
   const calibration = await loadCalibration(options.outDir);
   if (calibration !== undefined) {
     logger.info(
