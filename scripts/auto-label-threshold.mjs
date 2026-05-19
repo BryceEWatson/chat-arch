@@ -282,6 +282,36 @@ function stripJsonFence(s) {
   return (fenced ? fenced[1] : s).trim();
 }
 
+// Probe `claude --version` before the main loop. Fast (~ms) and gives
+// a clean early exit when Claude Code isn't installed / shim broken
+// / auth missing — much better than 100 pairs × 3 retries of the same
+// failure. Returns { ok, message }.
+function probeClaude({ timeoutMs = 10_000 } = {}) {
+  return new Promise((resolve) => {
+    const { bin, leadingArgs } = resolveClaudeCommand();
+    const useShell = process.platform === 'win32' && bin === 'claude';
+    const child = spawn(bin, [...leadingArgs, '--version'], {
+      shell: useShell,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, message: err.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ ok: true, message: '' });
+      else resolve({ ok: false, message: stderr.trim() || `exit ${code}` });
+    });
+  });
+}
+
 function spawnClaudeJudge({ judge, prompt, timeoutMs }) {
   return new Promise((resolve, reject) => {
     const { bin, leadingArgs } = resolveClaudeCommand();
@@ -438,10 +468,24 @@ async function main() {
   const disagreePath = path.join(dataDir, 'labels', 'threshold-disagreements.json');
 
   if (!opts.dryRun) {
-    // claude -p inherits the user's Claude Code auth (OAuth or
-    // keychain). We can't easily verify the binary up-front without
-    // a no-op spawn, so just fail loudly on the first call if it's
-    // missing. The error message from spawnClaudeJudge surfaces it.
+    const probe = await probeClaude();
+    if (!probe.ok) {
+      console.error(
+        c('yellow', `\nClaude Code CLI not available — skipping auto-label.`),
+      );
+      console.error(c('dim', `  reason: ${probe.message}`));
+      const broken = /claude\.exe.*not recognized|ENOENT.*claude/i.test(probe.message);
+      if (broken) {
+        console.error(
+          c('dim', `  hint: postinstall didn't write claude.exe. Reinstall via \`npm i -g @anthropic-ai/claude-code\`, or set\n` +
+            `        CLAUDE_BIN="node $(npm root -g)/@anthropic-ai/claude-code/cli-wrapper.cjs"`),
+        );
+      }
+      // Exit 0 so the exporter doesn't log this as a soft-fail with a
+      // non-zero exit. Missing Claude Code is an environment fact,
+      // not a script error.
+      process.exit(0);
+    }
   }
 
   let scan;
@@ -494,10 +538,10 @@ async function main() {
     c('bold', `Plan: ${sampled.length} pairs × ${opts.judges.length} judges (${opts.judges.join(', ')}), concurrency ${opts.concurrency}.`),
   );
   console.log(
-    c('dim', `  Auth: Claude Code (\`claude -p\`) — uses your existing plan, no ANTHROPIC_API_KEY needed.`),
+    c('dim', `  Auth: Claude Code subscription — counts against your plan, no out-of-pocket per-token spend.`),
   );
   console.log(
-    c('dim', `  Per-call cost is reported by claude --output-format json; we sum and print the actual total at the end.`),
+    c('dim', `  claude -p reports an API-equivalent cost per call; we sum it at the end as a plan-usage estimate.`),
   );
   console.log(
     c('dim', `  Disagreements: ${opts.confirmDisagreements ? `queued to ${disagreePath}` : 'dropped (logged in audit only)'}.`),
@@ -597,7 +641,9 @@ async function main() {
   console.log(`  agreed not:      ${c('cyan', agreedNot)}`);
   console.log(`  disagreements:   ${c('yellow', disagreed)}${opts.confirmDisagreements ? ` (queued to ${disagreePath})` : ''}`);
   if (errors) console.log(`  errors:          ${c('red', errors)}`);
-  console.log(c('dim', `  total cost (reported by claude -p): $${totalCostUsd.toFixed(4)} USD`));
+  console.log(
+    c('dim', `  plan usage (API-equivalent): $${totalCostUsd.toFixed(4)} USD — actual cost is bounded by your Claude Code plan.`),
+  );
   console.log(c('dim', `  audit log: ${auditPath}`));
   console.log(c('dim', `  labels:    ${labelsPath}`));
   if (disagreed && opts.confirmDisagreements) {

@@ -42,7 +42,7 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
       out: { type: 'string', short: 'o' },
       zip: { type: 'string' },
       'no-cloud': { type: 'boolean' },
-      'auto-label-threshold': { type: 'boolean' },
+      'no-auto-label-threshold': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: false,
@@ -50,22 +50,25 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
 
   if (values.help) {
     logger.info(
-      'chat-arch all [--zip <path>] [--no-cloud] [--auto-label-threshold] [--out <dir>]\n\n' +
+      'chat-arch all [--zip <path>] [--no-cloud] [--no-auto-label-threshold] [--out <dir>]\n\n' +
         '  Run cowork + cli + cloud phases sequentially and merge their output\n' +
         '  into a single unified manifest.json.\n\n' +
-        '  --zip                    Cloud-export ZIP path (default: latest match in ~/Downloads).\n' +
-        '  --no-cloud               Skip the cloud phase entirely; keep any previously-written\n' +
-        '                           cloud-manifest.json in the merge. Used by the viewer\n' +
-        '                           "RESCAN" button — cloud data is only refreshed when the\n' +
-        '                           user uploads a ZIP, not as part of rescanning local disks.\n' +
-        '  --auto-label-threshold   After semantic analysis, run scripts/auto-label-threshold.mjs\n' +
-        '                           to fill any deficit in chat-arch-data/labels/threshold-pairs.json\n' +
-        '                           using dual-judge `claude -p` headless calls — inherits your\n' +
-        '                           Claude Code auth, no ANTHROPIC_API_KEY needed. Off by default.\n' +
-        '                           Also enabled by CHAT_ARCH_AUTO_LABEL=1 (which the viewer\'s\n' +
-        '                           "RESCAN" inherits for free since it passes process.env through).\n' +
-        '  --out, -o                Output directory\n' +
-        '                           (default: <repo-root>/apps/standalone/public/chat-arch-data).\n',
+        '  --zip                       Cloud-export ZIP path (default: latest match in ~/Downloads).\n' +
+        '  --no-cloud                  Skip the cloud phase entirely; keep any previously-written\n' +
+        '                              cloud-manifest.json in the merge. Used by the viewer\n' +
+        '                              "RESCAN" button — cloud data is only refreshed when the\n' +
+        '                              user uploads a ZIP, not as part of rescanning local disks.\n' +
+        '  --no-auto-label-threshold   Skip the post-semantic threshold-labels auto-fill stage.\n' +
+        '                              By default we run scripts/auto-label-threshold.mjs to top up\n' +
+        '                              chat-arch-data/labels/threshold-pairs.json using dual-judge\n' +
+        '                              `claude -p` headless calls — inherits your Claude Code\n' +
+        '                              auth, counts against your plan (no per-token spend).\n' +
+        '                              If `claude` isn\'t on PATH the stage logs a single line\n' +
+        '                              and skips. Also disabled by CHAT_ARCH_AUTO_LABEL=0\n' +
+        '                              (which the viewer\'s "RESCAN" inherits for free since it\n' +
+        '                              passes process.env through).\n' +
+        '  --out, -o                   Output directory\n' +
+        '                              (default: <repo-root>/apps/standalone/public/chat-arch-data).\n',
     );
     return 0;
   }
@@ -255,17 +258,19 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
     );
   }
 
-  // Wave 3: optional threshold-pair auto-labeling. Off by default —
-  // opt in with `--auto-label-threshold` or `CHAT_ARCH_AUTO_LABEL=1`
-  // in the environment (the viewer's RESCAN inherits the env-var path
-  // because /api/rescan passes process.env through). The script uses
-  // `claude -p` under the hood, so it inherits the user's Claude Code
-  // auth — no ANTHROPIC_API_KEY needed. If `claude` is not on PATH the
-  // child reports the spawn failure and we soft-fail.
-  const autoLabel =
-    values['auto-label-threshold'] === true ||
-    process.env.CHAT_ARCH_AUTO_LABEL === '1';
-  if (autoLabel) {
+  // Wave 3: threshold-pair auto-labeling. On by default — the script
+  // uses `claude -p`, which inherits the user's Claude Code subscription
+  // (counts against their plan, no per-token spend). If `claude` isn't
+  // available the script probes for it up-front and exits 0 cleanly
+  // with a single-line log, so this stage doesn't break scans on
+  // machines without Claude Code. Disable explicitly with
+  // `--no-auto-label-threshold` or `CHAT_ARCH_AUTO_LABEL=0` (the
+  // viewer's RESCAN inherits the env-var path because /api/rescan
+  // passes process.env through).
+  const autoLabelDisabled =
+    values['no-auto-label-threshold'] === true ||
+    process.env.CHAT_ARCH_AUTO_LABEL === '0';
+  if (!autoLabelDisabled) {
     const scriptPath = path.join(findRepoRoot(), 'scripts', 'auto-label-threshold.mjs');
     const alStart = Date.now();
     try {
