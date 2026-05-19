@@ -2,30 +2,40 @@
 /**
  * Auto-labeler for threshold pairs.
  *
- * Dual-judge: Haiku 4.5 + Sonnet 4.6 evaluate each pair independently.
+ * Dual-judge: Haiku 4.5 + Sonnet 4.6 evaluate each pair independently
+ * via `claude -p` (Claude Code in headless mode), so this uses your
+ * existing Claude Code auth/plan — no ANTHROPIC_API_KEY needed.
  * Agreed labels are written to the same file the TUI labeler writes
  * (`chat-arch-data/labels/threshold-pairs.json`), so the existing
  * sweep + CI machinery consumes them unchanged. Disagreements are
  * dropped by default (logged for audit) or queued for the TUI via
  * `--confirm-disagreements`.
  *
- * Optimizations:
+ * Why `claude -p` over the Anthropic SDK:
  *
- *   - Prompt caching on the rubric + tool schema (ephemeral, 5 min TTL).
- *     Reads at 10% of input cost; with ~1500 cacheable tokens, the
- *     rubric pays for itself after the second pair.
- *   - tool_use forced output (structured JSON), no parse failures.
+ *   - One auth: same Claude Code subscription that powers the editor,
+ *     no separate API key to manage.
+ *   - Structured output via `--json-schema` — the model's response
+ *     is validated against a schema at the CLI layer, no parse races.
+ *   - System prompt override (`--system-prompt`) strips the default
+ *     CLAUDE.md / cwd / git-status injection so the rubric is the
+ *     only context; same prompt across pairs → caching reuse.
+ *   - `--tools "" --no-session-persistence --disable-slash-commands
+ *     --strict-mcp-config` keeps each call isolated and side-effect
+ *     free.
+ *   - Per-call cost is reported in the JSON `total_cost_usd` field;
+ *     we sum it across pairs for an actual (not estimated) total.
+ *
+ * Other optimizations:
+ *
  *   - Two judges run in parallel per pair; pairs are processed with
- *     bounded concurrency (default 5 in-flight, i.e. 10 API requests).
+ *     bounded concurrency (default 5 in-flight, i.e. 10 spawns).
  *   - Resumable: every agreed label is persisted to disk immediately.
  *     A second run skips already-labeled pairs.
  *   - Stratified by cosine bucket — same deficit logic as the TUI, so
  *     re-running with the same `--n` fills the gaps without redoing.
  *   - Truncated inputs: title ≤ 120 chars, preview ≤ 800 chars per
- *     side. Keeps per-pair input under ~500 tokens.
- *
- * Cost: ~$0.30/100 pairs (Haiku $1/$5 + Sonnet $3/$15 per MTok, with
- * cached rubric). `--dry-run` prints the estimate before spending.
+ *     side. Keeps per-pair input small.
  *
  * Usage:
  *   node scripts/auto-label-threshold.mjs [--n 100] [--band 0.85,1.0]
@@ -33,10 +43,16 @@
  *     [--confirm-disagreements] [--judges haiku,sonnet]
  *     [--data-dir <path>] [--max-retries 3]
  *
- * Requires ANTHROPIC_API_KEY in the environment.
+ * Requires `claude` (the Claude Code CLI) on PATH. If your install's
+ * `claude` shim is broken (postinstall didn't write claude.exe — only
+ * .old.* rotations remain in bin/), set:
+ *
+ *   CLAUDE_BIN="node $(npm root -g)/@anthropic-ai/claude-code/cli-wrapper.cjs"
+ *
+ * to use the Node fallback wrapper that ships in the same package.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -65,27 +81,36 @@ const ANSI = {
 const c = (col, s) => `${ANSI[col]}${s}${ANSI.reset}`;
 
 // ---------- Models ----------
+// Passed verbatim to `claude --model`. Pinned full IDs (not aliases
+// like 'haiku' / 'sonnet') so the calibration sample stays
+// reproducible if the alias points elsewhere later.
 const MODELS = {
   haiku: 'claude-haiku-4-5-20251001',
   sonnet: 'claude-sonnet-4-6',
 };
-// Per-MTok pricing (USD), public list pricing as of model release.
-// Cache reads are 10% of input; cache writes are 1.25x input. The
-// cost preview uses these to give the user a sticker-shock estimate
-// before they spend.
-const PRICING = {
-  haiku: { in: 1, out: 5 },
-  sonnet: { in: 3, out: 15 },
-};
 
 // ---------- Rubric ----------
 //
-// Kept terse and explicit so the two judges aren't fighting over
-// definitional drift. The few-shot examples cover the three common
-// failure modes mxbai-embed-large gets wrong in this band: high-cos
-// topic overlap that isn't actually duplicate, low-cos paraphrases
-// that ARE duplicate, and boilerplate template prompts that score
-// > 0.97 but address different underlying tasks.
+// Two-part:
+//   - SYSTEM_PROMPT (short, single line, escape-safe) — goes to
+//     `--system-prompt`. Must survive Windows cmd.exe quoting under
+//     shell:true with no special characters or newlines.
+//   - RUBRIC (multi-line, full definition + examples) — prepended to
+//     the per-pair user content, sent via stdin so shell escaping
+//     never touches it.
+//
+// Splitting it this way also lets us override the default Claude Code
+// system prompt entirely — without an explicit --system-prompt, every
+// call would carry ~34k tokens of Claude Code context (~$0.04/call,
+// ~$8 for a 100-pair run vs <$1 with the override).
+const SYSTEM_PROMPT =
+  'You are a JSON-only classification API. Reply with a single JSON object matching the schema described in the user message. No prose, no commentary, no markdown fences.';
+
+// Few-shot examples cover the three common failure modes
+// mxbai-embed-large gets wrong in this band: high-cos topic overlap
+// that isn't actually duplicate, low-cos paraphrases that ARE
+// duplicate, and boilerplate template prompts that score > 0.97 but
+// address different underlying tasks.
 const RUBRIC = `You are judging whether two chat sessions are near-duplicates.
 
 DEFINITION — two sessions are NEAR-DUPLICATES iff a knowledgeable user, shown one of them, would want a tool to surface the other as "you already asked this." Concretely:
@@ -104,10 +129,12 @@ When uncertain, prefer NOT — the cost of a false-positive duplicate (silently 
 
 You will receive title + preview for each side. The preview is truncated; judge on what's visible, do not speculate about content past the cutoff.
 
-OUTPUT — call the submit_label tool with:
-- label: "near-duplicate" or "not"
-- confidence: 0.0–1.0 (how sure you are)
-- reasoning: one sentence, ≤200 chars
+OUTPUT — respond with a single JSON object matching this schema (no prose around it, no markdown fence, no commentary):
+{
+  "label": "near-duplicate" | "not",
+  "confidence": 0.0–1.0,
+  "reasoning": "one sentence, ≤200 chars"
+}
 
 Examples:
 
@@ -123,29 +150,20 @@ A: "/review PR #41"               / "Review the changes on this branch..."
 B: "/review PR #52"               / "Review the changes on this branch..."
 → not (template overlap masks distinct PRs), confidence 0.95`;
 
-const TOOL_DEF = {
-  name: 'submit_label',
-  description: 'Submit your near-duplicate judgement for the pair.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      label: {
-        type: 'string',
-        enum: ['near-duplicate', 'not'],
-      },
-      confidence: {
-        type: 'number',
-        minimum: 0,
-        maximum: 1,
-      },
-      reasoning: {
-        type: 'string',
-        maxLength: 200,
-      },
-    },
-    required: ['label', 'confidence', 'reasoning'],
+// JSON schema passed to `claude --json-schema`. The CLI validates the
+// model's response against this; an invalid response surfaces as a
+// failed run we can retry.
+const LABEL_SCHEMA = {
+  type: 'object',
+  properties: {
+    label: { type: 'string', enum: ['near-duplicate', 'not'] },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    reasoning: { type: 'string', maxLength: 200 },
   },
+  required: ['label', 'confidence', 'reasoning'],
+  additionalProperties: false,
 };
+const LABEL_SCHEMA_JSON = JSON.stringify(LABEL_SCHEMA);
 
 // ---------- CLI parsing ----------
 function parseArgs(argv) {
@@ -159,6 +177,11 @@ function parseArgs(argv) {
     judges: ['haiku', 'sonnet'],
     dataDir: null,
     maxRetries: 3,
+    // 60s per claude -p invocation. CLI cold-start + a Haiku call
+    // typically finishes in 5-10s; 60s leaves headroom for the
+    // first-spawn warm-up on a fresh shell and the occasional slow
+    // Sonnet response. Tunable for slow networks.
+    timeoutMs: 60_000,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -173,6 +196,7 @@ function parseArgs(argv) {
     else if (a === '--judges') out.judges = argv[++i].split(',').map((s) => s.trim());
     else if (a === '--data-dir') out.dataDir = argv[++i];
     else if (a === '--max-retries') out.maxRetries = Math.max(0, Math.floor(Number(argv[++i])));
+    else if (a === '--timeout-ms') out.timeoutMs = Math.max(1000, Math.floor(Number(argv[++i])));
     else if (a === '--help' || a === '-h') {
       usage();
       process.exit(0);
@@ -200,9 +224,10 @@ function usage() {
       `  --concurrency <N>        pairs in flight at once (default 5)\n` +
       `  --judges <a,b>           comma-separated judge models (default haiku,sonnet)\n` +
       `  --confirm-disagreements  write disagreements to a separate file for TUI follow-up\n` +
-      `  --dry-run                show the plan + cost estimate, don't call the API\n` +
+      `  --dry-run                show the plan, don't invoke claude -p\n` +
       `  --data-dir <path>        override the chat-arch-data root\n` +
-      `  --max-retries <N>        per-call retry budget on 429/5xx (default 3)\n`,
+      `  --max-retries <N>        per-call retry budget on failure (default 3)\n` +
+      `  --timeout-ms <N>         per-spawn wall-clock timeout (default 60000)\n`,
   );
 }
 
@@ -229,11 +254,122 @@ function makeSemaphore(limit) {
   };
 }
 
-// ---------- API call ----------
-async function callJudge({ client, judge, pair, sessionsById, maxRetries }) {
+// ---------- claude -p invocation ----------
+//
+// Spawns Claude Code in headless print mode with all the isolation
+// flags so the call has no project-context side effects: no tools,
+// no session persistence, no slash commands, no MCP servers, system
+// prompt overridden so CLAUDE.md / cwd / env / git-status aren't
+// injected. `--json-schema` validates the model's response against
+// LABEL_SCHEMA before the CLI exits 0, so by the time we see output
+// it's already shape-correct.
+
+// Resolve the claude command + leading args. CLAUDE_BIN can be a
+// single binary ("claude") or a multi-token command line
+// ("node C:/path/to/cli-wrapper.cjs") for users whose `claude` shim
+// is broken (postinstall didn't write claude.exe — the Node-fallback
+// cli-wrapper.cjs is the official escape hatch in that case). The
+// string is split on whitespace; first token is the binary, the rest
+// are leading args.
+function resolveClaudeCommand() {
+  const raw = (process.env.CLAUDE_BIN ?? 'claude').trim();
+  const parts = raw.split(/\s+/);
+  return { bin: parts[0], leadingArgs: parts.slice(1) };
+}
+
+function stripJsonFence(s) {
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  return (fenced ? fenced[1] : s).trim();
+}
+
+function spawnClaudeJudge({ judge, prompt, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    const { bin, leadingArgs } = resolveClaudeCommand();
+    const args = [
+      ...leadingArgs,
+      '-p',
+      '--model',
+      MODELS[judge],
+      '--output-format',
+      'json',
+      '--input-format',
+      'text',
+      '--system-prompt',
+      SYSTEM_PROMPT,
+      '--json-schema',
+      LABEL_SCHEMA_JSON,
+      '--tools',
+      '',
+      '--no-session-persistence',
+      '--disable-slash-commands',
+      '--strict-mcp-config',
+      '--mcp-config',
+      '',
+      '--setting-sources',
+      '',
+    ];
+    // shell:true on Windows so a bare `claude` resolves to claude.cmd
+    // when CLAUDE_BIN isn't set. When CLAUDE_BIN points at `node` +
+    // a script path, shell isn't needed and skipping it avoids extra
+    // argument-quoting risk.
+    const useShell = process.platform === 'win32' && bin === 'claude';
+    const child = spawn(bin, args, {
+      shell: useShell,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    // Send the full prompt (rubric + pair content) on stdin. This
+    // sidesteps shell escaping for everything multi-line.
+    child.stdin.write(prompt);
+    child.stdin.end();
+    let stdout = '';
+    let stderr = '';
+    let killed = false;
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill('SIGTERM');
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new Error(`spawn claude failed: ${err.message}`));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (killed) {
+        return reject(new Error(`claude -p timed out after ${timeoutMs}ms`));
+      }
+      if (code !== 0) {
+        const msg = stderr.trim() || stdout.trim();
+        // Common Windows breakage: `claude.cmd` points at a
+        // `node_modules/.../bin/claude.exe` that was rotated out by
+        // a partial postinstall, leaving only `claude.exe.old.*`
+        // files. The user's editor still works because it spawns
+        // claude through a different channel. Surface the fix
+        // proactively so they don't have to grep the error.
+        const isBrokenShim = /claude\.exe.*not recognized|not found.*claude\.exe|ENOENT.*claude/i.test(msg);
+        const hint = isBrokenShim
+          ? '\n\nHint: the `claude` shim points at a missing claude.exe. Either:\n' +
+            '  1) Reinstall: `npm i -g @anthropic-ai/claude-code` (or `claude install`)\n' +
+            '  2) Override: set CLAUDE_BIN to the Node fallback wrapper, e.g.:\n' +
+            '     CLAUDE_BIN="node $(npm root -g)/@anthropic-ai/claude-code/cli-wrapper.cjs"'
+          : '';
+        return reject(new Error(`claude -p exited ${code}: ${msg}${hint}`));
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+async function callJudge({ judge, pair, sessionsById, maxRetries, timeoutMs }) {
   const a = sessionsById.get(pair.a);
   const b = sessionsById.get(pair.b);
-  const userContent =
+  const pairPayload =
     `Session A:\n` +
     `  Title: ${truncate(a?.title ?? '(unknown)', 120)}\n` +
     `  Preview: ${truncate(a?.preview ?? '', 800)}\n\n` +
@@ -241,68 +377,55 @@ async function callJudge({ client, judge, pair, sessionsById, maxRetries }) {
     `  Title: ${truncate(b?.title ?? '(unknown)', 120)}\n` +
     `  Preview: ${truncate(b?.preview ?? '', 800)}\n\n` +
     `Cosine similarity (mxbai-embed-large): ${pair.cos.toFixed(4)} — do not let this anchor your judgement; the whole point of this labeling pass is to calibrate it.`;
+  // Rubric goes in the user message (via stdin) rather than the
+  // system prompt, so multi-line content never goes through cmd.exe
+  // quoting. The short SYSTEM_PROMPT on the command line just pins
+  // the model in JSON-only mode.
+  const userPrompt = `${RUBRIC}\n\n---\n\n${pairPayload}`;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await client.messages.create({
-        model: MODELS[judge],
-        max_tokens: 400,
-        system: [
-          {
-            type: 'text',
-            text: RUBRIC,
-            // Ephemeral cache on the rubric. Reads = 10% of input price;
-            // a single run amortizes this across the whole pair pool.
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        tools: [TOOL_DEF],
-        tool_choice: { type: 'tool', name: 'submit_label' },
-        messages: [{ role: 'user', content: userContent }],
-      });
-      const toolUse = res.content.find((b2) => b2.type === 'tool_use');
-      if (!toolUse) {
-        throw new Error(`judge ${judge} returned no tool_use block`);
+      const raw = await spawnClaudeJudge({ judge, prompt: userPrompt, timeoutMs });
+      const envelope = JSON.parse(raw);
+      // claude -p with --json-schema puts the schema-conformant
+      // payload in envelope.structured_output (typed). `result` is
+      // the model's conversational summary of what it did and is not
+      // schema-bound. Fall back to parsing result text (with fence
+      // stripping) for the rare case where structured_output is
+      // missing — e.g. the model refused to call the structured-
+      // output tool.
+      let label;
+      if (envelope.structured_output && typeof envelope.structured_output === 'object') {
+        label = envelope.structured_output;
+      } else {
+        const resultText = stripJsonFence(
+          typeof envelope.result === 'string' ? envelope.result : '',
+        );
+        label = JSON.parse(resultText);
       }
-      const input = toolUse.input;
       return {
         judge,
-        label: input.label,
-        confidence: Number(input.confidence ?? 0),
-        reasoning: String(input.reasoning ?? ''),
-        usage: res.usage,
+        label: label.label,
+        confidence: Number(label.confidence ?? 0),
+        reasoning: String(label.reasoning ?? ''),
+        costUsd: Number(envelope.total_cost_usd ?? 0),
+        usage: envelope.usage ?? null,
+        durationMs: Number(envelope.duration_ms ?? envelope.duration ?? 0),
       };
     } catch (err) {
-      const status = err?.status ?? err?.response?.status;
-      const retryable = status === 429 || (status >= 500 && status < 600);
-      if (!retryable || attempt === maxRetries) throw err;
+      // claude -p doesn't expose typed retryable errors via the JSON
+      // envelope yet, so retry on any failure up to maxRetries. The
+      // common transient failures (rate limits, network, kernel
+      // schedule blips on cold start) all recover within seconds.
+      if (attempt === maxRetries) throw err;
       const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 250, 8000);
       console.warn(
-        c('yellow', `  judge ${judge} retry ${attempt + 1}/${maxRetries} after ${delay.toFixed(0)}ms (status ${status})`),
+        c('yellow', `  judge ${judge} retry ${attempt + 1}/${maxRetries} after ${delay.toFixed(0)}ms (${err.message ?? err})`),
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
   throw new Error(`unreachable: callJudge ${judge}`);
-}
-
-// ---------- Cost ----------
-function estimateCost({ pairs, judges }) {
-  // Conservative per-pair token counts.
-  const cachedSystem = 1500; // rubric + tool schema, cached
-  const userPerPair = 450; // truncated content
-  const outputPerPair = 80; // tool_use payload
-  let usd = 0;
-  for (const j of judges) {
-    const p = PRICING[j];
-    // First call writes cache (1.25x input), subsequent reads (0.1x input).
-    // Approximate: ~all subsequent reads (write cost dominated by 1 call).
-    const totalIn = cachedSystem * 0.1 + userPerPair;
-    const totalOut = outputPerPair;
-    usd += (pairs * totalIn * p.in) / 1_000_000;
-    usd += (pairs * totalOut * p.out) / 1_000_000;
-  }
-  return usd;
 }
 
 // ---------- Main ----------
@@ -314,9 +437,11 @@ async function main() {
   const auditPath = path.join(dataDir, 'labels', 'threshold-judges.json');
   const disagreePath = path.join(dataDir, 'labels', 'threshold-disagreements.json');
 
-  if (!opts.dryRun && !process.env.ANTHROPIC_API_KEY) {
-    console.error(c('red', 'ANTHROPIC_API_KEY is not set. Export it before running, or use --dry-run.'));
-    process.exit(1);
+  if (!opts.dryRun) {
+    // claude -p inherits the user's Claude Code auth (OAuth or
+    // keychain). We can't easily verify the binary up-front without
+    // a no-op spawn, so just fail loudly on the first call if it's
+    // missing. The error message from spawnClaudeJudge surfaces it.
   }
 
   let scan;
@@ -365,19 +490,26 @@ async function main() {
     return;
   }
 
-  const costUsd = estimateCost({ pairs: sampled.length, judges: opts.judges });
   console.log(
     c('bold', `Plan: ${sampled.length} pairs × ${opts.judges.length} judges (${opts.judges.join(', ')}), concurrency ${opts.concurrency}.`),
   );
-  console.log(c('dim', `  Est. cost: ~$${costUsd.toFixed(3)} USD (rubric cached after first call).`));
-  console.log(c('dim', `  Disagreements: ${opts.confirmDisagreements ? `queued to ${disagreePath}` : 'dropped (logged in audit only)'}.`));
+  console.log(
+    c('dim', `  Auth: Claude Code (\`claude -p\`) — uses your existing plan, no ANTHROPIC_API_KEY needed.`),
+  );
+  console.log(
+    c('dim', `  Per-call cost is reported by claude --output-format json; we sum and print the actual total at the end.`),
+  );
+  console.log(
+    c('dim', `  Disagreements: ${opts.confirmDisagreements ? `queued to ${disagreePath}` : 'dropped (logged in audit only)'}.`),
+  );
 
   if (opts.dryRun) {
-    console.log(c('green', '\n--dry-run: not calling the API. Drop the flag to spend the estimate above.\n'));
+    console.log(
+      c('green', '\n--dry-run: not invoking claude. Drop the flag to run.\n'),
+    );
     return;
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const acquire = makeSemaphore(opts.concurrency);
 
   // Audit log: every per-judge vote, keyed by pairId. Survives across
@@ -390,10 +522,7 @@ async function main() {
   let agreedNot = 0;
   let disagreed = 0;
   let errors = 0;
-  let usageIn = 0;
-  let usageOut = 0;
-  let usageCacheRead = 0;
-  let usageCacheCreate = 0;
+  let totalCostUsd = 0;
 
   let i = 0;
   await Promise.all(
@@ -403,19 +532,16 @@ async function main() {
         const votes = await Promise.all(
           opts.judges.map((judge) =>
             callJudge({
-              client,
               judge,
               pair,
               sessionsById,
               maxRetries: opts.maxRetries,
+              timeoutMs: opts.timeoutMs,
             }),
           ),
         );
         for (const v of votes) {
-          usageIn += v.usage?.input_tokens ?? 0;
-          usageOut += v.usage?.output_tokens ?? 0;
-          usageCacheRead += v.usage?.cache_read_input_tokens ?? 0;
-          usageCacheCreate += v.usage?.cache_creation_input_tokens ?? 0;
+          totalCostUsd += v.costUsd;
         }
         audit.entries[pair.id] = {
           cos: pair.cos,
@@ -471,7 +597,7 @@ async function main() {
   console.log(`  agreed not:      ${c('cyan', agreedNot)}`);
   console.log(`  disagreements:   ${c('yellow', disagreed)}${opts.confirmDisagreements ? ` (queued to ${disagreePath})` : ''}`);
   if (errors) console.log(`  errors:          ${c('red', errors)}`);
-  console.log(c('dim', `  tokens: ${usageIn} in (${usageCacheRead} cache-read, ${usageCacheCreate} cache-create) / ${usageOut} out`));
+  console.log(c('dim', `  total cost (reported by claude -p): $${totalCostUsd.toFixed(4)} USD`));
   console.log(c('dim', `  audit log: ${auditPath}`));
   console.log(c('dim', `  labels:    ${labelsPath}`));
   if (disagreed && opts.confirmDisagreements) {

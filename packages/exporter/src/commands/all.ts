@@ -60,10 +60,10 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
         '                           user uploads a ZIP, not as part of rescanning local disks.\n' +
         '  --auto-label-threshold   After semantic analysis, run scripts/auto-label-threshold.mjs\n' +
         '                           to fill any deficit in chat-arch-data/labels/threshold-pairs.json\n' +
-        '                           using dual-judge Claude API calls. Requires ANTHROPIC_API_KEY.\n' +
-        '                           Off by default. Also enabled by CHAT_ARCH_AUTO_LABEL=1\n' +
-        '                           (which the viewer\'s "RESCAN" inherits for free since it\n' +
-        '                           passes process.env through). Cost: ~$0.30 / 100 new pairs.\n' +
+        '                           using dual-judge `claude -p` headless calls — inherits your\n' +
+        '                           Claude Code auth, no ANTHROPIC_API_KEY needed. Off by default.\n' +
+        '                           Also enabled by CHAT_ARCH_AUTO_LABEL=1 (which the viewer\'s\n' +
+        '                           "RESCAN" inherits for free since it passes process.env through).\n' +
         '  --out, -o                Output directory\n' +
         '                           (default: <repo-root>/apps/standalone/public/chat-arch-data).\n',
     );
@@ -258,36 +258,29 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   // Wave 3: optional threshold-pair auto-labeling. Off by default —
   // opt in with `--auto-label-threshold` or `CHAT_ARCH_AUTO_LABEL=1`
   // in the environment (the viewer's RESCAN inherits the env-var path
-  // because /api/rescan passes process.env through). Spawns the
-  // top-level script rather than importing it because the script
-  // lives outside this package and is plain Node ESM.
+  // because /api/rescan passes process.env through). The script uses
+  // `claude -p` under the hood, so it inherits the user's Claude Code
+  // auth — no ANTHROPIC_API_KEY needed. If `claude` is not on PATH the
+  // child reports the spawn failure and we soft-fail.
   const autoLabel =
     values['auto-label-threshold'] === true ||
     process.env.CHAT_ARCH_AUTO_LABEL === '1';
   if (autoLabel) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      logger.warn(
-        'auto-label-threshold requested but ANTHROPIC_API_KEY is not set — skipping.',
-      );
-    } else {
-      const scriptPath = path.join(findRepoRoot(), 'scripts', 'auto-label-threshold.mjs');
-      const alStart = Date.now();
-      try {
-        const code = await runChild('node', [scriptPath, '--data-dir', outDir]);
-        if (code === 0) {
-          logger.info(
-            `auto-label-threshold complete in ${Date.now() - alStart} ms`,
-          );
-        } else {
-          logger.warn(
-            `auto-label-threshold exited ${code} after ${Date.now() - alStart} ms (continuing)`,
-          );
-        }
-      } catch (err) {
+    const scriptPath = path.join(findRepoRoot(), 'scripts', 'auto-label-threshold.mjs');
+    const alStart = Date.now();
+    try {
+      const code = await runChild('node', [scriptPath, '--data-dir', outDir]);
+      if (code === 0) {
+        logger.info(`auto-label-threshold complete in ${Date.now() - alStart} ms`);
+      } else {
         logger.warn(
-          `auto-label-threshold soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+          `auto-label-threshold exited ${code} after ${Date.now() - alStart} ms (continuing)`,
         );
       }
+    } catch (err) {
+      logger.warn(
+        `auto-label-threshold soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
