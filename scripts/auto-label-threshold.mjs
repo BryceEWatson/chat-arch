@@ -66,6 +66,7 @@ import {
   saveLabels,
   truncate,
 } from './label.mjs';
+import { sampleByCurveUncertainty } from '@chat-arch/analysis';
 
 // ---------- ANSI ----------
 const ANSI = {
@@ -178,6 +179,12 @@ function parseArgs(argv) {
     judges: ['haiku', 'sonnet'],
     dataDir: null,
     maxRetries: 3,
+    // `stratified` (default): even coverage of cosine buckets, good
+    // for initial calibration. `active`: pick the n unlabeled pairs
+    // whose calibrated P is closest to 0.5, refines the existing
+    // curve faster per label. Active falls back to stratified when
+    // no calibration.json exists yet.
+    strategy: 'stratified',
     // 60s per claude -p invocation. CLI cold-start + a Haiku call
     // typically finishes in 5-10s; 60s leaves headroom for the
     // first-spawn warm-up on a fresh shell and the occasional slow
@@ -198,7 +205,14 @@ function parseArgs(argv) {
     else if (a === '--data-dir') out.dataDir = argv[++i];
     else if (a === '--max-retries') out.maxRetries = Math.max(0, Math.floor(Number(argv[++i])));
     else if (a === '--timeout-ms') out.timeoutMs = Math.max(1000, Math.floor(Number(argv[++i])));
-    else if (a === '--help' || a === '-h') {
+    else if (a === '--strategy') {
+      const v = argv[++i];
+      if (v !== 'stratified' && v !== 'active') {
+        console.error(c('red', `--strategy must be 'stratified' or 'active', got '${v}'`));
+        process.exit(2);
+      }
+      out.strategy = v;
+    } else if (a === '--help' || a === '-h') {
       usage();
       process.exit(0);
     } else {
@@ -228,6 +242,8 @@ function usage() {
       `  --dry-run                show the plan, don't invoke claude -p\n` +
       `  --data-dir <path>        override the chat-arch-data root\n` +
       `  --max-retries <N>        per-call retry budget on failure (default 3)\n` +
+      `  --strategy <s>           sampling strategy: stratified (default) | active\n` +
+      `                           (active = pick most-uncertain pairs vs current calibration.json)\n` +
       `  --timeout-ms <N>         per-spawn wall-clock timeout (default 60000)\n`,
   );
 }
@@ -516,33 +532,67 @@ async function main() {
   const store = await loadLabels(labelsPath);
   const labeled = new Set(Object.keys(store.labels));
   const unlabeled = allPairs.filter((p) => !labeled.has(p.id));
-  const stats = computeBucketStats(store.labels, opts.band, opts.strata, opts.n);
-  const sampled = stratifiedSampleDeficit(
-    unlabeled,
-    stats,
-    opts.band,
-    opts.strata,
-    'seed-threshold',
-  );
 
-  // Bucket-level preview, same shape the TUI prints.
-  const bounds = computeBucketBounds(opts.band, opts.strata);
-  console.log(c('bold', `\nDeficit per bucket (target: ${Math.floor(opts.n / opts.strata)} per bucket):`));
-  for (let i = 0; i < bounds.length; i++) {
-    const s = stats[i];
-    const sampledInBucket = sampled.filter(
-      (p) => bucketIndexFor(p.cos, opts.band, opts.strata) === i,
-    ).length;
-    const close = bounds[i].isLast ? ']' : ')';
-    const color = s.deficit > 0 ? 'yellow' : 'dim';
-    let line = `  [${bounds[i].lo.toFixed(4)}, ${bounds[i].hi.toFixed(4)}${close}: ${s.alreadyLabeled}/${s.target} labeled`;
-    if (s.deficit > 0) line += `, ${s.deficit} more needed → ${sampledInBucket} auto-sample`;
-    console.log(c(color, line));
+  // Choose a strategy. Active falls back to stratified when no
+  // calibration.json exists yet — the curve is needed to score
+  // uncertainty. After the first stratified pass writes
+  // calibration.json, subsequent passes can use active.
+  const calibration = await loadCalibration(dataDir);
+  const effectiveStrategy =
+    opts.strategy === 'active' && calibration !== null ? 'active' : 'stratified';
+  if (opts.strategy === 'active' && calibration === null) {
+    console.log(
+      c('yellow',
+        `--strategy active requested but no calibration.json found — falling back to stratified.\n` +
+        `  (Run a stratified pass + fit-calibration first, then re-run with --strategy active.)`),
+    );
+  }
+
+  let sampled;
+  if (effectiveStrategy === 'active') {
+    sampled = sampleByCurveUncertainty(unlabeled, calibration, opts.n);
+    // Active-pass preview: histogram by bucket so the user can see
+    // where the curve is most uncertain.
+    const bounds = computeBucketBounds(opts.band, opts.strata);
+    console.log(
+      c('bold', `\nActive sample of ${sampled.length} most-uncertain pairs (current curve, ${calibration.method}):`),
+    );
+    for (let i = 0; i < bounds.length; i++) {
+      const sampledInBucket = sampled.filter(
+        (p) => bucketIndexFor(p.cos, opts.band, opts.strata) === i,
+      ).length;
+      const close = bounds[i].isLast ? ']' : ')';
+      console.log(
+        c('dim', `  [${bounds[i].lo.toFixed(4)}, ${bounds[i].hi.toFixed(4)}${close}: ${sampledInBucket} selected`),
+      );
+    }
+  } else {
+    const stats = computeBucketStats(store.labels, opts.band, opts.strata, opts.n);
+    sampled = stratifiedSampleDeficit(
+      unlabeled,
+      stats,
+      opts.band,
+      opts.strata,
+      'seed-threshold',
+    );
+    const bounds = computeBucketBounds(opts.band, opts.strata);
+    console.log(c('bold', `\nDeficit per bucket (target: ${Math.floor(opts.n / opts.strata)} per bucket):`));
+    for (let i = 0; i < bounds.length; i++) {
+      const s = stats[i];
+      const sampledInBucket = sampled.filter(
+        (p) => bucketIndexFor(p.cos, opts.band, opts.strata) === i,
+      ).length;
+      const close = bounds[i].isLast ? ']' : ')';
+      const color = s.deficit > 0 ? 'yellow' : 'dim';
+      let line = `  [${bounds[i].lo.toFixed(4)}, ${bounds[i].hi.toFixed(4)}${close}: ${s.alreadyLabeled}/${s.target} labeled`;
+      if (s.deficit > 0) line += `, ${s.deficit} more needed → ${sampledInBucket} auto-sample`;
+      console.log(c(color, line));
+    }
   }
   console.log();
 
   if (sampled.length === 0) {
-    console.log(c('green', 'All bucket targets met. Nothing to do.'));
+    console.log(c('green', 'Nothing to sample. Either all bucket targets are met (stratified) or no unlabeled pairs remain (active).'));
     return;
   }
 
@@ -668,6 +718,29 @@ async function main() {
     console.log(
       c('yellow', `\nNext: run \`pnpm label:threshold\` to adjudicate the ${disagreed} disagreement(s) interactively.`),
     );
+  }
+}
+
+// Read calibration.json. Returns the parsed curve or null if absent
+// or shape-invalid — the active path falls back to stratified in
+// that case (the curve is required to score uncertainty).
+async function loadCalibration(dataDir) {
+  const p = path.join(dataDir, 'calibration.json');
+  try {
+    const raw = await readFile(p, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'schemaVersion' in parsed &&
+      'method' in parsed &&
+      'knots' in parsed
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
