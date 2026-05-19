@@ -79,10 +79,10 @@ interface LabelStore {
   lastUpdated: number | null;
 }
 
-// In-process cache keyed by `${band}|${n}` so repeat init calls during
-// the same Node session don't rerun the O(N²) cosine scan. The cache
-// outlives one user's labeling session but rebuilds on dev-server
-// restart, which is fine for this workflow.
+// In-process cache for the *full* in-band pair set, keyed by the band
+// alone. Sampling (stratified or otherwise) is layered on top so cache
+// hits survive across different n/strata combos within one Node session.
+// Rebuilds on dev-server restart, which is fine for this workflow.
 const pairCache = new Map<string, Pair[]>();
 
 async function loadLabels(): Promise<{ store: LabelStore; path: string }> {
@@ -151,8 +151,8 @@ interface EmbeddingsMeta {
   entries: Array<{ sessionId: string; offset: number }>;
 }
 
-async function computePairs(band: [number, number], n: number): Promise<Pair[]> {
-  const key = `${band[0]},${band[1]}|${n}`;
+async function computeAllPairs(band: [number, number]): Promise<Pair[]> {
+  const key = `${band[0]},${band[1]}`;
   const cached = pairCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -188,7 +188,10 @@ async function computePairs(band: [number, number], n: number): Promise<Pair[]> 
       const a = vecs[i]!.v;
       const b = vecs[j]!.v;
       for (let k = 0; k < dim; k++) dot += a[k]! * b[k]!;
-      if (dot >= band[0] && dot < band[1]) {
+      // Inclusive at the top edge — cos=1.0 (perfect duplicates) and
+      // any pairs exactly on the band ceiling are part of the
+      // calibration surface, not noise to be dropped.
+      if (dot >= band[0] && dot <= band[1]) {
         const sa = byId.get(vecs[i]!.sessionId);
         const sb = byId.get(vecs[j]!.sessionId);
         all.push({
@@ -205,16 +208,78 @@ async function computePairs(band: [number, number], n: number): Promise<Pair[]> 
     }
   }
 
-  const sampled = sampleN(all, n, 'seed-threshold');
-  pairCache.set(key, sampled);
-  return sampled;
+  pairCache.set(key, all);
+  return all;
 }
 
 function parseBand(input: string | null): [number, number] {
-  if (!input) return [0.85, 0.97];
+  if (!input) return [0.85, 1.0];
   const [lo, hi] = input.split(',').map(Number);
-  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi) return [0.85, 0.97];
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi) return [0.85, 1.0];
   return [lo!, hi!];
+}
+
+export interface BucketBound {
+  lo: number;
+  hi: number;
+  isLast: boolean;
+}
+
+// Equal-width buckets over [band[0], band[1]]. With band [0.85, 1.0]
+// and strata 4 you get [0.85, 0.8875), [0.8875, 0.925),
+// [0.925, 0.9625), [0.9625, 1.0]. Top bucket is closed on the right.
+export function computeBucketBounds(
+  band: [number, number],
+  strata: number,
+): BucketBound[] {
+  const width = (band[1] - band[0]) / strata;
+  const out: BucketBound[] = [];
+  for (let i = 0; i < strata; i++) {
+    out.push({
+      lo: band[0] + i * width,
+      hi: band[0] + (i + 1) * width,
+      isLast: i === strata - 1,
+    });
+  }
+  return out;
+}
+
+export function bucketIndexFor(
+  cos: number,
+  band: [number, number],
+  strata: number,
+): number {
+  if (strata <= 1) return 0;
+  const width = (band[1] - band[0]) / strata;
+  const idx = Math.floor((cos - band[0]) / width);
+  return Math.max(0, Math.min(strata - 1, idx));
+}
+
+// Stratified sampling: target equal counts per cosine bucket, with the
+// remainder of (n mod strata) routed to the lowest-index buckets.
+// Buckets that don't have enough pairs simply contribute what they
+// can — the deficit is reported to the caller rather than silently
+// re-routed to neighbors, since the whole point of stratification is
+// to keep the label distribution interpretable.
+export function stratifiedSample(
+  pairs: Pair[],
+  n: number,
+  band: [number, number],
+  strata: number,
+  seed: string,
+): Pair[] {
+  if (strata <= 1) return sampleN(pairs, n, seed);
+  const base = Math.floor(n / strata);
+  const remainder = n - base * strata;
+  const buckets: Pair[][] = Array.from({ length: strata }, () => []);
+  for (const p of pairs) buckets[bucketIndexFor(p.cos, band, strata)]!.push(p);
+  const out: Pair[] = [];
+  for (let i = 0; i < strata; i++) {
+    const target = base + (i < remainder ? 1 : 0);
+    const want = Math.min(target, buckets[i]!.length);
+    out.push(...sampleN(buckets[i]!, want, `${seed}-bucket-${i}`));
+  }
+  return out;
 }
 
 // Wilson score 95% CI for a binomial proportion p̂ over n samples.
@@ -249,7 +314,7 @@ export interface SweepRow {
 
 export function computeSweep(
   labels: LabelStore['labels'],
-  band: [number, number] = [0.85, 0.97],
+  band: [number, number] = [0.85, 1.0],
 ): SweepRow[] {
   const values = Object.values(labels);
   if (values.length === 0) return [];
@@ -290,18 +355,37 @@ export const GET: APIRoute = async ({ request, url }) => {
   if (action === 'init') {
     const band = parseBand(url.searchParams.get('band'));
     const n = Number(url.searchParams.get('n') ?? '100');
+    const strataParam = Number(url.searchParams.get('strata') ?? '4');
+    const strata = Math.max(
+      1,
+      Number.isFinite(strataParam) ? Math.floor(strataParam) : 4,
+    );
     try {
-      const pairs = await computePairs(band, n);
+      const allPairs = await computeAllPairs(band);
+      const sampled = stratifiedSample(allPairs, n, band, strata, 'seed-threshold');
       const { store } = await loadLabels();
       const labeled = new Set(Object.keys(store.labels));
-      const unlabeled = pairs.filter((p) => !labeled.has(p.id));
+      const unlabeled = sampled.filter((p) => !labeled.has(p.id));
+      const bucketBounds = computeBucketBounds(band, strata);
+      const bucketCounts = bucketBounds.map((b, i) => ({
+        lo: b.lo,
+        hi: b.hi,
+        isLast: b.isLast,
+        sampled: sampled.filter(
+          (p) => bucketIndexFor(p.cos, band, strata) === i,
+        ).length,
+      }));
       return new Response(
         JSON.stringify({
           ok: true,
-          total: pairs.length,
-          labeledCount: pairs.length - unlabeled.length,
+          total: sampled.length,
+          labeledCount: sampled.length - unlabeled.length,
           pairs: unlabeled,
           completedAll: store.completed,
+          band,
+          strata,
+          buckets: bucketCounts,
+          poolSize: allPairs.length,
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
@@ -323,7 +407,7 @@ export const GET: APIRoute = async ({ request, url }) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        sweep: computeSweep(store.labels),
+        sweep: computeSweep(store.labels, [0.85, 1.0]),
         completed: store.completed,
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { computeSweep, wilsonCI } from '../../src/pages/api/calibrate.js';
+import {
+  bucketIndexFor,
+  computeBucketBounds,
+  computeSweep,
+  stratifiedSample,
+  wilsonCI,
+} from '../../src/pages/api/calibrate.js';
 
 describe('calibrate — Wilson 95% CI', () => {
   // Reference values come from the standard Wilson score interval —
@@ -35,6 +41,106 @@ describe('calibrate — Wilson 95% CI', () => {
 
   it('returns the no-information interval [0, 1] when n=0', () => {
     expect(wilsonCI(0.5, 0)).toEqual({ low: 0, high: 1 });
+  });
+});
+
+describe('calibrate — stratified bucket sampling', () => {
+  it('computeBucketBounds splits the band into equal-width buckets', () => {
+    const bounds = computeBucketBounds([0.85, 1.0], 4);
+    expect(bounds).toHaveLength(4);
+    expect(bounds[0]!.lo).toBeCloseTo(0.85, 5);
+    expect(bounds[0]!.hi).toBeCloseTo(0.8875, 5);
+    expect(bounds[1]!.hi).toBeCloseTo(0.925, 5);
+    expect(bounds[2]!.hi).toBeCloseTo(0.9625, 5);
+    expect(bounds[3]!.hi).toBeCloseTo(1.0, 5);
+    // Only the last bucket is closed on the right — the upper-edge
+    // pair (cos=1.0) must land in bucket N-1, not be lost.
+    expect(bounds[0]!.isLast).toBe(false);
+    expect(bounds[3]!.isLast).toBe(true);
+  });
+
+  it('bucketIndexFor places cos at boundaries deterministically', () => {
+    const band: [number, number] = [0.85, 1.0];
+    expect(bucketIndexFor(0.85, band, 4)).toBe(0);
+    expect(bucketIndexFor(0.88, band, 4)).toBe(0);
+    expect(bucketIndexFor(0.9, band, 4)).toBe(1);
+    expect(bucketIndexFor(0.95, band, 4)).toBe(2);
+    expect(bucketIndexFor(0.99, band, 4)).toBe(3);
+    expect(bucketIndexFor(1.0, band, 4)).toBe(3); // clamped to last bucket
+    expect(bucketIndexFor(0.5, band, 4)).toBe(0); // clamped below
+  });
+
+  it('stratifiedSample distributes the budget evenly across buckets', () => {
+    // 50 pairs per bucket (200 total) over band [0.85, 1.0], strata 4.
+    // Sampling 40 with even split → 10 per bucket.
+    const band: [number, number] = [0.85, 1.0];
+    const pairs: Array<{
+      id: string;
+      a: string;
+      b: string;
+      aTitle: string;
+      bTitle: string;
+      aPreview: string;
+      bPreview: string;
+      cos: number;
+    }> = [];
+    const bucketCenters = [0.87, 0.91, 0.94, 0.98];
+    for (let b = 0; b < 4; b++) {
+      for (let i = 0; i < 50; i++) {
+        pairs.push({
+          id: `b${b}-${i}`,
+          a: `a${b}-${i}`,
+          b: `b${b}-${i}`,
+          aTitle: '',
+          bTitle: '',
+          aPreview: '',
+          bPreview: '',
+          cos: bucketCenters[b]!,
+        });
+      }
+    }
+    const sampled = stratifiedSample(pairs, 40, band, 4, 'test-seed');
+    expect(sampled).toHaveLength(40);
+    const perBucket = [0, 0, 0, 0];
+    for (const p of sampled) perBucket[bucketIndexFor(p.cos, band, 4)]! += 1;
+    expect(perBucket).toEqual([10, 10, 10, 10]);
+  });
+
+  it('stratifiedSample contributes only what a deficit bucket has', () => {
+    // Bucket 3 (cos ≥ 0.9625) only has 2 pairs; target is 10. The
+    // bucket should yield 2, not steal from neighbors.
+    const band: [number, number] = [0.85, 1.0];
+    const pairs: Array<{
+      id: string;
+      a: string;
+      b: string;
+      aTitle: string;
+      bTitle: string;
+      aPreview: string;
+      bPreview: string;
+      cos: number;
+    }> = [];
+    const bucketCenters = [0.87, 0.91, 0.94, 0.98];
+    const bucketSupply = [50, 50, 50, 2];
+    for (let b = 0; b < 4; b++) {
+      for (let i = 0; i < bucketSupply[b]!; i++) {
+        pairs.push({
+          id: `b${b}-${i}`,
+          a: '',
+          b: '',
+          aTitle: '',
+          bTitle: '',
+          aPreview: '',
+          bPreview: '',
+          cos: bucketCenters[b]!,
+        });
+      }
+    }
+    const sampled = stratifiedSample(pairs, 40, band, 4, 'test-seed');
+    const perBucket = [0, 0, 0, 0];
+    for (const p of sampled) perBucket[bucketIndexFor(p.cos, band, 4)]! += 1;
+    expect(perBucket).toEqual([10, 10, 10, 2]);
+    expect(sampled).toHaveLength(32);
   });
 });
 

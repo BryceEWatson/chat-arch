@@ -58,11 +58,12 @@ const rule = () => c('gray', '─'.repeat(70));
 // ---------- CLI parsing ----------
 function parseArgs(argv) {
   const task = argv[2];
-  const out = { task, n: null, dataDir: null, band: null };
+  const out = { task, n: null, dataDir: null, band: null, strata: null };
   for (let i = 3; i < argv.length; i++) {
     if (argv[i] === '--n') out.n = Number(argv[++i]);
     else if (argv[i] === '--data-dir') out.dataDir = argv[++i];
     else if (argv[i] === '--band') out.band = argv[++i];
+    else if (argv[i] === '--strata') out.strata = Number(argv[++i]);
   }
   return out;
 }
@@ -72,7 +73,7 @@ function usage() {
     `Usage:\n` +
       `  node scripts/label.mjs corrections [--n 100] [--data-dir <path>]\n` +
       `  node scripts/label.mjs playbook    [--n 50]\n` +
-      `  node scripts/label.mjs threshold   [--n 100] [--band 0.85,0.97]\n`,
+      `  node scripts/label.mjs threshold   [--n 100] [--band 0.85,1.0] [--strata 4]\n`,
   );
   process.exit(2);
 }
@@ -412,7 +413,9 @@ async function taskThreshold(opts) {
   const n = opts.n ?? 100;
   const [bandLo, bandHi] = opts.band
     ? opts.band.split(',').map(Number)
-    : [0.85, 0.97];
+    : [0.85, 1.0];
+  const strata = Math.max(1, Math.floor(opts.strata ?? 4));
+  const bucketBounds = computeBucketBounds([bandLo, bandHi], strata);
 
   let meta;
   let bin;
@@ -456,7 +459,11 @@ async function taskThreshold(opts) {
       const a = vectors[i].v;
       const b = vectors[j].v;
       for (let k = 0; k < dim; k++) dot += a[k] * b[k];
-      if (dot >= bandLo && dot < bandHi) {
+      // Inclusive at the top edge so cos=1.0 (perfect duplicates) and
+      // the calibration band's terminal boundary are captured. Strict-
+      // less-than would silently drop those — and they're exactly the
+      // boilerplate/template false positives Task 2 is trying to surface.
+      if (dot >= bandLo && dot <= bandHi) {
         pairs.push({
           id: `${vectors[i].sessionId}::${vectors[j].sessionId}`,
           a: vectors[i].sessionId,
@@ -471,14 +478,23 @@ async function taskThreshold(opts) {
   const remaining = pairs.filter((p) => !store.labels[p.id]);
   if (remaining.length === 0) {
     console.log(c('green', `\nNo unlabeled pairs. ${store.completed} already labeled.\n`));
+    printThresholdSweep(store.labels);
     return;
   }
-  const sampled = sampleN(remaining, Math.min(n, remaining.length), 'seed-threshold');
+  const sampled = stratifiedSample(
+    remaining,
+    Math.min(n, remaining.length),
+    [bandLo, bandHi],
+    strata,
+    'seed-threshold',
+  );
 
   console.log(
-    c('bold', `\nLabeling ${sampled.length} pairs in cos[${bandLo}, ${bandHi}).`) +
-      ` Output: ${c('cyan', labelsPath)}\n`,
+    c('bold', `\nLabeling ${sampled.length} pairs in cos[${bandLo}, ${bandHi}), stratified into ${strata} buckets:`) +
+      ` Output: ${c('cyan', labelsPath)}`,
   );
+  printBucketLegend(bucketBounds, sampled);
+  console.log();
 
   let i = 0;
   while (i < sampled.length) {
@@ -578,6 +594,70 @@ function sampleN(arr, n, seedStr) {
   return copy.slice(0, n);
 }
 
+// Equal-width bucket bounds across [band[0], band[1]]. With band
+// [0.85, 1.0] and strata 4 you get [0.85, 0.8875), [0.8875, 0.925),
+// [0.925, 0.9625), [0.9625, 1.0]. The last bucket is closed on the
+// right so cos = 1.0 (identical sessions) is still included.
+export function computeBucketBounds(band, strata) {
+  const width = (band[1] - band[0]) / strata;
+  const out = [];
+  for (let i = 0; i < strata; i++) {
+    out.push({
+      lo: band[0] + i * width,
+      hi: band[0] + (i + 1) * width,
+      isLast: i === strata - 1,
+    });
+  }
+  return out;
+}
+
+export function bucketIndexFor(cos, band, strata) {
+  if (strata <= 1) return 0;
+  const width = (band[1] - band[0]) / strata;
+  const idx = Math.floor((cos - band[0]) / width);
+  return Math.max(0, Math.min(strata - 1, idx));
+}
+
+// Stratified-by-cosine-bucket sampling. Targets equal counts per
+// bucket (floor(n/strata), with the remainder distributed to the
+// lowest-index buckets). Falls back to whatever each bucket can
+// supply when it has fewer pairs than the target — the deficit is
+// reported by the caller, not silently re-routed to neighboring
+// buckets, so the label distribution stays interpretable.
+export function stratifiedSample(pairs, n, band, strata, seed) {
+  if (strata <= 1) return sampleN(pairs, n, seed);
+  const base = Math.floor(n / strata);
+  const remainder = n - base * strata;
+  const buckets = Array.from({ length: strata }, () => []);
+  for (const p of pairs) {
+    buckets[bucketIndexFor(p.cos, band, strata)].push(p);
+  }
+  const out = [];
+  for (let i = 0; i < strata; i++) {
+    const target = base + (i < remainder ? 1 : 0);
+    const want = Math.min(target, buckets[i].length);
+    out.push(...sampleN(buckets[i], want, `${seed}-bucket-${i}`));
+  }
+  return out;
+}
+
+function printBucketLegend(bounds, sampled) {
+  // Show "[lo, hi): N sampled" per bucket so the labeler can see at
+  // a glance that they're working a representative mix rather than
+  // an uneven one (e.g. all the > 0.97 bucket would skew P upward).
+  console.log(c('dim', '  buckets:'));
+  for (let i = 0; i < bounds.length; i++) {
+    const b = bounds[i];
+    const inBucket = sampled.filter(
+      (p) => p.cos >= b.lo && (b.isLast ? p.cos <= b.hi : p.cos < b.hi),
+    ).length;
+    const close = b.isLast ? ']' : ')';
+    console.log(
+      c('dim', `    [${b.lo.toFixed(4)}, ${b.hi.toFixed(4)}${close}: ${inBucket} sampled`),
+    );
+  }
+}
+
 function printKeyLegend(task) {
   // Brief intro printed once before the loop starts.
   if (task === 'corrections') {
@@ -638,7 +718,7 @@ function printThresholdSweep(labels) {
   // are too noisy to interpret without a bound (Park et al. 2026 on
   // cosine anisotropy in mxbai-embed-large made this acute).
   console.log(c('bold', '\nPrecision sweep (threshold → precision [95% CI] · recall):'));
-  for (let t = 0.85; t <= 0.97; t += 0.01) {
+  for (let t = 0.85; t <= 1.0 + 1e-9; t += 0.01) {
     const above = sorted.filter((v) => v.cos >= t);
     if (above.length === 0) continue;
     const tp = above.filter((v) => v.nearDup === true).length;

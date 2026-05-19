@@ -9,10 +9,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       <h1>THRESHOLD CALIBRATION</h1>
       <p class="calibrate__sub">
         Label session pairs in the cos[<span id="band-lo">0.85</span>,
-        <span id="band-hi">0.97</span>) band as near-duplicate or not.
-        Labels save to the same file as <code>pnpm label:threshold</code> —
-        you can switch tools mid-session.
+        <span id="band-hi">1.00</span>] band as near-duplicate or not.
+        Pairs are sampled stratified by cosine bucket so the whole
+        band — including the cos &gt; 0.97 boilerplate zone — gets
+        even coverage. Labels save to the same file as
+        <code>pnpm label:threshold</code> — switch tools mid-session.
       </p>
+      <ul id="bucket-legend" class="calibrate__buckets" hidden></ul>
     </header>
 
     <section id="loading" class="calibrate__state">
@@ -133,6 +136,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   .calibrate__hint { font-size: 0.85rem; color: var(--lcars-dim, #888); margin-top: 0.5rem; }
   .calibrate__dim { opacity: 0.6; }
 
+  .calibrate__buckets { list-style: none; padding: 0; margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--lcars-dim, #888); }
+  .calibrate__buckets li { padding: 0.2rem 0.5rem; background: rgba(255,255,255,0.04); border-radius: 3px; }
+  .calibrate__buckets li.deficit { color: #d8a; }
+
   .calibrate__sweep-table { border-collapse: collapse; margin-top: 1rem; }
   .calibrate__sweep-table th, .calibrate__sweep-table td { padding: 0.4rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; font-family: ui-monospace, monospace; font-size: 0.9rem; }
   .calibrate__sweep-table th { color: var(--lcars-dim, #888); font-weight: normal; }
@@ -176,10 +183,17 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     }
   }
 
+  interface Bucket {
+    lo: number;
+    hi: number;
+    isLast: boolean;
+    sampled: number;
+  }
+
   async function init(): Promise<void> {
     showOnly('loading');
     try {
-      const res = await fetch('/api/calibrate?action=init&n=100');
+      const res = await fetch('/api/calibrate?action=init&n=100&strata=4');
       const data = (await res.json()) as {
         ok: boolean;
         error?: string;
@@ -187,6 +201,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         pairs?: Pair[];
         labeledCount?: number;
         total?: number;
+        band?: [number, number];
+        strata?: number;
+        buckets?: Bucket[];
+        poolSize?: number;
       };
       if (!data.ok || !Array.isArray(data.pairs)) {
         $('error-msg').textContent = (data.error ?? 'unknown') + (data.hint ? '\n\n' + data.hint : '');
@@ -196,6 +214,11 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       state.pairs = data.pairs;
       state.labeledAtStart = data.labeledCount ?? 0;
       state.total = data.total ?? data.pairs.length;
+      if (Array.isArray(data.band)) {
+        $('band-lo').textContent = data.band[0].toFixed(2);
+        $('band-hi').textContent = data.band[1].toFixed(2);
+      }
+      renderBuckets(data.buckets ?? [], data.strata ?? 4);
       if (state.pairs.length === 0) {
         $('done-count').textContent = String(state.total);
         showOnly('empty');
@@ -208,6 +231,27 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       $('error-msg').textContent = String(err);
       showOnly('error');
     }
+  }
+
+  function renderBuckets(buckets: Bucket[], strata: number): void {
+    const legend = $('bucket-legend') as HTMLUListElement;
+    legend.innerHTML = '';
+    if (buckets.length === 0) {
+      legend.hidden = true;
+      return;
+    }
+    // Even-split target — surface deficits visually so the user knows
+    // when a bucket is starving the sample (typical of cos > 0.97 on
+    // small corpora; some buckets just don't have many pairs).
+    const target = Math.floor(100 / strata);
+    for (const b of buckets) {
+      const li = document.createElement('li');
+      const close = b.isLast ? ']' : ')';
+      li.textContent = `[${b.lo.toFixed(4)}, ${b.hi.toFixed(4)}${close}: ${b.sampled} sampled`;
+      if (b.sampled < target) li.classList.add('deficit');
+      legend.appendChild(li);
+    }
+    legend.hidden = false;
   }
 
   function render(): void {
