@@ -59,7 +59,33 @@ import type {
 } from '@chat-arch/schema';
 import { cosineSimilarityNormalized } from './classifyByEmbedding.js';
 
-export const DEFAULT_SEMANTIC_DUP_THRESHOLD = 0.92;
+/**
+ * Cosine threshold above which two sessions are considered near-
+ * duplicates. **Calibrated against the user's actual corpus** via the
+ * /calibrate page (2026-05): 100 random pairs in [0.85, 0.97) hand-
+ * labeled "near-dup / not", producing the precision/recall sweep:
+ *
+ *   threshold  precision  recall  n     verdict
+ *   0.92       0.86       0.77    58    (literature default, too loose)
+ *   0.93       0.87       0.74    55
+ *   0.94       0.90       0.57    41    ← picked: precision-leaning
+ *   0.95       0.88       0.34    25    (sample too small to trust)
+ *   0.96       0.93       0.20    14    (sample too small to trust)
+ *
+ * 0.94 trades ~25% of true-dup recall for ~30% fewer false positives
+ * vs the prior 0.92. Picked over 0.93 because the "duplicates" view
+ * erodes user trust faster on false hits than on missed ones — when
+ * someone sees two sessions clustered, they expect those two sessions
+ * to be near-identical, not just topically similar.
+ *
+ * Precision never crosses 0.95 in this band on this embedder
+ * (mxbai-embed-large at 768d); the precision plateau between 0.87 and
+ * 0.93 suggests the embedder doesn't cleanly separate "near-duplicate"
+ * from "topically very similar" at any sharp cutoff. The next
+ * calibration pass should extend the band above 0.97 to see whether
+ * the very-high-cos region is reliably ≥0.95 precision.
+ */
+export const DEFAULT_SEMANTIC_DUP_THRESHOLD = 0.94;
 
 export type SemanticDupLinkage = 'single' | 'complete';
 

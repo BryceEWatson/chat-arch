@@ -13,7 +13,11 @@ describe('buildSemanticDuplicates', () => {
       { sessionId: 'c', vector: vec(0, 0, 1) },
     ]);
     expect(r.clusters).toEqual([]);
-    expect(r.threshold).toBe(0.92);
+    // Default threshold is 0.94 (calibrated against the user's actual
+    // corpus — see duplicatesSemantic.ts docstring). The other
+    // threshold-specific tests pass explicit thresholds, so this is
+    // the only place the literal default appears.
+    expect(r.threshold).toBe(0.94);
   });
 
   it('clusters identical vectors into one component', () => {
