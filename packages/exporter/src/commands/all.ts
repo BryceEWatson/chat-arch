@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
+import { spawn } from 'node:child_process';
 import type { UnifiedSessionEntry } from '@chat-arch/schema';
 import { runCoworkExport } from '../sources/cowork.js';
 import { runCliExport } from '../sources/cli.js';
@@ -41,6 +42,7 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
       out: { type: 'string', short: 'o' },
       zip: { type: 'string' },
       'no-cloud': { type: 'boolean' },
+      'auto-label-threshold': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: false,
@@ -48,16 +50,22 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
 
   if (values.help) {
     logger.info(
-      'chat-arch all [--zip <path>] [--no-cloud] [--out <dir>]\n\n' +
+      'chat-arch all [--zip <path>] [--no-cloud] [--auto-label-threshold] [--out <dir>]\n\n' +
         '  Run cowork + cli + cloud phases sequentially and merge their output\n' +
         '  into a single unified manifest.json.\n\n' +
-        '  --zip            Cloud-export ZIP path (default: latest match in ~/Downloads).\n' +
-        '  --no-cloud       Skip the cloud phase entirely; keep any previously-written\n' +
-        '                   cloud-manifest.json in the merge. Used by the viewer\n' +
-        '                   "RESCAN" button — cloud data is only refreshed when the\n' +
-        '                   user uploads a ZIP, not as part of rescanning local disks.\n' +
-        '  --out, -o        Output directory\n' +
-        '                   (default: <repo-root>/apps/standalone/public/chat-arch-data).\n',
+        '  --zip                    Cloud-export ZIP path (default: latest match in ~/Downloads).\n' +
+        '  --no-cloud               Skip the cloud phase entirely; keep any previously-written\n' +
+        '                           cloud-manifest.json in the merge. Used by the viewer\n' +
+        '                           "RESCAN" button — cloud data is only refreshed when the\n' +
+        '                           user uploads a ZIP, not as part of rescanning local disks.\n' +
+        '  --auto-label-threshold   After semantic analysis, run scripts/auto-label-threshold.mjs\n' +
+        '                           to fill any deficit in chat-arch-data/labels/threshold-pairs.json\n' +
+        '                           using dual-judge Claude API calls. Requires ANTHROPIC_API_KEY.\n' +
+        '                           Off by default. Also enabled by CHAT_ARCH_AUTO_LABEL=1\n' +
+        '                           (which the viewer\'s "RESCAN" inherits for free since it\n' +
+        '                           passes process.env through). Cost: ~$0.30 / 100 new pairs.\n' +
+        '  --out, -o                Output directory\n' +
+        '                           (default: <repo-root>/apps/standalone/public/chat-arch-data).\n',
     );
     return 0;
   }
@@ -247,5 +255,57 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
     );
   }
 
+  // Wave 3: optional threshold-pair auto-labeling. Off by default —
+  // opt in with `--auto-label-threshold` or `CHAT_ARCH_AUTO_LABEL=1`
+  // in the environment (the viewer's RESCAN inherits the env-var path
+  // because /api/rescan passes process.env through). Spawns the
+  // top-level script rather than importing it because the script
+  // lives outside this package and is plain Node ESM.
+  const autoLabel =
+    values['auto-label-threshold'] === true ||
+    process.env.CHAT_ARCH_AUTO_LABEL === '1';
+  if (autoLabel) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      logger.warn(
+        'auto-label-threshold requested but ANTHROPIC_API_KEY is not set — skipping.',
+      );
+    } else {
+      const scriptPath = path.join(findRepoRoot(), 'scripts', 'auto-label-threshold.mjs');
+      const alStart = Date.now();
+      try {
+        const code = await runChild('node', [scriptPath, '--data-dir', outDir]);
+        if (code === 0) {
+          logger.info(
+            `auto-label-threshold complete in ${Date.now() - alStart} ms`,
+          );
+        } else {
+          logger.warn(
+            `auto-label-threshold exited ${code} after ${Date.now() - alStart} ms (continuing)`,
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          `auto-label-threshold soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
   return 0;
+}
+
+// Streams the child's stdout/stderr through this process so the user
+// sees per-pair progress live (the viewer's RESCAN already pipes the
+// exporter's stdio to its NDJSON event stream, so this also surfaces
+// in the web UI). Resolves with the exit code.
+function runChild(cmd: string, args: readonly string[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      stdio: 'inherit',
+      env: process.env,
+      shell: process.platform === 'win32',
+    });
+    child.on('error', (err) => reject(err));
+    child.on('close', (code) => resolve(code ?? 1));
+  });
 }
