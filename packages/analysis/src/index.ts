@@ -215,6 +215,7 @@ export {
   fitCalibration,
   fitIsotonic,
   fitPlatt,
+  sampleByCurveUncertainty,
   type CalibrationCurve,
   type CalibrationKnot,
   type IsotonicCurve,

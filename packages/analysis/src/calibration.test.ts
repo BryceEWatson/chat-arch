@@ -8,6 +8,7 @@ import {
   fitCalibration,
   fitIsotonic,
   fitPlatt,
+  sampleByCurveUncertainty,
   type LabelPoint,
 } from './calibration.js';
 
@@ -353,5 +354,65 @@ describe('audit-corrected default constants', () => {
 
   it('ISOTONIC_MIN_LABELS is 500 — Platt below, isotonic above', () => {
     expect(ISOTONIC_MIN_LABELS).toBe(500);
+  });
+});
+
+describe('sampleByCurveUncertainty — active sampling helper', () => {
+  // Construct a Platt curve centered at cos=0.92 (P=0.5 at the
+  // sigmoid center). Pairs near cos=0.92 should be most-uncertain;
+  // pairs near the band ends should be least.
+  const curve = {
+    schemaVersion: 1 as const,
+    method: 'platt' as const,
+    calibratedAt: 0,
+    labelCount: 60,
+    band: [0.85, 1.0] as [number, number],
+    a: -50,
+    b: 46,
+    knots: [],
+  };
+
+  it('returns pairs closest to P=0.5 first', () => {
+    const pairs = [
+      { id: 'edge-low', cos: 0.86 }, // P ≈ 0
+      { id: 'mid', cos: 0.92 }, // P ≈ 0.5 — most uncertain
+      { id: 'edge-high', cos: 0.99 }, // P ≈ 1
+    ];
+    const top = sampleByCurveUncertainty(pairs, curve, 1);
+    expect(top).toHaveLength(1);
+    expect(top[0]!.id).toBe('mid');
+  });
+
+  it('returns empty array on n=0 or empty pool', () => {
+    expect(sampleByCurveUncertainty([{ cos: 0.9 }], curve, 0)).toEqual([]);
+    expect(sampleByCurveUncertainty([], curve, 5)).toEqual([]);
+  });
+
+  it('returns all pairs when n exceeds pool size', () => {
+    const pairs = [{ cos: 0.86 }, { cos: 0.92 }, { cos: 0.99 }];
+    expect(sampleByCurveUncertainty(pairs, curve, 10)).toHaveLength(3);
+  });
+
+  it('is generic over pair shape (preserves extra fields)', () => {
+    const pairs = [
+      { cos: 0.86, payload: 'a' },
+      { cos: 0.92, payload: 'b' },
+      { cos: 0.99, payload: 'c' },
+    ];
+    const top = sampleByCurveUncertainty(pairs, curve, 2);
+    expect(top[0]!.payload).toBe('b'); // closest to P=0.5
+    expect(top.every((p) => typeof p.payload === 'string')).toBe(true);
+  });
+
+  it('orders by decreasing uncertainty (P=0.5 first, P=0 or 1 last)', () => {
+    const pairs = Array.from({ length: 30 }, (_, i) => ({
+      cos: 0.85 + (i / 29) * 0.15,
+    }));
+    const all = sampleByCurveUncertainty(pairs, curve, pairs.length);
+    // Top entry is closest to P=0.5; bottom is furthest.
+    const topU = 1 - Math.abs(evaluateCalibration(curve, all[0]!.cos) - 0.5) * 2;
+    const botU =
+      1 - Math.abs(evaluateCalibration(curve, all[all.length - 1]!.cos) - 0.5) * 2;
+    expect(topU).toBeGreaterThanOrEqual(botU);
   });
 });

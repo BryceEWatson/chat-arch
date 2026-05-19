@@ -408,3 +408,36 @@ export function fitCalibration({
     knots,
   };
 }
+
+/**
+ * Active-sampling helper for the next labeling pass.
+ *
+ * Given a pool of unlabeled pairs and the current calibration curve,
+ * return the `n` pairs whose calibrated P is closest to 0.5 — i.e.
+ * where the model is least certain. Labeling those tightens the fit
+ * faster than another stratified-random pass, which spends label
+ * budget on pairs whose verdict is already obvious under the curve.
+ *
+ * `uncertainty = 1 - |p - 0.5| * 2`, in [0, 1], peaks at p = 0.5.
+ *
+ * Generic over pair shape — anything with a `cos: number` works.
+ *
+ * Caveat (see research/calibration-tier3-design.md §1): active samples
+ * concentrate near the decision boundary, so they are NOT a
+ * representative sample of in-band pairs. A precision sweep computed
+ * over actively-sampled labels will be biased. Either maintain a
+ * separate stratified set for sweep reporting, or annotate.
+ */
+export function sampleByCurveUncertainty<T extends { cos: number }>(
+  pairs: readonly T[],
+  curve: CalibrationCurve,
+  n: number,
+): T[] {
+  if (n <= 0 || pairs.length === 0) return [];
+  const scored = pairs.map((p) => ({
+    pair: p,
+    uncertainty: 1 - Math.abs(evaluateCalibration(curve, p.cos) - 0.5) * 2,
+  }));
+  scored.sort((a, b) => b.uncertainty - a.uncertainty);
+  return scored.slice(0, n).map((s) => s.pair);
+}
