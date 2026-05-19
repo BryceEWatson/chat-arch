@@ -37,6 +37,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 // ---------- ANSI ----------
 const ANSI = {
@@ -402,37 +403,18 @@ async function taskPlaybook(opts) {
   console.log(c('green', `\nSaved ${store.completed} labels to ${labelsPath}`));
 }
 
-// ---------- Task: threshold pairs ----------
-async function taskThreshold(opts) {
-  const dataDir =
-    opts.dataDir ?? path.join('apps', 'standalone', 'public', 'chat-arch-data');
+// Pair-pool scanner — shared with scripts/auto-label-threshold.mjs.
+// Reads the embeddings sidecar + manifest, computes all in-band pairs,
+// and returns them with the session metadata needed for display.
+export async function scanInBandPairs({ dataDir, band }) {
   const metaPath = path.join(dataDir, 'analysis', 'embeddings.meta.json');
   const binPath = path.join(dataDir, 'analysis', 'embeddings.bin');
   const manifestPath = path.join(dataDir, 'manifest.json');
-  const labelsPath = path.join(dataDir, 'labels', 'threshold-pairs.json');
-  const n = opts.n ?? 100;
-  const [bandLo, bandHi] = opts.band
-    ? opts.band.split(',').map(Number)
-    : [0.85, 1.0];
-  const strata = Math.max(1, Math.floor(opts.strata ?? 4));
-  const bucketBounds = computeBucketBounds([bandLo, bandHi], strata);
-
-  let meta;
-  let bin;
-  try {
-    meta = JSON.parse(await readFile(metaPath, 'utf8'));
-    bin = await readFile(binPath);
-  } catch (err) {
-    console.error(c('red', `\nCould not read embeddings: ${err.message}`));
-    console.error(
-      c('dim', 'Run `pnpm exporter run start` with Ollama running first.'),
-    );
-    process.exit(1);
-  }
+  const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+  const bin = await readFile(binPath);
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const sessionsById = new Map(manifest.sessions.map((s) => [s.id, s]));
 
-  // Read vectors.
   const dim = meta.dimensions;
   const stride = dim * 4;
   const vectors = [];
@@ -440,7 +422,6 @@ async function taskThreshold(opts) {
     if (entry.offset + stride > bin.length) continue;
     const v = new Float32Array(dim);
     for (let i = 0; i < dim; i++) v[i] = bin.readFloatLE(entry.offset + i * 4);
-    // L2-normalize
     let norm = 0;
     for (let i = 0; i < dim; i++) norm += v[i] * v[i];
     norm = Math.sqrt(norm);
@@ -448,10 +429,7 @@ async function taskThreshold(opts) {
     vectors.push({ sessionId: entry.sessionId, v });
   }
 
-  console.log(c('dim', `Scanning ${vectors.length} embeddings for pairs in [${bandLo}, ${bandHi}]...`));
-
-  // Find pairs in band. O(N²) but only at sample time; user's corpus
-  // is ~1k so this is fine.
+  const [bandLo, bandHi] = band;
   const pairs = [];
   for (let i = 0; i < vectors.length; i++) {
     for (let j = i + 1; j < vectors.length; j++) {
@@ -459,10 +437,9 @@ async function taskThreshold(opts) {
       const a = vectors[i].v;
       const b = vectors[j].v;
       for (let k = 0; k < dim; k++) dot += a[k] * b[k];
-      // Inclusive at the top edge so cos=1.0 (perfect duplicates) and
-      // the calibration band's terminal boundary are captured. Strict-
-      // less-than would silently drop those — and they're exactly the
-      // boilerplate/template false positives Task 2 is trying to surface.
+      // Inclusive at the top edge so cos=1.0 perfect duplicates are
+      // captured. Strict-less-than would drop the boilerplate/template
+      // false positives the > 0.97 calibration zone is meant to surface.
       if (dot >= bandLo && dot <= bandHi) {
         pairs.push({
           id: `${vectors[i].sessionId}::${vectors[j].sessionId}`,
@@ -473,6 +450,35 @@ async function taskThreshold(opts) {
       }
     }
   }
+  return { pairs, sessionsById, vectorCount: vectors.length };
+}
+
+// ---------- Task: threshold pairs ----------
+async function taskThreshold(opts) {
+  const dataDir =
+    opts.dataDir ?? path.join('apps', 'standalone', 'public', 'chat-arch-data');
+  const labelsPath = path.join(dataDir, 'labels', 'threshold-pairs.json');
+  const n = opts.n ?? 100;
+  const [bandLo, bandHi] = opts.band
+    ? opts.band.split(',').map(Number)
+    : [0.85, 1.0];
+  const strata = Math.max(1, Math.floor(opts.strata ?? 4));
+  const bucketBounds = computeBucketBounds([bandLo, bandHi], strata);
+
+  let scan;
+  try {
+    scan = await scanInBandPairs({ dataDir, band: [bandLo, bandHi] });
+  } catch (err) {
+    console.error(c('red', `\nCould not read embeddings: ${err.message}`));
+    console.error(
+      c('dim', 'Run `pnpm exporter run start` with Ollama running first.'),
+    );
+    process.exit(1);
+  }
+  const { pairs, sessionsById, vectorCount } = scan;
+  console.log(
+    c('dim', `Scanned ${vectorCount} embeddings; ${pairs.length} pairs in [${bandLo}, ${bandHi}].`),
+  );
 
   const store = await loadLabels(labelsPath);
   const remaining = pairs.filter((p) => !store.labels[p.id]);
@@ -802,8 +808,20 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(c('red', `\nlabeler crashed: ${err.message}`));
-  console.error(c('dim', err.stack));
-  process.exit(1);
-});
+// Only auto-run when invoked as a script. Importing this file from
+// scripts/auto-label-threshold.mjs (or a future caller) reuses the
+// helpers above without firing main().
+const invokedAsScript =
+  process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (invokedAsScript) {
+  main().catch((err) => {
+    console.error(c('red', `\nlabeler crashed: ${err.message}`));
+    console.error(c('dim', err.stack));
+    process.exit(1);
+  });
+}
+
+// Public re-exports for sibling scripts. Kept explicit (not `export *`)
+// so the surface area of this module-pretending-to-be-a-CLI is obvious.
+export { loadLabels, saveLabels, truncate };
