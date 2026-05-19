@@ -208,13 +208,18 @@ export {
 
 export {
   DEFAULT_P_NEAR_DUP_TARGET,
+  ISOTONIC_MIN_LABELS,
   MIN_LABELS_FOR_FIT,
+  MIN_PER_CLASS_FOR_FIT,
   evaluateCalibration,
   fitCalibration,
   fitIsotonic,
+  fitPlatt,
   type CalibrationCurve,
   type CalibrationKnot,
+  type IsotonicCurve,
   type LabelPoint,
+  type PlattCurve,
 } from './calibration.js';
 
 export {

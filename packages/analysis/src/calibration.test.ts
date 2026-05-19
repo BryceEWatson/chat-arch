@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_P_NEAR_DUP_TARGET,
+  ISOTONIC_MIN_LABELS,
   MIN_LABELS_FOR_FIT,
+  MIN_PER_CLASS_FOR_FIT,
   evaluateCalibration,
   fitCalibration,
   fitIsotonic,
+  fitPlatt,
   type LabelPoint,
 } from './calibration.js';
 
@@ -173,9 +176,63 @@ describe('evaluateCalibration', () => {
   });
 });
 
-describe('fitCalibration', () => {
+describe('fitPlatt — Lin/Lin/Weng 2007 sigmoid', () => {
+  it('returns null on empty input', () => {
+    expect(fitPlatt([])).toBeNull();
+  });
+
+  it('returns null when all labels share a class (degenerate)', () => {
+    const allPos: LabelPoint[] = Array.from({ length: 30 }, (_, i) => ({
+      cos: 0.85 + i * 0.005,
+      nearDup: true,
+    }));
+    expect(fitPlatt(allPos)).toBeNull();
+  });
+
+  it('recovers a strongly-separating sigmoid (a < 0, large |a|)', () => {
+    // Perfectly separable: positives at cos≥0.95, negatives at cos<0.95.
+    // For an increasing-in-cos sigmoid we need a < 0 (so a*cos + b
+    // decreases as cos increases → P = 1/(1+exp(...)) increases).
+    const labels: LabelPoint[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      labels.push({ cos: 0.86 + i * 0.002, nearDup: false });
+    }
+    for (let i = 0; i < 30; i += 1) {
+      labels.push({ cos: 0.95 + i * 0.002, nearDup: true });
+    }
+    const params = fitPlatt(labels);
+    expect(params).not.toBeNull();
+    expect(params!.a).toBeLessThan(0);
+    // P at the separator midpoint should be ~0.5.
+    const fApB = params!.a * 0.93 + params!.b;
+    const pMid = 1 / (1 + Math.exp(fApB));
+    expect(pMid).toBeGreaterThan(0.3);
+    expect(pMid).toBeLessThan(0.7);
+  });
+
+  it('outputs probabilities that stay in [0, 1] across the band', () => {
+    const labels: LabelPoint[] = [];
+    for (let i = 0; i < 50; i += 1) {
+      // Noisy: not perfectly separable.
+      const cos = 0.85 + (i / 49) * 0.15;
+      const pTrue = (cos - 0.85) / 0.15; // linear in cos
+      labels.push({ cos, nearDup: Math.random() < pTrue });
+    }
+    const params = fitPlatt(labels);
+    if (params === null) return; // RNG could yield degenerate input
+    for (let c = 0.85; c <= 1.0; c += 0.01) {
+      const fApB = params.a * c + params.b;
+      const p = fApB >= 0
+        ? Math.exp(-fApB) / (1 + Math.exp(-fApB))
+        : 1 / (1 + Math.exp(fApB));
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('fitCalibration — auto-selects Platt at small n, isotonic at large n', () => {
   function mkLabels(n: number, positives: number): LabelPoint[] {
-    // Positives concentrated at the high end so the fit is non-trivial.
     const labels: LabelPoint[] = [];
     for (let i = 0; i < n; i += 1) {
       const cos = 0.85 + (i / (n - 1)) * 0.15;
@@ -184,57 +241,117 @@ describe('fitCalibration', () => {
     return labels;
   }
 
-  it('returns null when label count is below MIN_LABELS_FOR_FIT', () => {
+  it('returns null below MIN_LABELS_FOR_FIT total samples', () => {
     expect(
       fitCalibration({
-        labels: mkLabels(MIN_LABELS_FOR_FIT - 1, 10),
+        labels: mkLabels(MIN_LABELS_FOR_FIT - 1, 15),
         band: [0.85, 1.0],
       }),
     ).toBeNull();
   });
 
-  it('returns null when all labels are positive (degenerate)', () => {
-    const labels: LabelPoint[] = Array.from({ length: 50 }, (_, i) => ({
-      cos: 0.85 + i * 0.001,
-      nearDup: true,
-    }));
-    expect(fitCalibration({ labels, band: [0.85, 1.0] })).toBeNull();
+  it('returns null below MIN_PER_CLASS_FOR_FIT positives (audit-tightened gate)', () => {
+    // 60 labels total but only 5 positives → fails the new 10-per-class
+    // floor that the audit at research/calibration-audit-2026-05-19.md
+    // added. Previously this would have fit a noisy isotonic curve
+    // dominated by the 5 lone positives.
+    expect(
+      fitCalibration({ labels: mkLabels(60, 5), band: [0.85, 1.0] }),
+    ).toBeNull();
   });
 
-  it('returns null when all labels are negative (degenerate)', () => {
-    const labels: LabelPoint[] = Array.from({ length: 50 }, (_, i) => ({
-      cos: 0.85 + i * 0.001,
-      nearDup: false,
-    }));
-    expect(fitCalibration({ labels, band: [0.85, 1.0] })).toBeNull();
+  it('returns null below MIN_PER_CLASS_FOR_FIT negatives', () => {
+    expect(
+      fitCalibration({
+        labels: mkLabels(60, 55), // 5 negatives
+        band: [0.85, 1.0],
+      }),
+    ).toBeNull();
   });
 
-  it('returns a well-formed curve when labels support a fit', () => {
+  it('picks Platt at small n (default behavior)', () => {
     const curve = fitCalibration({
-      labels: mkLabels(60, 12),
+      labels: mkLabels(60, 15),
       band: [0.85, 1.0],
       now: 1_700_000_000_000,
     });
     expect(curve).not.toBeNull();
+    expect(curve!.method).toBe('platt');
     expect(curve!.schemaVersion).toBe(1);
-    expect(curve!.method).toBe('isotonic');
     expect(curve!.calibratedAt).toBe(1_700_000_000_000);
     expect(curve!.labelCount).toBe(60);
     expect(curve!.band).toEqual([0.85, 1.0]);
-    expect(curve!.knots.length).toBeGreaterThan(0);
-    // Monotone non-decreasing.
-    for (let i = 1; i < curve!.knots.length; i += 1) {
-      expect(curve!.knots[i]!.p).toBeGreaterThanOrEqual(curve!.knots[i - 1]!.p);
+    // Platt curve has a/b params + sampled knots for inspection.
+    if (curve!.method === 'platt') {
+      expect(typeof curve!.a).toBe('number');
+      expect(typeof curve!.b).toBe('number');
+      expect(curve!.knots.length).toBeGreaterThan(0);
     }
+  });
+
+  it('picks isotonic when forced and label count is borderline', () => {
+    const curve = fitCalibration({
+      labels: mkLabels(60, 15),
+      band: [0.85, 1.0],
+      forceMethod: 'isotonic',
+    });
+    expect(curve).not.toBeNull();
+    expect(curve!.method).toBe('isotonic');
   });
 });
 
-describe('default constants', () => {
-  it('DEFAULT_P_NEAR_DUP_TARGET is 0.5 (more-likely-than-not)', () => {
-    expect(DEFAULT_P_NEAR_DUP_TARGET).toBe(0.5);
+describe('evaluateCalibration — dispatches on method', () => {
+  it('evaluates a Platt curve analytically (no knot lookup)', () => {
+    // Construct a Platt curve by hand. a=-50, b=46 → sigmoid centered at
+    // cos = -b/a = 0.92, increasing in cos. Verify P at boundary and
+    // midpoint.
+    const curve = {
+      schemaVersion: 1 as const,
+      method: 'platt' as const,
+      calibratedAt: 0,
+      labelCount: 60,
+      band: [0.85, 1.0] as [number, number],
+      a: -50,
+      b: 46,
+      knots: [],
+    };
+    // At cos=0.92, fApB = -50*0.92 + 46 = 0 → P = 0.5.
+    expect(evaluateCalibration(curve, 0.92)).toBeCloseTo(0.5, 3);
+    // Above the band → clamp to upper edge.
+    expect(evaluateCalibration(curve, 1.5)).toBeCloseTo(
+      evaluateCalibration(curve, 1.0),
+      6,
+    );
+    // Below the band → clamp to lower edge.
+    expect(evaluateCalibration(curve, 0.5)).toBeCloseTo(
+      evaluateCalibration(curve, 0.85),
+      6,
+    );
   });
 
-  it('MIN_LABELS_FOR_FIT is 40 per the design doc', () => {
-    expect(MIN_LABELS_FOR_FIT).toBe(40);
+  it('still accepts bare knot arrays (backward compat with isotonic)', () => {
+    const knots = [
+      { cos: 0.85, p: 0.1 },
+      { cos: 0.95, p: 0.9 },
+    ];
+    expect(evaluateCalibration(knots, 0.85)).toBe(0.1);
+    expect(evaluateCalibration(knots, 0.95)).toBe(0.9);
+    expect(evaluateCalibration(knots, 0.5)).toBe(0.1); // flat below
+    expect(evaluateCalibration(knots, 1.5)).toBe(0.9); // flat above
+  });
+});
+
+describe('audit-corrected default constants', () => {
+  it('DEFAULT_P_NEAR_DUP_TARGET is 0.9 — precision-leaning per audit', () => {
+    expect(DEFAULT_P_NEAR_DUP_TARGET).toBe(0.9);
+  });
+
+  it('MIN_LABELS_FOR_FIT is 50, MIN_PER_CLASS_FOR_FIT is 10', () => {
+    expect(MIN_LABELS_FOR_FIT).toBe(50);
+    expect(MIN_PER_CLASS_FOR_FIT).toBe(10);
+  });
+
+  it('ISOTONIC_MIN_LABELS is 500 — Platt below, isotonic above', () => {
+    expect(ISOTONIC_MIN_LABELS).toBe(500);
   });
 });

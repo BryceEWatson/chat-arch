@@ -34,11 +34,28 @@
  * triggered the Platt addition.
  */
 
-/** Default probability threshold for "is a near-duplicate". */
-export const DEFAULT_P_NEAR_DUP_TARGET = 0.5;
+/**
+ * Default probability threshold for "is a near-duplicate." Production
+ * deduplication pipelines target precision ≥0.95 (Christen 2012; NeMo
+ * Curator default; SemDeDup paper ε regimes); 0.5 is symmetric-loss
+ * default and the wrong choice for this domain (audit 2026-05-19).
+ */
+export const DEFAULT_P_NEAR_DUP_TARGET = 0.9;
 
-/** Below this label count, refuse to fit (PAV degenerates). */
-export const MIN_LABELS_FOR_FIT = 40;
+/**
+ * Below ~500 samples we use Platt scaling (smooth sigmoid, 2 params);
+ * above we use PAV isotonic. Niculescu-Mizil & Caruana 2005, "Predicting
+ * Good Probabilities with Supervised Learning," ICML — isotonic
+ * dominates above ~1000, Platt below ~200, with a transitional band
+ * between. 500 splits the band conservatively in favor of Platt's
+ * stability at small n.
+ */
+export const ISOTONIC_MIN_LABELS = 500;
+
+/** Minimum total labels before any calibration is attempted. */
+export const MIN_LABELS_FOR_FIT = 50;
+/** Minimum positives (and minimum negatives) required for a fit. */
+export const MIN_PER_CLASS_FOR_FIT = 10;
 
 export interface CalibrationKnot {
   /** Cosine value at the start of this step. */
@@ -47,18 +64,37 @@ export interface CalibrationKnot {
   p: number;
 }
 
-export interface CalibrationCurve {
+interface CalibrationBase {
   schemaVersion: 1;
-  method: 'isotonic';
   /** Wall-clock at fit time, ms since epoch. */
   calibratedAt: number;
   /** How many labels the fit consumed. */
   labelCount: number;
   /** Cosine band the labels were drawn from. */
   band: [number, number];
-  /** Monotone non-decreasing step function, sorted by `cos`. */
+}
+
+/** Isotonic (PAV) curve — monotone non-decreasing step function. */
+export interface IsotonicCurve extends CalibrationBase {
+  method: 'isotonic';
   knots: CalibrationKnot[];
 }
+
+/**
+ * Platt-scaled sigmoid curve. The probability is computed analytically
+ * as 1 / (1 + exp(a*cos + b)) — `knots` is a sampled rendering of the
+ * sigmoid for human-readable inspection and is NOT consulted by
+ * evaluateCalibration when method='platt'.
+ */
+export interface PlattCurve extends CalibrationBase {
+  method: 'platt';
+  a: number;
+  b: number;
+  /** Sampled (cos, p) pairs across the band, for inspection only. */
+  knots: CalibrationKnot[];
+}
+
+export type CalibrationCurve = IsotonicCurve | PlattCurve;
 
 export interface LabelPoint {
   cos: number;
@@ -125,29 +161,182 @@ export function fitIsotonic(labels: readonly LabelPoint[]): CalibrationKnot[] {
 }
 
 /**
- * Evaluate the calibrated curve at an arbitrary cosine.
+ * Platt scaling — fit a sigmoid P(y=1 | x) = 1 / (1 + exp(a*x + b))
+ * to binary labels by maximum likelihood. Implementation follows
+ * Lin, Lin & Weng 2007, "A Note on Platt's Probabilistic Outputs for
+ * Support Vector Machines" — the standard numerically-stable variant
+ * of Platt's original 1999 algorithm. Newton's method with
+ * backtracking line search, prior-corrected target values
+ * (y* = (N+1)/(N+2) vs 1/(N+2)) to prevent boundary overfit.
  *
- * Below the labeled range: return knots[0].p (flat extrapolation
- *   from the left endpoint).
- * Above the labeled range: return knots[last].p (flat from the
- *   right endpoint).
- * Within: return the p of the rightmost knot whose cos ≤ x.
+ * At our calibration scales (50–500 labels) this converges in fewer
+ * than 30 iterations on real data. Returns null on degenerate input.
+ */
+export function fitPlatt(
+  labels: readonly LabelPoint[],
+): { a: number; b: number } | null {
+  if (labels.length === 0) return null;
+  const n = labels.length;
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  let nPos = 0;
+  for (let i = 0; i < n; i += 1) {
+    x[i] = labels[i]!.cos;
+    if (labels[i]!.nearDup) {
+      y[i] = 1;
+      nPos += 1;
+    }
+  }
+  const nNeg = n - nPos;
+  if (nPos === 0 || nNeg === 0) return null;
+
+  // Prior-corrected targets (Platt 1999, Eq. (10); Lin 2007 §3).
+  const hiTarget = (nPos + 1) / (nPos + 2);
+  const loTarget = 1 / (nNeg + 2);
+  const t = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) t[i] = y[i] === 1 ? hiTarget : loTarget;
+
+  // Initial values: log of class-prior odds (Lin 2007).
+  let a = 0;
+  let b = Math.log((nNeg + 1) / (nPos + 1));
+
+  const maxIter = 100;
+  const minStep = 1e-10;
+  const sigma = 1e-12;
+
+  // Initial objective value.
+  let fval = 0;
+  for (let i = 0; i < n; i += 1) {
+    const fApB = a * x[i]! + b;
+    if (fApB >= 0) fval += t[i]! * fApB + Math.log1p(Math.exp(-fApB));
+    else fval += (t[i]! - 1) * fApB + Math.log1p(Math.exp(fApB));
+  }
+
+  for (let iter = 0; iter < maxIter; iter += 1) {
+    // Gradient + Hessian.
+    let h11 = sigma;
+    let h22 = sigma;
+    let h21 = 0;
+    let g1 = 0;
+    let g2 = 0;
+    for (let i = 0; i < n; i += 1) {
+      const fApB = a * x[i]! + b;
+      let p: number;
+      let q: number;
+      if (fApB >= 0) {
+        const ex = Math.exp(-fApB);
+        p = ex / (1 + ex);
+        q = 1 / (1 + ex);
+      } else {
+        const ex = Math.exp(fApB);
+        p = 1 / (1 + ex);
+        q = ex / (1 + ex);
+      }
+      const d2 = p * q;
+      h11 += x[i]! * x[i]! * d2;
+      h22 += d2;
+      h21 += x[i]! * d2;
+      const d1 = t[i]! - p;
+      g1 += x[i]! * d1;
+      g2 += d1;
+    }
+
+    if (Math.abs(g1) < 1e-5 && Math.abs(g2) < 1e-5) break;
+
+    // Solve 2×2 Newton step.
+    const det = h11 * h22 - h21 * h21;
+    const dA = -(h22 * g1 - h21 * g2) / det;
+    const dB = -(-h21 * g1 + h11 * g2) / det;
+    const gd = g1 * dA + g2 * dB;
+
+    // Backtracking line search.
+    let stepSize = 1;
+    while (stepSize >= minStep) {
+      const newA = a + stepSize * dA;
+      const newB = b + stepSize * dB;
+      let newFval = 0;
+      for (let i = 0; i < n; i += 1) {
+        const fApB = newA * x[i]! + newB;
+        if (fApB >= 0) newFval += t[i]! * fApB + Math.log1p(Math.exp(-fApB));
+        else newFval += (t[i]! - 1) * fApB + Math.log1p(Math.exp(fApB));
+      }
+      if (newFval < fval + 0.0001 * stepSize * gd) {
+        a = newA;
+        b = newB;
+        fval = newFval;
+        break;
+      }
+      stepSize /= 2;
+    }
+    if (stepSize < minStep) break;
+  }
+
+  return { a, b };
+}
+
+/** Sigmoid sampler — produce display-only knots from Platt params. */
+function plattKnots(
+  params: { a: number; b: number },
+  band: [number, number],
+  n = 32,
+): CalibrationKnot[] {
+  const out: CalibrationKnot[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const cos = band[0] + ((band[1] - band[0]) * i) / (n - 1);
+    out.push({ cos, p: plattEvaluate(params.a, params.b, cos) });
+  }
+  return out;
+}
+
+function plattEvaluate(a: number, b: number, cos: number): number {
+  const fApB = a * cos + b;
+  // Numerically-stable sigmoid (avoid overflow at large |fApB|).
+  if (fApB >= 0) {
+    const ex = Math.exp(-fApB);
+    return ex / (1 + ex);
+  }
+  const ex = Math.exp(fApB);
+  return 1 / (1 + ex);
+}
+
+/**
+ * Evaluate a calibration curve at an arbitrary cosine.
  *
- * Flat extrapolation is the design-doc choice (linear extrapolation
- * with sparse tail labels frequently produces p > 1 or p < 0 — a
- * known PAV failure mode). See research/dedup-calibration-design.md.
+ * For Platt: evaluate the sigmoid analytically. Clamp cos to the band
+ *   so out-of-range inputs return the boundary value (flat
+ *   extrapolation, matching the isotonic convention).
+ *
+ * For isotonic: return the p of the rightmost knot whose cos ≤ x.
+ *   Below the labeled range → knots[0].p; above → knots[last].p. Flat
+ *   extrapolation per sklearn IsotonicRegression(out_of_bounds='clip')
+ *   default — linear extrapolation can yield p < 0 or p > 1.
+ *
+ * Accepts a bare knot array for backward compat (treated as isotonic).
  */
 export function evaluateCalibration(
   curve: CalibrationCurve | readonly CalibrationKnot[],
   cos: number,
 ): number {
-  const knots: readonly CalibrationKnot[] = Array.isArray(curve)
-    ? curve
-    : (curve as CalibrationCurve).knots;
+  if (Array.isArray(curve)) {
+    return evaluateIsotonicKnots(curve, cos);
+  }
+  const c = curve as CalibrationCurve;
+  if (c.method === 'platt') {
+    const lo = c.band[0];
+    const hi = c.band[1];
+    const clamped = cos < lo ? lo : cos > hi ? hi : cos;
+    return plattEvaluate(c.a, c.b, clamped);
+  }
+  return evaluateIsotonicKnots(c.knots, cos);
+}
+
+function evaluateIsotonicKnots(
+  knots: readonly CalibrationKnot[],
+  cos: number,
+): number {
   if (knots.length === 0) return 0;
   if (cos < knots[0]!.cos) return knots[0]!.p;
   if (cos >= knots[knots.length - 1]!.cos) return knots[knots.length - 1]!.p;
-  // Binary search for the rightmost knot with knot.cos ≤ cos.
   let lo = 0;
   let hi = knots.length - 1;
   while (lo < hi) {
@@ -159,24 +348,55 @@ export function evaluateCalibration(
 }
 
 /**
- * Build a complete CalibrationCurve from labels. Returns null when
- * the labels can't support a non-degenerate fit: < MIN_LABELS_FOR_FIT
- * points, all-positive, or all-negative. In those cases the caller
- * should leave calibration.json absent and fall back to the literature
- * threshold path.
+ * Build a calibration curve from labels. Auto-selects between Platt
+ * (smooth sigmoid, robust at n<500) and PAV isotonic (non-parametric,
+ * needs n≥500 to recover arbitrary shapes without overfitting noise).
+ *
+ * Returns null on degenerate input:
+ *   - fewer than MIN_LABELS_FOR_FIT (50) total points, OR
+ *   - fewer than MIN_PER_CLASS_FOR_FIT (10) of either class.
+ *
+ * The 10-per-class floor was added in audit 2026-05-19 — a single
+ * positive can dominate a small fit (Niculescu-Mizil & Caruana 2005;
+ * Guo et al. 2017). Below the floor, leave calibration.json absent
+ * and fall back to the literature threshold path.
  */
 export function fitCalibration({
   labels,
   band,
   now = Date.now(),
+  forceMethod,
 }: {
   labels: readonly LabelPoint[];
   band: [number, number];
   now?: number;
+  /** Override auto-selection for tests / experiments. */
+  forceMethod?: 'platt' | 'isotonic';
 }): CalibrationCurve | null {
   if (labels.length < MIN_LABELS_FOR_FIT) return null;
   const positives = labels.filter((l) => l.nearDup).length;
-  if (positives === 0 || positives === labels.length) return null;
+  const negatives = labels.length - positives;
+  if (positives < MIN_PER_CLASS_FOR_FIT) return null;
+  if (negatives < MIN_PER_CLASS_FOR_FIT) return null;
+
+  const method =
+    forceMethod ?? (labels.length < ISOTONIC_MIN_LABELS ? 'platt' : 'isotonic');
+
+  if (method === 'platt') {
+    const params = fitPlatt(labels);
+    if (params === null) return null;
+    return {
+      schemaVersion: 1,
+      method: 'platt',
+      calibratedAt: now,
+      labelCount: labels.length,
+      band,
+      a: params.a,
+      b: params.b,
+      knots: plattKnots(params, band),
+    };
+  }
+
   const knots = fitIsotonic(labels);
   if (knots.length === 0) return null;
   return {
