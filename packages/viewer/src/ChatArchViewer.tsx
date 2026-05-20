@@ -62,6 +62,11 @@ import {
   loadExportsManifest,
   type ExportManifest,
 } from './data/exportsLoader.js';
+import {
+  loadInsightsAcks,
+  type InsightsAcksFile,
+} from './data/insightsAckClient.js';
+import { ActionItemsBanner } from './components/ActionItemsBanner.js';
 import type {
   CompositeOutcomesFile,
   CorrectionsFile,
@@ -85,6 +90,7 @@ import {
   buildDuplicateClusters as buildDuplicateClustersAnalysis,
   buildZombieProjects,
   firstHumanText,
+  THRESHOLDS,
   type DuplicateInput,
 } from '@chat-arch/analysis';
 import {
@@ -494,6 +500,10 @@ export function ChatArchViewer({
   });
   const [exportsManifest, setExportsManifest] =
     useState<ExportManifest | null>(null);
+  // Wave 6 #3c — insights-acks ledger, drives the per-item ACK
+  // suppression in InsightsMode AND the action-items banner.
+  const [insightsAcks, setInsightsAcks] =
+    useState<InsightsAcksFile | null>(null);
 
   // --- Phase 3 semantic-classification state ---
   //
@@ -891,6 +901,10 @@ export function ChatArchViewer({
       if (cancelled) return;
       setExportsManifest(m);
     });
+    loadInsightsAcks(dataRoot).then((f) => {
+      if (cancelled) return;
+      setInsightsAcks(f);
+    });
     return () => {
       cancelled = true;
     };
@@ -924,6 +938,49 @@ export function ChatArchViewer({
     correctionsRoute,
     mode,
   ]);
+
+  // Wave 6 #4 — action-items banner counts. Derived from the same
+  // sidecars the modes consume, so a SCAN that refreshes the files
+  // also refreshes the banner.
+  const unclassifiedDecisionsCount = useMemo(() => {
+    if (decisionsFile === null) return 0;
+    let n = 0;
+    for (const d of decisionsFile.decisions) {
+      if (d.classification === null) n += 1;
+    }
+    return n;
+  }, [decisionsFile]);
+  const knowledgeDebtClusterCount = useMemo(
+    () => insightsBundle.knowledgeDebt?.clusters.length ?? 0,
+    [insightsBundle],
+  );
+  const unacknowledgedItsCount = useMemo(() => {
+    const its = insightsBundle.its;
+    if (its === null) return 0;
+    const ackedKeys = new Set<string>();
+    for (const e of insightsAcks?.entries ?? []) {
+      if (e.kind === 'its-contrast') ackedKeys.add(e.id);
+    }
+    let n = 0;
+    for (const r of its.results) {
+      // Only count rows that would render — pre + post above the
+      // display floor AND a non-zero-overlap CI (i.e., the row would
+      // get an ACKNOWLEDGE pill).
+      if (
+        r.pre.n < THRESHOLDS.display.minNForRate ||
+        r.post.n < THRESHOLDS.display.minNForRate
+      ) {
+        continue;
+      }
+      const clearEffect =
+        (r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
+        (r.deltaCI.low < 0 && r.deltaCI.high < 0);
+      if (!clearEffect) continue;
+      const key = `${r.sha}:${r.path}`;
+      if (!ackedKeys.has(key)) n += 1;
+    }
+    return n;
+  }, [insightsBundle, insightsAcks]);
 
   // --- fetch manifest ---
   useEffect(() => {
@@ -2789,6 +2846,13 @@ export function ChatArchViewer({
               ) : (
                 <>
                   <div className="lcars-mode-area__base" hidden={showDetailOverlay}>
+                    <ActionItemsBanner
+                      unclassifiedDecisions={unclassifiedDecisionsCount}
+                      knowledgeDebtClusters={knowledgeDebtClusterCount}
+                      unacknowledgedItsContrasts={unacknowledgedItsCount}
+                      currentMode={baseMode}
+                      onNavigate={(m) => setMode(m)}
+                    />
                     {baseMode === 'command' ? (
                       sessionsView === 'timeline' ? (
                         <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
@@ -2865,6 +2929,7 @@ export function ChatArchViewer({
                     ) : baseMode === 'insights' ? (
                       <InsightsMode
                         bundle={insightsBundle}
+                        acks={insightsAcks}
                         onSelectSession={(id) => {
                           setPriorModeBeforeDetail('insights');
                           onSelect(id);

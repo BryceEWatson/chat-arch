@@ -43,6 +43,11 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
       zip: { type: 'string' },
       'no-cloud': { type: 'boolean' },
       'no-auto-label-threshold': { type: 'boolean' },
+      // Opt the PR-land network join into the analysis pipeline. Off
+      // by default so headless / no-network runs stay clean; the rescan
+      // endpoint flips this on when it detects `gh auth status` exit 0.
+      // See `runAnalysis()`'s `enablePrJoin` option.
+      'enable-pr-join': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: false,
@@ -58,6 +63,10 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
         '                              cloud-manifest.json in the merge. Used by the viewer\n' +
         '                              "RESCAN" button — cloud data is only refreshed when the\n' +
         '                              user uploads a ZIP, not as part of rescanning local disks.\n' +
+        '  --enable-pr-join            Opt into the gh-API PR-land join after the merge step.\n' +
+        '                              Off by default so no-network runs stay clean. The\n' +
+        '                              viewer\'s RESCAN button auto-enables this when it\n' +
+        '                              detects an authenticated gh CLI.\n' +
         '  --no-auto-label-threshold   Skip the post-semantic threshold-labels auto-fill stage.\n' +
         '                              By default we run scripts/auto-label-threshold.mjs to top up\n' +
         '                              chat-arch-data/labels/threshold-pairs.json using dual-judge\n' +
@@ -195,9 +204,10 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   }
 
   // Phase 6: run browser-tier analysis writers (Decision 1).
+  const enablePrJoin = values['enable-pr-join'] === true;
   try {
     const analysisStart = Date.now();
-    const result = await runAnalysis(merged, { outDir });
+    const result = await runAnalysis(merged, { outDir, enablePrJoin });
     logger.info(
       `analysis complete in ${Date.now() - analysisStart} ms — dup_clusters=${result.counts.duplicatesClusters} dup_sessions=${result.counts.duplicatesSessions} active=${result.counts.active} dormant=${result.counts.dormant} zombie=${result.counts.zombie} → ${result.analysisDir}`,
     );

@@ -1,9 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { THRESHOLDS } from '@chat-arch/analysis';
 import { EmptyState } from '../EmptyState.js';
 import { MethodologyDisclosure } from '../MethodologyDisclosure.js';
 import type { InsightsBundle } from '../../data/insightsLoader.js';
 import { formatShortDate } from '../../util/time.js';
+import {
+  ackInsight,
+  type InsightsAcksFile,
+} from '../../data/insightsAckClient.js';
 
 /**
  * Phase 1 expansions #2 (config-correlation) + #11 (knowledge-debt) +
@@ -31,6 +35,18 @@ export interface InsightsModeProps {
   bundle: InsightsBundle;
   /** Click-through to a session detail surface. */
   onSelectSession?: (id: string) => void;
+  /** Pre-loaded acks file (read once at mount; the mode updates a
+   *  local-state copy on click so the UI doesn't need a refresh). */
+  acks?: InsightsAcksFile | null;
+  /**
+   * Base URL where Obsidian-export markdown files live (relative to
+   * the data root). When the user clicks INSTALL AS RULE on a
+   * knowledge-debt cluster, the mode opens `<baseUrl>/exports/
+   * knowledge-debt.md` in a new tab if supported; otherwise it copies
+   * the cluster's canonical question to the clipboard so the user can
+   * paste it into `/update-config`. Defaults to a sensible value.
+   */
+  knowledgeDebtMarkdownUrl?: string;
 }
 
 function pct(v: number): string {
@@ -48,8 +64,75 @@ function fmtCi(low: number, high: number): string {
   return `${pct(low)} … ${pct(high)}`;
 }
 
-export function InsightsMode({ bundle, onSelectSession }: InsightsModeProps) {
+/** Stable id for an ITS contrast row — used as the ack ledger key. */
+function itsRowKey(r: { sha: string; path: string }): string {
+  return `${r.sha}:${r.path}`;
+}
+
+export function InsightsMode({
+  bundle,
+  onSelectSession,
+  acks: initialAcks = null,
+  knowledgeDebtMarkdownUrl = 'chat-arch-data/exports/knowledge-debt.md',
+}: InsightsModeProps) {
   const { its, knowledgeDebt, reflexive } = bundle;
+  // Local-state copy of ack ids so a click updates the UI without a
+  // refetch. Seeded from the loader's initial file.
+  const [ackedIds, setAckedIds] = useState<ReadonlySet<string>>(() => {
+    const s = new Set<string>();
+    for (const e of initialAcks?.entries ?? []) {
+      s.add(`${e.kind}:${e.id}`);
+    }
+    return s;
+  });
+  const isAcked = (kind: 'its-contrast', id: string): boolean =>
+    ackedIds.has(`${kind}:${id}`);
+  const onAck = (kind: 'its-contrast', id: string): void => {
+    void ackInsight(kind, id).then((r) => {
+      if (!r.ok) return;
+      setAckedIds((prev) => {
+        if (prev.has(`${kind}:${id}`)) return prev;
+        const next = new Set(prev);
+        next.add(`${kind}:${id}`);
+        return next;
+      });
+    });
+  };
+
+  // Wave 6 #3b — INSTALL AS RULE handler.
+  // Tries to open the Obsidian markdown export in a new tab; if the
+  // browser blocks (popup blocker, file:// scheme refused on some
+  // hosts), copies the canonical question + sample sessions to the
+  // clipboard so the user can paste them into `/update-config`.
+  const onInstallAsRule = (cluster: {
+    canonicalQuestion: string;
+    sessionIds: readonly string[];
+  }): void => {
+    const lines = [
+      `# Install as rule`,
+      ``,
+      `Canonical question: ${cluster.canonicalQuestion}`,
+      ``,
+      `Sample sessions (first ${Math.min(cluster.sessionIds.length, 5)}):`,
+      ...cluster.sessionIds.slice(0, 5).map((s) => `- ${s}`),
+      ``,
+      `Next step: paste this into \`/update-config\` so the rule is added`,
+      `to your CLAUDE.md / settings.json.`,
+    ];
+    const payload = lines.join('\n');
+    const opened =
+      typeof window !== 'undefined' &&
+      typeof window.open === 'function'
+        ? window.open(knowledgeDebtMarkdownUrl, '_blank', 'noopener')
+        : null;
+    if (opened !== null) return;
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard !== undefined
+    ) {
+      void navigator.clipboard.writeText(payload).catch(() => undefined);
+    }
+  };
 
   const itsRows = useMemo(() => {
     if (its === null) return [];
@@ -67,6 +150,24 @@ export function InsightsMode({ bundle, onSelectSession }: InsightsModeProps) {
       .slice()
       .sort((a, b) => Math.abs(b.deltaGoodShare) - Math.abs(a.deltaGoodShare));
   }, [its]);
+
+  // Partition into pending vs. acknowledged so acked rows don't
+  // compete for attention on the main feed. The criterion for the
+  // ACKNOWLEDGE pill is "non-zero-overlap CI" — both CI bounds on the
+  // same side of 0 — meaning the contrast is clearly non-null
+  // (descriptive, not causal). Other rows still render but without
+  // the pill.
+  const itsPending = useMemo(
+    () => itsRows.filter((r) => !isAcked('its-contrast', itsRowKey(r))),
+    [itsRows, ackedIds],
+  );
+  const itsAcknowledged = useMemo(
+    () => itsRows.filter((r) => isAcked('its-contrast', itsRowKey(r))),
+    [itsRows, ackedIds],
+  );
+  const hasClearEffect = (r: { deltaCI: { low: number; high: number } }): boolean =>
+    (r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
+    (r.deltaCI.low < 0 && r.deltaCI.high < 0);
 
   const debtClusters = useMemo(() => {
     if (knowledgeDebt === null) return [];
@@ -125,47 +226,99 @@ export function InsightsMode({ bundle, onSelectSession }: InsightsModeProps) {
             {THRESHOLDS.display.minNForRate}+ sessions on both sides yet.
           </p>
         ) : (
-          <ul className="lcars-insights__card-list" role="list">
-            {itsRows.slice(0, 12).map((r) => (
-              <li key={`${r.sha}-${r.path}`} role="listitem">
-                <article className="lcars-insights__card">
-                  <header className="lcars-insights__card-header">
-                    <span className="lcars-insights__card-tag">
-                      {pct(r.deltaGoodShare)} delta
-                    </span>
-                    <h4 className="lcars-insights__card-title">
-                      {r.subject || r.path}
-                    </h4>
-                    <span className="lcars-insights__card-meta">
-                      {formatShortDate(r.ts)} · {r.path}
-                    </span>
-                  </header>
-                  <dl className="lcars-insights__card-dl">
-                    <div className="lcars-insights__card-dl-row">
-                      <dt>PRE WINDOW</dt>
-                      <dd>
-                        n={r.pre.n} · good {pctAbs(r.pre.goodShare)}
-                      </dd>
-                    </div>
-                    <div className="lcars-insights__card-dl-row">
-                      <dt>POST WINDOW</dt>
-                      <dd>
-                        n={r.post.n} · good {pctAbs(r.post.goodShare)}
-                      </dd>
-                    </div>
-                    <div className="lcars-insights__card-dl-row">
-                      <dt>DELTA 95% CI</dt>
-                      <dd>{fmtCi(r.deltaCI.low, r.deltaCI.high)}</dd>
-                    </div>
-                    <div className="lcars-insights__card-dl-row">
-                      <dt>WINDOW</dt>
-                      <dd>±{r.windowDays}d</dd>
-                    </div>
-                  </dl>
-                </article>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul
+              className="lcars-insights__card-list"
+              role="list"
+              aria-label="pending config-impact contrasts"
+            >
+              {itsPending.slice(0, 12).map((r) => {
+                const key = itsRowKey(r);
+                const showAck = hasClearEffect(r);
+                return (
+                  <li key={`${r.sha}-${r.path}`} role="listitem">
+                    <article className="lcars-insights__card">
+                      <header className="lcars-insights__card-header">
+                        <span className="lcars-insights__card-tag">
+                          {pct(r.deltaGoodShare)} delta
+                        </span>
+                        <h4 className="lcars-insights__card-title">
+                          {r.subject || r.path}
+                        </h4>
+                        <span className="lcars-insights__card-meta">
+                          {formatShortDate(r.ts)} · {r.path}
+                        </span>
+                      </header>
+                      <dl className="lcars-insights__card-dl">
+                        <div className="lcars-insights__card-dl-row">
+                          <dt>PRE WINDOW</dt>
+                          <dd>
+                            n={r.pre.n} · good {pctAbs(r.pre.goodShare)}
+                          </dd>
+                        </div>
+                        <div className="lcars-insights__card-dl-row">
+                          <dt>POST WINDOW</dt>
+                          <dd>
+                            n={r.post.n} · good {pctAbs(r.post.goodShare)}
+                          </dd>
+                        </div>
+                        <div className="lcars-insights__card-dl-row">
+                          <dt>DELTA 95% CI</dt>
+                          <dd>{fmtCi(r.deltaCI.low, r.deltaCI.high)}</dd>
+                        </div>
+                        <div className="lcars-insights__card-dl-row">
+                          <dt>WINDOW</dt>
+                          <dd>±{r.windowDays}d</dd>
+                        </div>
+                      </dl>
+                      {showAck && (
+                        <div className="lcars-insights__card-actions">
+                          <button
+                            type="button"
+                            className="lcars-insights__ack-pill"
+                            data-testid={`ack-its-${key}`}
+                            onClick={() => onAck('its-contrast', key)}
+                            title="Mark this contrast as reviewed; it'll move to the ACKNOWLEDGED list."
+                          >
+                            ACKNOWLEDGE
+                          </button>
+                        </div>
+                      )}
+                    </article>
+                  </li>
+                );
+              })}
+            </ul>
+            {itsAcknowledged.length > 0 && (
+              <details
+                className="lcars-insights__acked"
+                aria-label="acknowledged config-impact contrasts"
+              >
+                <summary className="lcars-insights__acked-summary">
+                  ACKNOWLEDGED ({itsAcknowledged.length})
+                </summary>
+                <ul className="lcars-insights__card-list" role="list">
+                  {itsAcknowledged.slice(0, 12).map((r) => (
+                    <li key={`${r.sha}-${r.path}-acked`} role="listitem">
+                      <article className="lcars-insights__card lcars-insights__card--muted">
+                        <header className="lcars-insights__card-header">
+                          <span className="lcars-insights__card-tag">
+                            {pct(r.deltaGoodShare)} delta
+                          </span>
+                          <h4 className="lcars-insights__card-title">
+                            {r.subject || r.path}
+                          </h4>
+                          <span className="lcars-insights__card-meta">
+                            {formatShortDate(r.ts)} · {r.path}
+                          </span>
+                        </header>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         )}
       </section>
 
@@ -253,6 +406,22 @@ export function InsightsMode({ bundle, onSelectSession }: InsightsModeProps) {
                       )}
                     </ul>
                   )}
+                  <div className="lcars-insights__card-actions">
+                    <button
+                      type="button"
+                      className="lcars-insights__install-btn"
+                      data-testid={`install-rule-${c.id}`}
+                      onClick={() =>
+                        onInstallAsRule({
+                          canonicalQuestion: c.canonicalQuestion,
+                          sessionIds: c.sessionIds,
+                        })
+                      }
+                      title="Open the Obsidian markdown export for this cluster, or copy a paste-ready snippet for /update-config."
+                    >
+                      INSTALL AS RULE
+                    </button>
+                  </div>
                 </article>
               </li>
             ))}

@@ -59,6 +59,9 @@ importers:
       '@chat-arch/analysis':
         specifier: workspace:*
         version: link:../../packages/analysis
+      '@chat-arch/exporter':
+        specifier: workspace:*
+        version: link:../../packages/exporter
       '@chat-arch/schema':
         specifier: workspace:*
         version: link:../../packages/schema

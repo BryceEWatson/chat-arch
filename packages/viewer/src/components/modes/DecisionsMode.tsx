@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Decision, DecisionsFile } from '@chat-arch/schema';
 import { THRESHOLDS, wilsonCI } from '@chat-arch/analysis';
 import { EmptyState } from '../EmptyState.js';
+import { startMineDecisions } from '../../data/mineDecisionsClient.js';
 
 /**
  * Stream J #1 — DECISIONS surface.
@@ -114,6 +115,31 @@ export function DecisionsMode({ file, onSelectSession }: DecisionsModeProps) {
     [file],
   );
 
+  // Wave 6 #3a — surface the unclassified-decisions queue at the top
+  // of the mode so the user knows there's an LLM-pass available. Count
+  // is observational: classification === null on the on-disk row.
+  const unclassifiedCount = useMemo(() => {
+    if (file === null) return 0;
+    let n = 0;
+    for (const d of file.decisions) if (d.classification === null) n += 1;
+    return n;
+  }, [file]);
+  const [mineState, setMineState] = useState<
+    | { status: 'idle' }
+    | { status: 'running' }
+    | { status: 'done'; ok: boolean; stderr: string | null }
+  >({ status: 'idle' });
+
+  const onMine = async () => {
+    setMineState({ status: 'running' });
+    const result = await startMineDecisions();
+    setMineState({
+      status: 'done',
+      ok: result.ok,
+      stderr: result.stderrTail ?? null,
+    });
+  };
+
   if (file === null) {
     return (
       <EmptyState
@@ -144,6 +170,48 @@ export function DecisionsMode({ file, onSelectSession }: DecisionsModeProps) {
           {minN} (the Wilson 95% CI is too wide to be informative).
         </p>
       </header>
+      {unclassifiedCount > 0 && (
+        <aside
+          className="lcars-decisions__cta"
+          aria-label="mine decisions"
+          data-testid="mine-decisions-cta"
+        >
+          <p className="lcars-decisions__cta-text">
+            <strong>{unclassifiedCount}</strong>{' '}
+            {unclassifiedCount === 1 ? 'decision awaits' : 'decisions await'}{' '}
+            classification. Mining will use an LLM to extract{' '}
+            {`{question, alternatives, chosen, rationale}`} for each — same
+            shape as <code>/mine-corrections</code> does for corrections.
+          </p>
+          <button
+            type="button"
+            className="lcars-decisions__cta-btn"
+            disabled={mineState.status === 'running'}
+            onClick={() => void onMine()}
+            data-testid="mine-decisions-btn"
+          >
+            {mineState.status === 'running' ? 'MINING…' : '▶ MINE DECISIONS'}
+          </button>
+          {mineState.status === 'done' && !mineState.ok && (
+            <p
+              className="lcars-decisions__cta-error"
+              role="status"
+              aria-live="polite"
+            >
+              {mineState.stderr ?? 'Mining run did not complete.'}
+            </p>
+          )}
+          {mineState.status === 'done' && mineState.ok && (
+            <p
+              className="lcars-decisions__cta-status"
+              role="status"
+              aria-live="polite"
+            >
+              Mining complete — refresh the page to pick up new classifications.
+            </p>
+          )}
+        </aside>
+      )}
       {buckets.map((bucket) => {
         const showRate = bucket.denom >= minN;
         const pHat = bucket.denom > 0 ? bucket.landed / bucket.denom : 0;
