@@ -1,7 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { THRESHOLDS } from '@chat-arch/analysis';
-import { EmptyState } from '../EmptyState.js';
+import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import { MethodologyDisclosure } from '../MethodologyDisclosure.js';
+import { CopyMarkdownButton } from '../CopyMarkdownButton.js';
+import {
+  loadKnowledgeDebtStates,
+  setKnowledgeDebtState,
+  type KnowledgeDebtStateValue,
+} from '../../data/knowledgeDebtStateClient.js';
 import type { InsightsBundle } from '../../data/insightsLoader.js';
 import { formatShortDate } from '../../util/time.js';
 import {
@@ -47,6 +53,27 @@ export interface InsightsModeProps {
    * paste it into `/update-config`. Defaults to a sensible value.
    */
   knowledgeDebtMarkdownUrl?: string;
+  /**
+   * Wave 7 P1 #4 — wire empty-state CTA to the data panel.
+   */
+  onOpenDataPanel?: () => void;
+  /**
+   * Wave 7 P2 #9 — base URL for the knowledge-debt-state ledger.
+   * Defaults to the standalone data root; tests override.
+   */
+  dataDirBaseUrl?: string;
+}
+
+/**
+ * Wave 7 P2 #8 — extended ack entry. We persist the `deltaCI` at the
+ * time of ack so future renders can compare it against the current
+ * delta and flag drift. Backward-compatible: old ledger entries that
+ * lack the snapshot just don't get drift-checked.
+ */
+interface ItsAckSnapshot {
+  deltaCI: { low: number; high: number };
+  nPost: number;
+  nPre: number;
 }
 
 function pct(v: number): string {
@@ -74,10 +101,14 @@ export function InsightsMode({
   onSelectSession,
   acks: initialAcks = null,
   knowledgeDebtMarkdownUrl = 'chat-arch-data/exports/knowledge-debt.md',
+  onOpenDataPanel,
+  dataDirBaseUrl = 'chat-arch-data',
 }: InsightsModeProps) {
   const { its, knowledgeDebt, reflexive } = bundle;
   // Local-state copy of ack ids so a click updates the UI without a
-  // refetch. Seeded from the loader's initial file.
+  // refetch. Seeded from the loader's initial file. We also extract any
+  // `snapshot` field carried on legacy entries so drift detection can
+  // run without a server round-trip.
   const [ackedIds, setAckedIds] = useState<ReadonlySet<string>>(() => {
     const s = new Set<string>();
     for (const e of initialAcks?.entries ?? []) {
@@ -85,15 +116,81 @@ export function InsightsMode({
     }
     return s;
   });
+  const [ackSnapshots, setAckSnapshots] = useState<
+    ReadonlyMap<string, ItsAckSnapshot>
+  >(() => {
+    const m = new Map<string, ItsAckSnapshot>();
+    for (const e of initialAcks?.entries ?? []) {
+      if (e.kind !== 'its-contrast') continue;
+      const snap = (e as { snapshot?: ItsAckSnapshot }).snapshot;
+      if (snap !== undefined && snap !== null) {
+        m.set(`${e.kind}:${e.id}`, snap);
+      }
+    }
+    return m;
+  });
   const isAcked = (kind: 'its-contrast', id: string): boolean =>
     ackedIds.has(`${kind}:${id}`);
-  const onAck = (kind: 'its-contrast', id: string): void => {
+  const onAck = (
+    kind: 'its-contrast',
+    id: string,
+    snapshot?: ItsAckSnapshot,
+  ): void => {
     void ackInsight(kind, id).then((r) => {
       if (!r.ok) return;
       setAckedIds((prev) => {
         if (prev.has(`${kind}:${id}`)) return prev;
         const next = new Set(prev);
         next.add(`${kind}:${id}`);
+        return next;
+      });
+      if (snapshot !== undefined) {
+        setAckSnapshots((prev) => {
+          const next = new Map(prev);
+          next.set(`${kind}:${id}`, snapshot);
+          return next;
+        });
+      }
+    });
+  };
+
+  // Wave 7 P2 #9 — knowledge-debt cluster states. Loaded once on mount
+  // from the on-disk ledger; updates fire through the same single-
+  // flight POST endpoint. PENDING is the implicit default for any
+  // cluster not in the ledger.
+  const [clusterStates, setClusterStates] = useState<
+    ReadonlyMap<string, { state: KnowledgeDebtStateValue; sizeAtState: number }>
+  >(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    void loadKnowledgeDebtStates(dataDirBaseUrl).then((file) => {
+      if (cancelled || file === null) return;
+      const m = new Map<
+        string,
+        { state: KnowledgeDebtStateValue; sizeAtState: number }
+      >();
+      for (const e of file.entries) {
+        m.set(e.clusterId, {
+          state: e.state,
+          sizeAtState: e.sizeAtState,
+        });
+      }
+      setClusterStates(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataDirBaseUrl]);
+  const onClusterStateChange = (
+    clusterId: string,
+    state: KnowledgeDebtStateValue,
+    currentSize: number,
+  ): void => {
+    void setKnowledgeDebtState(clusterId, state, currentSize).then((r) => {
+      if (!r.ok) return;
+      setClusterStates((prev) => {
+        const next = new Map(prev);
+        next.set(clusterId, { state, sizeAtState: currentSize });
         return next;
       });
     });
@@ -151,19 +248,63 @@ export function InsightsMode({
       .sort((a, b) => Math.abs(b.deltaGoodShare) - Math.abs(a.deltaGoodShare));
   }, [its]);
 
+  /**
+   * Wave 7 P2 #8 — ack staleness check. An acked row is "stale" when
+   * the current `deltaCI` no longer overlaps the originally-acked
+   * `deltaCI`, OR when post-window n has grown by ≥ the configured
+   * fraction since ack-time. Stale rows are promoted back to the
+   * pending pile with a STALE-ACK chip.
+   */
+  const isStaleAck = (
+    key: string,
+    current: { deltaCI: { low: number; high: number }; post: { n: number } },
+  ): boolean => {
+    const snap = ackSnapshots.get(`its-contrast:${key}`);
+    if (snap === undefined) return false;
+    // CI moved outside snapshot CI on either side.
+    if (
+      current.deltaCI.low > snap.deltaCI.high ||
+      current.deltaCI.high < snap.deltaCI.low
+    ) {
+      return true;
+    }
+    // n-growth check.
+    const growthFloor =
+      snap.nPost *
+      (1 + THRESHOLDS.actionBanner.staleAckPostNGrowthFraction);
+    if (current.post.n >= growthFloor && snap.nPost > 0) {
+      return true;
+    }
+    return false;
+  };
+
   // Partition into pending vs. acknowledged so acked rows don't
   // compete for attention on the main feed. The criterion for the
   // ACKNOWLEDGE pill is "non-zero-overlap CI" — both CI bounds on the
   // same side of 0 — meaning the contrast is clearly non-null
   // (descriptive, not causal). Other rows still render but without
-  // the pill.
+  // the pill. Stale-ack rows count as pending again per #8.
   const itsPending = useMemo(
-    () => itsRows.filter((r) => !isAcked('its-contrast', itsRowKey(r))),
-    [itsRows, ackedIds],
+    () =>
+      itsRows.filter((r) => {
+        const key = itsRowKey(r);
+        if (!isAcked('its-contrast', key)) return true;
+        return isStaleAck(key, r);
+      }),
+    // isAcked / isStaleAck close over ackedIds + ackSnapshots which are
+    // both listed; restating the helpers in deps would be redundant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itsRows, ackedIds, ackSnapshots],
   );
   const itsAcknowledged = useMemo(
-    () => itsRows.filter((r) => isAcked('its-contrast', itsRowKey(r))),
-    [itsRows, ackedIds],
+    () =>
+      itsRows.filter((r) => {
+        const key = itsRowKey(r);
+        if (!isAcked('its-contrast', key)) return false;
+        return !isStaleAck(key, r);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itsRows, ackedIds, ackSnapshots],
   );
   const hasClearEffect = (r: { deltaCI: { low: number; high: number } }): boolean =>
     (r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
@@ -178,14 +319,57 @@ export function InsightsMode({
       .sort((a, b) => b.sessionIds.length - a.sessionIds.length);
   }, [knowledgeDebt]);
 
+  /**
+   * Wave 7 P2 #9 — given a cluster's persisted state + current size,
+   * decide whether the cluster should render in the active pile or
+   * the DISMISSED collapse. DISMISSED clusters re-promote when their
+   * current size grows by ≥ the repromotion multiplier from the
+   * snapshot taken at dismissal.
+   */
+  const effectiveClusterState = (
+    clusterId: string,
+    currentSize: number,
+  ): KnowledgeDebtStateValue => {
+    const persisted = clusterStates.get(clusterId);
+    if (persisted === undefined) return 'PENDING';
+    if (persisted.state !== 'DISMISSED') return persisted.state;
+    const repromotionMin =
+      persisted.sizeAtState *
+      THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier;
+    if (currentSize >= repromotionMin && persisted.sizeAtState > 0) {
+      return 'PENDING';
+    }
+    return 'DISMISSED';
+  };
+
+  const debtActive = useMemo(
+    () =>
+      debtClusters.filter(
+        (c) => effectiveClusterState(c.id, c.sessionIds.length) !== 'DISMISSED',
+      ),
+    // effectiveClusterState closes over clusterStates which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [debtClusters, clusterStates],
+  );
+  const debtDismissed = useMemo(
+    () =>
+      debtClusters.filter(
+        (c) => effectiveClusterState(c.id, c.sessionIds.length) === 'DISMISSED',
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [debtClusters, clusterStates],
+  );
+
   const hasAnything =
     its !== null || knowledgeDebt !== null || reflexive !== null;
 
   if (!hasAnything) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO INSIGHTS DATA"
-        message="INSIGHTS reads analysis/its-analysis.json + knowledge-debt.json + reflexive.json. Run pnpm exporter run start to generate them, then refresh."
+        detail="INSIGHTS reads analysis/its-analysis.json + knowledge-debt.json + reflexive.json. Open DATA → SCAN LOCAL to populate them, then refresh."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="insights-empty"
       />
     );
   }
@@ -235,6 +419,16 @@ export function InsightsMode({
               {itsPending.slice(0, 12).map((r) => {
                 const key = itsRowKey(r);
                 const showAck = hasClearEffect(r);
+                const isStale =
+                  isAcked('its-contrast', key) && isStaleAck(key, r);
+                const copyBody = [
+                  `${r.subject || r.path}`,
+                  `Δ good-share: ${pct(r.deltaGoodShare)}`,
+                  `Δ 95% CI: ${fmtCi(r.deltaCI.low, r.deltaCI.high)}`,
+                  `Pre window: n=${r.pre.n}, good ${pctAbs(r.pre.goodShare)}`,
+                  `Post window: n=${r.post.n}, good ${pctAbs(r.post.goodShare)}`,
+                  `Window: ±${r.windowDays}d  ·  Commit: ${r.sha.slice(0, 7)}  ·  Path: ${r.path}`,
+                ];
                 return (
                   <li key={`${r.sha}-${r.path}`} role="listitem">
                     <article className="lcars-insights__card">
@@ -248,6 +442,20 @@ export function InsightsMode({
                         <span className="lcars-insights__card-meta">
                           {formatShortDate(r.ts)} · {r.path}
                         </span>
+                        {isStale && (
+                          <span
+                            className="lcars-insights__chip lcars-insights__chip--stale"
+                            data-testid={`stale-ack-${key}`}
+                            title="The CI moved or post-n grew significantly since this row was acknowledged. Re-review."
+                          >
+                            STALE ACK — re-review
+                          </span>
+                        )}
+                        <CopyMarkdownButton
+                          title="CONFIG IMPACT"
+                          bodyLines={copyBody}
+                          testId={`copy-its-${key}`}
+                        />
                       </header>
                       <dl className="lcars-insights__card-dl">
                         <div className="lcars-insights__card-dl-row">
@@ -277,7 +485,13 @@ export function InsightsMode({
                             type="button"
                             className="lcars-insights__ack-pill"
                             data-testid={`ack-its-${key}`}
-                            onClick={() => onAck('its-contrast', key)}
+                            onClick={() =>
+                              onAck('its-contrast', key, {
+                                deltaCI: r.deltaCI,
+                                nPost: r.post.n,
+                                nPre: r.pre.n,
+                              })
+                            }
                             title="Mark this contrast as reviewed; it'll move to the ACKNOWLEDGED list."
                           >
                             ACKNOWLEDGE
@@ -346,86 +560,188 @@ export function InsightsMode({
             size {THRESHOLDS.clustering.minClusterSize}.)
           </p>
         ) : (
-          <ul className="lcars-insights__card-list" role="list">
-            {debtClusters.slice(0, 12).map((c) => (
-              <li key={c.id} role="listitem">
-                <article
-                  className="lcars-insights__card"
-                  data-confidence={c.confidence}
-                >
-                  <header className="lcars-insights__card-header">
-                    <span className="lcars-insights__card-tag">
-                      {c.sessionIds.length} sessions
-                    </span>
-                    <h4 className="lcars-insights__card-title">
-                      {c.canonicalQuestion.length > 140
-                        ? `${c.canonicalQuestion.slice(0, 140)}…`
-                        : c.canonicalQuestion}
-                    </h4>
-                    <span className="lcars-insights__card-meta">
-                      {formatShortDate(c.firstSeen)} –{' '}
-                      {formatShortDate(c.lastSeen)} · confidence{' '}
-                      {c.confidence}
-                    </span>
-                  </header>
-                  {c.labelTerms.length > 0 && (
-                    <p className="lcars-insights__card-tags">
-                      {c.labelTerms.slice(0, 8).map((t) => (
-                        <span
-                          key={t}
-                          className="lcars-insights__card-term"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </p>
-                  )}
-                  {onSelectSession !== undefined && (
-                    <ul
-                      className="lcars-insights__evidence"
-                      role="list"
-                      aria-label="evidence sessions"
+          <>
+            <ul className="lcars-insights__card-list" role="list">
+              {debtActive.slice(0, 12).map((c) => {
+                const persistedState =
+                  clusterStates.get(c.id)?.state ?? 'PENDING';
+                const installed = persistedState === 'INSTALLED';
+                const copyBody = [
+                  c.canonicalQuestion,
+                  `Cluster size: ${c.sessionIds.length} sessions`,
+                  `First seen: ${formatShortDate(c.firstSeen)}  ·  Last seen: ${formatShortDate(c.lastSeen)}`,
+                  `Confidence: ${c.confidence}`,
+                  c.labelTerms.length > 0
+                    ? `Top terms: ${c.labelTerms.slice(0, 8).join(', ')}`
+                    : '',
+                ].filter((l) => l.length > 0);
+                return (
+                  <li key={c.id} role="listitem">
+                    <article
+                      className={
+                        'lcars-insights__card' +
+                        (installed ? ' lcars-insights__card--installed' : '')
+                      }
+                      data-confidence={c.confidence}
+                      data-cluster-state={persistedState}
                     >
-                      {c.sessionIds.slice(0, 6).map((sid) => (
-                        <li key={sid}>
+                      <header className="lcars-insights__card-header">
+                        <span className="lcars-insights__card-tag">
+                          {c.sessionIds.length} sessions
+                        </span>
+                        <h4 className="lcars-insights__card-title">
+                          {c.canonicalQuestion.length > 140
+                            ? `${c.canonicalQuestion.slice(0, 140)}…`
+                            : c.canonicalQuestion}
+                        </h4>
+                        <span className="lcars-insights__card-meta">
+                          {formatShortDate(c.firstSeen)} –{' '}
+                          {formatShortDate(c.lastSeen)} · confidence{' '}
+                          {c.confidence}
+                        </span>
+                        {installed && (
+                          <span
+                            className="lcars-insights__chip lcars-insights__chip--installed"
+                            data-testid={`cluster-installed-${c.id}`}
+                          >
+                            INSTALLED
+                          </span>
+                        )}
+                        <CopyMarkdownButton
+                          title="KNOWLEDGE DEBT — recurring question"
+                          bodyLines={copyBody}
+                          testId={`copy-debt-${c.id}`}
+                        />
+                      </header>
+                      {c.labelTerms.length > 0 && (
+                        <p className="lcars-insights__card-tags">
+                          {c.labelTerms.slice(0, 8).map((t) => (
+                            <span
+                              key={t}
+                              className="lcars-insights__card-term"
+                            >
+                              {t}
+                            </span>
+                          ))}
+                        </p>
+                      )}
+                      {onSelectSession !== undefined && (
+                        <ul
+                          className="lcars-insights__evidence"
+                          role="list"
+                          aria-label="evidence sessions"
+                        >
+                          {c.sessionIds.slice(0, 6).map((sid) => (
+                            <li key={sid}>
+                              <button
+                                type="button"
+                                className="lcars-insights__evidence-pill"
+                                onClick={() => onSelectSession(sid)}
+                              >
+                                ▸ session: {sid.slice(0, 8)}
+                              </button>
+                            </li>
+                          ))}
+                          {c.sessionIds.length > 6 && (
+                            <li>
+                              <span className="lcars-insights__evidence-pill lcars-insights__evidence-pill--static">
+                                +{c.sessionIds.length - 6} more
+                              </span>
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                      <div className="lcars-insights__card-actions">
+                        <button
+                          type="button"
+                          className="lcars-insights__install-btn"
+                          data-testid={`install-rule-${c.id}`}
+                          onClick={() => {
+                            onInstallAsRule({
+                              canonicalQuestion: c.canonicalQuestion,
+                              sessionIds: c.sessionIds,
+                            });
+                            onClusterStateChange(
+                              c.id,
+                              'INSTALLED',
+                              c.sessionIds.length,
+                            );
+                          }}
+                          title="Open the Obsidian markdown export for this cluster, or copy a paste-ready snippet for /update-config."
+                        >
+                          INSTALL AS RULE
+                        </button>
+                        <button
+                          type="button"
+                          className="lcars-insights__dismiss-btn"
+                          data-testid={`dismiss-cluster-${c.id}`}
+                          onClick={() =>
+                            onClusterStateChange(
+                              c.id,
+                              'DISMISSED',
+                              c.sessionIds.length,
+                            )
+                          }
+                          title={`Hide this cluster. It will return when its size grows ≥${THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier}× from now.`}
+                        >
+                          DISMISS
+                        </button>
+                      </div>
+                    </article>
+                  </li>
+                );
+              })}
+            </ul>
+            {debtDismissed.length > 0 && (
+              <details
+                className="lcars-insights__dismissed"
+                aria-label="dismissed knowledge-debt clusters"
+              >
+                <summary
+                  className="lcars-insights__dismissed-summary"
+                  data-testid="dismissed-clusters-summary"
+                >
+                  DISMISSED ({debtDismissed.length})
+                </summary>
+                <ul className="lcars-insights__card-list" role="list">
+                  {debtDismissed.slice(0, 12).map((c) => (
+                    <li key={c.id} role="listitem">
+                      <article
+                        className="lcars-insights__card lcars-insights__card--muted"
+                        data-cluster-state="DISMISSED"
+                      >
+                        <header className="lcars-insights__card-header">
+                          <span className="lcars-insights__card-tag">
+                            {c.sessionIds.length} sessions
+                          </span>
+                          <h4 className="lcars-insights__card-title">
+                            {c.canonicalQuestion.length > 140
+                              ? `${c.canonicalQuestion.slice(0, 140)}…`
+                              : c.canonicalQuestion}
+                          </h4>
                           <button
                             type="button"
-                            className="lcars-insights__evidence-pill"
-                            onClick={() => onSelectSession(sid)}
+                            className="lcars-insights__restore-btn"
+                            data-testid={`restore-cluster-${c.id}`}
+                            onClick={() =>
+                              onClusterStateChange(
+                                c.id,
+                                'PENDING',
+                                c.sessionIds.length,
+                              )
+                            }
+                            title="Restore this cluster to the active list."
                           >
-                            ▸ session: {sid.slice(0, 8)}
+                            RESTORE
                           </button>
-                        </li>
-                      ))}
-                      {c.sessionIds.length > 6 && (
-                        <li>
-                          <span className="lcars-insights__evidence-pill lcars-insights__evidence-pill--static">
-                            +{c.sessionIds.length - 6} more
-                          </span>
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                  <div className="lcars-insights__card-actions">
-                    <button
-                      type="button"
-                      className="lcars-insights__install-btn"
-                      data-testid={`install-rule-${c.id}`}
-                      onClick={() =>
-                        onInstallAsRule({
-                          canonicalQuestion: c.canonicalQuestion,
-                          sessionIds: c.sessionIds,
-                        })
-                      }
-                      title="Open the Obsidian markdown export for this cluster, or copy a paste-ready snippet for /update-config."
-                    >
-                      INSTALL AS RULE
-                    </button>
-                  </div>
-                </article>
-              </li>
-            ))}
-          </ul>
+                        </header>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         )}
       </section>
 
@@ -466,6 +782,23 @@ export function InsightsMode({
                 nTreated={reflexive.result.nTreated} · nControl=
                 {reflexive.result.nControl} · pairs={reflexive.result.pairs.length}
               </span>
+              <CopyMarkdownButton
+                title="REFLEXIVE — matched-pair contrast"
+                bodyLines={[
+                  `Mean delta: ${pct(reflexive.result.meanDelta)}`,
+                  `Delta 95% CI: ${fmtCi(reflexive.result.ci.low, reflexive.result.ci.high)}`,
+                  `Treated good: ${pctAbs(reflexive.result.pTreated)}  ·  Control good: ${pctAbs(reflexive.result.pControl)}`,
+                  `n_treated=${reflexive.result.nTreated}  ·  n_control=${reflexive.result.nControl}  ·  pairs=${reflexive.result.pairs.length}`,
+                  reflexive.result.eValueStatus === 'computed' &&
+                  reflexive.result.eValueCIBound !== null
+                    ? `E-value (CI bound): ${reflexive.result.eValueCIBound.toFixed(2)}`
+                    : reflexive.result.eValueStatus === 'p-control-zero' &&
+                        reflexive.result.eValueCIBound !== null
+                      ? `E-value (Wilson-floored): ${reflexive.result.eValueCIBound.toFixed(2)}`
+                      : 'E-value: N/A — contrast not distinguishable from null',
+                ]}
+                testId="copy-reflexive"
+              />
             </header>
             <dl className="lcars-insights__card-dl">
               <div className="lcars-insights__card-dl-row">

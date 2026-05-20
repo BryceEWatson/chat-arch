@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { EmptyState } from '../EmptyState.js';
+import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import {
   probeGenerateExports,
   startGenerateExports,
@@ -26,6 +26,8 @@ export interface ExportModeProps {
   projectOptions?: ReadonlyArray<{ id: string; label: string }>;
   /** Optional archetype list for the dropdown. */
   archetypeOptions?: ReadonlyArray<{ id: string; label: string }>;
+  /** Wave 7 P1 #4 — wire empty-state CTA to the data panel. */
+  onOpenDataPanel?: () => void;
 }
 
 /** All export kinds the panel knows about. Manifest may report a
@@ -88,6 +90,7 @@ export function ExportMode({
   manifest,
   projectOptions = [],
   archetypeOptions = [],
+  onOpenDataPanel,
 }: ExportModeProps) {
   // Per-kind selection (defaults: enabled when the manifest already has
   // entries; disabled otherwise so a first-time GENERATE produces only
@@ -151,9 +154,11 @@ export function ExportMode({
 
   if (manifest === null && endpointAvailable === false) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO EXPORT MANIFEST"
-        message="EXPORT reads analysis/exports/manifest.json. Run the exporter's export submodule to generate it."
+        detail="EXPORT reads analysis/exports/manifest.json. Open DATA → SCAN LOCAL to populate it, or generate exports below once a manifest is present."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="export-empty"
       />
     );
   }

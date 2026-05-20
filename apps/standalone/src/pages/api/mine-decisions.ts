@@ -67,12 +67,19 @@ function repoRoot(): string {
 
 interface MineDecisionsBody {
   dataDir?: unknown;
+  /** Wave 7 P2 #7 — per-candidate cap. Accepts a positive integer or the literal "all". */
+  batch?: unknown;
 }
 
 interface MineParams {
   requestId: string;
   dataDir: string;
+  /** Resolved batch — number (clamped) or null for "all". */
+  batch: number | null;
 }
+
+const DEFAULT_BATCH = 5;
+const MAX_BATCH = 200;
 
 interface SpawnOutcome {
   exitCode: number | null;
@@ -181,8 +188,9 @@ async function streamMineDecisions(
   encoder: TextEncoder,
 ): Promise<void> {
   const started = Date.now();
-  const { requestId, dataDir } = params;
-  const argSuffix = `--request-id=${requestId} --data-dir=${dataDir}`;
+  const { requestId, dataDir, batch } = params;
+  const batchArg = batch === null ? '--batch=all' : `--batch=${batch}`;
+  const argSuffix = `--request-id=${requestId} --data-dir=${dataDir} ${batchArg}`;
   const prompt = `/mine-decisions ${argSuffix}`;
 
   const send = (obj: unknown) => {
@@ -255,7 +263,21 @@ export const POST: APIRoute = async ({ request }) => {
       ? body.dataDir
       : DEFAULT_DATA_DIR;
 
-  const params: MineParams = { requestId: randomUUID(), dataDir };
+  let batch: number | null = DEFAULT_BATCH;
+  if (typeof body.batch === 'string') {
+    if (body.batch === 'all') {
+      batch = null;
+    } else {
+      const n = Number(body.batch);
+      if (Number.isFinite(n) && n >= 1) {
+        batch = Math.min(Math.floor(n), MAX_BATCH);
+      }
+    }
+  } else if (typeof body.batch === 'number' && Number.isFinite(body.batch)) {
+    if (body.batch >= 1) batch = Math.min(Math.floor(body.batch), MAX_BATCH);
+  }
+
+  const params: MineParams = { requestId: randomUUID(), dataDir, batch };
 
   const encoder = new TextEncoder();
   let done: (() => void) | null = null;

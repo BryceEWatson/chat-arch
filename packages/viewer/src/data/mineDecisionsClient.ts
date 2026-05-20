@@ -11,6 +11,14 @@
 const MINE_DECISIONS_PATH = '/api/mine-decisions';
 const REQUIRED_HEADER_VALUE = 'chat-arch-mine-decisions';
 
+/**
+ * Wave 7 P2 #7 — selectable mining batch size. `5` / `20` cap the run
+ * at N candidates; `'all'` removes the cap (the server still applies
+ * its per-run budget guard). Default is `5` — keeps the LLM cost
+ * predictable on first click.
+ */
+export type MineDecisionsBatch = 5 | 20 | 'all';
+
 export interface MineDecisionsResult {
   ok: boolean;
   exitCode?: number | null;
@@ -18,6 +26,18 @@ export interface MineDecisionsResult {
   stderrTail?: string;
   /** Network / parse error surfaced as a string. */
   error?: string;
+}
+
+export interface MineDecisionsStartOpts {
+  dataDir?: string;
+  /** Per-candidate cap. Defaults to 5. */
+  batch?: MineDecisionsBatch;
+  /**
+   * Called whenever the server emits a `decision-done` (or generic
+   * `progress`) NDJSON event so the UI can render row-by-row progress.
+   * The argument is the cumulative count of classified candidates.
+   */
+  onProgress?: (cumulativeCount: number) => void;
 }
 
 interface DoneEvent {
@@ -28,12 +48,23 @@ interface DoneEvent {
   stderrTail: string;
 }
 
+interface ProgressEvent {
+  type: 'progress' | 'decision-done';
+  count?: number;
+}
+
 function isDone(obj: unknown): obj is DoneEvent {
   return (
     typeof obj === 'object' &&
     obj !== null &&
     (obj as { type?: unknown }).type === 'done'
   );
+}
+
+function isProgress(obj: unknown): obj is ProgressEvent {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const t = (obj as { type?: unknown }).type;
+  return t === 'progress' || t === 'decision-done';
 }
 
 /**
@@ -58,8 +89,12 @@ export async function probeMineDecisions(): Promise<boolean> {
  * stderrTail so the UI can show it verbatim.
  */
 export async function startMineDecisions(
-  opts: { dataDir?: string } = {},
+  opts: MineDecisionsStartOpts = {},
 ): Promise<MineDecisionsResult> {
+  const { onProgress, batch, dataDir } = opts;
+  const body: Record<string, unknown> = {};
+  if (dataDir !== undefined) body.dataDir = dataDir;
+  if (batch !== undefined) body.batch = batch;
   let res: Response;
   try {
     res = await fetch(MINE_DECISIONS_PATH, {
@@ -68,7 +103,7 @@ export async function startMineDecisions(
         'X-Requested-With': REQUIRED_HEADER_VALUE,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(opts),
+      body: JSON.stringify(body),
     });
   } catch (err) {
     return {
@@ -93,7 +128,10 @@ export async function startMineDecisions(
   const decoder = new TextDecoder();
   let buf = '';
   let final: DoneEvent | null = null;
-  // Drain until the server closes; collect the last `done` event.
+  let progressCount = 0;
+  // Drain until the server closes; collect the last `done` event and
+  // forward incremental progress events to the caller (#7 streams the
+  // table row-by-row).
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -105,7 +143,15 @@ export async function startMineDecisions(
         if (line.trim().length === 0) continue;
         try {
           const obj = JSON.parse(line) as unknown;
-          if (isDone(obj)) final = obj;
+          if (isDone(obj)) {
+            final = obj;
+          } else if (isProgress(obj)) {
+            progressCount =
+              typeof obj.count === 'number' && Number.isFinite(obj.count)
+                ? obj.count
+                : progressCount + 1;
+            onProgress?.(progressCount);
+          }
         } catch {
           // ignore parse errors on partial lines
         }

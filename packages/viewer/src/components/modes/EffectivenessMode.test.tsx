@@ -147,7 +147,7 @@ describe('EffectivenessMode', () => {
     expect(screen.getByText(/Not enough weekly data/i)).toBeDefined();
   });
 
-  it('renders no causal language in the visible DOM text', () => {
+  it('renders no causal language in the visible DOM text (methodology body excluded)', () => {
     const { outcomes, sessionUpdatedAt } = buildFixture();
     const { container } = render(
       <EffectivenessMode
@@ -155,10 +155,59 @@ describe('EffectivenessMode', () => {
         sessionUpdatedAt={sessionUpdatedAt}
       />,
     );
+    // Wave 7 ships MethodologyDisclosure expanded by default — its body
+    // legitimately names the forbidden tokens by reference (allow-causal
+    // suppressed in the lint). The cards-outside-methodology must still
+    // be clean.
+    const methodology = container.querySelector('.lcars-methodology');
+    if (methodology !== null) methodology.remove();
     assertNoCausalLanguage(container.textContent ?? '');
   });
 
-  it('expands the methodology disclosure on click', () => {
+  it('renders the trajectory verdict line above the good-share panel (Wave 7 P2 #10)', () => {
+    const { outcomes, sessionUpdatedAt } = buildFixture();
+    render(
+      <EffectivenessMode
+        outcomes={outcomes}
+        sessionUpdatedAt={sessionUpdatedAt}
+      />,
+    );
+    // The verdict either renders (when enough informative weeks land in
+    // the trajectory window) or is omitted entirely — the fixture has
+    // 10 informative weeks so it must render.
+    const verdict = screen.queryByTestId('effectiveness-verdict');
+    expect(verdict).not.toBeNull();
+    expect(verdict?.textContent).toMatch(/Trajectory:/);
+    expect(verdict?.textContent).toMatch(/Wilson-tested/);
+  });
+
+  it('renders commit ticks when config-history is supplied', () => {
+    const { outcomes, sessionUpdatedAt } = buildFixture();
+    const firstWeek = Date.UTC(2026, 0, 4);
+    render(
+      <EffectivenessMode
+        outcomes={outcomes}
+        sessionUpdatedAt={sessionUpdatedAt}
+        configHistory={{
+          version: 1,
+          generatedAt: Date.now(),
+          commits: [
+            {
+              sha: '1234567890abcdef',
+              ts: firstWeek + 3 * WEEK_MS,
+              path: 'CLAUDE.md',
+              subject: 'tighten guidance',
+            },
+          ],
+        }}
+      />,
+    );
+    const ticks = screen.getByTestId('effectiveness-commit-ticks');
+    expect(ticks.textContent).toMatch(/1234567/);
+    expect(ticks.textContent).toMatch(/tighten guidance/);
+  });
+
+  it('renders the methodology disclosure expanded by default (Wave 7 P0)', () => {
     const { outcomes, sessionUpdatedAt } = buildFixture();
     render(
       <EffectivenessMode
@@ -169,11 +218,12 @@ describe('EffectivenessMode', () => {
     const toggle = screen.getByRole('button', {
       name: /methodology.*limitations/i,
     });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(toggle);
+    // Surface-visible by default — first paint shows the caveats.
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    // Caveats become visible after expansion.
     expect(screen.getByText('Confounding by indication')).toBeDefined();
     expect(screen.getByText('E-value caveats')).toBeDefined();
+    // Toggle still works in reverse — clicking collapses.
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 });

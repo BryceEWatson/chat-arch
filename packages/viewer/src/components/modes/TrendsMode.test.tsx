@@ -240,4 +240,24 @@ describe('TrendsMode', () => {
     expect(screen.getByText('react hooks')).toBeDefined();
     expect(screen.getByText('docker compose')).toBeDefined();
   });
+
+  it('labels the BH-FDR-adjusted value as q (not p̂) in skill curves (Wave 7 P0 #2)', () => {
+    render(
+      <TrendsMode
+        trajectories={null}
+        archetypes={null}
+        surfaceComparison={null}
+        skillCurves={skillCurves}
+      />,
+    );
+    // Caption explains the q symbol.
+    expect(
+      screen.getByTestId('skill-curves-q-caption').textContent,
+    ).toMatch(/q = BH-FDR adjusted p/i);
+    // The skill rows surface "q=" rather than "p̂=".
+    const learningRow = screen.getByText(/react hooks/).closest('li');
+    if (learningRow === null) throw new Error('row not rendered');
+    expect(learningRow.textContent).toMatch(/q=0\.020/);
+    expect(learningRow.textContent).not.toContain('p̂=');
+  });
 });

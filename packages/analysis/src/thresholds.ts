@@ -132,6 +132,28 @@ export const THRESHOLDS = {
     perRunInputTokenCap: 5_000_000,
     perRunOutputTokenCap: 2_000_000,
   },
+  /**
+   * Wave 7 P2 #8 — when does an ITS ack go stale?
+   *
+   *   - `nGrowthFraction`: the post-window n must grow by at least this
+   *     fraction (default 0.5 = 50%) since ack-time for the row to be
+   *     promoted back to the unacked pile on n-growth alone.
+   *
+   * The other staleness criterion — CI drift outside the originally-
+   * acked CI bounds — is a structural check, not a threshold: any
+   * non-overlap counts. We codify the n-growth knob here so future
+   * calibration can tighten / loosen it without recompiling.
+   */
+  actionBanner: {
+    staleAckCiInvalidationThreshold: 1.0,
+    staleAckPostNGrowthFraction: 0.5,
+    /**
+     * Wave 7 P2 #9 — knowledge-debt clusters dismissed by the user
+     * re-promote when the cluster's session-list size grows by this
+     * multiplier from the dismissed snapshot. Default: 2× growth.
+     */
+    knowledgeDebtRepromotionGrowthMultiplier: 2,
+  },
 } as const;
 
 export type Thresholds = typeof THRESHOLDS;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { THRESHOLDS } from '@chat-arch/analysis';
-import { EmptyState } from '../EmptyState.js';
+import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import type {
   ArchetypesFile,
   ProjectTrajectoriesFile,
@@ -37,6 +37,8 @@ export interface TrendsModeProps {
   skillCurves: SkillCurvesFile | null;
   /** Optional click-through for sessions assigned to a centroid. */
   onSelectSession?: (id: string) => void;
+  /** Wave 7 P1 #4 — wire empty-state CTA to the data panel. */
+  onOpenDataPanel?: () => void;
 }
 
 const CLASSIFICATION_LABEL: Record<TrajectoryClassification, string> = {
@@ -128,6 +130,7 @@ export function TrendsMode({
   surfaceComparison,
   skillCurves,
   onSelectSession,
+  onOpenDataPanel,
 }: TrendsModeProps) {
   const anyDataLoaded =
     trajectories !== null ||
@@ -137,9 +140,11 @@ export function TrendsMode({
 
   if (!anyDataLoaded) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO TRENDS DATA"
-        message="TRENDS reads analysis/project-trajectories.json, archetypes.json, surface-comparison.json, skill-curves.json. Run the exporter to generate them."
+        detail="TRENDS reads analysis/project-trajectories.json, archetypes.json, surface-comparison.json, skill-curves.json. Open DATA → SCAN LOCAL to populate them."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="trends-empty"
       />
     );
   }
@@ -521,7 +526,8 @@ const SKILL_GROUPS: ReadonlyArray<{
     classification: 'Learning',
     label: 'LEARNING',
     tone: 'positive',
-    blurb: 'Ask-rate trending down — overrepresented among topics being internalized.',
+    blurb:
+      'Ask-rate weeks per active session declining over the observed window.',
   },
   {
     classification: 'Steady',
@@ -534,7 +540,7 @@ const SKILL_GROUPS: ReadonlyArray<{
     label: 'STUCK-DEPENDENT',
     tone: 'negative',
     blurb:
-      'Ask-rate at-or-above corpus median with no decline — correlates with topics not being integrated.',
+      'Ask-rate at-or-above corpus median, no decline over the observed window.',
   },
 ];
 
@@ -555,6 +561,12 @@ function SkillCurvesSection({ skillCurves }: SkillCurvesSectionProps) {
       <p className="lcars-trends__caption">
         BH-FDR α={skillCurves.bhFdrAlpha} · min weeks present=
         {skillCurves.minWeeksPresent}
+      </p>
+      <p
+        className="lcars-trends__caption lcars-trends__caption--note"
+        data-testid="skill-curves-q-caption"
+      >
+        q = BH-FDR adjusted p (α={THRESHOLDS.skillCurve.bhFdrAlpha})
       </p>
       {SKILL_GROUPS.map((g) => {
         const rows = skillCurves.results.filter(
@@ -593,7 +605,7 @@ function SkillCurvesSection({ skillCurves }: SkillCurvesSectionProps) {
                     />
                     <span className="lcars-trends__skill-meta">
                       askPerActive={r.askPerActiveSession.toFixed(2)} · weeks=
-                      {r.weeksPresent} · p̂={r.pValueAdjusted.toFixed(3)}
+                      {r.weeksPresent} · q={r.pValueAdjusted.toFixed(3)}
                     </span>
                   </li>
                 );

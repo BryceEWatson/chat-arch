@@ -162,4 +162,17 @@ describe('DecisionsMode', () => {
     const cell = within(table).getByTitle(/composite 0\.75 · bad/);
     expect(cell.textContent).toContain('BAD');
   });
+
+  it('renders the MINE batch-size selector when there are unclassified decisions (Wave 7 P2 #7)', () => {
+    const decisions: Decision[] = [
+      decision('u1', 'explicit-go-with', null, { classified: false }),
+    ];
+    render(<DecisionsMode file={buildFile(decisions)} />);
+    const selector = screen.getByTestId('mine-batch-selector');
+    expect(selector).toBeDefined();
+    // Default batch is 5 — the button label reflects it.
+    expect(screen.getByTestId('mine-decisions-btn').textContent).toMatch(
+      /MINE 5/,
+    );
+  });
 });

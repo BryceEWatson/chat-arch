@@ -66,7 +66,7 @@ import {
   loadInsightsAcks,
   type InsightsAcksFile,
 } from './data/insightsAckClient.js';
-import { ActionItemsBanner } from './components/ActionItemsBanner.js';
+import { ActionItemsBanner, type TopItem } from './components/ActionItemsBanner.js';
 import type {
   CompositeOutcomesFile,
   CorrectionsFile,
@@ -981,6 +981,102 @@ export function ChatArchViewer({
     }
     return n;
   }, [insightsBundle, insightsAcks]);
+
+  // Wave 7 P1 #5 — Top-3 representatives + trust mis-calibration flag.
+  // Computed here so the banner is a pure renderer over the sidecar
+  // data. The same heuristic the modes use to flag rows surfaces the
+  // headline candidates.
+  const topActionItems = useMemo<readonly TopItem[]>(() => {
+    const out: TopItem[] = [];
+    // Highest-confidence + largest knowledge-debt cluster.
+    const debt = insightsBundle.knowledgeDebt;
+    if (debt !== null && debt.clusters.length > 0) {
+      const top = [...debt.clusters].sort((a, b) => {
+        const ca = a.confidence === 'high' ? 1 : 0;
+        const cb = b.confidence === 'high' ? 1 : 0;
+        if (ca !== cb) return cb - ca;
+        return b.sessionIds.length - a.sessionIds.length;
+      })[0];
+      if (top !== undefined) {
+        const q =
+          top.canonicalQuestion.length > 80
+            ? top.canonicalQuestion.slice(0, 77) + '…'
+            : top.canonicalQuestion;
+        out.push({
+          kind: 'knowledge-debt',
+          headline: `recurring question (${top.sessionIds.length} sessions) — ${q}`,
+          detail: `confidence ${top.confidence}`,
+          mode: 'insights',
+        });
+      }
+    }
+    // Biggest |delta| disjoint-CI ITS contrast.
+    const its = insightsBundle.its;
+    if (its !== null) {
+      const clear = its.results
+        .filter(
+          (r) =>
+            r.pre.n >= THRESHOLDS.display.minNForRate &&
+            r.post.n >= THRESHOLDS.display.minNForRate &&
+            ((r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
+              (r.deltaCI.low < 0 && r.deltaCI.high < 0)),
+        )
+        .sort((a, b) => Math.abs(b.deltaGoodShare) - Math.abs(a.deltaGoodShare));
+      const top = clear[0];
+      if (top !== undefined) {
+        const pp = Math.round(top.deltaGoodShare * 100);
+        out.push({
+          kind: 'its',
+          headline: `${top.subject || top.path} shifted good-share ${pp >= 0 ? '+' : ''}${pp} pp`,
+          detail: `commit ${top.sha.slice(0, 7)}`,
+          mode: 'insights',
+        });
+      }
+    }
+    return out;
+  }, [insightsBundle]);
+
+  // Trust mis-calibration flag — pure read from the decisions file.
+  // Mirrors the logic in TrustMode without duplicating the full 2×2
+  // build (we only need the boolean here).
+  const trustMisCalibrationFired = useMemo(() => {
+    if (decisionsFile === null) return false;
+    const minN = THRESHOLDS.trustCell.minN;
+    let aL = 0,
+      aN = 0,
+      oL = 0,
+      oN = 0;
+    for (const d of decisionsFile.decisions) {
+      const tc = d.trustCalibration;
+      if (tc === null || tc === undefined) continue;
+      if (tc.acceptedAssistant) {
+        if (tc.landed) aL += 1;
+        else aN += 1;
+      } else {
+        if (tc.landed) oL += 1;
+        else oN += 1;
+      }
+    }
+    const aTotal = aL + aN;
+    const oTotal = oL + oN;
+    if (aL < minN || aN < minN || oL < minN || oN < minN) return false;
+    if (aTotal === 0 || oTotal === 0) return false;
+    const pA = aL / aTotal;
+    const pO = oL / oTotal;
+    // Wilson CI inline (we don't want to depend on the analysis package here).
+    const wilson = (p: number, n: number) => {
+      const z = 1.96;
+      const z2 = z * z;
+      const denom = 1 + z2 / n;
+      const centre = (p + z2 / (2 * n)) / denom;
+      const radius =
+        (z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / denom;
+      return { low: centre - radius, high: centre + radius };
+    };
+    const ciA = wilson(pA, aTotal);
+    const ciO = wilson(pO, oTotal);
+    return ciA.high < ciO.low || ciO.high < ciA.low;
+  }, [decisionsFile]);
 
   // --- fetch manifest ---
   useEffect(() => {
@@ -2850,6 +2946,8 @@ export function ChatArchViewer({
                       unclassifiedDecisions={unclassifiedDecisionsCount}
                       knowledgeDebtClusters={knowledgeDebtClusterCount}
                       unacknowledgedItsContrasts={unacknowledgedItsCount}
+                      trustMisCalibrationFired={trustMisCalibrationFired}
+                      topItems={topActionItems}
                       currentMode={baseMode}
                       onNavigate={(m) => setMode(m)}
                     />
@@ -2925,6 +3023,8 @@ export function ChatArchViewer({
                             ),
                           )
                         }
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                        configHistory={insightsBundle.configHistory}
                       />
                     ) : baseMode === 'insights' ? (
                       <InsightsMode
@@ -2934,6 +3034,7 @@ export function ChatArchViewer({
                           setPriorModeBeforeDetail('insights');
                           onSelect(id);
                         }}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
                       />
                     ) : baseMode === 'decisions' ? (
                       <DecisionsMode
@@ -2942,9 +3043,13 @@ export function ChatArchViewer({
                           setPriorModeBeforeDetail('decisions');
                           onSelect(id);
                         }}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
                       />
                     ) : baseMode === 'trust' ? (
-                      <TrustMode file={decisionsFile} />
+                      <TrustMode
+                        file={decisionsFile}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                      />
                     ) : baseMode === 'trends' ? (
                       <TrendsMode
                         trajectories={trendsBundle.trajectories}
@@ -2955,9 +3060,13 @@ export function ChatArchViewer({
                           setPriorModeBeforeDetail('trends');
                           onSelect(id);
                         }}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
                       />
                     ) : baseMode === 'export' ? (
-                      <ExportMode manifest={exportsManifest} />
+                      <ExportMode
+                        manifest={exportsManifest}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                      />
                     ) : baseMode === 'corrections' ? (
                       <CorrectionsPanel
                         dataDirBaseUrl={dataRoot}

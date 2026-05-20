@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { Decision, DecisionsFile } from '@chat-arch/schema';
 import { THRESHOLDS, wilsonCI } from '@chat-arch/analysis';
-import { EmptyState } from '../EmptyState.js';
-import { startMineDecisions } from '../../data/mineDecisionsClient.js';
+import { SidecarEmptyState } from '../SidecarEmptyState.js';
+import {
+  startMineDecisions,
+  type MineDecisionsBatch,
+} from '../../data/mineDecisionsClient.js';
 
 /**
  * Stream J #1 — DECISIONS surface.
@@ -22,7 +25,12 @@ import { startMineDecisions } from '../../data/mineDecisionsClient.js';
 export interface DecisionsModeProps {
   file: DecisionsFile | null;
   onSelectSession?: (sessionId: string) => void;
+  /** Wave 7 P1 #4 — wire empty-state CTA to the data panel. */
+  onOpenDataPanel?: () => void;
 }
+
+/** Wave 7 P2 #7 — selectable batch sizes for MINE DECISIONS. */
+const MINE_BATCH_OPTIONS: ReadonlyArray<MineDecisionsBatch> = [5, 20, 'all'];
 
 /** Group decisions by topic-ish bucket. Falls back to "Untagged" when the
  *  LLM-classification pass hasn't tagged the row yet. The Phase 2 #1
@@ -109,7 +117,11 @@ function scoreClass(binary: 'good' | 'bad' | 'neutral'): string {
   return `lcars-decisions__score lcars-decisions__score--${binary}`;
 }
 
-export function DecisionsMode({ file, onSelectSession }: DecisionsModeProps) {
+export function DecisionsMode({
+  file,
+  onSelectSession,
+  onOpenDataPanel,
+}: DecisionsModeProps) {
   const buckets = useMemo(
     () => (file === null ? [] : buildBuckets(file.decisions)),
     [file],
@@ -126,13 +138,21 @@ export function DecisionsMode({ file, onSelectSession }: DecisionsModeProps) {
   }, [file]);
   const [mineState, setMineState] = useState<
     | { status: 'idle' }
-    | { status: 'running' }
+    | { status: 'running'; progress: number }
     | { status: 'done'; ok: boolean; stderr: string | null }
   >({ status: 'idle' });
+  const [mineBatch, setMineBatch] = useState<MineDecisionsBatch>(5);
 
   const onMine = async () => {
-    setMineState({ status: 'running' });
-    const result = await startMineDecisions();
+    setMineState({ status: 'running', progress: 0 });
+    const result = await startMineDecisions({
+      batch: mineBatch,
+      onProgress: (progress) => {
+        setMineState((prev) =>
+          prev.status === 'running' ? { status: 'running', progress } : prev,
+        );
+      },
+    });
     setMineState({
       status: 'done',
       ok: result.ok,
@@ -142,18 +162,22 @@ export function DecisionsMode({ file, onSelectSession }: DecisionsModeProps) {
 
   if (file === null) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO DECISIONS"
-        message="DECISIONS reads analysis/decisions.json. Run the exporter to generate it."
+        detail="DECISIONS reads analysis/decisions.json. Open DATA → SCAN LOCAL to populate it."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="decisions-empty"
       />
     );
   }
 
   if (file.decisions.length === 0) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO DECISIONS FOUND"
-        message="The decision-extraction kernel ran but didn't surface any candidates in your corpus."
+        detail="The decision-extraction kernel ran but didn't surface any candidates in your corpus."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="decisions-empty-found"
       />
     );
   }
@@ -183,15 +207,44 @@ export function DecisionsMode({ file, onSelectSession }: DecisionsModeProps) {
             {`{question, alternatives, chosen, rationale}`} for each — same
             shape as <code>/mine-corrections</code> does for corrections.
           </p>
-          <button
-            type="button"
-            className="lcars-decisions__cta-btn"
-            disabled={mineState.status === 'running'}
-            onClick={() => void onMine()}
-            data-testid="mine-decisions-btn"
+          <div
+            className="lcars-decisions__cta-controls"
+            role="group"
+            aria-label="mine decisions controls"
           >
-            {mineState.status === 'running' ? 'MINING…' : '▶ MINE DECISIONS'}
-          </button>
+            <label
+              className="lcars-decisions__cta-batch"
+              data-testid="mine-batch-selector"
+            >
+              <span className="lcars-decisions__cta-batch-label">Mine</span>
+              <select
+                value={String(mineBatch)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMineBatch(v === 'all' ? 'all' : (Number(v) as 5 | 20));
+                }}
+                disabled={mineState.status === 'running'}
+                aria-label="batch size"
+              >
+                {MINE_BATCH_OPTIONS.map((opt) => (
+                  <option key={String(opt)} value={String(opt)}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="lcars-decisions__cta-btn"
+              disabled={mineState.status === 'running'}
+              onClick={() => void onMine()}
+              data-testid="mine-decisions-btn"
+            >
+              {mineState.status === 'running'
+                ? `MINING… (${mineState.progress})`
+                : `▶ MINE ${mineBatch === 'all' ? 'ALL' : mineBatch}`}
+            </button>
+          </div>
           {mineState.status === 'done' && !mineState.ok && (
             <p
               className="lcars-decisions__cta-error"

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import type { Decision, DecisionsFile } from '@chat-arch/schema';
 import { THRESHOLDS, wilsonCI } from '@chat-arch/analysis';
-import { EmptyState } from '../EmptyState.js';
+import { SidecarEmptyState } from '../SidecarEmptyState.js';
+import { CopyMarkdownButton } from '../CopyMarkdownButton.js';
 
 /**
  * Stream J #10 — TRUST surface.
@@ -27,6 +28,8 @@ import { EmptyState } from '../EmptyState.js';
 
 export interface TrustModeProps {
   file: DecisionsFile | null;
+  /** Wave 7 P1 #4 — wire empty-state CTA to the data panel. */
+  onOpenDataPanel?: () => void;
 }
 
 type CellKey = 'accept-land' | 'accept-noland' | 'override-land' | 'override-noland';
@@ -153,7 +156,7 @@ function formatRate(p: number): string {
   return `${Math.round(p * 100)}%`;
 }
 
-export function TrustMode({ file }: TrustModeProps) {
+export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
   const tally = useMemo(
     () => (file === null ? null : build2x2(file.decisions)),
     [file],
@@ -161,18 +164,22 @@ export function TrustMode({ file }: TrustModeProps) {
 
   if (file === null) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO TRUST DATA"
-        message="TRUST reads analysis/decisions.json — run the exporter (and the upstream Phase 2 #1 LLM-classification pass) to populate it."
+        detail="TRUST reads analysis/decisions.json. Open DATA → SCAN LOCAL to populate it (and run the LLM-classification pass)."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="trust-empty"
       />
     );
   }
 
   if (tally === null || tally.totalUsable === 0) {
     return (
-      <EmptyState
+      <SidecarEmptyState
         title="NO USABLE DECISIONS"
-        message="No decisions have both an accept/override signal AND a joined composite outcome yet. Run the LLM-classification pass."
+        detail="No decisions have both an accept/override signal AND a joined composite outcome yet. Run the LLM-classification pass."
+        {...(onOpenDataPanel ? { onOpenDataPanel } : {})}
+        testId="trust-empty-usable"
       />
     );
   }
@@ -222,6 +229,25 @@ export function TrustMode({ file }: TrustModeProps) {
           <RateCell row={overrideRow} qualified={overrideRow.meetsCellN} />
         </div>
       </div>
+      <div className="lcars-trust__copy-row">
+        <CopyMarkdownButton
+          title="TRUST — accept/override × landed/didn't"
+          bodyLines={[
+            `Accepted Claude: landed=${cells['accept-land'].n}  ·  didn't land=${cells['accept-noland'].n}`,
+            `Overrode Claude: landed=${cells['override-land'].n}  ·  didn't land=${cells['override-noland'].n}`,
+            `Accept-row landed rate: ${formatRate(acceptRow.pHat)}` +
+              (acceptRow.meetsCellN
+                ? ` (Wilson 95% CI ${formatRate(acceptRow.ci.low)} – ${formatRate(acceptRow.ci.high)}, n=${acceptRow.total})`
+                : ` (n insufficient: ${acceptRow.total})`),
+            `Override-row landed rate: ${formatRate(overrideRow.pHat)}` +
+              (overrideRow.meetsCellN
+                ? ` (Wilson 95% CI ${formatRate(overrideRow.ci.low)} – ${formatRate(overrideRow.ci.high)}, n=${overrideRow.total})`
+                : ` (n insufficient: ${overrideRow.total})`),
+            `Mis-calibration flag fired: ${misCalibrated ? 'YES (disjoint CIs)' : 'no'}`,
+          ]}
+          testId="copy-trust-2x2"
+        />
+      </div>
       <div
         className={
           'lcars-trust__flag' +
@@ -236,8 +262,9 @@ export function TrustMode({ file }: TrustModeProps) {
           <>
             <strong>Mis-calibration:</strong> the landed-rate CIs for ACCEPTED and
             OVERRODE are disjoint ({formatRate(acceptRow.pHat)} vs{' '}
-            {formatRate(overrideRow.pHat)}). Your override behavior correlates with a
-            measurably different landed-rate.
+            {formatRate(overrideRow.pHat)}). Accept- and override-rows show
+            non-overlapping Wilson CIs on landed-rate. Selection effects mean this
+            contrast is not adjusted for the reason you overrode.
           </>
         ) : (
           <>

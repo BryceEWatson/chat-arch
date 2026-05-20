@@ -116,7 +116,12 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
 ];
 
 export function MethodologyDisclosure() {
-  const [expanded, setExpanded] = useState(false);
+  // Surface-visible by default — JSDoc above is load-bearing. The user
+  // should never have to leave the mode to learn how to read the
+  // numbers. Wave 7 QA pass: first-time-user persona missed every
+  // caveat when the section shipped collapsed. Toggle stays so a
+  // returning user CAN collapse once they've internalized them.
+  const [expanded, setExpanded] = useState(true);
   return (
     <div className="lcars-methodology" aria-label="methodology and limitations">
       <button
