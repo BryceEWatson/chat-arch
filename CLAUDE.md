@@ -141,3 +141,42 @@ The corrections pipeline writes three files under
 - `correction-status-${requestId}.json` — per-run progress files the
   skill writes during a mining pass. The viewer polls them while a
   run is in flight; the clear endpoint sweeps them up.
+
+### Outcome-substrate sidecars (Phase 1-4, EXPORTER_VERSION 1.2.0)
+
+Eleven additional sidecars under `apps/standalone/public/chat-arch-data/
+analysis/` (all gitignored — locally generated, may carry PII):
+
+- `composite-outcomes.json` — per-session composite score + binary
+  good/bad classification. PII: session IDs + scores. Foundation; every
+  Phase 1-3 surface reads it.
+- `pr-land-cache.json` — `gh api` PR merge-state cache (opt-in via
+  `--enable-pr-join`). PII: GitHub data (org / repo / PR titles).
+- `config-history.json` — `git log` over `~/.claude/`, `~/.claude/
+  skills/`, `<project>/.claude/`. PII: commit subjects (reproducible
+  from git; not data-on-disk in the same sense as transcripts).
+- `its-analysis.json` — interrupted-time-series contrasts of composite
+  score around config changes. Aggregate numbers, not PII; gitignored
+  conservatively.
+- `knowledge-debt.json` + `chat-arch-data/exports/knowledge-debt.md` —
+  clustered recurring first-user-turn questions. PII: user questions
+  verbatim.
+- `reflexive.json` — matched-pair contrast for "touched chat-arch"
+  sessions. PII: session IDs + composite scores.
+- `decisions.json` — extracted decisions (LF candidates) joined to
+  composite outcome. PII: decision prose.
+- `archetypes.json` — k-means workflow-archetype centroids + per-
+  session assignments. PII: session-archetype mapping.
+- `project-trajectories.json` — Theil-Sen slope per project +
+  block-bootstrap CI. PII: project name + composite score series.
+- `surface-comparison.json` — `(source, archetype)` cell aggregates +
+  Holm-Bonferroni pairwise tests. Aggregate numbers; gitignored
+  conservatively.
+- `skill-curves.json` — per-topic weekly ask-count series + Mann-
+  Kendall trend test with BH-FDR. PII: topic + time series.
+
+The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
+and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
+#12 post-mortems + knowledge-debt) are also gitignored. The wildcard
+`apps/standalone/public/chat-arch-data/*` covers them all; the
+explicit entries in `.gitignore` exist as auditable documentation.

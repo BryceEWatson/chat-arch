@@ -41,6 +41,7 @@ import type {
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
 import {
+  AUDIT_CONFIG_VERSION,
   buildBlogCandidates,
   buildDailyBrief,
   buildSemanticDuplicates,
@@ -767,6 +768,7 @@ export async function runSemanticAnalysis(
   const auditResultsFile: AuditResultsFile = {
     version: 1,
     generatedAt: now,
+    auditConfigVersion: AUDIT_CONFIG_VERSION,
     totals: verifyResult.summary.totals,
     results: verifyResult.results,
   };

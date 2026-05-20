@@ -1,0 +1,26 @@
+{
+  "heuristicRecallVersion": 2,
+  "generatedAt": 1699996000000,
+  "corrections": [],
+  "patterns": [],
+  "scannedSessionIds": ["s-1"],
+  "scanStatsBySession": { "s-1": [1, 0, 0] },
+  "scanStats": {
+    "sessionsInManifest": 1,
+    "sessionsScanned": 1,
+    "sessionsMissing": 0,
+    "sessionsBySource": { "cli-direct": 1 },
+    "sessionsMissingBySource": {},
+    "sessionsCrashedBySource": {},
+    "rawUserTurns": 1,
+    "wrapperFiltered": 0,
+    "tooLongFiltered": 0,
+    "survivingTurns": 1
+  },
+  "pipeline": {
+    "heuristicRecall": true,
+    "llmClassification": false,
+    "embeddingClustering": false,
+    "claudeMdCrossCheck": false
+  }
+}

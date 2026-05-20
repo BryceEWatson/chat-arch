@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 4,
+  "generatedAt": 1700000000000,
+  "counts": {
+    "cowork": 0,
+    "cli-direct": 1,
+    "cli-desktop": 0,
+    "cloud": 0
+  },
+  "sessions": [
+    {
+      "id": "s-1",
+      "source": "cli-direct",
+      "rawSessionId": "s-1",
+      "startedAt": 1699990000000,
+      "updatedAt": 1699995000000,
+      "durationMs": 5000000,
+      "title": "fixture session s-1",
+      "titleSource": "fallback",
+      "preview": "Please open a PR for these changes.",
+      "userTurns": 1,
+      "model": null,
+      "modelsUsed": [],
+      "cwdKind": "absolute",
+      "cwd": "/example-project",
+      "project": "example-project",
+      "projectId": "example-project",
+      "totalCostUsd": null,
+      "transcriptPath": "local-transcripts/cli-direct/s-1.jsonl",
+      "transcriptStatus": "present"
+    }
+  ]
+}

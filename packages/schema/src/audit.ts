@@ -63,6 +63,14 @@ export interface AuditResult extends AuditClaim {
 export interface AuditResultsFile {
   version: 1;
   generatedAt: number;
+  /**
+   * Snapshot of `AUDIT_CONFIG_VERSION` (from `auditConfig.ts`) at write
+   * time. Phase 1 Wave 5 (Stream A): added so the migration test can
+   * detect cache invalidation across the 1.1.0 → 1.2.0 boundary. Optional
+   * on the type for back-compat with 1.1.0 sidecars; emitted on every
+   * 1.2.0 write.
+   */
+  auditConfigVersion?: number;
   totals: Record<AuditOutcome, number>;
   results: readonly AuditResult[];
 }

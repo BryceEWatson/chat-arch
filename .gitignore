@@ -68,6 +68,24 @@ apps/standalone/public/design-system/
 
 # Exporter output for local dev — data is on user's machine, not in repo
 apps/standalone/public/chat-arch-data/*
+# Outcome-substrate sidecars (Phase 1-4) are explicitly enumerated for
+# documentation — they're already covered by the wildcard above, but
+# listing them keeps the PII surface auditable from .gitignore alone.
+apps/standalone/public/chat-arch-data/analysis/composite-outcomes.json
+apps/standalone/public/chat-arch-data/analysis/pr-land-cache.json
+apps/standalone/public/chat-arch-data/analysis/config-history.json
+apps/standalone/public/chat-arch-data/analysis/knowledge-debt.json
+apps/standalone/public/chat-arch-data/analysis/reflexive.json
+apps/standalone/public/chat-arch-data/analysis/its-analysis.json
+apps/standalone/public/chat-arch-data/analysis/decisions.json
+apps/standalone/public/chat-arch-data/analysis/archetypes.json
+apps/standalone/public/chat-arch-data/analysis/project-trajectories.json
+apps/standalone/public/chat-arch-data/analysis/surface-comparison.json
+apps/standalone/public/chat-arch-data/analysis/skill-curves.json
+apps/standalone/public/chat-arch-data/analysis/thrash-fires.json
+apps/standalone/public/chat-arch-data/exports/
+.claude/review-loop.disabled
+.claude/review-loop.disabled-roles
 # Keep empty chat-arch-data dir on fresh clones.
 !apps/standalone/public/chat-arch-data/.gitkeep
 # Track the empty default manifest. Shipping it (instead of relying on a

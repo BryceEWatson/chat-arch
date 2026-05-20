@@ -100,12 +100,15 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
   },
   {
     title: 'No-causal-language lint',
+    // allow-causal: this entry is the methodology disclosure that has to
+    // NAME the forbidden tokens by reference to disavow them. Suppression
+    // applies to the JSX body below.
     body: (
       <>
-        Viewer copy across these surfaces is checked against a
-        no-causal-language linter — words like &ldquo;because&rdquo;,
-        &ldquo;caused by&rdquo;, &ldquo;due to&rdquo;, and
-        &ldquo;effect of&rdquo; are forbidden. Reading the surface
+        Viewer copy across these surfaces is checked against a {/* allow-causal */}
+        no-causal-language linter — words like &ldquo;because&rdquo;, {/* allow-causal */}
+        &ldquo;caused by&rdquo;, &ldquo;due to&rdquo;, and {/* allow-causal */}
+        &ldquo;effect of&rdquo; are forbidden. Reading the surface {/* allow-causal */}
         as a causal estimate is reading it wrong.
       </>
     ),
