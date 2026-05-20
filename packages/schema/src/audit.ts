@@ -15,12 +15,21 @@ export type ClaimType =
   | 'verification-claim'
   | 'addition-claim'
   | 'build-pass-claim'
-  | 'completion-claim';
-// NOTE: Phase 1 Wave 2 (Stream B) extends this union with the
-// outcome-substrate claim families (gh-pr-opened, gh-pr-merged,
-// gh-pr-closed-unmerged, git-revert, git-reset-hard, git-force-push,
-// affirmation) alongside the verifier logic. Wave 1 keeps the union
-// stable so the schema package builds independently.
+  | 'completion-claim'
+  // Phase 1 Wave 2 (Stream B) — outcome-substrate claim families. The
+  // verifier (`packages/analysis/src/auditEvidence.ts`) inspects the
+  // structured `TimelineEvent` stream — Bash `tool_use` input.command
+  // plus the following `tool_result.isError` — to assign pass / fail /
+  // inconclusive. `affirmation` is the positive-polarity mirror of
+  // `completion-claim`: a forward window over USER turns checked
+  // against `AFFIRMATION_PATTERNS`.
+  | 'gh-pr-opened'
+  | 'gh-pr-merged'
+  | 'gh-pr-closed-unmerged'
+  | 'git-revert'
+  | 'git-reset-hard'
+  | 'git-force-push'
+  | 'affirmation';
 
 export type AuditOutcome = 'pass' | 'fail' | 'inconclusive';
 

@@ -162,6 +162,15 @@ export {
   type PlaybookKernelHit,
 } from './detectPlaybookCandidates.js';
 
+export {
+  DECISION_HEURISTIC_VERSION,
+  DECISION_LFS,
+  detectDecisions,
+  runLabelingFunction as runDecisionLabelingFunction,
+  type DecisionLabelingFunction,
+  type DecisionTurnPair,
+} from './detectDecisions.js';
+
 export { clusterByThreshold } from './clusterRules.js';
 
 export {
@@ -183,6 +192,7 @@ export {
 } from './discoveryScore.js';
 
 export {
+  AFFIRMATION_PATTERNS,
   AUDIT_CONFIG_VERSION,
   CLAIM_PATTERNS,
   DEFAULT_VERIFIER_WINDOWS,
@@ -191,6 +201,18 @@ export {
   type ClaimPattern,
   type VerifierWindows,
 } from './auditConfig.js';
+
+export {
+  binaryFromScore,
+  composeOutcome,
+  extractPrimitives,
+  logitFromPrimitives,
+  weightsHashFnv,
+  type ComposeOutcomeOptions,
+  type CompositePrimitives,
+  type LogitContributions,
+  type UpgradeOutcomeMetricsSnapshot,
+} from './composeOutcome.js';
 
 export {
   extractClaims,
@@ -288,3 +310,57 @@ export {
   buildBlogCandidates,
   type BuildBlogCandidatesOptions,
 } from './blogCandidates.js';
+
+export {
+  runItsAnalysis,
+  type ItsConfigCommit,
+  type ItsOutcomeInput,
+  type ItsResult,
+  type ItsSnapshot,
+  type RunItsAnalysisOptions,
+} from './itsAnalysis.js';
+
+export {
+  detectKnowledgeDebt,
+  renderObsidianMarkdown,
+  type DetectKnowledgeDebtOptions,
+  type KnowledgeDebtCluster,
+  type KnowledgeDebtEntry,
+} from './detectKnowledgeDebt.js';
+
+export {
+  computeReflexive,
+  type CovariateFn,
+  type EValueStatus,
+  type ReflexiveEntry,
+  type ReflexivePair,
+  type ReflexiveResult,
+} from './computeReflexive.js';
+
+export {
+  detectArchetypes,
+  type ArchetypeCentroid,
+  type ArchetypesResult,
+  type DetectArchetypesOptions,
+  type SessionToolStats,
+} from './detectArchetypes.js';
+
+export {
+  bootstrapSlope,
+  politisWhiteBlockLength,
+  theilSen,
+  type BootstrapResult,
+  type BootstrapSlopeOptions,
+  type BootstrapStatus,
+} from './trajectoryBootstrap.js';
+
+export {
+  analyzeSkillCurves,
+  benjaminiHochberg,
+  mannKendall,
+  type AnalyzeSkillCurvesOptions,
+  type SkillCurveClassification,
+  type SkillCurvePoint,
+  type SkillCurveResult,
+  type SkillCurveSeries,
+} from './skillCurve.js';

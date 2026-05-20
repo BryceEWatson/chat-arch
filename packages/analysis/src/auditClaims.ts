@@ -34,6 +34,14 @@ const EMPTY_TOTALS: Readonly<Record<ClaimType, number>> = {
   'addition-claim': 0,
   'build-pass-claim': 0,
   'completion-claim': 0,
+  // v2 outcome-substrate families
+  'gh-pr-opened': 0,
+  'gh-pr-merged': 0,
+  'gh-pr-closed-unmerged': 0,
+  'git-revert': 0,
+  'git-reset-hard': 0,
+  'git-force-push': 0,
+  'affirmation': 0,
 };
 
 function makeContext(text: string, matchIndex: number, matchLength: number): string {

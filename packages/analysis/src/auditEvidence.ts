@@ -31,6 +31,7 @@ import type {
   AuditSummary,
 } from '@chat-arch/schema';
 import {
+  AFFIRMATION_PATTERNS,
   DEFAULT_VERIFIER_WINDOWS,
   PUSHBACK_PATTERNS,
   type VerifierWindows,
@@ -206,6 +207,98 @@ function verifyCompletion(
   };
 }
 
+/**
+ * Generic "Bash tool_use whose input.command matches `commandRegex`,
+ * followed within 3 events by a non-error tool_result" verifier. Used by
+ * the gh-pr-* and git-* claim families.
+ *
+ * Result discipline:
+ *   - no matching Bash in window           → fail   (claim un-evidenced)
+ *   - matching Bash but tool_result.isError → fail   (command ran but errored)
+ *   - matching Bash but no tool_result      → inconclusive (truncated)
+ *   - matching Bash + clean tool_result     → pass
+ */
+function verifyBashCommand(
+  events: readonly TimelineEvent[],
+  claimIdx: number,
+  windowSize: number,
+  commandRegex: RegExp,
+  label: string,
+): VerdictPlan {
+  for (let i = claimIdx + 1; i < Math.min(events.length, claimIdx + windowSize + 1); i += 1) {
+    const e = events[i];
+    if (e === undefined || !isToolUse(e)) continue;
+    if (e.name !== 'Bash') continue;
+    const cmd = bashCommand(e.input);
+    if (!commandRegex.test(cmd)) continue;
+    const r = findForward(events, i, 3, isToolResult);
+    if (r === null) {
+      return {
+        outcome: 'inconclusive',
+        reason: `${label} Bash at line ${e.lineNumber} but no tool_result captured`,
+      };
+    }
+    if (r.event.isError) {
+      return {
+        outcome: 'fail',
+        reason: `${label} Bash exited with error at line ${r.event.lineNumber}`,
+      };
+    }
+    return {
+      outcome: 'pass',
+      reason: `${label} Bash + clean tool_result at line ${r.event.lineNumber}`,
+    };
+  }
+  return { outcome: 'fail', reason: `no ${label} Bash command in window` };
+}
+
+/**
+ * Positive-polarity mirror of `verifyCompletion`. The claim is the
+ * assistant signalling "I'm done — check it" (or equivalent); the
+ * evidence is the user affirming in the next N user turns. Absence of
+ * any user reply is inconclusive (no signal either way), absence of
+ * affirmation across observed user turns is fail (the user moved on
+ * without acknowledging — same default as pushback).
+ */
+function verifyAffirmation(
+  events: readonly TimelineEvent[],
+  claimIdx: number,
+  windowSize: number,
+): VerdictPlan {
+  let userTurnsSeen = 0;
+  for (let i = claimIdx + 1; i < events.length; i += 1) {
+    const e = events[i];
+    if (e === undefined || !isUserTurn(e)) continue;
+    userTurnsSeen += 1;
+    if (userTurnsSeen > windowSize) break;
+    for (const re of AFFIRMATION_PATTERNS) {
+      if (re.test(e.text)) {
+        return {
+          outcome: 'pass',
+          reason: `user affirmation at line ${e.lineNumber}: ${e.text.slice(0, 80)}`,
+        };
+      }
+    }
+  }
+  if (userTurnsSeen === 0) {
+    return { outcome: 'inconclusive', reason: 'no further user turns to check for affirmation' };
+  }
+  return {
+    outcome: 'fail',
+    reason: `no affirmation across next ${userTurnsSeen} user turn(s)`,
+  };
+}
+
+// Command regexes for the v2 verifiers. Anchored on Bash input.command.
+const GH_PR_OPENED_CMD = /\bgh\s+pr\s+create\b/i;
+const GH_PR_MERGED_CMD = /\bgh\s+pr\s+merge\b/i;
+const GH_PR_CLOSED_CMD = /\bgh\s+pr\s+close\b/i;
+const GIT_REVERT_CMD = /\bgit\s+revert\b/i;
+const GIT_RESET_HARD_CMD = /\bgit\s+reset\s+(?:[^\n]*\s+)?--hard\b/i;
+// Force-push covers both --force and --force-with-lease; the latter is
+// safer but still a force push for audit purposes.
+const GIT_FORCE_PUSH_CMD = /\bgit\s+push\b[^\n]*\s--?force(?:-with-lease)?\b/i;
+
 const TEST_COMMAND_PATTERNS: readonly RegExp[] = [
   /\btest\b/i,
   /vitest/i,
@@ -290,6 +383,63 @@ export function verifyOneClaim(
     case 'completion-claim':
       plan = verifyCompletion(timeline, claimIdx, windows.completionWindow);
       break;
+    case 'gh-pr-opened':
+      plan = verifyBashCommand(
+        timeline,
+        claimIdx,
+        windows.ghPrOpenedWindow,
+        GH_PR_OPENED_CMD,
+        'gh pr create',
+      );
+      break;
+    case 'gh-pr-merged':
+      plan = verifyBashCommand(
+        timeline,
+        claimIdx,
+        windows.ghPrMergedWindow,
+        GH_PR_MERGED_CMD,
+        'gh pr merge',
+      );
+      break;
+    case 'gh-pr-closed-unmerged':
+      plan = verifyBashCommand(
+        timeline,
+        claimIdx,
+        windows.ghPrClosedUnmergedWindow,
+        GH_PR_CLOSED_CMD,
+        'gh pr close',
+      );
+      break;
+    case 'git-revert':
+      plan = verifyBashCommand(
+        timeline,
+        claimIdx,
+        windows.gitRevertWindow,
+        GIT_REVERT_CMD,
+        'git revert',
+      );
+      break;
+    case 'git-reset-hard':
+      plan = verifyBashCommand(
+        timeline,
+        claimIdx,
+        windows.gitResetHardWindow,
+        GIT_RESET_HARD_CMD,
+        'git reset --hard',
+      );
+      break;
+    case 'git-force-push':
+      plan = verifyBashCommand(
+        timeline,
+        claimIdx,
+        windows.gitForcePushWindow,
+        GIT_FORCE_PUSH_CMD,
+        'git push --force',
+      );
+      break;
+    case 'affirmation':
+      plan = verifyAffirmation(timeline, claimIdx, windows.affirmationWindow);
+      break;
     default: {
       // exhaustiveness: cast for TS
       const _exhaust: never = claim.claimType;
@@ -335,6 +485,14 @@ export function verifySessions(
     'addition-claim': { ...ZERO_STATS },
     'build-pass-claim': { ...ZERO_STATS },
     'completion-claim': { ...ZERO_STATS },
+    // v2 outcome-substrate families
+    'gh-pr-opened': { ...ZERO_STATS },
+    'gh-pr-merged': { ...ZERO_STATS },
+    'gh-pr-closed-unmerged': { ...ZERO_STATS },
+    'git-revert': { ...ZERO_STATS },
+    'git-reset-hard': { ...ZERO_STATS },
+    'git-force-push': { ...ZERO_STATS },
+    'affirmation': { ...ZERO_STATS },
   };
   const byProject: Record<string, ClaimTypeStats> = {};
 

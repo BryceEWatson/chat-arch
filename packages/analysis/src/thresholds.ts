@@ -70,6 +70,11 @@ export const THRESHOLDS = {
     silhouetteMin: 0.15,
     intraClusterCosineMin: 0.7,
     minClusterSize: 10,
+    // Workflow-archetype clusters (#5) need a higher floor than generic
+    // topic clusters — too-small archetypes are noisy "person-shaped" tails
+    // rather than real workflow patterns. Pre-launch placeholder; calibrate
+    // when archetype hand-labels are first applied.
+    archetypeMinSize: 20,
   },
   trajectory: {
     rollingWindow: 10,

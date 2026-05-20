@@ -8,6 +8,7 @@ export * from './topic.js';
 export * from './narrative.js';
 export * from './pattern.js';
 export * from './correction.js';
+export * from './decision.js';
 export * from './playbook.js';
 export * from './applied-improvement.js';
 export * from './configDocument.js';
