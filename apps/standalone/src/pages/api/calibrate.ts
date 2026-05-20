@@ -349,26 +349,11 @@ export function stratifiedSampleDeficit(
   return out;
 }
 
-// Wilson score 95% CI for a binomial proportion p̂ over n samples.
-// z = 1.96. Edge cases: n=0 returns [0,1] (no information); p̂=0 or 1
-// still yields a finite interval (Wilson is well-behaved at the
-// boundaries, unlike the normal approximation).
-export function wilsonCI(
-  pHat: number,
-  n: number,
-  z = 1.96,
-): { low: number; high: number } {
-  if (n <= 0) return { low: 0, high: 1 };
-  const z2 = z * z;
-  const denom = 1 + z2 / n;
-  const center = (pHat + z2 / (2 * n)) / denom;
-  const margin =
-    (z * Math.sqrt((pHat * (1 - pHat)) / n + z2 / (4 * n * n))) / denom;
-  return {
-    low: Math.max(0, center - margin),
-    high: Math.min(1, center + margin),
-  };
-}
+// Wilson CI moved to @chat-arch/analysis/src/stats.ts so the outcome-
+// substrate pipeline can share one implementation. Import + re-export
+// here to keep existing imports stable AND local call sites working.
+import { wilsonCI } from '@chat-arch/analysis';
+export { wilsonCI };
 
 export interface SweepRow {
   threshold: number;

@@ -266,6 +266,21 @@ export {
 } from './dailyBrief.js';
 
 export {
+  THRESHOLDS,
+  type Thresholds,
+} from './thresholds.js';
+
+export {
+  euclidean,
+  ewma,
+  matchedPair1NN,
+  mean,
+  sigmoid,
+  variance,
+  wilsonCI,
+} from './stats.js';
+
+export {
   DEFAULT_BLOG_CLUSTER_THRESHOLD,
   DEFAULT_BLOG_DISCOVERY_THRESHOLD,
   DEFAULT_MIN_CLUSTER_SIZE,

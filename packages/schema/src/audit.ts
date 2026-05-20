@@ -16,6 +16,11 @@ export type ClaimType =
   | 'addition-claim'
   | 'build-pass-claim'
   | 'completion-claim';
+// NOTE: Phase 1 Wave 2 (Stream B) extends this union with the
+// outcome-substrate claim families (gh-pr-opened, gh-pr-merged,
+// gh-pr-closed-unmerged, git-revert, git-reset-hard, git-force-push,
+// affirmation) alongside the verifier logic. Wave 1 keeps the union
+// stable so the schema package builds independently.
 
 export type AuditOutcome = 'pass' | 'fail' | 'inconclusive';
 
