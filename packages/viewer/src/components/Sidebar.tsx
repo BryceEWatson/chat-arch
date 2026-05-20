@@ -50,7 +50,7 @@ interface NavItem {
 }
 
 interface NavGroup {
-  group: 'FIX RULES' | 'BROWSE' | 'ANALYTICS';
+  group: 'FIX RULES' | 'BROWSE' | 'ANALYTICS' | 'EXPORT';
   items: readonly NavItem[];
 }
 
@@ -85,6 +85,11 @@ const NAV: readonly NavGroup[] = [
       { mode: 'chat', label: 'CHAT', short: 'CHT' },
       { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
       { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
+      // Stream J — DECISIONS + TRUST live under FIX RULES because they
+      // both surface "what should I change about how I'm working with
+      // the assistant" — the same workshop loop CORRECTIONS owns.
+      { mode: 'decisions', label: 'DECISIONS', short: 'DEC' },
+      { mode: 'trust', label: 'TRUST', short: 'TRU' },
     ],
   },
   {
@@ -94,9 +99,28 @@ const NAV: readonly NavGroup[] = [
   {
     group: 'ANALYTICS',
     items: [
+      // Outcome-substrate Phase 1 surfaces. EFFECTIVENESS surfaces the
+      // weekly composite-score trajectory; INSIGHTS collects the three
+      // descriptive-contrast cards (config-window snapshots, knowledge-
+      // debt clusters, reflexive matched-pair). They live in ANALYTICS
+      // because they're descriptive roll-ups — they don't drive a patch
+      // decision (which is what the FIX RULES group is for).
+      { mode: 'effectiveness', label: 'EFFECTIVENESS', short: 'EFF' },
+      { mode: 'insights', label: 'INSIGHTS', short: 'INS' },
+      // Stream J — TRENDS rolls up project trajectory + archetypes +
+      // surface comparison + skill curves; same descriptive-roll-up
+      // shape as EFFECTIVENESS / INSIGHTS.
+      { mode: 'trends', label: 'TRENDS', short: 'TRN' },
       { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
       { mode: 'topics', label: 'TOPICS', short: 'TOP' },
     ],
+  },
+  {
+    // Stream J #7 — EXPORT is its own top-level entry near the end:
+    // it's an action (generate artifacts), not a content surface, so it
+    // gets its own one-item group rather than slotting into ANALYTICS.
+    group: 'EXPORT',
+    items: [{ mode: 'export', label: 'EXPORT', short: 'EXP' }],
   },
 ];
 
@@ -108,9 +132,15 @@ const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
   { mode: 'chat', label: 'CHAT', short: 'CHT' },
   { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
   { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
+  { mode: 'decisions', label: 'DECISIONS', short: 'DEC' },
+  { mode: 'trust', label: 'TRUST', short: 'TRU' },
   { mode: 'command', label: 'SESSIONS', short: 'SES' },
+  { mode: 'effectiveness', label: 'EFFECTIVENESS', short: 'EFF' },
+  { mode: 'insights', label: 'INSIGHTS', short: 'INS' },
+  { mode: 'trends', label: 'TRENDS', short: 'TRN' },
   { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
   { mode: 'topics', label: 'TOPICS', short: 'TOP' },
+  { mode: 'export', label: 'EXPORT', short: 'EXP' },
 ];
 
 // DATA item is rendered separately from the mode-driven nav: it's a

@@ -129,6 +129,21 @@ export interface DecisionClassification {
 }
 
 /**
+ * Trust-calibration cell for the 2×2 mis-calibration view (Stream J
+ * #10). Records whether the user accepted or overrode Claude on this
+ * decision, and whether the outcome subsequently "landed" (binaryClass
+ * === 'good') so the viewer can bucket per cell. Null when neither
+ * the acceptance nor the outcome could be determined (e.g. unclassified
+ * decision, or no composite outcome joined).
+ */
+export interface DecisionTrustCalibration {
+  /** True when the user took the assistant's recommendation. */
+  acceptedAssistant: boolean;
+  /** True when the outcome bucket downstream of the decision was 'good'. */
+  landed: boolean;
+}
+
+/**
  * Decision + classification + outcome-join. The on-disk form. A
  * candidate becomes a `Decision` once it's been classified; the
  * outcome ref attaches in a later builder pass.
@@ -140,6 +155,13 @@ export interface Decision {
   classification: DecisionClassification | null;
   /** Outcome join. Null until the builder's join pass runs. */
   outcomeRef: DecisionOutcomeRef | null;
+  /**
+   * Trust-calibration cell. Optional — older `decisions.json` files
+   * predate this field, in which case the viewer falls back to
+   * deriving accept/override from `classification` + `outcomeRef`
+   * where possible.
+   */
+  trustCalibration?: DecisionTrustCalibration | null;
 }
 
 /**

@@ -36,13 +36,37 @@ import {
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
 import { PracticeMode } from './components/modes/PracticeMode.js';
+import { EffectivenessMode } from './components/modes/EffectivenessMode.js';
+import { InsightsMode } from './components/modes/InsightsMode.js';
+import { DecisionsMode } from './components/modes/DecisionsMode.js';
+import { TrustMode } from './components/modes/TrustMode.js';
+import { TrendsMode } from './components/modes/TrendsMode.js';
+import { ExportMode } from './components/modes/ExportMode.js';
 import { CorrectionsPanel } from './components/CorrectionsPanel.js';
 import { fetchManifest } from './data/fetch.js';
 import {
   loadAppliedImprovementsFile,
   loadCorrectionsFile,
 } from './data/correctionsLoader.js';
-import type { CorrectionsFile } from '@chat-arch/schema';
+import { loadCompositeOutcomesFile } from './data/outcomesLoader.js';
+import {
+  loadInsightsBundle,
+  type InsightsBundle,
+} from './data/insightsLoader.js';
+import { loadDecisionsFile } from './data/decisionsLoader.js';
+import {
+  loadTrendsBundle,
+  type TrendsBundle,
+} from './data/trendsLoader.js';
+import {
+  loadExportsManifest,
+  type ExportManifest,
+} from './data/exportsLoader.js';
+import type {
+  CompositeOutcomesFile,
+  CorrectionsFile,
+  DecisionsFile,
+} from '@chat-arch/schema';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
 import { computeV2Entities } from './data/computeV2Entities.js';
@@ -105,6 +129,8 @@ const HASH_TOPIC_PREFIX = '#topic/';
 const HASH_PRACTICE = '#practice';
 const HASH_CHAT = '#chat';
 const HASH_CORRECTIONS = '#corrections';
+const HASH_EFFECTIVENESS = '#effectiveness';
+const HASH_INSIGHTS = '#insights';
 // Action hash — opens the DataPanel modal and strips itself so a
 // back-nav / reload doesn't re-fire the open. Mirrors the standalone
 // app's `/sessions#data` deep-link from the AppSidebar SYSTEM > DATA
@@ -208,6 +234,18 @@ function readChatHash(): boolean {
 function readCorrectionsHash(): boolean {
   if (typeof window === 'undefined') return false;
   return window.location.hash === HASH_CORRECTIONS;
+}
+
+/** Outcome-substrate trajectory surface — no detail dimension. */
+function readEffectivenessHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_EFFECTIVENESS;
+}
+
+/** Outcome-substrate descriptive-contrast surface — no detail dimension. */
+function readInsightsHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_INSIGHTS;
 }
 
 /** Action hash — open the DataPanel modal. Stripped after firing. */
@@ -331,6 +369,8 @@ export function ChatArchViewer({
     const top = readTopicsHash();
     if (top.surface === 'topics') return 'topics';
     if (readPracticeHash()) return 'practice';
+    if (readEffectivenessHash()) return 'effectiveness';
+    if (readInsightsHash()) return 'insights';
     // #data is an action hash, not a surface mode — it opens the
     // DataPanel via the sync useEffect and strips itself. Mode falls
     // through to defaultLandingMode so the underlying page is sane.
@@ -420,6 +460,40 @@ export function ChatArchViewer({
     useState<CorrectionsFile | null>(null);
   const [correctionsRouteHydrated, setCorrectionsRouteHydrated] =
     useState(false);
+
+  // --- Phase 1 outcome-substrate sidecars (Wave 4 Stream I) ---
+  //
+  // EffectivenessMode reads `analysis/composite-outcomes.json`; InsightsMode
+  // reads `its-analysis.json` + `knowledge-debt.json` + `reflexive.json` +
+  // `config-history.json`. All loaders return null on 404 / parse failure
+  // so a missing kernel never blocks viewer startup; the modes render the
+  // upstream empty state in that case.
+  const [compositeOutcomes, setCompositeOutcomes] =
+    useState<CompositeOutcomesFile | null>(null);
+  const [insightsBundle, setInsightsBundle] = useState<InsightsBundle>({
+    configHistory: null,
+    its: null,
+    knowledgeDebt: null,
+    reflexive: null,
+  });
+
+  // --- Phase 2/3/4 outcome-substrate sidecars (Wave 4 Stream J) ---
+  //
+  // DECISIONS reads `analysis/decisions.json`; TRUST reads the same file
+  // (joined trustCalibration cells); TRENDS reads four sidecars; EXPORT
+  // reads `analysis/exports/manifest.json`. All loaders return null on
+  // 404 / parse failure.
+  const [decisionsFile, setDecisionsFile] = useState<DecisionsFile | null>(
+    null,
+  );
+  const [trendsBundle, setTrendsBundle] = useState<TrendsBundle>({
+    trajectories: null,
+    archetypes: null,
+    surfaceComparison: null,
+    skillCurves: null,
+  });
+  const [exportsManifest, setExportsManifest] =
+    useState<ExportManifest | null>(null);
 
   // --- Phase 3 semantic-classification state ---
   //
@@ -651,6 +725,8 @@ export function ChatArchViewer({
       const onPractice = readPracticeHash();
       const onChat = readChatHash();
       const onCorrections = readCorrectionsHash();
+      const onEffectiveness = readEffectivenessHash();
+      const onInsights = readInsightsHash();
       // #data is an action, not a surface — open the panel and strip
       // the hash so a back-nav / reload doesn't re-fire the open. Done
       // BEFORE the unrecognized-hash branch below so the strip doesn't
@@ -676,6 +752,10 @@ export function ChatArchViewer({
         setMode('chat');
       } else if (onCorrections) {
         setMode('corrections');
+      } else if (onEffectiveness) {
+        setMode('effectiveness');
+      } else if (onInsights) {
+        setMode('insights');
       } else {
         // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
         // `#constellation` bookmark would otherwise sit in the URL
@@ -706,7 +786,9 @@ export function ChatArchViewer({
             prev === 'topics' ||
             prev === 'practice' ||
             prev === 'chat' ||
-            prev === 'corrections'
+            prev === 'corrections' ||
+            prev === 'effectiveness' ||
+            prev === 'insights'
           ) {
             const stashed = priorModeBeforeDetailRef.current;
             if (prev === 'detail' && stashed) {
@@ -783,6 +865,32 @@ export function ChatArchViewer({
         setCorrectionsRouteHydrated(true);
       });
     }
+    // Phase 1 outcome-substrate sidecars: fetch in parallel with
+    // corrections so first paint already has the bundle when the user
+    // lands directly on EFFECTIVENESS or INSIGHTS via deep link. All
+    // failures resolve to null inside the loaders.
+    loadCompositeOutcomesFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setCompositeOutcomes(f);
+    });
+    loadInsightsBundle(dataRoot).then((bundle) => {
+      if (cancelled) return;
+      setInsightsBundle(bundle);
+    });
+    // Stream J — DECISIONS / TRUST share decisions.json, TRENDS pulls
+    // four sidecars in parallel, EXPORT pulls the export manifest.
+    loadDecisionsFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setDecisionsFile(f);
+    });
+    loadTrendsBundle(dataRoot).then((bundle) => {
+      if (cancelled) return;
+      setTrendsBundle(bundle);
+    });
+    loadExportsManifest(dataRoot).then((m) => {
+      if (cancelled) return;
+      setExportsManifest(m);
+    });
     return () => {
       cancelled = true;
     };
@@ -2286,6 +2394,15 @@ export function ChatArchViewer({
     baseMode === 'topics' ||
     baseMode === 'practice' ||
     baseMode === 'corrections' ||
+    // Phase 1 outcome-substrate surfaces have their own chrome and
+    // don't consume the shared session-filter rails — same reasoning
+    // as practice/corrections/chat.
+    baseMode === 'effectiveness' ||
+    baseMode === 'insights' ||
+    baseMode === 'decisions' ||
+    baseMode === 'trust' ||
+    baseMode === 'trends' ||
+    baseMode === 'export' ||
     // Chat is its own surface — it manages its own sidebar (chat list),
     // its own input bar, and doesn't consume the shared session-filter
     // chrome. Add to isV2Surface so UpperPanel/MidBar/FilterBar hide
@@ -2521,6 +2638,18 @@ export function ChatArchViewer({
                   window.history.pushState(null, '', HASH_PRACTICE);
                 }
               }
+              // Phase 1 outcome-substrate surfaces — same single-hash
+              // contract as practice / corrections.
+              if (m === 'effectiveness') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_EFFECTIVENESS);
+                }
+              }
+              if (m === 'insights') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_INSIGHTS);
+                }
+              }
               // Chat-page §3: CHAT is its own self-contained surface.
               // The chat-list lives inside the surface; the only
               // routable state at the viewer level is "are we on the
@@ -2721,6 +2850,49 @@ export function ChatArchViewer({
                           }
                         }}
                       />
+                    ) : baseMode === 'effectiveness' ? (
+                      <EffectivenessMode
+                        outcomes={compositeOutcomes}
+                        sessionUpdatedAt={
+                          new Map(
+                            activeManifest.sessions.map(
+                              (s) =>
+                                [s.id, s.updatedAt ?? s.startedAt ?? 0] as const,
+                            ),
+                          )
+                        }
+                      />
+                    ) : baseMode === 'insights' ? (
+                      <InsightsMode
+                        bundle={insightsBundle}
+                        onSelectSession={(id) => {
+                          setPriorModeBeforeDetail('insights');
+                          onSelect(id);
+                        }}
+                      />
+                    ) : baseMode === 'decisions' ? (
+                      <DecisionsMode
+                        file={decisionsFile}
+                        onSelectSession={(id) => {
+                          setPriorModeBeforeDetail('decisions');
+                          onSelect(id);
+                        }}
+                      />
+                    ) : baseMode === 'trust' ? (
+                      <TrustMode file={decisionsFile} />
+                    ) : baseMode === 'trends' ? (
+                      <TrendsMode
+                        trajectories={trendsBundle.trajectories}
+                        archetypes={trendsBundle.archetypes}
+                        surfaceComparison={trendsBundle.surfaceComparison}
+                        skillCurves={trendsBundle.skillCurves}
+                        onSelectSession={(id) => {
+                          setPriorModeBeforeDetail('trends');
+                          onSelect(id);
+                        }}
+                      />
+                    ) : baseMode === 'export' ? (
+                      <ExportMode manifest={exportsManifest} />
                     ) : baseMode === 'corrections' ? (
                       <CorrectionsPanel
                         dataDirBaseUrl={dataRoot}
