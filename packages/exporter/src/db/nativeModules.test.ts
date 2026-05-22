@@ -25,11 +25,27 @@
 // package.json, so this test is co-located with the code that will
 // actually consume the dependency.
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 describe('Rev3-A native modules CI spike', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    // Per-test temp dir so the file-backed WAL case (below) can
+    // open + journal + clean up without colliding with siblings.
+    tmpDir = mkdtempSync(join(tmpdir(), 'chat-arch-native-modules-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
   it('opens an in-memory better-sqlite3 database', () => {
     const db = new Database(':memory:');
     try {
@@ -69,14 +85,21 @@ describe('Rev3-A native modules CI spike', () => {
     }
   });
 
-  it('enables WAL mode + synchronous=NORMAL (plan §SQLite write contract)', () => {
+  it('enables WAL mode + synchronous=NORMAL on a file-backed DB (plan §SQLite write contract)', () => {
     // The plan pins WAL + synchronous=NORMAL as the connection contract.
-    // For :memory: databases SQLite reports `memory` (not `wal`) — the
-    // pragma still accepts the set without error. We assert both pragmas
-    // round-trip to confirm the binary supports them.
-    const db = new Database(':memory:');
+    // MUST run against a file-backed DB: in-memory SQLite silently
+    // ignores `journal_mode = WAL` (stays 'memory'), so a :memory: test
+    // can't catch a runner missing WAL support. The whole point of the
+    // CI compatibility gate is to verify the prebuild on the runner
+    // actually exposes WAL, so use a tmp file.
+    const dbPath = join(tmpDir, 'wal-spike.db');
+    const db = new Database(dbPath);
     try {
-      db.pragma('journal_mode = WAL');
+      const journalMode = db.pragma('journal_mode = WAL', {
+        simple: true,
+      });
+      expect(journalMode).toBe('wal');
+
       db.pragma('synchronous = NORMAL');
       const sync = db.pragma('synchronous', { simple: true });
       // synchronous=NORMAL is integer 1 in SQLite's PRAGMA output.
