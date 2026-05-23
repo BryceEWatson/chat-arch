@@ -20,7 +20,7 @@
  * the whole file — composite rows depend on every layer below.
  */
 
-import { closeSync, fsyncSync, openSync, renameSync, writeFileSync } from 'node:fs';
+import { atomicWriteJsonSync as atomicWriteJson } from '../lib/atomicWrite.js';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
@@ -174,25 +174,8 @@ async function loadPriorCache(
   return { generatedAt: parsed.generatedAt, bySession };
 }
 
-/**
- * Atomic file write: tmp → fsync → renameSync. `writeFileSync` plus
- * `fsyncSync` guarantees the bytes are durable before the rename, so a
- * crash mid-write never leaves the canonical filename pointing at a
- * partially-written file.
- */
-function atomicWriteJson(target: string, value: unknown): void {
-  // Stamped tmp name to avoid concurrent-writer rename races. (S3)
-  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const json = JSON.stringify(value, null, 2) + '\n';
-  writeFileSync(tmp, json, 'utf8');
-  const fd = openSync(tmp, 'r+');
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmp, target);
-}
+// atomicWriteJson is now the shared atomicWriteJsonSync helper from
+// ../lib/atomicWrite.js (aliased on import) — consolidated per DN3.
 
 export async function buildCompositeOutcomesFile(
   manifest: SessionManifest,

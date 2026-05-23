@@ -95,7 +95,7 @@ packages/schema/     UnifiedSessionEntry + manifest + correction types
                      decision, archetype, narrative, pattern)
 packages/exporter/   CLI + parsers + analysis writers + sub-CLIs
                      (embed-cli, ingest-configs-cli,
-                      cluster-corrections-cli, generate-drafts-cli)
+                      cluster-corrections-cli)
                      + src/export/ Obsidian-targeted export submodule
                      (post-mortems, knowledge-debt)
 packages/analysis/   Shared cloud-mapping + clustering +

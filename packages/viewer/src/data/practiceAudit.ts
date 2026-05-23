@@ -62,12 +62,10 @@ export interface PracticeAuditResult {
   findings: readonly PracticeFinding[];
 }
 
-// Threshold knobs — moved to THRESHOLDS.practiceAudit per the PR #53
-// adversarial review (D3). Pulled out as local consts so call-site
-// changes are minimal.
-const VALUE_LEAK_DUP_THRESHOLD = THRESHOLDS.practiceAudit.valueLeakDuplicateMinSize;
-const TOP_COST_OUTLIERS = THRESHOLDS.practiceAudit.topCostOutliers;
-const TURN_OUTLIER_MIN = THRESHOLDS.practiceAudit.turnOutlierMin;
+// Threshold knobs centralized in THRESHOLDS.practiceAudit per the
+// PR #53 adversarial review (D3). Inlined at call sites — the
+// rename-alias pattern violated thresholds.ts:9-11's "no rename
+// aliases" rule. (DN2)
 
 function topNByCost(
   sessions: readonly UnifiedSessionEntry[],
@@ -201,13 +199,13 @@ function detectValueLeaks(
 
   // Big duplicate clusters → wasted re-asks.
   const bigDups = duplicateClusters.filter(
-    (c) => c.sessionIds.length >= VALUE_LEAK_DUP_THRESHOLD,
+    (c) => c.sessionIds.length >= THRESHOLDS.practiceAudit.valueLeakDuplicateMinSize,
   );
   if (bigDups.length > 0) {
     findings.push({
       lens: 'value-leaks',
       id: 'value-duplicate-clusters',
-      title: `${bigDups.length} duplicate cluster${bigDups.length === 1 ? '' : 's'} of ≥ ${VALUE_LEAK_DUP_THRESHOLD} sessions`,
+      title: `${bigDups.length} duplicate cluster${bigDups.length === 1 ? '' : 's'} of ≥ ${THRESHOLDS.practiceAudit.valueLeakDuplicateMinSize} sessions`,
       body: `When the same prompt body recurs, you're either retrying without context, restarting an aborted session, or rebuilding a workflow you already had. Deduplicating these earns time back across all four lenses.`,
       severity: 'warn',
       evidence: bigDups.slice(0, 5).map((c) => ({
@@ -236,7 +234,7 @@ function detectValueLeaks(
   }
 
   // Cost outliers — top 5 by cost. Useful for spotting runaway loops.
-  const costTop = topNByCost(sessions, TOP_COST_OUTLIERS);
+  const costTop = topNByCost(sessions, THRESHOLDS.practiceAudit.topCostOutliers);
   if (costTop.length > 0) {
     const total = costTop.reduce(
       (acc, s) => acc + (s.totalCostUsd ?? s.costEstimatedUsd ?? 0),
@@ -256,10 +254,10 @@ function detectValueLeaks(
     });
   }
 
-  // Turn-count outliers — sessions over TURN_OUTLIER_MIN turns suggest
+  // Turn-count outliers — sessions over THRESHOLDS.practiceAudit.turnOutlierMin turns suggest
   // a marathon that may have hidden a stuck loop.
   const turnOutliers = sessions
-    .filter((s) => ((s.userTurns ?? 0) + (s.assistantTurns ?? 0)) >= TURN_OUTLIER_MIN)
+    .filter((s) => ((s.userTurns ?? 0) + (s.assistantTurns ?? 0)) >= THRESHOLDS.practiceAudit.turnOutlierMin)
     .sort(
       (a, b) =>
         (b.userTurns ?? 0) +
@@ -270,8 +268,8 @@ function detectValueLeaks(
     findings.push({
       lens: 'value-leaks',
       id: 'value-turn-outliers',
-      title: `${turnOutliers.length} session${turnOutliers.length === 1 ? '' : 's'} above ${TURN_OUTLIER_MIN} turns`,
-      body: `Long sessions are sometimes legitimate, but a turn count above ${TURN_OUTLIER_MIN} is often the signature of a stuck loop the user wasn't aware of. Skim the top few.`,
+      title: `${turnOutliers.length} session${turnOutliers.length === 1 ? '' : 's'} above ${THRESHOLDS.practiceAudit.turnOutlierMin} turns`,
+      body: `Long sessions are sometimes legitimate, but a turn count above ${THRESHOLDS.practiceAudit.turnOutlierMin} is often the signature of a stuck loop the user wasn't aware of. Skim the top few.`,
       severity: 'warn',
       evidence: turnOutliers.slice(0, 5).map((s) => ({
         kind: 'session' as const,

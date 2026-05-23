@@ -111,6 +111,8 @@ score and slices the corpus six ways:
 
 | Mode | What it shows |
 | ---- | ------------- |
+| **Results** (`/results`) | Cross-corpus claim-pass rate by claim type / project / session + loop-closure rollup (shipped 1.1.0) |
+| **Playbook** (`/playbook`) | Recurring user-turn phrasings ranked by occurrence × downstream pass-rate; COPY AS MARKDOWN handoff (shipped 1.1.0) |
 | **Effectiveness** | Per-session composite score (test/build/PR/affirmation signals) + time-series |
 | **Insights** | Interrupted-time-series contrasts of composite score around `.claude/` config changes |
 | **Decisions** | Extracted decisions joined to downstream composite outcome |

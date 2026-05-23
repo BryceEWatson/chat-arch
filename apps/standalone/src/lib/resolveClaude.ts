@@ -126,7 +126,9 @@ export function resolveClaudeBin(): ClaudeBin {
     const appdata = process.env['APPDATA'];
     if (typeof appdata === 'string' && appdata.length > 0) {
       const found = pickNewestAppdataInstall(appdata);
-      if (found && fileExists(found)) {
+      // pickNewestAppdataInstall already filters via fileExists; no
+      // need to re-check here. (XN1)
+      if (found) {
         return { file: found, useShell: false, source: 'appdata' };
       }
     }

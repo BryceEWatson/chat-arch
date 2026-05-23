@@ -14,7 +14,10 @@
  * Atomic writes on both.
  */
 
-import { closeSync, fsyncSync, openSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  atomicWriteJsonSync as atomicWriteJson,
+  atomicWriteTextSync as atomicWriteText,
+} from '../lib/atomicWrite.js';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
@@ -79,32 +82,9 @@ async function parallelMap<T, R>(
   return out;
 }
 
-function atomicWriteJson(target: string, value: unknown): void {
-  // Stamped tmp name to avoid concurrent-writer rename races. (S3)
-  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const json = JSON.stringify(value, null, 2) + '\n';
-  writeFileSync(tmp, json, 'utf8');
-  const fd = openSync(tmp, 'r+');
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmp, target);
-}
-
-function atomicWriteText(target: string, content: string): void {
-  // Stamped tmp name to avoid concurrent-writer rename races. (S3)
-  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  writeFileSync(tmp, content, 'utf8');
-  const fd = openSync(tmp, 'r+');
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmp, target);
-}
+// atomicWriteJson / atomicWriteText are now the shared sync helpers
+// from ../lib/atomicWrite.js (aliased on import) — consolidated per
+// DN3.
 
 interface FirstTurn {
   sessionId: string;

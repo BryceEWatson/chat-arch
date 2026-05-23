@@ -37,3 +37,23 @@ export function assertDataDirContained(
   }
   return resolved;
 }
+
+/**
+ * Convert a `DataDirGuardError` into a 400 JSON Response. Returns
+ * `null` for any other error so the caller can re-throw / propagate
+ * via its existing flow.
+ *
+ * Extracted from 4 copy-pasted callsites flagged by iter-2 review
+ * (XN2). The response shape is intentionally a static "escapes the
+ * safe root" message — never echo the attempted path back to the
+ * caller (avoids leaking absolute paths to a malicious origin).
+ */
+export function handleDataDirGuardError(err: unknown): Response | null {
+  if (err instanceof DataDirGuardError) {
+    return new Response(
+      JSON.stringify({ ok: false, error: 'dataDir escapes the chat-arch-data safe root' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    );
+  }
+  return null;
+}

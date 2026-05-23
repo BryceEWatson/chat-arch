@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
-import { assertDataDirContained, DataDirGuardError } from '../../lib/dataDirGuard.js';
+import {
+  assertDataDirContained,
+  handleDataDirGuardError,
+} from '../../lib/dataDirGuard.js';
 
 /**
  * Opt this route into server rendering. The rest of the site is static
@@ -951,12 +954,8 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     params = await parseParams(body);
   } catch (e) {
-    if (e instanceof DataDirGuardError) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'dataDir escapes the chat-arch-data safe root' }),
-        { status: 400, headers: { 'content-type': 'application/json' } },
-      );
-    }
+    const r = handleDataDirGuardError(e); // (XN2)
+    if (r) return r;
     throw e;
   }
 
@@ -1047,12 +1046,8 @@ export const GET: APIRoute = async ({ url }) => {
   try {
     dataDir = assertDataDirContained(candidate, repoRoot()); // (S1)
   } catch (e) {
-    if (e instanceof DataDirGuardError) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'dataDir escapes the chat-arch-data safe root' }),
-        { status: 400, headers: { 'content-type': 'application/json' } },
-      );
-    }
+    const r = handleDataDirGuardError(e); // (XN2)
+    if (r) return r;
     throw e;
   }
   const selParam = url.searchParams.get('selection');

@@ -48,7 +48,7 @@
 
 import type { APIRoute } from 'astro';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { assertDataDirContained, DataDirGuardError } from '../../lib/dataDirGuard.js';
+import { assertDataDirContained, handleDataDirGuardError } from '../../lib/dataDirGuard.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import type {
@@ -442,11 +442,8 @@ export const POST: APIRoute = async ({ request }) => {
     try {
       validated = validateBody(body);
     } catch (err) {
-      if (err instanceof DataDirGuardError) {
-        const r = jsonResponse(
-          { ok: false, error: 'dataDir escapes the chat-arch-data safe root' },
-          400,
-        );
+      const r = handleDataDirGuardError(err); // (XN2)
+      if (r) {
         resolveSlot(r);
         return r;
       }

@@ -24,7 +24,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { closeSync, fsyncSync, openSync, renameSync, writeFileSync } from 'node:fs';
+import { atomicWriteJsonSync as atomicWriteJson } from '../lib/atomicWrite.js';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AuditResultsFile, CompositeOutcome, CompositeOutcomesFile } from '@chat-arch/schema';
@@ -100,20 +100,8 @@ const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const PR_URL_REGEX =
   /https?:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/g;
 
-function atomicWriteJson(target: string, value: unknown): void {
-  // Stamped tmp name so concurrent writers to the same destination
-  // never share a tmp filename and race rename(). (S3)
-  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const json = JSON.stringify(value, null, 2) + '\n';
-  writeFileSync(tmp, json, 'utf8');
-  const fd = openSync(tmp, 'r+');
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmp, target);
-}
+// atomicWriteJson is now the shared atomicWriteJsonSync helper from
+// ../lib/atomicWrite.js (aliased on import) — consolidated per DN3.
 
 async function loadCache(outDir: string): Promise<PrLandCacheFile> {
   const p = path.join(outDir, 'analysis', 'pr-land-cache.json');

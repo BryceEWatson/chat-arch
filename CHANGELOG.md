@@ -14,6 +14,34 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **NDJSON streaming progress widget** on the Today page for rescan /
+  mine-corrections / regen-brief actions — spinner, elapsed ticker,
+  phase labels, scrollback log, `attachIfBusy()` resume-on-load.
+- **DataDirGuard** at `apps/standalone/src/lib/dataDirGuard.ts` — path-
+  traversal containment check wired into mine-corrections (POST + GET),
+  mine-decisions, and generate-exports. Returns 400 on traversal.
+- **`THRESHOLDS.practiceAudit`** group — three PRACTICE-audit knobs
+  (`valueLeakDuplicateMinSize`, `topCostOutliers`, `turnOutlierMin`)
+  moved out of inline constants in the viewer.
+
+### Fixed
+
+- **Security (S1):** dataDir path-traversal across three API endpoints.
+- **Security (S2):** drop verbatim `gh` CLI stderr from
+  `pr-land-cache.json` — `state` enum is sufficient for cache TTL.
+- **Security (S3):** stamp atomic-write `.tmp` filenames with
+  `${pid}-${Date.now()}-${rand6}` so concurrent writers can't race.
+- **Security (S4):** `apply-correction.ts` outer catch now resolves the
+  slot promise with 500 instead of rejecting + rethrowing (was
+  triggering Node 15+ unhandled-rejection process exit).
+- **Security (S5):** drop `cmd.exe /d /s /c` shell-injection path in
+  mine-corrections and mine-decisions — `spawn(bin.file, args, …)` via
+  the central resolveClaudeBin() helper instead.
+- **`resolveClaude.ts`:** add `CLAUDE_CODE_EXECPATH` probe between
+  `CLAUDE_BIN` and the `%APPDATA%\Claude\…` fallback.
+
 ## [1.2.0] — 2026-05-23
 
 ### Added
