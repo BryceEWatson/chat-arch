@@ -80,9 +80,21 @@ apps/standalone/public/chat-arch-data/*
 # modulo the edge-cache behavior.
 !apps/standalone/public/chat-arch-data/manifest.json
 
-# Internal scratch spaces — never ship
+# Internal scratch spaces — never ship. The three load-bearing
+# planning artifacts (locked v2 spec, Rev3 plan, Rev3 progress
+# tracker) are carved out so the Phase Rev3-A spec amendment can
+# land as a real commit and the tracker is visible across machines /
+# fresh contributors. Other planning markdown + ad-hoc scripts under
+# _planning/ stay ignored.
 _audit/
-_planning/
+# Use `/*` (not `/`) so git descends into the directory and honors
+# the explicit negations below — once the parent itself is ignored,
+# file-level negations are silently dropped by git (same trick as
+# `.claude/*` above).
+_planning/*
+!_planning/chat-arch-v2-spec.md
+!_planning/chat-arch-v2-rev3-plan.md
+!_planning/chat-arch-v2-rev3-progress.md
 _research/
 design_handoff_chat_archaeologist/
 *.zip
