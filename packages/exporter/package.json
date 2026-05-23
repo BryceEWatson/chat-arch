@@ -31,9 +31,12 @@
   "dependencies": {
     "@chat-arch/analysis": "workspace:*",
     "@chat-arch/schema": "workspace:*",
+    "better-sqlite3": "^11.7.0",
+    "sqlite-vec": "^0.1.6",
     "yauzl": "^3.1.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/yauzl": "^2.10.3"
   }
 }

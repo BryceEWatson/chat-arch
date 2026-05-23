@@ -11,6 +11,19 @@ out/
 # Build artifacts
 *.tsbuildinfo
 
+# SQLite database files — local-tier substrate (Rev3-A). The DB lives
+# co-located with chat-arch-data/ which is already ignored via the
+# wildcard below, but the global patterns are listed explicitly so
+# accidental DB files elsewhere in the tree (test scratch, dev tools)
+# stay out of git. PII risk identical to the existing populated
+# manifest.json — never commit a populated DB.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # Editor
 .vscode/
 .idea/
