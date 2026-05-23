@@ -80,7 +80,7 @@ Per-package alternatives:
 
 - `pnpm --filter @chat-arch/viewer <script>` for viewer-only runs
 - `pnpm --filter @chat-arch/standalone dev` to boot the dev server
-  on port 4324 (via `pnpm dev` at root)
+  on port 4321 (via `pnpm dev` at root — Astro's default)
 
 ## Shape of the workspace
 
@@ -100,7 +100,9 @@ scripts/             One-off audits (audit-correction-recall.mjs)
 ```
 
 Viewer imports from `@chat-arch/analysis`, not `@chat-arch/exporter`
-subpaths — the exporter's `exports` field only declares the root.
+subpaths. The exporter's `exports` field declares two entry points
+(`.` for the main runtime and `./export` for the Obsidian-targeted
+export submodule); viewer code should stay off both.
 
 ## Versioning
 

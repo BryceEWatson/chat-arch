@@ -73,8 +73,8 @@ export interface CompositePrimitives {
 
 /**
  * Per-signal contribution to the linear logit. Exposed for sensitivity
- * analysis in the viewer (Phase 1 PR-3) — the order matches
- * `THRESHOLDS.composite.signPositive` + `signNegative`.
+ * analysis in the viewer (Phase 1 PR-3) — keys match
+ * `THRESHOLDS.composite.weights`.
  */
 export interface LogitContributions {
   testPass: number;
@@ -151,8 +151,7 @@ export function extractPrimitives(
         // observation. A failed `git revert` Bash invocation still
         // means the user TRIED to rework, so we record `true`.
         if (r.outcome !== 'inconclusive') {
-          if (reworkSame === null) reworkSame = true;
-          else reworkSame = reworkSame || true;
+          reworkSame = true;
         }
         break;
       case 'affirmation':

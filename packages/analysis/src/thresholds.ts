@@ -30,10 +30,6 @@ export const THRESHOLDS = {
     },
     // Midpoint of the sigmoid-output range [0, 1].
     binaryThresholdGood: 0.5,
-    // Sign constraints used by the calibration refit.
-    signPositive: ['testPass', 'buildPass', 'prLandMerged', 'affirmation'] as const,
-    signNegative: ['testFail', 'prLandClosedUnmerged', 'reworkSameSession', 'reworkContinuation'] as const,
-    magnitudeCapAbsSum: 2.0,
   },
   matching: {
     /**
