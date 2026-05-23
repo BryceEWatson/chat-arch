@@ -25,9 +25,9 @@ Plan anchor: [§Phase Rev3-A](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | A1 | Amend `chat-arch-v2-spec.md` §13 (SQLite substrate) and §16 (curator/falsifier/MCP in scope) | pending | Lands as PR alongside this tracker |
 | A2 | Add `*.db / *.db-wal / *.db-shm` to `.gitignore` | pending | |
 | A3 | Add `better-sqlite3` + `sqlite-vec` deps; CI spike confirming prebuilt binaries on Ubuntu runner | pending | Native-module gate |
-| A4 | Create `packages/schema/src/db/` with migration framework (`schema_migrations` table, idempotent migration runner) | pending | |
-| A5 | Initial migration: tables for `projects`, `topics`, `sessions`, `session_messages`, `session_revisions`, `narratives`, `patterns`, `findings`, `analyzers` | pending | |
-| A6 | Enable WAL mode + `synchronous=NORMAL`; document `BEGIN IMMEDIATE` single-writer contract | pending | |
+| A4 | Create `packages/exporter/src/db/migrations/` with migration framework (`schema_migrations` table, idempotent migration runner) — moved from `packages/schema/` since `better-sqlite3` is a Node native module and `packages/schema/` must stay browser-safe | in-review | PR #TBD |
+| A5 | Initial migration: tables for `projects`, `topics`, `sessions`, `session_messages`, `session_revisions`, `narratives`, `narrative_evidence`, `patterns`, `project_sessions`, `project_topics`, `topic_sessions`, `findings`, `analyzers` (12 entity + 1 generic findings) | in-review | PR #TBD |
+| A6 | Enable WAL mode + `synchronous=NORMAL` + `foreign_keys=ON`; document `BEGIN IMMEDIATE` single-writer contract with 50ms→1s exponential backoff retry | in-review | PR #TBD |
 | A7 | THRESHOLDS additions in `packages/analysis/src/thresholds.ts`: `narrativeRung.*`, `curator.*`, `closureC.*` | pending | All values centralized |
 | A8 | SDK skeleton in `packages/exporter/src/db/` exposing typed query/write methods over the new tables | pending | |
 | A9 | Extend `NuclearReset` to sweep orphan JSON files under `chat-arch-data/analysis/` | pending | |
@@ -186,3 +186,15 @@ Plan anchor: [§Phase Rev3-I](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 - Pre-existing open PRs at session start (not opened by this loop): #46, #48, #52, #53.
 - Pre-existing uncommitted local changes on `feature/outcome-substrate-roadmap` at session start (not touched by this loop): `manifest.json` + four source files under `apps/standalone/src/`.
 - Chunk this session: sub-task **A1** (spec amendment §13 + §16) + tracker creation, landed together. Sub-task **A0** (`rev3-start` tag) handled out-of-band before branching.
+
+### Session 2 — 2026-05-22 (later same day)
+
+- PR #54 (A1 spec amendment + tracker) merged.
+- Chunk this session: sub-tasks **A2** + **A3** (gitignore patterns for `*.db*` + `better-sqlite3` + `sqlite-vec` deps + native-module CI spike test). Landed as PR #55.
+- Codex bot review surfaced a real defect: the WAL pragma test ran against `:memory:`, which silently ignores `journal_mode = WAL`. Fixed in commit `9e2f16e` to use a file-backed temp DB.
+
+### Session 3 — 2026-05-23
+
+- Multi-agent adversarial review of PR #53 dispatched (5 reviewers + execution runner). Falsifier upheld 24 of 25 LOAD-BEARING findings (R2 falsified). User worked review fixes manually; mid-flight strategic-planning prompt requested + drafted.
+- PR #55 (A2 + A3) merged. PR #56 (Bryce's IA amendment for review finding D1) also merged.
+- Chunk this session: sub-tasks **A4** (migration framework — moved from `packages/schema/src/db/` to `packages/exporter/src/db/migrations/` since `better-sqlite3` is a Node native module) + **A5** (initial schema migration creating 12 tables: 4 entities + 1 sessions + 1 messages + 1 revisions + 1 evidence + 3 junctions + 1 findings + 1 analyzers, plus 8 indexes) + **A6** (WAL/synchronous=NORMAL/foreign_keys=ON connection helper + `BEGIN IMMEDIATE` retry wrapper with 50ms→1s exponential backoff per plan §"SQLite write contract"). 22 new tests covering connection contract, transaction commit/rollback/retry/budget-exhaustion, runner idempotency + rollback-on-failure, and per-table FK + CASCADE + SET NULL behavior.
