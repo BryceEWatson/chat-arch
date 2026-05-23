@@ -45,8 +45,10 @@ export interface PrLandCacheEntry {
   fetchedAt: number;
   /** Only present on state==='ok'. */
   data?: GhPrApiResponse;
-  /** Last error text for diagnostic surface. */
-  error?: string;
+  // No `error` field — gh-CLI stderr can carry org/repo names, file
+  // paths, and token hints (PII). The `state` enum is sufficient for
+  // the cache layer's TTL decisions. Diagnostic text is logged to
+  // stderr at fetch time, not persisted. (S2)
 }
 
 export interface PrLandCacheFile {
@@ -99,7 +101,9 @@ const PR_URL_REGEX =
   /https?:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/g;
 
 function atomicWriteJson(target: string, value: unknown): void {
-  const tmp = `${target}.tmp`;
+  // Stamped tmp name so concurrent writers to the same destination
+  // never share a tmp filename and race rename(). (S3)
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const json = JSON.stringify(value, null, 2) + '\n';
   writeFileSync(tmp, json, 'utf8');
   const fd = openSync(tmp, 'r+');
@@ -284,7 +288,8 @@ export async function buildPrLandJoin(
       state: r.state,
       fetchedAt: options.now,
       ...(r.data !== undefined ? { data: r.data } : {}),
-      ...(r.error !== undefined ? { error: r.error } : {}),
+      // r.error is logged below but NOT persisted to the cache (S2 —
+      // see PrLandCacheEntry comment).
     };
     cache.entries[key.k] = entry;
     fetched += 1;

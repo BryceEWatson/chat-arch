@@ -20,7 +20,9 @@ export async function atomicWriteJson(
   filePath: string,
   content: string,
 ): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
+  // Stamped tmp name so concurrent writers to the same destination
+  // never share a tmp filename and race rename(). (S3)
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await writeFile(tmpPath, content, 'utf8');
   await rename(tmpPath, filePath);
 }

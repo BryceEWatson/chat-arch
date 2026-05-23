@@ -165,7 +165,11 @@ async function atomicWriteAckLedger(
   ledgerPath: string,
   next: InsightsAcksFile,
 ): Promise<void> {
-  const tmpPath = join(dirname(ledgerPath), '.insights-acks.json.tmp');
+  // Stamped tmp name so concurrent writers never race rename(). (S3)
+  const tmpPath = join(
+    dirname(ledgerPath),
+    `.insights-acks.json.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
   await writeFile(tmpPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
   await rename(tmpPath, ledgerPath);
 }
