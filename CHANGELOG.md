@@ -14,6 +14,54 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-05-23
+
+### Added
+
+- **Outcome-substrate roadmap (Phases 1-4).** Per-session
+  `CompositeOutcome` score with embedded weights + `weightsHash`
+  for refit-aware caching. Eleven new gitignored analysis sidecars:
+  `composite-outcomes.json`, `pr-land-cache.json`,
+  `config-history.json`, `its-analysis.json`, `knowledge-debt.json`
+  (+ `chat-arch-data/exports/knowledge-debt.md`), `reflexive.json`,
+  `decisions.json`, `archetypes.json`, `project-trajectories.json`,
+  `surface-comparison.json`, `skill-curves.json`.
+- **Six new viewer modes**: Effectiveness, Insights, Decisions,
+  Trust, Trends, Export. Each ships a `MethodologyDisclosure`
+  panel + `SourceAttribution` cell-level honesty labels.
+- **Audit-config extensions**: six new claim families
+  (`gh-pr-opened` / `gh-pr-merged` / `gh-pr-closed-unmerged` /
+  `git-revert` / `git-reset-hard` / `git-force-push`) and a
+  positive-polarity `AFFIRMATION_PATTERNS` family.
+- **THRESHOLDS registry** at `packages/analysis/src/thresholds.ts`.
+  Lint script `lint:thresholds-imports` flags bare numeric literals
+  outside that file.
+- **`/api/generate-exports`** endpoint + `packages/exporter/src/
+  export/` submodule for Obsidian-targeted post-mortems and
+  knowledge-debt exports.
+- **Phase 4 thrash detector** PostToolUse hook (under
+  `~/.claude/skills/chat-arch-thrash-detect/`, NOT in-repo) gated
+  on `CHATARCH_THRASH_DETECT=1` for a 4-week calibration window.
+
+## [1.1.0] — 2026-05-18
+
+### Added
+
+- **AppSidebar** — collapsible left-rail primary nav grouped
+  WORKSHOP / TRACK / BROWSE / SYSTEM. Replaces the horizontal
+  TodayNav (which now redirects).
+- **RESULTS surface** at `/results` — cross-corpus claim-pass
+  rate by claim type / project / session + loop-closure rollup.
+- **PLAYBOOK surface** at `/playbook` — recurring user-turn
+  phrasings ranked by occurrence × downstream pass-rate; COPY AS
+  MARKDOWN handoff for blog-post drafting.
+- **`/api/regen-brief`** endpoint behind the Today-page "REGEN
+  BRIEF" action button.
+
+### Fixed
+
+- Pre-existing TrustStrip apostrophe-escape lint errors.
+
 ## [1.0.0] — 2026-05-16
 
 ### Added

@@ -87,16 +87,38 @@ Per-package alternatives:
 ```
 apps/standalone/     Astro shell + /api/rescan + /api/clear endpoints
                      + /api/mine-corrections + /api/clear-corrections
+                     + /api/mine-decisions + /api/generate-exports
+                     + /api/insights-ack + /api/knowledge-debt-state
+                     + /api/apply-correction + /api/regen-brief
 packages/schema/     UnifiedSessionEntry + manifest + correction types
+                     + outcome-substrate types (composite-outcome,
+                     decision, archetype, narrative, pattern)
 packages/exporter/   CLI + parsers + analysis writers + sub-CLIs
                      (embed-cli, ingest-configs-cli,
-                      cluster-corrections-cli)
+                      cluster-corrections-cli, generate-drafts-cli)
+                     + src/export/ Obsidian-targeted export submodule
+                     (post-mortems, knowledge-debt)
 packages/analysis/   Shared cloud-mapping + clustering +
-                     correction-recall kernels
-packages/viewer/     React viewer (mount target)
-scripts/             One-off audits (audit-correction-recall.mjs)
+                     correction-recall kernels + outcome-substrate
+                     kernels (composeOutcome, audit*, thresholds,
+                     statsShared, itsAnalysis, computeReflexive,
+                     surfaceComparisonBuilder, etc.)
+packages/viewer/     React viewer (mount target) + 6 outcome-substrate
+                     modes (Effectiveness / Insights / Decisions /
+                     Trust / Trends / Export) + MethodologyDisclosure
+                     + SourceAttribution
+scripts/             One-off audits (audit-correction-recall.mjs) +
+                     lint scripts (lint-causal-copy.mjs,
+                     lint-thresholds-imports.mjs, lint-fixture-pii.mjs)
 .claude/skills/
   mine-corrections/  Skill driving the corrections LLM stages
+  mine-decisions/    Skill driving the decisions LLM stages (stub UI
+                     until LLM pipeline lands; see Phase Rev3-F)
+  chat-arch-thrash-detect/  NOT in this repo — lives under
+                            ~/.claude/skills/ as a global hook
+                            (writes thrash-fires.json into the
+                            chat-arch corpus when CHATARCH_THRASH_-
+                            DETECT=1 is set)
 ```
 
 Viewer imports from `@chat-arch/analysis`, not `@chat-arch/exporter`
@@ -182,3 +204,10 @@ and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
 #12 post-mortems + knowledge-debt) are also gitignored. The wildcard
 `apps/standalone/public/chat-arch-data/*` covers them all; the
 explicit entries in `.gitignore` exist as auditable documentation.
+
+**Producer of `thrash-fires.json`:** the
+`chat-arch-thrash-detect` skill at
+`~/.claude/skills/chat-arch-thrash-detect/` (a global Claude Code
+hook), NOT in this repo. The hook is gated on
+`CHATARCH_THRASH_DETECT=1`. The chat-arch corpus only consumes the
+sidecar; producing it is out-of-tree.

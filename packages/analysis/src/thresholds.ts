@@ -150,6 +150,18 @@ export const THRESHOLDS = {
      */
     knowledgeDebtRepromotionGrowthMultiplier: 2,
   },
+  /**
+   * PRACTICE four-lens audit knobs. Tuned conservatively. (D3 — moved
+   * here from inline constants in viewer/src/data/practiceAudit.ts.)
+   */
+  practiceAudit: {
+    /** Minimum cluster size for a value-leak duplicate-cluster finding. */
+    valueLeakDuplicateMinSize: 3,
+    /** Top-N cost outliers to surface as findings. */
+    topCostOutliers: 5,
+    /** Minimum user-turn count to flag a session as a turn-outlier. */
+    turnOutlierMin: 50,
+  },
 } as const;
 
 export type Thresholds = typeof THRESHOLDS;

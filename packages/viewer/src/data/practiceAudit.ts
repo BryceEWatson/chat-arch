@@ -1,4 +1,5 @@
 import type { UnifiedSessionEntry, Project, Narrative } from '@chat-arch/schema';
+import { THRESHOLDS } from '@chat-arch/analysis';
 import type { ZombieProject } from '../components/constellation/ZombieProjectCard.js';
 import type { MergedDuplicateCluster } from './mergeDuplicates.js';
 
@@ -61,10 +62,12 @@ export interface PracticeAuditResult {
   findings: readonly PracticeFinding[];
 }
 
-/** Threshold knobs — tuned conservatively. See module docstring. */
-const VALUE_LEAK_DUP_THRESHOLD = 3;
-const TOP_COST_OUTLIERS = 5;
-const TURN_OUTLIER_MIN = 50;
+// Threshold knobs — moved to THRESHOLDS.practiceAudit per the PR #53
+// adversarial review (D3). Pulled out as local consts so call-site
+// changes are minimal.
+const VALUE_LEAK_DUP_THRESHOLD = THRESHOLDS.practiceAudit.valueLeakDuplicateMinSize;
+const TOP_COST_OUTLIERS = THRESHOLDS.practiceAudit.topCostOutliers;
+const TURN_OUTLIER_MIN = THRESHOLDS.practiceAudit.turnOutlierMin;
 
 function topNByCost(
   sessions: readonly UnifiedSessionEntry[],
