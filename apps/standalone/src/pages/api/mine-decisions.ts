@@ -19,6 +19,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { resolveClaudeBin } from '../../lib/resolveClaude.js';
 
 export const prerender = false;
 
@@ -107,28 +108,18 @@ function runClaudeOnce(
   };
   return new Promise<SpawnOutcome>((resolvePromise) => {
     const allowedTools = 'Read Write Edit Bash Task Glob Grep';
-    const isWin = process.platform === 'win32';
-    let child: ReturnType<typeof spawn>;
-    if (isWin) {
-      const cmdLine =
-        `claude.cmd --allowedTools ${JSON.stringify(allowedTools)} ` +
-        `-p ${JSON.stringify(prompt)}`;
-      child = spawn('cmd.exe', ['/d', '/s', '/c', cmdLine], {
-        cwd: repoRoot(),
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } else {
-      child = spawn(
-        'claude',
-        ['--allowedTools', allowedTools, '-p', prompt],
-        {
-          cwd: repoRoot(),
-          env: process.env,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        },
-      );
-    }
+    // resolveClaudeBin handles the broken-npm-shim case (see
+    // src/lib/resolveClaude.ts) — required on Windows machines where
+    // the auto-updater rotated claude.exe to `.old.<ts>` and left the
+    // bin/ directory without a current binary.
+    const bin = resolveClaudeBin();
+    const args = ['--allowedTools', allowedTools, '-p', prompt];
+    const child = spawn(bin.file, args, {
+      cwd: repoRoot(),
+      env: process.env,
+      shell: bin.useShell,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let stdoutBuf = '';
     let stderrBuf = '';

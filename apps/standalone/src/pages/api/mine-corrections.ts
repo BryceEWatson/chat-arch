@@ -4,6 +4,7 @@ import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { resolveClaudeBin } from '../../lib/resolveClaude.js';
 
 /**
  * Opt this route into server rendering. The rest of the site is static
@@ -619,49 +620,25 @@ function runClaudeOnce(
     // Risk is bounded by this endpoint's CSRF gate (local origin only)
     // and the skill's project-local write scope.
     const allowedTools = 'Read Write Edit Bash Task Glob Grep';
-    const isWin = process.platform === 'win32';
 
-    // Windows quoting fix (2026-05-17): the prior approach pre-wrapped
-    // the prompt in escaped quotes AND used `spawn('claude', [...args],
-    // { shell: true })`. On Windows, Node's shell:true joins those args
-    // into a single command line that cmd.exe then re-parses — and the
-    // pre-wrapped quotes on `promptArg` combined with Node's own
-    // automatic quoting around the resolved `claude.exe` path produced
-    // a malformed cmd line: `'"C:\...claude.exe"' is not recognized as
-    // an internal or external command`. The fix: build the entire cmd
-    // line ourselves and pass it as a single-string command with
-    // shell:true so Node doesn't add any quoting of its own. JSON.
-    // stringify produces a JSON-string that's valid cmd-quoted syntax
-    // for our inputs (no embedded backslash-only paths).
-    let child: ReturnType<typeof spawn>;
-    if (isWin) {
-      // The bare `claude` filename on PATH (typical npm-global install
-      // via nvm4w) is a Unix-style script with `#!/usr/bin/env node` —
-      // cmd.exe can't execute it directly and tries the resolved
-      // `claude.exe` path with quotes that cmd then parses as part of
-      // the command name (the load-bearing failure mode). Forcing
-      // `claude.cmd` (the npm-emitted Windows batch shim) routes the
-      // launch through Node correctly. The shim itself handles the
-      // claude.exe spawn with proper Windows quoting.
-      const cmdLine =
-        `claude.cmd --allowedTools ${JSON.stringify(allowedTools)} ` +
-        `-p ${JSON.stringify(prompt)}`;
-      child = spawn('cmd.exe', ['/d', '/s', '/c', cmdLine], {
-        cwd: repoRoot(),
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } else {
-      child = spawn(
-        'claude',
-        ['--allowedTools', allowedTools, '-p', prompt],
-        {
-          cwd: repoRoot(),
-          env: process.env,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        },
-      );
-    }
+    // Resolve the claude binary via the central helper. It checks
+    // CLAUDE_BIN → CLAUDE_CODE_EXECPATH → %APPDATA%\Claude\claude-code\
+    // → bare 'claude' on PATH, in that order — so we get a working
+    // install even when the global npm shim is broken (auto-updater
+    // mid-flight leaves `claude.exe.old.*` files with no current .exe).
+    // When the resolver returns an absolute path, spawn without a shell
+    // so the OS launches the .exe directly and Node's arg array is
+    // passed verbatim (no cmd.exe special-char surprises). Only the
+    // PATH-fallback branch uses shell:true so PATHEXT can resolve
+    // `claude.cmd`.
+    const bin = resolveClaudeBin();
+    const args = ['--allowedTools', allowedTools, '-p', prompt];
+    const child = spawn(bin.file, args, {
+      cwd: repoRoot(),
+      env: process.env,
+      shell: bin.useShell,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let stdoutBuf = '';
     let stderrBuf = '';
