@@ -57,7 +57,21 @@ The unit of insight. Sentiment-aware.
 
 Fields: `id`, `projectId`, `sessionIds[]`, `sentiment` (`positive` | `negative` | `neutral`), `title`, `body`, `evidence[]` (session deep-link refs), `generatedAt`, `actionType` (`encode-as-pattern` for positive, `generate-corrective-prompt` for negative).
 
-## 5. Four-surface IA
+## 5. Seven-surface IA
+
+**Amended 2026-05-23** (outcome-substrate roadmap, plan §0). The
+original April-2026 lock specified four top-level surfaces (PROJECTS
+/ TOPICS / SESSIONS / PRACTICE). That decision is extended: three
+additional session-graded modes get top-level homes — **Effectiveness**,
+**Insights**, **Decisions** — and three cross-cutting analyses
+(**Trust**, **Trends**, **Export**) attach to PRACTICE as lenses.
+Rationale and surface definitions live in
+[chat-arch-v2-rev3-plan.md](chat-arch-v2-rev3-plan.md) §0 and the
+PR #53 commits that shipped them.
+
+The four original surfaces (§§5.1–5.4 below) are unchanged. The new
+top-level modes (§§5.5–5.7) ship a `MethodologyDisclosure` panel +
+cell-level `SourceAttribution` honesty labels at every claim site.
 
 ### 5.1 PROJECTS — index + detail
 
@@ -82,10 +96,47 @@ Four lenses, single audit pass with four output sections:
 
 The four lenses share inputs: sessions, projects, narratives, the existing zombies/duplicates/cluster outputs from `packages/analysis`, and the cost data from the unified schema.
 
+PRACTICE additionally hosts three lenses added by the outcome-substrate
+roadmap (PR #53), each backed by its own analysis sidecar:
+
+5. **Trust** — pairwise `(source, archetype)` comparison via
+   Holm-Bonferroni (`surface-comparison.json`).
+6. **Trends** — per-project trajectory (Theil-Sen + block-bootstrap CI;
+   `project-trajectories.json`) + skill-curve trends (Mann-Kendall +
+   BH-FDR; `skill-curves.json`).
+7. **Export** — Obsidian-targeted markdown export (post-mortems +
+   knowledge-debt; `chat-arch-data/exports/`).
+
+### 5.5 EFFECTIVENESS — composite-outcome dashboard
+
+Per-session composite score + binary good/bad classification (from
+`composite-outcomes.json`), surfaced as a time-series and a session-
+level table. Reads `THRESHOLDS.composite.weights`. The
+`MethodologyDisclosure` panel names the eight signal sources
+(test-pass / test-fail / build-pass / pr-merged / pr-closed-unmerged /
+rework-same-session / rework-continuation / affirmation) and the
+calibration plan.
+
+### 5.6 INSIGHTS — interrupted-time-series contrasts
+
+Renders the contrast of composite score in a window around each
+`.claude/` config change (`its-analysis.json`). Each row is a
+config-commit family; methodology disclosure flags multiple-testing
+caveats (BH-FDR landing in a follow-up per Rev3 review T1).
+
+### 5.7 DECISIONS — extracted decisions joined to outcome
+
+Decisions detected in your archive (`decisions.json`), grouped by
+kind, with landed-rate (composite-outcome share) per decision class.
+Rows hidden when n < `THRESHOLDS.display.minNForRate` (Wilson 95% CI
+too wide to be informative). MINE button shells the v1-stub mine-
+decisions skill — visibly labeled STUB until Phase Rev3-F lands the
+real curator/falsifier pipeline.
+
 ## 6. Navigation chrome
 
 - **Left sidebar = primary nav.**
-- **Top header = informational chrome only.** Tier indicator, current location indicator (PROJECTS / TOPICS / SESSIONS / PRACTICE), EARTHDATE-style date chip, search input. NO action buttons in the header.
+- **Top header = informational chrome only.** Tier indicator, current location indicator (PROJECTS / TOPICS / SESSIONS / PRACTICE / EFFECTIVENESS / INSIGHTS / DECISIONS — see §5 amendment), EARTHDATE-style date chip, search input. NO action buttons in the header.
 - **No nav duplication** between sidebar and header.
 
 Data-source actions (UPLOAD CLOUD, SCAN LOCAL, DELETE ALL) live under a new "DATA" item in the sidebar that opens a panel. They are NOT in the header.
