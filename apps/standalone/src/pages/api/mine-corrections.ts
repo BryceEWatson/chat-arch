@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import { assertDataDirContained, DataDirGuardError } from '../../lib/dataDirGuard.js';
 
 /**
  * Opt this route into server rendering. The rest of the site is static
@@ -837,10 +838,13 @@ interface MineRequestBody {
 
 async function parseParams(body: MineRequestBody): Promise<MineParams> {
   const rawDir = body.dataDir;
-  const dataDir =
+  const candidate =
     typeof rawDir === 'string' && rawDir.trim().length > 0
       ? rawDir
       : DEFAULT_DATA_DIR;
+  // Throws DataDirGuardError on `..`-traversal; POST handler converts
+  // to a 400 response. (S1)
+  const dataDir = assertDataDirContained(candidate, repoRoot());
 
   // Honor an explicit windowDays override. Otherwise compute auto-window
   // from manifest + correction-candidates + any prior corrections.json.
@@ -943,7 +947,18 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  const params = await parseParams(body);
+  let params: MineParams;
+  try {
+    params = await parseParams(body);
+  } catch (e) {
+    if (e instanceof DataDirGuardError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'dataDir escapes the chat-arch-data safe root' }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw e;
+  }
 
   // If auto-window resolved to "idle" (nothing new to mine), short-circuit
   // before we even spawn claude. The viewer renders this as a clean
@@ -1024,10 +1039,22 @@ export const POST: APIRoute = async ({ request }) => {
  */
 export const GET: APIRoute = async ({ url }) => {
   const dirParam = url.searchParams.get('dataDir');
-  const dataDir =
+  const candidate =
     typeof dirParam === 'string' && dirParam.trim().length > 0
       ? dirParam
       : DEFAULT_DATA_DIR;
+  let dataDir: string;
+  try {
+    dataDir = assertDataDirContained(candidate, repoRoot()); // (S1)
+  } catch (e) {
+    if (e instanceof DataDirGuardError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'dataDir escapes the chat-arch-data safe root' }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw e;
+  }
   const selParam = url.searchParams.get('selection');
   const selection: 'recent' | 'backfill' | 'all' =
     selParam === 'all'

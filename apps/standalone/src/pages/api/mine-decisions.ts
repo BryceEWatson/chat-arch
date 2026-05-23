@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import { assertDataDirContained, DataDirGuardError } from '../../lib/dataDirGuard.js';
 
 export const prerender = false;
 
@@ -249,10 +250,22 @@ export const POST: APIRoute = async ({ request }) => {
   } catch {
     body = {};
   }
-  const dataDir =
+  const candidate =
     typeof body.dataDir === 'string' && body.dataDir.trim().length > 0
       ? body.dataDir
       : DEFAULT_DATA_DIR;
+  let dataDir: string;
+  try {
+    dataDir = assertDataDirContained(candidate, repoRoot()); // (S1)
+  } catch (e) {
+    if (e instanceof DataDirGuardError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'dataDir escapes the chat-arch-data safe root' }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw e;
+  }
 
   let batch: number | null = DEFAULT_BATCH;
   if (typeof body.batch === 'string') {

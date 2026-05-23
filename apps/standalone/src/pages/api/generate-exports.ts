@@ -48,6 +48,7 @@
 
 import type { APIRoute } from 'astro';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { assertDataDirContained, DataDirGuardError } from '../../lib/dataDirGuard.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import type {
@@ -166,10 +167,13 @@ export function validateBody(body: unknown): ValidatedRequest {
       filters.outcomePercentile = f.outcomePercentile;
     }
   }
-  const dataDir =
+  const candidate =
     typeof b.dataDir === 'string' && b.dataDir.trim().length > 0
       ? b.dataDir
       : DEFAULT_DATA_DIR;
+  // Throws DataDirGuardError on `..`-traversal; POST handler converts
+  // to a 400 response. (S1)
+  const dataDir = assertDataDirContained(candidate, repoRoot());
   return { kinds, filters, dataDir };
 }
 
@@ -434,7 +438,20 @@ export const POST: APIRoute = async ({ request }) => {
     } catch {
       body = {};
     }
-    const validated = validateBody(body);
+    let validated: ValidatedRequest;
+    try {
+      validated = validateBody(body);
+    } catch (err) {
+      if (err instanceof DataDirGuardError) {
+        const r = jsonResponse(
+          { ok: false, error: 'dataDir escapes the chat-arch-data safe root' },
+          400,
+        );
+        resolveSlot(r);
+        return r;
+      }
+      throw err;
+    }
     try {
       const outcome = await runGenerate(validated);
       const status = outcome.ok ? 200 : 200; // body carries error detail; status stays 200 unless we couldn't even start
