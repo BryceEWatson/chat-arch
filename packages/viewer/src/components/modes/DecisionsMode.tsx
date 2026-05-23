@@ -207,6 +207,16 @@ export function DecisionsMode({
             {`{question, alternatives, chosen, rationale}`} for each — same
             shape as <code>/mine-corrections</code> does for corrections.
           </p>
+          <p
+            className="lcars-decisions__cta-stub"
+            role="note"
+            data-testid="mine-decisions-stub-cue"
+          >
+            <strong>STUB:</strong> the LLM pipeline is not wired yet —
+            clicking <code>MINE</code> shells the skill but it returns
+            &ldquo;not yet implemented&rdquo;. Lands in Phase Rev3-F
+            (curator + falsifier). (R5)
+          </p>
           <div
             className="lcars-decisions__cta-controls"
             role="group"
