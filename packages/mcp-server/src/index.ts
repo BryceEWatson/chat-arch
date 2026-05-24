@@ -22,3 +22,17 @@ export {
   ReadOnlyPolicyError,
   READ_ONLY_POLICY,
 } from './readOnly.js';
+
+export {
+  registerSdkTools,
+  ToolArgError,
+  type RegisterSdkToolsOptions,
+} from './tools.js';
+
+export {
+  assertLocalhostBind,
+  LOCALHOST_BIND_POLICY,
+  LocalhostBindError,
+  type AssertLocalhostBindInput,
+  type BindDescriptor,
+} from './localhostBind.js';
