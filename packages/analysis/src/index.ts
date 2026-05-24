@@ -297,12 +297,14 @@ export {
   euclidean,
   ewma,
   matchedPair1NN,
+  mcnemarPValue,
   mean,
   normalCdf,
   sigmoid,
   twoProportionPValue,
   variance,
   wilsonCI,
+  type McNemarMethod,
 } from './stats.js';
 
 export {

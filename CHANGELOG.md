@@ -16,6 +16,29 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **McNemar test in reflexive matched-pair contrast (tech-debt T2).**
+  `ReflexiveResult` now carries `mcnemarP`, `mcnemarMethod`
+  (`'exact'` | `'chi-squared'` | `'undefined'`), and `discordantCount`
+  fields. McNemar respects the pairing in a way the existing
+  two-proportion z-test on `delta` does not — pair-level concordant
+  outcomes contribute no information about the treatment effect, so
+  only the `b + c` discordant pairs drive inference. Exact binomial
+  test when `b + c < 25`; continuity-corrected χ² with 1 df otherwise.
+  Surfaces in `analysis/reflexive.json`; viewer methodology disclosure
+  can show "tested on N discordant pairs" alongside the existing
+  e-value sensitivity analysis.
+- **Linear-trend pre-detrending in Politis-White block-length selector
+  (tech-debt T4).** `politisWhiteBlockLength(xs, { detrend? })` now
+  defaults to detrending via Theil-Sen slope + median-residual
+  intercept before computing autocovariances. A trended series
+  inflates low-lag `R(k)` (the autocov picks up the trend, not
+  residual autocorrelation), which pushes the selected block length
+  higher than the true correlation horizon warrants. The detrended
+  pre-step keeps `R(k)` reflecting residual autocorrelation only.
+  Pass `detrend: false` to restore the pre-T4 behavior for legacy
+  comparison; not recommended for new analyses. Affects
+  `analysis/project-trajectories.json` CIs — they should narrow on
+  trended projects (more accurate variance estimate).
 - **BH-FDR correction in ITS analysis (tech-debt T1).** `ItsResult`
   now carries `pValue` (raw pooled two-proportion z-test of post vs.
   pre good-share) and `qValue` (Benjamini-Hochberg adjusted across

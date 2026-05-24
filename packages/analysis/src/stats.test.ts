@@ -4,6 +4,7 @@ import {
   euclidean,
   ewma,
   matchedPair1NN,
+  mcnemarPValue,
   mean,
   normalCdf,
   sigmoid,
@@ -238,5 +239,57 @@ describe('bhFdrAdjust (Benjamini-Hochberg)', () => {
     expect(qs[0]).toBeCloseTo(0.03, 6);
     expect(qs[2]).toBeCloseTo(0.05, 6);
     expect(qs[3]).toBeCloseTo(0.05, 6);
+  });
+});
+
+describe('mcnemarPValue', () => {
+  it('returns {p:1, method:"undefined"} when both discordant counts are zero', () => {
+    const result = mcnemarPValue(0, 0);
+    expect(result.p).toBe(1);
+    expect(result.method).toBe('undefined');
+  });
+
+  it('returns {p:1, method:"undefined"} on negative or non-finite inputs', () => {
+    expect(mcnemarPValue(-1, 5).method).toBe('undefined');
+    expect(mcnemarPValue(Number.NaN, 5).method).toBe('undefined');
+    expect(mcnemarPValue(5, Number.POSITIVE_INFINITY).method).toBe('undefined');
+  });
+
+  it('exact binomial when b + c < 25: b=6, c=0 → p = 2 * (0.5)^6 = 0.03125', () => {
+    const r = mcnemarPValue(6, 0);
+    expect(r.method).toBe('exact');
+    expect(r.p).toBeCloseTo(0.03125, 6);
+  });
+
+  it('exact binomial: b=c (balanced) → p = 1', () => {
+    // 4 vs 4: sum of both tails covers the full mass → 1.
+    const r = mcnemarPValue(4, 4);
+    expect(r.method).toBe('exact');
+    expect(r.p).toBeCloseTo(1, 6);
+  });
+
+  it('chi-squared when b + c ≥ 25; b=20, c=5 → moderately significant', () => {
+    // χ² = (|20-5|-1)² / 25 = 196/25 = 7.84.
+    // P(χ²_1 > 7.84) = 2 * (1 - Φ(√7.84)) = 2 * (1 - Φ(2.8)) ≈ 0.0051.
+    const r = mcnemarPValue(20, 5);
+    expect(r.method).toBe('chi-squared');
+    expect(r.p).toBeGreaterThan(0.003);
+    expect(r.p).toBeLessThan(0.008);
+  });
+
+  it('chi-squared: balanced large discordant → p ≈ 1', () => {
+    const r = mcnemarPValue(20, 20);
+    expect(r.method).toBe('chi-squared');
+    // |b-c|-1 = -1 → squared inputs treated as 0 per the guard, p=1.
+    expect(r.p).toBe(1);
+  });
+
+  it('symmetry: mcnemarPValue(a, b) === mcnemarPValue(b, a)', () => {
+    for (const [b, c] of [[3, 8], [10, 20], [1, 6]] as const) {
+      const ab = mcnemarPValue(b, c);
+      const ba = mcnemarPValue(c, b);
+      expect(ab.p).toBeCloseTo(ba.p, 9);
+      expect(ab.method).toBe(ba.method);
+    }
   });
 });

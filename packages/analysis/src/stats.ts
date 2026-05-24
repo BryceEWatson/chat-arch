@@ -180,6 +180,71 @@ export function twoProportionPValue(
 }
 
 /**
+ * McNemar test for paired binary outcomes. The pair-level 2×2 table:
+ *
+ *                     control: good   control: bad
+ *   treated: good     concordantGood    b (discordant)
+ *   treated: bad      c (discordant)    concordantBad
+ *
+ * Only the discordant counts `b` and `c` matter — concordant pairs
+ * contribute no information about the treatment effect (both responded
+ * the same way). The null hypothesis is `b = c` (treatment has no
+ * effect on the discordant subset).
+ *
+ * Returns:
+ *   - When `b + c === 0`: `{ p: 1, method: 'undefined' }` (no
+ *     discordant pairs → no test is meaningful).
+ *   - When `b + c < 25`: exact two-sided binomial test against
+ *     Binomial(n=b+c, p=0.5). This is the standard small-sample
+ *     recommendation (Agresti's rule of thumb).
+ *   - Otherwise: continuity-corrected χ² with 1 df:
+ *     `χ² = (|b - c| - 1)² / (b + c)`, two-sided p via
+ *     `2 * (1 - Φ(√χ²))`.
+ *
+ * Used by `computeReflexive` to test the matched-pair contrast in a
+ * way that respects pairing (treating pairs as independent observations,
+ * not pooling them into independent-proportion tests).
+ */
+export type McNemarMethod = 'exact' | 'chi-squared' | 'undefined';
+
+export function mcnemarPValue(
+  b: number,
+  c: number,
+): { readonly p: number; readonly method: McNemarMethod } {
+  if (!Number.isFinite(b) || !Number.isFinite(c) || b < 0 || c < 0) {
+    return { p: 1, method: 'undefined' };
+  }
+  const n = b + c;
+  if (n === 0) return { p: 1, method: 'undefined' };
+  if (n < 25) {
+    // Exact two-sided binomial against p=0.5. Compute the smaller tail
+    // and double; clip to 1.
+    const k = Math.min(b, c);
+    let cumulative = 0;
+    // P(X <= k) under Binomial(n, 0.5) = sum_{i=0..k} C(n, i) * (0.5)^n.
+    // Iterate combinatorially to avoid overflow at moderate n.
+    let coef = 1; // C(n, 0)
+    for (let i = 0; i <= k; i += 1) {
+      cumulative += coef;
+      // Recurrence: C(n, i+1) = C(n, i) * (n - i) / (i + 1)
+      coef = (coef * (n - i)) / (i + 1);
+    }
+    const twoSided = Math.min(1, 2 * cumulative * Math.pow(0.5, n));
+    return { p: twoSided, method: 'exact' };
+  }
+  // Continuity-corrected χ² with df=1.
+  const num = Math.abs(b - c) - 1;
+  if (num <= 0) {
+    // |b-c| ≤ 1 with the correction yields χ² ≤ 0 → p = 1.
+    return { p: 1, method: 'chi-squared' };
+  }
+  const chiSquared = (num * num) / n;
+  // P(χ²_1 > x) = 2 * (1 - Φ(√x)).
+  const p = 2 * (1 - normalCdf(Math.sqrt(chiSquared)));
+  return { p: Math.max(0, Math.min(1, p)), method: 'chi-squared' };
+}
+
+/**
  * Benjamini-Hochberg false-discovery-rate adjustment. Given m raw
  * two-sided p-values, returns the m BH-adjusted q-values (same shape,
  * same order as input).

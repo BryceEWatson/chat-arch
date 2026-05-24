@@ -148,6 +148,100 @@ describe('computeReflexive', () => {
     expect(r.eValueCIBound).toBeNull();
   });
 
+  it('McNemar (T2): emits null + undefined when zero discordant pairs', () => {
+    // All treated and matched controls have the same binary outcome →
+    // no discordant pairs → McNemar is undefined.
+    const entries: SyntheticEntry[] = [];
+    const treatedIds = new Set<string>();
+    for (let i = 0; i < 4; i += 1) {
+      const t = `t-${i}`;
+      entries.push(entry(t, [i], true));
+      entries.push(entry(`c-${i}`, [i + 0.01], true)); // also good
+      treatedIds.add(t);
+    }
+    const r = computeReflexive(entries, treatedIds, covariate);
+    expect(r.discordantCount).toBe(0);
+    expect(r.mcnemarP).toBeNull();
+    expect(r.mcnemarMethod).toBe('undefined');
+  });
+
+  it('McNemar (T2): exact method for small n; chi-squared for large n', () => {
+    // Small case: 6 pairs, all discordant in same direction (b=6, c=0).
+    // Exact binomial p = 2 * (0.5)^6 = 0.03125.
+    const smallEntries: SyntheticEntry[] = [];
+    const smallTreated = new Set<string>();
+    for (let i = 0; i < 6; i += 1) {
+      const t = `t-${i}`;
+      smallEntries.push(entry(t, [i], true));
+      smallEntries.push(entry(`c-${i}`, [i + 0.01], false));
+      smallTreated.add(t);
+    }
+    const small = computeReflexive(smallEntries, smallTreated, covariate);
+    expect(small.mcnemarMethod).toBe('exact');
+    expect(small.discordantCount).toBe(6);
+    expect(small.mcnemarP).not.toBeNull();
+    expect(small.mcnemarP!).toBeCloseTo(0.03125, 4);
+
+    // Large case: 30 pairs, all discordant in same direction (b=30, c=0).
+    // Chi-squared with continuity correction: ((|30-0|-1)^2)/30 = 841/30 ≈ 28.03;
+    // P(χ²_1 > 28.03) ≈ 1.18e-7. Test asserts < 1e-5 (loose to allow
+    // approximation drift in normalCdf).
+    const largeEntries: SyntheticEntry[] = [];
+    const largeTreated = new Set<string>();
+    for (let i = 0; i < 30; i += 1) {
+      const t = `tL-${i}`;
+      largeEntries.push(entry(t, [i], true));
+      largeEntries.push(entry(`cL-${i}`, [i + 0.01], false));
+      largeTreated.add(t);
+    }
+    const large = computeReflexive(largeEntries, largeTreated, covariate);
+    expect(large.mcnemarMethod).toBe('chi-squared');
+    expect(large.discordantCount).toBe(30);
+    expect(large.mcnemarP!).toBeLessThan(1e-5);
+  });
+
+  it('McNemar (T2): balanced discordant counts → p near 1', () => {
+    // 8 pairs: 4 with treated-good/control-bad, 4 with treated-bad/control-good.
+    // b = c = 4 → exact binomial p = 1 (sum of both tails = full mass).
+    const entries: SyntheticEntry[] = [];
+    const treatedIds = new Set<string>();
+    for (let i = 0; i < 4; i += 1) {
+      const t = `t-up-${i}`;
+      entries.push({
+        sessionId: t,
+        updatedAt: 1000,
+        composite: comp(true, 0.8),
+        cov: [i],
+      });
+      entries.push({
+        sessionId: `c-up-${i}`,
+        updatedAt: 1000,
+        composite: comp(false, 0.3),
+        cov: [i + 0.01],
+      });
+      treatedIds.add(t);
+    }
+    for (let i = 0; i < 4; i += 1) {
+      const t = `t-dn-${i}`;
+      entries.push({
+        sessionId: t,
+        updatedAt: 1000,
+        composite: comp(false, 0.3),
+        cov: [10 + i],
+      });
+      entries.push({
+        sessionId: `c-dn-${i}`,
+        updatedAt: 1000,
+        composite: comp(true, 0.8),
+        cov: [10 + i + 0.01],
+      });
+      treatedIds.add(t);
+    }
+    const r = computeReflexive(entries, treatedIds, covariate);
+    expect(r.discordantCount).toBe(8);
+    expect(r.mcnemarP!).toBeCloseTo(1, 3);
+  });
+
   it('respects the covariateFn — confounded matching surfaces a different delta than naive', () => {
     // Treated and control good-rates the same overall (0.5 each), but
     // there's a covariate-x-outcome confound: high-cov sessions are

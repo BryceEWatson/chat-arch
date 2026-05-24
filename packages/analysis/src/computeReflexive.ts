@@ -16,7 +16,12 @@
  */
 
 import type { CompositeOutcome } from '@chat-arch/schema';
-import { matchedPair1NN, wilsonCI } from './stats.js';
+import {
+  matchedPair1NN,
+  mcnemarPValue,
+  type McNemarMethod,
+  wilsonCI,
+} from './stats.js';
 
 export interface ReflexiveEntry {
   sessionId: string;
@@ -58,6 +63,29 @@ export interface ReflexiveResult {
   nTreated: number;
   /** Number of control sessions in the pool (pre-matching). */
   nControl: number;
+  /**
+   * McNemar test p-value on the paired binary outcome. Tests the
+   * pair-level null `b = c` (no treatment effect on discordant pairs).
+   * Respects pairing in a way the two-proportion z-test does not.
+   *
+   * `null` when there are no discordant pairs (b + c = 0) — the test is
+   * undefined. Otherwise:
+   *   - Exact two-sided binomial when discordantCount < 25.
+   *   - Continuity-corrected χ² with 1 df otherwise.
+   *
+   * Reject the null at significance α when `mcnemarP ≤ α`. This is the
+   * inferential complement to `ci` (which is a delta-on-proportions CI
+   * that ignores pairing).
+   */
+  mcnemarP: number | null;
+  /** Which method produced `mcnemarP`. `'undefined'` when null. */
+  mcnemarMethod: McNemarMethod;
+  /**
+   * Count of discordant pairs (`b + c`) — the only pairs that
+   * contribute to McNemar. Surfaces in the viewer's methodology
+   * disclosure (small discordant counts → wide CI → weak inference).
+   */
+  discordantCount: number;
 }
 
 export type CovariateFn<T> = (entry: T) => readonly number[];
@@ -143,19 +171,33 @@ export function computeReflexive(
       eValueStatus: 'ci-straddles-null',
       nTreated,
       nControl,
+      mcnemarP: null,
+      mcnemarMethod: 'undefined',
+      discordantCount: 0,
     };
   }
 
   let goodT = 0;
   let goodC = 0;
+  // McNemar discordant counts:
+  //   b = treated good + control bad
+  //   c = treated bad  + control good
+  let bDiscordant = 0;
+  let cDiscordant = 0;
   for (const p of pairs) {
     goodT += p.treatedGood;
     goodC += p.controlGood;
+    if (p.treatedGood === 1 && p.controlGood === 0) bDiscordant += 1;
+    else if (p.treatedGood === 0 && p.controlGood === 1) cDiscordant += 1;
   }
   const pTreated = goodT / nTreated;
   const pControl = goodC / nTreated;
   const meanDelta = pTreated - pControl;
   const ci = deltaProportionCI(pTreated, nTreated, pControl, nTreated);
+  const mcnemar = mcnemarPValue(bDiscordant, cDiscordant);
+  const discordantCount = bDiscordant + cDiscordant;
+  const mcnemarP =
+    mcnemar.method === 'undefined' ? null : mcnemar.p;
 
   // E-value on the CI bound NEAREST the null (RR=1). This is the
   // conservative number — the more useful one to display because the
@@ -209,5 +251,8 @@ export function computeReflexive(
     eValueStatus,
     nTreated,
     nControl,
+    mcnemarP,
+    mcnemarMethod: mcnemar.method,
+    discordantCount,
   };
 }
