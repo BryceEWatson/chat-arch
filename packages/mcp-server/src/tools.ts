@@ -78,7 +78,12 @@ function requireString(
   key: string,
 ): string {
   const value = args[key];
-  if (typeof value !== 'string' || value.length === 0) {
+  // `.trim().length === 0` (not `.length === 0`) so whitespace-only
+  // strings like `'   '` are rejected. Pre-guard: LLM callers
+  // sending `{id: '   '}` reached the SDK as a literal non-empty
+  // SQL parameter and got silent empty results. Per final exit-
+  // review on rev3-start..main.
+  if (typeof value !== 'string' || value.trim().length === 0) {
     throw new ToolArgError(
       `Tool "${toolName}" requires "${key}" to be a non-empty string. Got: ${JSON.stringify(value)}.`,
     );
@@ -112,7 +117,7 @@ function optionalString(
 ): string | undefined {
   const value = args[key];
   if (value === undefined) return undefined;
-  if (typeof value !== 'string' || value.length === 0) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
     throw new ToolArgError(
       `Optional argument "${key}" must be a non-empty string when present. Got: ${JSON.stringify(value)}.`,
     );
@@ -135,7 +140,7 @@ function optionalStringOrNull(
   const value = args[key];
   if (value === undefined) return undefined;
   if (value === null) return null;
-  if (typeof value !== 'string' || value.length === 0) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
     throw new ToolArgError(
       `Optional argument "${key}" must be null or a non-empty string when present. Got: ${JSON.stringify(value)}.`,
     );

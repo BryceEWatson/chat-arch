@@ -34,3 +34,12 @@ export type {
 // materializes; until then, dead surface adds bundle / cognitive cost.
 
 export * from './sdk/index.js';
+
+// B5 backfill kernel — promotes v1 narratives to v2 with default-
+// prior provenance. Wired into apps/standalone/src/lib/chatArchDb.ts
+// init sequence in the exit-review cleanup PR (was dead code per
+// the final review-loop on rev3-start..main).
+export {
+  backfillNarrativeProvenance,
+  type BackfillResult,
+} from './backfillNarrativeProvenance.js';

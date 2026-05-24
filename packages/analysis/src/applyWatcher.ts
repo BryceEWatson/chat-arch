@@ -47,7 +47,17 @@ const MS_PER_DAY = 86_400_000;
  * the pattern's domain?) is deferred to Rev3-F's falsifier as the
  * plan §"Three closures" specifies.
  */
-const RECURRENCE_SENTIMENTS: ReadonlySet<string> = new Set(['negative', 'mixed']);
+// `'mixed'` removed in the final exit-review on rev3-start..main:
+// the schema `Sentiment` type for Narrative is only
+// `'positive' | 'negative' | 'neutral'` (per
+// `packages/schema/src/sentiment.ts`); `'mixed'` belongs to
+// `ProjectSentiment`, not Narrative. So the `'mixed'` allow-list
+// entry could never match a `validateNarrative`-passing row,
+// making the effective allow-list just `'negative'`. Tightened
+// here so the contract is explicit; if future Rev needs mixed-
+// sentiment narratives the Narrative schema itself must widen
+// first.
+const RECURRENCE_SENTIMENTS: ReadonlySet<string> = new Set(['negative']);
 
 /**
  * The four terminal verdicts plus the holding-open "we don't know

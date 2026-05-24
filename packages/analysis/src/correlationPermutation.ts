@@ -129,6 +129,21 @@ export function permutationTestDelta(
   const K = options.permutations ?? DEFAULT_PERMUTATIONS;
   const seed = options.seed ?? DEFAULT_SEED;
 
+  // K=0 (or negative) — pValueTwoSided would otherwise compute as
+  // 0/0 = NaN and propagate through `Math.max(NaN, 1/(K+1))` = NaN,
+  // failing-open for downstream `p < 0.05` checks. Per the final
+  // exit-review on rev3-start..main. Pinning here means downstream
+  // consumers never see a "valid" result with a NaN p-value.
+  if (K <= 0) {
+    return {
+      delta: 0,
+      pValueTwoSided: 1,
+      permutations: K,
+      atLeastAsExtremeCount: 0,
+      valid: false,
+    };
+  }
+
   if (cited.length === 0 || uncited.length === 0) {
     return {
       delta: 0,

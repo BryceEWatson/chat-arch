@@ -408,3 +408,31 @@ export function apiKeyFallbackAllowedFromEnv(): boolean {
   if (typeof v !== 'string') return false;
   return v === '1';
 }
+
+/**
+ * Two-rail composing helper — the load-bearing contract for
+ * `allowApiKeyFallback`.
+ *
+ * The viewer flag (per-user comfort) AND the server flag
+ * (deployment policy) BOTH must be ON for the API-key fallback
+ * to fire. This helper exists so endpoint authors don't have to
+ * re-derive the AND each time they wire a new /api/* route that
+ * calls `runCuratorSubprocess`.
+ *
+ * Per final review-loop on rev3-start..main: prior to this helper,
+ * the AND was documented but not encoded. A single missing `&&
+ * apiKeyFallbackAllowedFromEnv()` in any future endpoint would
+ * let a viewer-only opt-in bypass the server-side deployment
+ * policy. Use this helper; do NOT call `apiKeyFallbackAllowedFromEnv`
+ * directly from endpoint handlers.
+ *
+ * @param viewerOptIn — the `chatArchCuratorApiKeyOptIn` flag
+ *   passed up from the viewer request body. Must be the literal
+ *   `true` (not a string `"true"`, not the number `1`) so a
+ *   malformed request body fails closed.
+ */
+export function computeAllowApiKeyFallback(
+  viewerOptIn: unknown,
+): boolean {
+  return viewerOptIn === true && apiKeyFallbackAllowedFromEnv();
+}

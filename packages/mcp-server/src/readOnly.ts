@@ -52,6 +52,21 @@ const FORBIDDEN_VERB_PREFIXES = [
   'spawn_',
   'execute_',
   'eval_',
+  // Final exit-review additions — destructive SQL / OS verbs that
+  // the prior list missed. Defense-in-depth: even the prefix-only
+  // attack hasn't slipped past the read-verb-prefix check, but the
+  // segment-scan added in PR #93 iter-1 catches names that EMBED
+  // these verbs anywhere (`list_drop_table_findings`,
+  // `get_truncate_log`, etc).
+  'drop_',
+  'truncate_',
+  'destroy_',
+  'purge_',
+  'wipe_',
+  'reset_',
+  'clear_',
+  'kill_',
+  'terminate_',
 ] as const;
 
 // Verb ROOTS (no trailing underscore) used by the segment-scan

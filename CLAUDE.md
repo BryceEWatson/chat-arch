@@ -134,6 +134,18 @@ scripts/             One-off audits (audit-correction-recall.mjs) +
   mine-corrections/  Skill driving the corrections LLM stages
   mine-decisions/    Skill driving the decisions LLM stages (stub UI
                      until LLM pipeline lands; see Phase Rev3-F)
+  curate/            Phase Rev3-F F1 curator skill — ranks tier-2 +
+                     tier-3 narratives + knowledge-debt + applied-
+                     pattern watcher items into analysis/curator-feed.json
+                     (read by PRACTICE CuratorFeed component)
+  falsify/           Phase Rev3-F F2 falsifier skill — verifies each
+                     finding's evidenceChain via per-turn LLM
+                     judgments aggregated against
+                     THRESHOLDS.curator.falsifierMinSupportRatio;
+                     writes analysis/falsifier-verdicts.json
+  chat-answer/       Drives /api/chat-answer endpoint (the chat
+                     page's agent specialization for Q&A against
+                     the corpus)
   chat-arch-thrash-detect/  NOT in this repo — lives under
                             ~/.claude/skills/ as a global hook
                             (writes thrash-fires.json into the
