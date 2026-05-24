@@ -98,9 +98,9 @@ Plan anchor: [§Phase Rev3-E](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 |---|---|---|---|
 | E1 | Pattern entity schema gains `falsifierStatus: 'verified' \| 'skipped-by-user' \| 'unavailable'` | complete-and-merged | PR #79 (`Pattern.falsifierStatus` + `PatternFalsifierStatus` union + `PATTERN_FALSIFIER_STATUS_VALUES` exports in `packages/schema/src/pattern.ts`; optional for back-compat with pre-Rev3-E patterns) |
 | E2 | DB migration adding `falsifier_status` column to `patterns` table | complete-and-merged | PR #79 (migration 004 — `falsifier_status TEXT` with CHECK constraint over the three terminal states; NULL allowed for back-compat) |
-| E3 | Encode-as-pattern flow defaults to falsifier-gating; explicit override checkbox writes `skipped-by-user` | in-review | PR #TBD (`buildPatternFromNarrative` accepts `falsifierOverride`; `NarrativeCard` adds positive-only checkbox + status-message variant when override fires; default OFF so the safe path remains "let Rev3-F falsifier verify later") |
-| E4 | Next-sessions watcher: triggers `RECURRING_AFTER_APPLIED` or `WATCH_INCONCLUSIVE` on N=5 / 60d / project-inactivity 30d | pending | |
-| E5 | Wall-clock timeout emits low-priority `WATCH_INCONCLUSIVE` Narrative (not silence) | pending | |
+| E3 | Encode-as-pattern flow defaults to falsifier-gating; explicit override checkbox writes `skipped-by-user` | complete-and-merged | PR #80 (`buildPatternFromNarrative` accepts `falsifierOverride`; `NarrativeCard` adds positive-only checkbox + status-message variant when override fires; default OFF so the safe path remains "let Rev3-F falsifier verify later") |
+| E4 | Next-sessions watcher: triggers `RECURRING_AFTER_APPLIED` or `WATCH_INCONCLUSIVE` on N=5 / 60d / project-inactivity 30d | in-review | PR #TBD (`evaluateAppliedPatternWatcher` pure-decision kernel in `packages/analysis/src/applyWatcher.ts`; emits `{kind:'open'\|'holding'\|'recurring'\|'inconclusive'}` verdicts. Orchestration lands with Rev3-F curator) |
+| E5 | Wall-clock timeout emits low-priority `WATCH_INCONCLUSIVE` Narrative (not silence) | in-review | PR #TBD (same kernel returns `{kind:'inconclusive', reason:'wall-clock-timeout'\|'project-inactive'}`; curator formats the Narrative at low feed priority) |
 | E6 | Tests: applied pattern visibly closes its watcher within the window; bypass path produces auditable Pattern row | pending | Gate |
 
 **Gates:** an applied pattern visibly closes its watcher within the window; bypass path produces an auditable Pattern row.

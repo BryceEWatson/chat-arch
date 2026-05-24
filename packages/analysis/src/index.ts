@@ -384,3 +384,12 @@ export {
   type SkillCurveResult,
   type SkillCurveSeries,
 } from './skillCurve.js';
+
+export {
+  evaluateAppliedPatternWatcher,
+  type WatcherInput,
+  type WatcherNarrativeLike,
+  type WatcherPatternLike,
+  type WatcherSessionLike,
+  type WatcherVerdict,
+} from './applyWatcher.js';
