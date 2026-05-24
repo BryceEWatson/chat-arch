@@ -14,6 +14,21 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+### Changed
+
+- **`attachIfBusy` refactored to named function with explicit deps
+  object (tech-debt XN3).** The on-page-load handler that re-attaches
+  to in-flight mining runs in [`apps/standalone/src/pages/index.astro`]
+  was previously a 40-line IIFE closing over module-scope state. It's
+  now a named function (`attachIfBusy(deps)`) with dependencies
+  surfaced in one place — `showProgress`, `setButtonsDisabled`,
+  `startElapsedTicker`, `pollMineStatus`, `setStatus`, `hideProgress`,
+  `reloadSoon`, `setStatusPollTimer`, `clearStatusPollTimer`. The
+  script tag stays `is:inline` (Vite doesn't process inline scripts),
+  but the explicit-deps shape prepares a future module extraction to
+  lift the function verbatim. Same runtime behavior; no behavior
+  change.
+
 ### Added
 
 - **`cosineSimilarity` triplication consolidated (tech-debt D2).**
