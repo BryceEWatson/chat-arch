@@ -16,6 +16,35 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Narrative provenance backfill kernel (Phase Rev3-B B5).** New
+  module `packages/exporter/src/db/backfillNarrativeProvenance.ts`.
+  One-shot promotion of legacy schemaVersion=1 narrative rows to
+  schemaVersion=2 with provenance fields populated. For each v1 row:
+  - `supportingCount` = `COUNT(*)` of `narrative_evidence` rows.
+  - `contradictingCount` = 0 (no legacy contradiction info).
+  - `confidence` = `computeConfidence(supportingCount, 0,
+    THRESHOLDS.narrativeRung.defaultPrior)`.
+  - `attributedTo` = `'deterministic'` per plan §B5.
+  - `provenance` = synthesized placeholder (`intent:
+    'legacy-v1-backfill'`, `observation: title[0..200]`, `inference:
+    body[0..200]`). Future kernel re-runs overwrite with real
+    provenance.
+  - `schema_version` = 2.
+
+  All writes happen inside a single `withWriteTransaction` for
+  atomicity. Idempotent — second call promotes 0 (the `WHERE
+  schema_version = 1` filter excludes already-backfilled rows).
+  Pure (no `Date.now()` / PRNG / external I/O); same DB state in →
+  same DB state out.
+
+  7 new tests in `backfillNarrativeProvenance.test.ts` against the
+  PR #60 seeded fixture (4 v1 narratives + 1 v2 narrative): one-call
+  promotion, idempotency, provenance/attributedTo/confidence
+  population, supportingCount equals evidence-row count,
+  confidence matches computeConfidence formula, empty-DB no-op,
+  observation/inference truncation at 200 chars (placeholder
+  PII boundary).
+
 - **Narrative confidence-ladder helpers (Phase Rev3-B B6 + B7).**
   New module `packages/analysis/src/narrativeRung.ts` exports:
   - `computeConfidence(supporting, contradicting, prior)` — the
