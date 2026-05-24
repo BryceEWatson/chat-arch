@@ -7,6 +7,7 @@ import type {
   ProjectSentiment,
 } from '@chat-arch/schema';
 import { isUnassignedProject } from '@chat-arch/schema';
+import { narrativeSaturation } from '@chat-arch/analysis';
 import { BlurredPii } from '../BlurredPii.js';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
@@ -20,6 +21,11 @@ import {
   probeNarrativeActionsAvailable,
   savePrompt,
 } from '../../data/narrativeActions.js';
+import {
+  loadEntityStates,
+  setEntityState,
+  type EntityStateValue,
+} from '../../data/entityStatesClient.js';
 // `buildClaudeMdMarkdown` is exported by narrativeActions and consumed
 // by the encode-pattern endpoint when a `claudeMdMarkdown` payload is
 // supplied — Phase 7 ships the endpoint + helper, while the UI flow
@@ -51,6 +57,12 @@ export interface ProjectsModeProps {
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
   onSelectSession: (id: string) => void;
+  /**
+   * Rev3-D D3 — base URL for the entity-states ledger. Defaults to the
+   * standalone data root; tests override. The detail surface uses this
+   * to load per-narrative dismissal state for the audit affordance.
+   */
+  dataDirBaseUrl?: string;
 }
 
 const SENTIMENT_LABEL: Record<ProjectSentiment, string> = {
@@ -89,6 +101,7 @@ export function ProjectsMode({
   selectedProjectId,
   onSelectProject,
   onSelectSession,
+  dataDirBaseUrl = 'chat-arch-data',
 }: ProjectsModeProps) {
   const now = useMemo(() => Date.now(), []);
 
@@ -141,6 +154,7 @@ export function ProjectsMode({
         onBack={() => onSelectProject(null)}
         onSelectSession={onSelectSession}
         now={now}
+        dataDirBaseUrl={dataDirBaseUrl}
       />
     );
   }
@@ -246,6 +260,22 @@ interface ProjectDetailProps {
   onBack: () => void;
   onSelectSession: (id: string) => void;
   now: number;
+  dataDirBaseUrl: string;
+}
+
+/**
+ * Per-narrative state surfaced via the audit affordance (Rev3-D D3).
+ * `dismissalCount` defaults to 0 for any narrative the user hasn't
+ * dismissed; `state` defaults to PENDING. Snapshotted `sizeAtState`
+ * is the evidence count at the moment of dismissal — the live
+ * `narrative.evidence.length` is compared against
+ * `sizeAtState × narrativeSaturation(dismissalCount).multiplier` to
+ * decide whether re-promotion is unlocked.
+ */
+interface NarrativeAuditState {
+  readonly state: EntityStateValue;
+  readonly sizeAtState: number;
+  readonly dismissalCount: number;
 }
 
 function ProjectDetail({
@@ -256,6 +286,7 @@ function ProjectDetail({
   onBack,
   onSelectSession,
   now,
+  dataDirBaseUrl,
 }: ProjectDetailProps) {
   const projectSessions = useMemo(() => {
     const list: UnifiedSessionEntry[] = [];
@@ -266,6 +297,64 @@ function ProjectDetail({
     list.sort((a, b) => b.updatedAt - a.updatedAt);
     return list;
   }, [project.sessionIds, sessionById]);
+
+  // Rev3-D D3 — load per-narrative entity-states for the audit
+  // affordance. PENDING is the implicit default for any narrative not
+  // in the ledger. Mirrors the InsightsMode knowledge-debt pattern
+  // (PR #70, generalized to narratives in C1+C2).
+  const [narrativeStates, setNarrativeStates] = useState<
+    ReadonlyMap<string, NarrativeAuditState>
+  >(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    void loadEntityStates(dataDirBaseUrl).then((file) => {
+      if (cancelled || file === null) return;
+      const m = new Map<string, NarrativeAuditState>();
+      for (const e of file.entries) {
+        if (e.entityKind !== 'narrative') continue;
+        m.set(e.entityId, {
+          state: e.state,
+          sizeAtState: e.sizeAtState,
+          dismissalCount: e.dismissalCount ?? 0,
+        });
+      }
+      setNarrativeStates(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataDirBaseUrl]);
+
+  const onNarrativeStateChange = (
+    narrativeId: string,
+    state: EntityStateValue,
+    currentSize: number,
+  ): void => {
+    void setEntityState('narrative', narrativeId, state, currentSize).then(
+      (r) => {
+        if (!r.ok) return;
+        setNarrativeStates((prev) => {
+          const next = new Map(prev);
+          // Server returns the canonical row including the bumped
+          // dismissalCount; if the response shape lands first, prefer it.
+          // Otherwise approximate locally: bump only on the
+          // PENDING/INSTALLED → DISMISSED transition.
+          const prior = prev.get(narrativeId);
+          const wasDismissed = prior?.state === 'DISMISSED';
+          const becomeDismissed = state === 'DISMISSED';
+          const dismissalCount =
+            (prior?.dismissalCount ?? 0) +
+            (becomeDismissed && !wasDismissed ? 1 : 0);
+          next.set(narrativeId, {
+            state,
+            sizeAtState: currentSize,
+            dismissalCount,
+          });
+          return next;
+        });
+      },
+    );
+  };
 
   return (
     <div className="lcars-project-detail" id={`project-${project.id}`}>
@@ -321,7 +410,12 @@ function ProjectDetail({
           <ul className="lcars-project-detail__narrative-list" role="list">
             {narratives.map((n) => (
               <li key={n.id} role="listitem">
-                <NarrativeCard narrative={n} sessionById={sessionById} />
+                <NarrativeCard
+                  narrative={n}
+                  sessionById={sessionById}
+                  auditState={narrativeStates.get(n.id) ?? null}
+                  onStateChange={onNarrativeStateChange}
+                />
               </li>
             ))}
           </ul>
@@ -350,9 +444,27 @@ function ProjectDetail({
 interface NarrativeCardProps {
   narrative: Narrative;
   sessionById: ReadonlyMap<string, UnifiedSessionEntry>;
+  /**
+   * Rev3-D D3 — current dismissal-ledger entry for this narrative.
+   * `null` = the user has not dismissed it yet (effective state is
+   * PENDING). The component renders the audit affordance regardless
+   * so the user can see "Not dismissed (0/cap)" + a DISMISS button
+   * even before the first dismissal.
+   */
+  auditState: NarrativeAuditState | null;
+  onStateChange: (
+    narrativeId: string,
+    state: EntityStateValue,
+    currentSize: number,
+  ) => void;
 }
 
-function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
+function NarrativeCard({
+  narrative,
+  sessionById,
+  auditState,
+  onStateChange,
+}: NarrativeCardProps) {
   const isPositive = narrative.sentiment === 'positive';
   const accent = isPositive ? 'positive' : 'negative';
 
@@ -478,6 +590,11 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
             {actionMessage}
           </p>
         )}
+        <NarrativeAudit
+          narrative={narrative}
+          auditState={auditState}
+          onStateChange={onStateChange}
+        />
         <button
           type="button"
           className="lcars-narrative-card__action"
@@ -505,5 +622,90 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
         </button>
       </footer>
     </article>
+  );
+}
+
+interface NarrativeAuditProps {
+  narrative: Narrative;
+  auditState: NarrativeAuditState | null;
+  onStateChange: (
+    narrativeId: string,
+    state: EntityStateValue,
+    currentSize: number,
+  ) => void;
+}
+
+/**
+ * Rev3-D D3 — per-narrative audit row. Surfaces the Closure-B
+ * dismissal counter + the effective re-promotion bar so the user can
+ * see (a) how many times they've shelved this narrative, (b) what
+ * evidence-count it would have to grow to before re-emerging, and
+ * (c) a DISMISS button for the next dismissal.
+ *
+ * The displayed re-promotion bar is derived from `narrativeSaturation`
+ * (Rev3-D D1) — never inline `pow(decay, count)` here. The shelved
+ * regime (dismissalCount ≥ maxDismissals) shows the cap reached + no
+ * DISMISS button; D4 will add the "show shelved" toggle that filters
+ * the card from the list entirely.
+ */
+function NarrativeAudit({
+  narrative,
+  auditState,
+  onStateChange,
+}: NarrativeAuditProps) {
+  const dismissalCount = auditState?.dismissalCount ?? 0;
+  const saturation = narrativeSaturation(dismissalCount);
+  const currentSize = narrative.evidence.length;
+  const state: EntityStateValue = auditState?.state ?? 'PENDING';
+  const sizeAtState = auditState?.sizeAtState ?? 0;
+  const repromotionThreshold = saturation.multiplier !== null && sizeAtState > 0
+    ? sizeAtState * saturation.multiplier
+    : null;
+
+  const handleDismiss = (): void => {
+    onStateChange(narrative.id, 'DISMISSED', currentSize);
+  };
+
+  return (
+    <div
+      className="lcars-narrative-card__audit"
+      // Screen readers should hear "audit" framing before the counts
+      // so the numbers have context (otherwise "1 of 4" is unclear).
+      aria-label={
+        saturation.shelved
+          ? `audit — shelved after ${saturation.dismissalsConsumed} dismissals (cap ${saturation.cap})`
+          : `audit — ${saturation.dismissalsConsumed} of ${saturation.cap} dismissals`
+      }
+    >
+      <span className="lcars-narrative-card__audit-label">AUDIT</span>
+      <span className="lcars-narrative-card__audit-counts">
+        {saturation.dismissalsConsumed}/{saturation.cap} dismissals
+      </span>
+      {state === 'DISMISSED' && repromotionThreshold !== null && (
+        <span className="lcars-narrative-card__audit-threshold">
+          re-emerges at ≥{Math.ceil(repromotionThreshold)} evidence
+          {' '}(now: {currentSize})
+        </span>
+      )}
+      {saturation.shelved && (
+        <span
+          className="lcars-narrative-card__audit-shelved"
+          role="note"
+          aria-label="shelved permanently"
+        >
+          SHELVED
+        </span>
+      )}
+      {!saturation.shelved && state !== 'DISMISSED' && (
+        <button
+          type="button"
+          className="lcars-narrative-card__audit-dismiss"
+          aria-label={`dismiss this narrative (dismissal ${saturation.dismissalsConsumed + 1} of ${saturation.cap})`}
+          onClick={handleDismiss}
+        >
+          DISMISS
+        </button>
+      )}
+    </div>
   );
 }

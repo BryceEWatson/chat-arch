@@ -2974,6 +2974,7 @@ export function ChatArchViewer({
                         narratives={effectiveV2Entities.narratives ?? []}
                         sessions={activeManifest.sessions}
                         selectedProjectId={selectedProjectId}
+                        dataDirBaseUrl={dataRoot}
                         onSelectProject={(id) => {
                           setSelectedProjectId(id);
                           if (typeof window !== 'undefined') {

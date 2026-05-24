@@ -3940,6 +3940,61 @@
   color: var(--lcars-violet);
 }
 
+/* Rev3-D D3 — per-narrative audit affordance. Surfaces the
+ * Closure-B dismissal counter, the effective re-promotion bar
+ * (computed via narrativeSaturation), the SHELVED sentinel (D1
+ * cap reached), and the DISMISS button. Visually quieter than the
+ * primary action row above so it doesn't compete for attention. */
+.lcars-narrative-card__audit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+}
+.lcars-narrative-card__audit-label {
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--lcars-ice);
+  opacity: 0.7;
+}
+.lcars-narrative-card__audit-counts {
+  font-variant-numeric: tabular-nums;
+}
+.lcars-narrative-card__audit-threshold {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.lcars-narrative-card__audit-shelved {
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--lcars-peach);
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+}
+.lcars-narrative-card__audit-dismiss {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: var(--lcars-peach);
+  cursor: pointer;
+}
+.lcars-narrative-card__audit-dismiss:hover,
+.lcars-narrative-card__audit-dismiss:focus-visible {
+  background: rgba(255, 153, 102, 0.12);
+  outline: none;
+}
+
 /* ---------------------------------------------------------------- *
  * v2 Phase 8 — TOPICS surface (spec §5.2). Mirrors the PROJECTS    *
  * surface scaffolding with a topic-flavored ice accent.             *
