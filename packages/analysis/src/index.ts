@@ -408,3 +408,10 @@ export {
   type TurnJudgment,
   type TurnVerdict,
 } from './falsifierVerifier.js';
+
+export {
+  evaluateFalsifierMetaAccuracy,
+  type MetaAccuracyOptions,
+  type MetaAccuracyResult,
+  type VerdictPair,
+} from './falsifierMetaAccuracy.js';
