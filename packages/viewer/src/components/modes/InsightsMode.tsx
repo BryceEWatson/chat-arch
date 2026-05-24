@@ -58,8 +58,10 @@ export interface InsightsModeProps {
    */
   onOpenDataPanel?: () => void;
   /**
-   * Wave 7 P2 #9 — base URL for the knowledge-debt-state ledger.
-   * Defaults to the standalone data root; tests override.
+   * Wave 7 P2 #9 — base URL for the entity-states ledger (formerly
+   * knowledge-debt-state; renamed in Rev3-C C1+C2 to generalize over
+   * knowledge-debt clusters AND narratives). Defaults to the standalone
+   * data root; tests override.
    */
   dataDirBaseUrl?: string;
 }
