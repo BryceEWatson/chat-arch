@@ -54,10 +54,44 @@ export interface RunMigrationsResult {
  * see `./index.ts`), and an out-of-order migration list is a
  * programmer error worth surfacing.
  */
+export class MigrationOrderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MigrationOrderError';
+  }
+}
+
+/**
+ * Verify the registry's ids sort lexically in array order. Defends
+ * against a silent-merge hazard: when two devs land migration `002-…`
+ * on parallel branches, both arrays merge cleanly even though only
+ * the first to land gets recorded in the ledger — the second's `up()`
+ * silently never runs because its id was never inserted but its array
+ * slot moves. Enforce strict lexical-ordered ids so a colliding number
+ * surfaces as a deterministic build failure instead of a silent skip.
+ * (D4)
+ */
+export function assertMigrationIdsLexSorted(
+  migrations: readonly Migration[],
+): void {
+  for (let i = 1; i < migrations.length; i++) {
+    const prev = migrations[i - 1]!.id;
+    const curr = migrations[i]!.id;
+    if (curr <= prev) {
+      throw new MigrationOrderError(
+        `Migration ids must sort lexically in registry order: ` +
+          `index ${i} ("${curr}") does not sort after index ${i - 1} ("${prev}"). ` +
+          `Likely cause: two parallel branches both added the same numeric prefix.`,
+      );
+    }
+  }
+}
+
 export function runMigrations(
   db: Database,
   migrations: readonly Migration[],
 ): RunMigrationsResult {
+  assertMigrationIdsLexSorted(migrations);
   db.exec(SCHEMA_MIGRATIONS_DDL);
 
   const appliedRows = db

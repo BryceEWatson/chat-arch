@@ -17,7 +17,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { openDb } from '../connection.js';
-import { runMigrations } from './runner.js';
+import {
+  MigrationOrderError,
+  assertMigrationIdsLexSorted,
+  runMigrations,
+} from './runner.js';
 import type { Migration } from './types.js';
 
 function makeMigration(id: string, sql: string): Migration {
@@ -147,19 +151,47 @@ describe('runMigrations', () => {
     }
   });
 
-  it('preserves migration array order (does not sort)', () => {
-    // If the array is [002-b, 001-a], the runner applies 002-b first.
-    // Order-as-given is the contract — callers (the index module)
-    // are the canonical sort.
+  it('rejects an out-of-lex-order migration list with MigrationOrderError (D4)', () => {
+    // D4 contract: ids must sort lexically in registry order. An
+    // out-of-order list signals a silent-merge hazard (two parallel
+    // branches both adding migration 002) — fail fast instead of
+    // applying the wrong one first.
     const db = openDb(join(tmpDir, 'order.db'));
     try {
-      const result = runMigrations(db, [
-        makeMigration('002-b', 'CREATE TABLE b (y TEXT);'),
-        makeMigration('001-a', 'CREATE TABLE a (x INTEGER);'),
-      ]);
-      expect(result.applied).toEqual(['002-b', '001-a']);
+      expect(() =>
+        runMigrations(db, [
+          makeMigration('002-b', 'CREATE TABLE b (y TEXT);'),
+          makeMigration('001-a', 'CREATE TABLE a (x INTEGER);'),
+        ]),
+      ).toThrow(MigrationOrderError);
     } finally {
       db.close();
     }
+  });
+
+  it('rejects two migrations with the same id (D4)', () => {
+    // Two PRs both adding `002-foo` would merge cleanly into the
+    // registry array but only one row could ever land in
+    // schema_migrations. assertMigrationIdsLexSorted catches the
+    // collision at startup.
+    expect(() =>
+      assertMigrationIdsLexSorted([
+        { id: '001-a', name: 'a', up: () => {} },
+        { id: '002-foo', name: 'foo', up: () => {} },
+        { id: '002-foo', name: 'foo-collision', up: () => {} },
+      ]),
+    ).toThrow(MigrationOrderError);
+  });
+
+  it('accepts an empty migrations array', () => {
+    expect(() => assertMigrationIdsLexSorted([])).not.toThrow();
+  });
+
+  it('accepts a single-migration array', () => {
+    expect(() =>
+      assertMigrationIdsLexSorted([
+        { id: '001-a', name: 'a', up: () => {} },
+      ]),
+    ).not.toThrow();
   });
 });

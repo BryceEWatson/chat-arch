@@ -16,6 +16,41 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **SQLite substrate foundation (Rev3-A.A4 + A5 + A6).** New module
+  at `packages/exporter/src/db/`:
+  - `connection.ts` — `openDb(path, { readonly? })` applies the
+    four-pragma contract from the Rev3 plan §"SQLite write contract"
+    (`journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`,
+    `busy_timeout=0`).
+  - `transaction.ts` — `withWriteTransaction(db, work)` wraps
+    `BEGIN IMMEDIATE` … `COMMIT` with explicit `SQLITE_BUSY` retry
+    (50 ms initial backoff, doubles per retry, 1 s total budget;
+    throws `WriterBusyError` past budget).
+  - `migrations/` — idempotent runner backed by a `schema_migrations`
+    ledger. Each migration runs inside its own `BEGIN IMMEDIATE`; a
+    failed `up()` rolls back AND leaves the ledger unchanged so the
+    next call retries. Registry order is the apply order. New
+    `assertMigrationIdsLexSorted()` defends against
+    parallel-branch id collisions.
+  - `001-initial-schema.ts` — first migration. 14 tables matching the
+    existing TS entity types (analyzers, projects, topics, sessions,
+    session_messages, session_revisions, narratives,
+    narrative_evidence, narrative_sessions, patterns, project_sessions,
+    project_topics, topic_sessions, findings) + 10 indexes for the
+    hottest query paths. Composite session FK on `(source, id)`
+    propagates through evidence + sessions junctions. The `findings`
+    table carries optional FK anchors for every entity kind, gated
+    by a CHECK on the session composite key (both-or-neither).
+  - 5 test files (connection, transaction, runner, initial-schema)
+    covering pragmas, FK enforcement, CASCADE / SET NULL, busy-retry
+    success + exhaustion, idempotency, partial-state rollback,
+    migration-order invariant.
+
+  Wired by nothing yet — Phase Rev3-B kernels move onto SQLite. The
+  existing JSON-sidecar pipeline is unchanged.
+
+### Added
+
 - **NDJSON streaming progress widget** on the Today page for rescan /
   mine-corrections / regen-brief actions — spinner, elapsed ticker,
   phase labels, scrollback log, `attachIfBusy()` resume-on-load.

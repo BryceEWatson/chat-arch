@@ -143,15 +143,37 @@ const DDL = `
   );
 
   -- Evidence rows for each narrative. evidence_index preserves array
-  -- order; (narrative_id, evidence_index) is the natural PK.
+  -- order; (narrative_id, evidence_index) is the natural PK. The
+  -- session reference is COMPOSITE (source, id) so it can FK back to
+  -- sessions — bare session_id is ambiguous because the same id can
+  -- appear in multiple sources (see UnifiedSessionEntry dedup). (D1)
   CREATE TABLE narrative_evidence (
     narrative_id TEXT NOT NULL,
     evidence_index INTEGER NOT NULL,
+    session_source TEXT NOT NULL,
     session_id TEXT NOT NULL,
     anchor TEXT,
     excerpt TEXT,
     PRIMARY KEY (narrative_id, evidence_index),
-    FOREIGN KEY (narrative_id) REFERENCES narratives (id) ON DELETE CASCADE
+    FOREIGN KEY (narrative_id) REFERENCES narratives (id) ON DELETE CASCADE,
+    FOREIGN KEY (session_source, session_id)
+      REFERENCES sessions (source, id) ON DELETE CASCADE
+  );
+
+  -- Narrative ↔ Session junction. Mirrors project_sessions /
+  -- topic_sessions shape. The TS Narrative type has sessionIds[]; this
+  -- table reconstructs it. Evidence rows are a strict subset (a session
+  -- can be tagged on a narrative without being an evidence anchor), so
+  -- the junction is a distinct relation, not derivable from
+  -- narrative_evidence. (D2)
+  CREATE TABLE narrative_sessions (
+    narrative_id TEXT NOT NULL,
+    session_source TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    PRIMARY KEY (narrative_id, session_source, session_id),
+    FOREIGN KEY (narrative_id) REFERENCES narratives (id) ON DELETE CASCADE,
+    FOREIGN KEY (session_source, session_id)
+      REFERENCES sessions (source, id) ON DELETE CASCADE
   );
 
   -- Pattern: encoded actionable rule promoted from a Narrative. Per
@@ -217,6 +239,12 @@ const DDL = `
     session_id TEXT,
     narrative_id TEXT,
     pattern_id TEXT,
+    -- SQLite treats NULL in a composite FK as "unenforced," so without
+    -- this CHECK a row could set session_source='cli-direct' +
+    -- session_id=NULL and silently bypass the sessions FK. Both-or-
+    -- neither is the contract: either the session anchor is fully
+    -- populated or it's absent. (D3)
+    CHECK ((session_source IS NULL) = (session_id IS NULL)),
     FOREIGN KEY (kernel) REFERENCES analyzers (name) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL,
     FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE SET NULL,
@@ -236,6 +264,10 @@ const DDL = `
   CREATE INDEX idx_session_revisions_session
     ON session_revisions (session_source, session_id);
   CREATE INDEX idx_narratives_project ON narratives (project_id);
+  CREATE INDEX idx_narrative_evidence_session
+    ON narrative_evidence (session_source, session_id);
+  CREATE INDEX idx_narrative_sessions_session
+    ON narrative_sessions (session_source, session_id);
   CREATE INDEX idx_patterns_project ON patterns (project_id);
   CREATE INDEX idx_findings_kernel ON findings (kernel);
   CREATE INDEX idx_findings_project ON findings (project_id);
