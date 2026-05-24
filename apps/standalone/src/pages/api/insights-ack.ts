@@ -84,7 +84,18 @@ export interface InsightsAcksFile {
   entries: InsightsAckEntry[];
 }
 
-const KNOWN_KINDS = new Set(['its-contrast', 'knowledge-debt', 'reflexive', 'other']);
+const KNOWN_KINDS = new Set([
+  'its-contrast',
+  'knowledge-debt',
+  // Rev3-C C3 — `narrative` joins the ack allow-list for the binary
+  // ack case (one-shot "I've seen this Narrative"). The richer
+  // PENDING/INSTALLED/DISMISSED state machine for narratives lives
+  // in the entity-states ledger (`/api/entity-states`); this one is
+  // for the lightweight acknowledge action.
+  'narrative',
+  'reflexive',
+  'other',
+]);
 const MAX_ID_LEN = 256;
 
 export interface ValidatedAck {

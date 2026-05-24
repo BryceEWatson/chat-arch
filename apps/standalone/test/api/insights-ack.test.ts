@@ -27,6 +27,22 @@ describe('validateAckBody', () => {
     expect('error' in r).toBe(true);
   });
 
+  it('accepts the `narrative` kind (Rev3-C C3 binary-ack case)', () => {
+    const r = validateAckBody({ id: 'narr-abc', kind: 'narrative' });
+    expect('error' in r).toBe(false);
+    if (!('error' in r)) {
+      expect(r.kind).toBe('narrative');
+      expect(r.id).toBe('narr-abc');
+    }
+  });
+
+  it('accepts all four established kinds (its-contrast, knowledge-debt, narrative, reflexive)', () => {
+    for (const kind of ['its-contrast', 'knowledge-debt', 'narrative', 'reflexive']) {
+      const r = validateAckBody({ id: 'x', kind });
+      expect('error' in r).toBe(false);
+    }
+  });
+
   it('rejects missing id', () => {
     const r = validateAckBody({ kind: 'its-contrast' });
     expect('error' in r).toBe(true);
