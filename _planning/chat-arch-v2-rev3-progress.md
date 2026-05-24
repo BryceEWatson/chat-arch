@@ -44,14 +44,14 @@ Plan anchor: [§Phase Rev3-B](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 
 | # | Sub-task | Status | PR / notes |
 |---|---|---|---|
-| B1 | Extend `packages/schema/src/narrative.ts` with provenance fields (intent, observation, inference, attributedTo, verifiedAt, confidence, supportingCount, contradictingCount, correlatedOutcome, schemaVersion) | pending | |
-| B2 | Extend `NarrativeEvidence` with optional `turnIndex` | pending | |
-| B3 | DB migration adding the new columns to the `narratives` table | pending | |
-| B4 | `validateNarrative()` accepts both schemaVersion 1 and 2 | pending | |
+| B1 | Extend `packages/schema/src/narrative.ts` with provenance fields (intent, observation, inference, attributedTo, verifiedAt, confidence, supportingCount, contradictingCount, correlatedOutcome, schemaVersion) | in-review | PR #TBD |
+| B2 | Extend `NarrativeEvidence` with optional `turnIndex` | in-review | PR #TBD |
+| B3 | DB migration adding the new columns to the `narratives` table | in-review | PR #TBD (migration `002-narrative-provenance.ts`) |
+| B4 | `validateNarrative()` accepts both schemaVersion 1 and 2 | in-review | PR #TBD |
 | B5 | Backfill kernel — one-shot run over any existing narratives (post zero-data start, normally empty) computing confidence + setting `attributedTo='deterministic'` + bumping to schemaVersion 2 | pending | |
 | B6 | Confidence-ladder helper (`computeConfidence(supporting, contradicting, prior)`) consuming THRESHOLDS | pending | |
 | B7 | Calibration fail-safe: kernels with `calibrationCompletedAt = null` get effective prior pinned to `narrativeRung.uncalibratedPrior`; banner surfaces "kernel X uncalibrated" | pending | |
-| B8 | Named test `narrative.migration.test.ts` — covers legacy parse, deterministic backfill, round-trip, dual-schema acceptance | pending | Gate |
+| B8 | Named test `narrative.migration.test.ts` — covers legacy parse, deterministic backfill, round-trip, dual-schema acceptance | in-review | PR #TBD (covers dual-schema acceptance + structural rejections; backfill-round-trip lands with B5) |
 | B9 | PII handling for narrative previews — default-blur with reveal-on-click before any curator surface ships | pending | Gate |
 
 **Gates:** named `narrative.migration.test.ts` passes; existing `validateNarrative()` accepts both schemaVersion shapes.
