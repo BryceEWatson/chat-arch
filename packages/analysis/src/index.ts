@@ -296,6 +296,7 @@ export {
 export {
   computeConfidence,
   effectivePriorForKernel,
+  narrativePriorPenalty,
   narrativeSaturation,
   narrativeTier,
   type EffectivePriorOptions,
