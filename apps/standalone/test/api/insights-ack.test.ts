@@ -36,8 +36,8 @@ describe('validateAckBody', () => {
     }
   });
 
-  it('accepts all four established kinds (its-contrast, knowledge-debt, narrative, reflexive)', () => {
-    for (const kind of ['its-contrast', 'knowledge-debt', 'narrative', 'reflexive']) {
+  it('accepts all five established kinds (its-contrast, knowledge-debt, narrative, reflexive, other)', () => {
+    for (const kind of ['its-contrast', 'knowledge-debt', 'narrative', 'reflexive', 'other']) {
       const r = validateAckBody({ id: 'x', kind });
       expect('error' in r).toBe(false);
     }

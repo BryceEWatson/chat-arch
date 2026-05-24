@@ -64,9 +64,9 @@ Plan anchor: [§Phase Rev3-C](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 
 | # | Sub-task | Status | PR / notes |
 |---|---|---|---|
-| C1 | Rename `knowledge-debt-state.ts` ledger to `entity-states.ts` (generalize over narrative + knowledge-debt items) | in-review | PR #TBD |
-| C2 | Migrate state shape — handle Narrative IDs + knowledge-debt IDs under one entry shape; preserve back-compat read | in-review | PR #TBD (server reads legacy `knowledge-debt-states.json` when v2 file absent; viewer client mirrors the fallback) |
-| C3 | Add `narrative` kind to `insights-ack.ts` KNOWN_KINDS allow-list for binary-ack case | in-review | PR #TBD |
+| C1 | Rename `knowledge-debt-state.ts` ledger to `entity-states.ts` (generalize over narrative + knowledge-debt items) | complete-and-merged | PR #70 |
+| C2 | Migrate state shape — handle Narrative IDs + knowledge-debt IDs under one entry shape; preserve back-compat read | complete-and-merged | PR #70 (server reads legacy `knowledge-debt-states.json` when v2 file absent; viewer client mirrors the fallback) |
+| C3 | Add `narrative` kind to `insights-ack.ts` KNOWN_KINDS allow-list for binary-ack case | in-review | PR #71 |
 | C4 | Wire the new entity-states ledger to read/write through the SQLite SDK (not a separate JSON file going forward) | pending | |
 | C5 | Tests: dismiss-then-evidence-grows-then-re-promote round-trip on a Narrative | pending | Gate |
 
