@@ -52,7 +52,7 @@ Plan anchor: [§Phase Rev3-B](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | B6 | Confidence-ladder helper (`computeConfidence(supporting, contradicting, prior)`) consuming THRESHOLDS | in-review | PR #TBD |
 | B7 | Calibration fail-safe: kernels with `calibrationCompletedAt = null` get effective prior pinned to `narrativeRung.uncalibratedPrior`; banner surfaces "kernel X uncalibrated" | in-review | PR #TBD (helper landed; viewer banner wires in with B5 backfill caller) |
 | B8 | Named test `narrative.migration.test.ts` — covers legacy parse, deterministic backfill, round-trip, dual-schema acceptance | in-review | PR #TBD (covers dual-schema acceptance + structural rejections; backfill-round-trip lands with B5) |
-| B9 | PII handling for narrative previews — default-blur with reveal-on-click before any curator surface ships | pending | Gate |
+| B9 | PII handling for narrative previews — default-blur with reveal-on-click before any curator surface ships | in-review | PR #TBD (BlurredPii component + wired into ProjectsMode narrative title/body; evidence pill `title` attribute leak fixed) |
 
 **Gates:** named `narrative.migration.test.ts` passes; existing `validateNarrative()` accepts both schemaVersion shapes.
 
