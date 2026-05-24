@@ -1,7 +1,8 @@
 /**
- * Narrative confidence-ladder kernel (Phase Rev3-B sub-tasks B6 + B7).
+ * Narrative confidence-ladder + saturation kernel (Phase Rev3-B sub-
+ * tasks B6 + B7; Phase Rev3-D sub-task D1).
  *
- * Three pure helpers + their backing types:
+ * Four pure helpers + their backing types:
  *
  *   - `computeConfidence(supporting, contradicting, prior)` — B6.
  *     The Bayesian Beta-posterior-mean form pinned by
@@ -22,6 +23,14 @@
  *     gate per `THRESHOLDS.narrativeRung`. Returns the highest tier
  *     (0–3) whose floor AND supporting-count AND contradicting-cap
  *     gates are all satisfied. Tier 0 = "not surface-able."
+ *
+ *   - `narrativeSaturation(dismissalCount)` — D1. Maps the
+ *     `entity_states.dismissal_count` counter (Rev3-C C4) to the
+ *     effective re-promotion growth multiplier + shelved flag. Each
+ *     dismissal multiplies the base re-promotion bar by
+ *     `THRESHOLDS.narrativeRung.dismissDecay`; once dismissals reach
+ *     `maxDismissals` the entity is permanently shelved (visible only
+ *     via the Rev3-D D4 "show shelved" affordance).
  *
  * Pure, browser-safe. The viewer + curator-feed + Closure-B/C wirings
  * all consume these directly.
@@ -147,4 +156,95 @@ export function narrativeTier(
     return 1;
   }
   return 0;
+}
+
+/**
+ * D1 saturation result. The viewer and curator both consume this when
+ * deciding (a) whether a DISMISSED entity is still re-promotable and
+ * (b) what bar the current evidence size must clear to re-emerge.
+ */
+export interface NarrativeSaturation {
+  /**
+   * Effective re-promotion growth multiplier. The number the current
+   * evidence count must clear, relative to the size-at-last-dismissal
+   * snapshot persisted in `entity_states.size_at_state`. `null` when
+   * `shelved` is true — the bar is infinite by policy.
+   */
+  readonly multiplier: number | null;
+  /**
+   * `true` once the entity has been dismissed `maxDismissals` times.
+   * Shelved entities are visible only via the Rev3-D D4 "show shelved"
+   * affordance — they no longer re-emerge from growth alone.
+   */
+  readonly shelved: boolean;
+  /**
+   * Dismissals consumed so far, clamped to `[0, maxDismissals]`. Lets
+   * the audit table (D3) render "N/cap" without re-reading THRESHOLDS.
+   */
+  readonly dismissalsConsumed: number;
+  /**
+   * The cap pulled from THRESHOLDS. Same rationale as above — keeps
+   * callers free of a second THRESHOLDS import for display purposes.
+   */
+  readonly cap: number;
+}
+
+/**
+ * D1 saturation rule. Given the `dismissal_count` counter persisted by
+ * the SQLite SDK (Rev3-C C4), return the effective re-promotion
+ * growth multiplier the live evidence count must clear to bring the
+ * entity back from DISMISSED.
+ *
+ * Formula (all values from THRESHOLDS):
+ *
+ *     multiplier = baseGrowth × (dismissDecay ^ dismissalCount)
+ *
+ * where `baseGrowth =
+ * THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier`
+ * (the same constant the C5 round-trip test exercises for the
+ * `dismissalCount=0` baseline) and `dismissDecay =
+ * THRESHOLDS.narrativeRung.dismissDecay`. The doubling is documented
+ * in the THRESHOLDS comment block — each successive dismissal
+ * compounds the bar so a persistently-rejected narrative isn't a
+ * notifier nag.
+ *
+ * Edge cases:
+ *
+ *   - `dismissalCount` non-finite / negative → treated as 0
+ *     (fresh-state baseline; never throws so the viewer's render path
+ *     can't crash on a corrupt ledger row).
+ *   - `dismissalCount >= maxDismissals` → `shelved: true`, `multiplier:
+ *     null`. The viewer hides the entity from the active pile until
+ *     the D4 "show shelved" toggle is on.
+ *   - `dismissalCount` between (maxDismissals - 1, maxDismissals)
+ *     (fractional via persisted JSON) is `floor`'d before comparison,
+ *     so 2.9 dismissals counts as 2 (not yet shelved).
+ *
+ * The function is the single point of truth for re-promotion bar
+ * computation; UI callers MUST NOT inline `Math.pow(decay, count)`.
+ */
+export function narrativeSaturation(
+  dismissalCount: number,
+): NarrativeSaturation {
+  const r = THRESHOLDS.narrativeRung;
+  const base = THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier;
+  const safeCount =
+    !Number.isFinite(dismissalCount) || dismissalCount < 0
+      ? 0
+      : Math.floor(dismissalCount);
+  const consumed = Math.min(safeCount, r.maxDismissals);
+  if (consumed >= r.maxDismissals) {
+    return {
+      multiplier: null,
+      shelved: true,
+      dismissalsConsumed: consumed,
+      cap: r.maxDismissals,
+    };
+  }
+  return {
+    multiplier: base * Math.pow(r.dismissDecay, consumed),
+    shelved: false,
+    dismissalsConsumed: consumed,
+    cap: r.maxDismissals,
+  };
 }

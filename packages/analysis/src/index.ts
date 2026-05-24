@@ -296,8 +296,10 @@ export {
 export {
   computeConfidence,
   effectivePriorForKernel,
+  narrativeSaturation,
   narrativeTier,
   type EffectivePriorOptions,
+  type NarrativeSaturation,
 } from './narrativeRung.js';
 
 export {
