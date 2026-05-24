@@ -10,8 +10,12 @@
 
 import type { Migration } from './types.js';
 import { initialSchemaMigration } from './001-initial-schema.js';
+import { narrativeProvenanceMigration } from './002-narrative-provenance.js';
 
-export const MIGRATIONS: readonly Migration[] = [initialSchemaMigration];
+export const MIGRATIONS: readonly Migration[] = [
+  initialSchemaMigration,
+  narrativeProvenanceMigration,
+];
 
 export { runMigrations } from './runner.js';
 export type { Migration } from './types.js';

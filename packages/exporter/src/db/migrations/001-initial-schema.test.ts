@@ -316,7 +316,10 @@ describe('001-initial-schema migration', () => {
       const db = openDb(dbPath);
       try {
         const first = runMigrations(db, MIGRATIONS);
-        expect(first.applied).toEqual(['001-initial-schema']);
+        expect(first.applied).toEqual([
+          '001-initial-schema',
+          '002-narrative-provenance',
+        ]);
       } finally {
         db.close();
       }
@@ -326,7 +329,10 @@ describe('001-initial-schema migration', () => {
       try {
         const second = runMigrations(db, MIGRATIONS);
         expect(second.applied).toEqual([]);
-        expect(second.alreadyApplied).toEqual(['001-initial-schema']);
+        expect(second.alreadyApplied).toEqual([
+          '001-initial-schema',
+          '002-narrative-provenance',
+        ]);
       } finally {
         db.close();
       }

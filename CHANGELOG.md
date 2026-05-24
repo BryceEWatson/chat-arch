@@ -14,6 +14,43 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **Narrative provenance schema (Phase Rev3-B B1+B2+B3+B4+B8).**
+  `packages/schema/src/narrative.ts` extends the `Narrative` type
+  with optional `schemaVersion`, `provenance` (intent/observation/
+  inference), `attributedTo`, `verifiedAt`, `confidence`,
+  `supportingCount`, `contradictingCount`, and `correlatedOutcome`
+  fields. `NarrativeEvidence` gains optional `turnIndex` (0-based
+  message ordinal). `validateNarrative` runs the pre-existing
+  invariant checks on both schema versions and additionally enforces
+  the v2 shape (non-empty provenance, attributedTo, confidence in
+  [0,1], non-negative counts) when `schemaVersion === 2`. v1 rows
+  remain accepted untouched for the legacy on-disk corpus.
+
+  DB migration `002-narrative-provenance.ts` adds the matching nullable
+  columns to `narratives` (`intent`, `observation`, `inference`,
+  `attributed_to` with CHECK on the 4-value union, `verified_at`,
+  `confidence` with CHECK 0–1, `supporting_count`/`contradicting_count`
+  with CHECK ≥ 0, `correlated_outcome_json`) and `turn_index` to
+  `narrative_evidence` (CHECK ≥ 0). Existing rows survive with all
+  new columns NULL — equivalent to schemaVersion=1. The schema-layer
+  `schema_version` column already exists from migration 001 with
+  DEFAULT 1; migration 002 only adds the provenance siblings.
+
+  Gate test `packages/schema/src/narrative.migration.test.ts` (16
+  cases) covers: v1 acceptance with/without explicit schemaVersion,
+  v1 still rejects pre-Rev3-B invariant violations, v2 acceptance
+  for the full provenance shape, v2 acceptance of verifiedAt=null
+  + correlatedOutcome=null + all 4 attributedTo values, v2 structural
+  rejections (missing provenance / empty triple / missing
+  attributedTo / out-of-range confidence / negative counts), unknown
+  schemaVersion rejection, and turnIndex round-trip on evidence.
+  DB-side migration test `002-narrative-provenance.test.ts` (7 cases)
+  exercises the SQL CHECK constraints + a v1 legacy insert + a full
+  v2 insert with correlated_outcome_json JSON round-trip + the
+  evidence.turn_index optional+CHECK behavior.
+
 ### Changed
 
 - **`attachIfBusy` refactored to named function with explicit deps
