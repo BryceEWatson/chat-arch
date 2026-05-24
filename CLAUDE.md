@@ -107,6 +107,13 @@ packages/viewer/     React viewer (mount target) + 6 outcome-substrate
                      modes (Effectiveness / Insights / Decisions /
                      Trust / Trends / Export) + MethodologyDisclosure
                      + SourceAttribution
+packages/mcp-server/ Standalone MCP server exposing @chat-arch/
+                     exporter/db SDK as read-only tools to external
+                     claude sessions (Rev3-H). H1+H2 scaffold ships
+                     the workingDir scoping + read-only verb
+                     allowlist + server factory. H3 plugs the actual
+                     MCP protocol layer + SDK query tools on top;
+                     H4 enforces localhost-bind; H5 gate test.
 scripts/             One-off audits (audit-correction-recall.mjs) +
                      lint scripts (lint-causal-copy.mjs,
                      lint-thresholds-imports.mjs, lint-fixture-pii.mjs)
