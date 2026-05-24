@@ -415,3 +415,14 @@ export {
   type MetaAccuracyResult,
   type VerdictPair,
 } from './falsifierMetaAccuracy.js';
+
+export {
+  welchsTTest,
+  type WelchResult,
+} from './welchsTTest.js';
+
+export {
+  evaluateCorrelationTagVisibility,
+  type CorrelationTagInput,
+  type CorrelationTagVisibility,
+} from './correlationTagGate.js';
