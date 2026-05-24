@@ -16,6 +16,31 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Phase Rev3-E complete (E6 Closure-C gate test).** Integration
+  test at `apps/standalone/test/integration/closure-c-applied-pattern-gate.test.ts`
+  composes the full Closure-C round-trip:
+  - **Encode flow (E3):** asserts `buildPatternFromNarrative` omits
+    `falsifierStatus` on the default path (Rev3-F will populate it
+    later) and writes `'skipped-by-user'` when the override checkbox
+    fires; `appendedToClaudeMd` flag is preserved independently.
+  - **Watcher kernel (E4+E5):** walks `evaluateAppliedPatternWatcher`
+    through all three closure paths: open → holding (N sessions
+    without recurrence), open → recurring (negative narrative fires
+    after encoding; verdict carries the offending narrative id +
+    timestamp for curator formatting), open → inconclusive on
+    wall-clock timeout.
+  - **Audit trail:** two encoded patterns (one default, one bypass)
+    are distinguishable downstream by `falsifierStatus ===
+    'skipped-by-user'` — pinning the plan's "bypass path produces an
+    auditable Pattern row" gate.
+
+  7 test cases; all pass. **Closes Phase Rev3-E** — Closure C
+  (applied-rule outcome) is now wired end-to-end through the SQLite
+  substrate from C4 and the watcher kernel from E4+E5. The pure-
+  decision kernel + the encode-time falsifierStatus sentinel give
+  Rev3-F's curator everything it needs to surface RECURRING_AFTER_-
+  APPLIED and WATCH_INCONCLUSIVE Narratives at the right moments.
+
 - **Per-narrative audit affordance (Phase Rev3-D D3).** New
   `NarrativeAudit` subcomponent in
   `packages/viewer/src/components/modes/ProjectsMode.tsx` renders an

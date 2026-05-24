@@ -101,7 +101,7 @@ Plan anchor: [§Phase Rev3-E](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | E3 | Encode-as-pattern flow defaults to falsifier-gating; explicit override checkbox writes `skipped-by-user` | complete-and-merged | PR #80 (`buildPatternFromNarrative` accepts `falsifierOverride`; `NarrativeCard` adds positive-only checkbox + status-message variant when override fires; default OFF so the safe path remains "let Rev3-F falsifier verify later") |
 | E4 | Next-sessions watcher: triggers `RECURRING_AFTER_APPLIED` or `WATCH_INCONCLUSIVE` on N=5 / 60d / project-inactivity 30d | in-review | PR #TBD (`evaluateAppliedPatternWatcher` pure-decision kernel in `packages/analysis/src/applyWatcher.ts`; emits `{kind:'open'\|'holding'\|'recurring'\|'inconclusive'}` verdicts. Orchestration lands with Rev3-F curator) |
 | E5 | Wall-clock timeout emits low-priority `WATCH_INCONCLUSIVE` Narrative (not silence) | in-review | PR #TBD (same kernel returns `{kind:'inconclusive', reason:'wall-clock-timeout'\|'project-inactive'}`; curator formats the Narrative at low feed priority) |
-| E6 | Tests: applied pattern visibly closes its watcher within the window; bypass path produces auditable Pattern row | pending | Gate |
+| E6 | Tests: applied pattern visibly closes its watcher within the window; bypass path produces auditable Pattern row | in-review | PR #TBD (closes Phase Rev3-E — integration test in `apps/standalone/test/integration/closure-c-applied-pattern-gate.test.ts` composes E3 encode → E4+E5 watcher kernel across all three closure paths: holding, recurring, inconclusive) |
 
 **Gates:** an applied pattern visibly closes its watcher within the window; bypass path produces an auditable Pattern row.
 
