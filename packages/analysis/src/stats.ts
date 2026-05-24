@@ -180,6 +180,72 @@ export function twoProportionPValue(
 }
 
 /**
+ * Indexable numeric vector — covers `Float32Array`, `Float64Array`,
+ * `Array<number>`, `ReadonlyArray<number>`. The cosine-similarity
+ * functions accept either form; mismatched lengths are tolerated by
+ * iterating to `min(a.length, b.length)`.
+ */
+export type NumericVector =
+  | Float32Array
+  | Float64Array
+  | readonly number[];
+
+/**
+ * Cosine similarity of two arbitrary (un-normalized) numeric vectors:
+ *
+ *     cos(a, b) = (a · b) / (|a| · |b|)
+ *
+ * Returns 0 when either vector has zero magnitude (the cosine is
+ * mathematically undefined; 0 is the conservative "no similarity"
+ * fallback the downstream rankers expect).
+ *
+ * For unit-length inputs prefer `cosineSimilarityNormalized` — it
+ * skips two `sqrt`s in the hot loop. (D2 tech-debt sweep: centralizes
+ * the previously-triplicated implementations in
+ * `packages/analysis/src/clusterRules.ts`,
+ * `packages/exporter/src/embeddings/index.ts`, and the
+ * `cosineSimilarityNormalized` in `classifyByEmbedding.ts`.)
+ */
+export function cosineSimilarity(a: NumericVector, b: NumericVector): number {
+  const len = Math.min(a.length, b.length);
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < len; i += 1) {
+    const x = a[i] as number;
+    const y = b[i] as number;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/**
+ * Cosine similarity of two unit-length vectors — equivalent to
+ * `dot(a, b)` because the magnitudes are 1. Callers MUST pre-normalize
+ * the inputs (the embedding pipeline does so once at write-time so
+ * downstream lookups are dot-product-fast).
+ *
+ * Behavior on non-unit inputs is intentionally NOT defensive — the
+ * function returns whatever the dot product gives, which is wrong
+ * but cheaper than checking. Pass non-normalized vectors to the
+ * general `cosineSimilarity` instead.
+ */
+export function cosineSimilarityNormalized(
+  a: NumericVector,
+  b: NumericVector,
+): number {
+  let s = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    s += (a[i] as number) * (b[i] as number);
+  }
+  return s;
+}
+
+/**
  * Fisher's exact test for a 2×2 contingency table. Two-sided p-value
  * via the "minlike" method: sum of hypergeometric probabilities of all
  * tables with the same marginals and probability ≤ P(observed).

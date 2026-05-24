@@ -71,12 +71,13 @@ export {
   classifyBatch,
   classifyChunksOfOne,
   classifyOne,
-  cosineSimilarityNormalized,
   type ClassificationResult,
   type ClassifyOptions,
   type Embedding,
   type ProjectCentroid,
 } from './classifyByEmbedding.js';
+// cosineSimilarityNormalized lives in stats.ts (D2 consolidation);
+// re-export below.
 
 export {
   discoverClusters,
@@ -294,6 +295,8 @@ export {
 
 export {
   bhFdrAdjust,
+  cosineSimilarity,
+  cosineSimilarityNormalized,
   euclidean,
   ewma,
   expectedCellCounts2x2,
@@ -307,6 +310,7 @@ export {
   variance,
   wilsonCI,
   type McNemarMethod,
+  type NumericVector,
 } from './stats.js';
 
 export {

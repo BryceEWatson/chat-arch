@@ -80,19 +80,13 @@ export interface ClassificationResult {
 const DEFAULT_THRESHOLD = 0.4;
 const DEFAULT_MARGIN = 0.02;
 
-/**
- * Cosine similarity of two unit-length vectors. Equivalent to `dot(a, b)`
- * when both are pre-normalized — we assert that as the calling contract
- * and avoid the sqrt in the hot loop.
- */
-export function cosineSimilarityNormalized(a: Embedding, b: Embedding): number {
-  let s = 0;
-  const len = a.length;
-  for (let i = 0; i < len; i += 1) {
-    s += (a[i] as number) * (b[i] as number);
-  }
-  return s;
-}
+// cosineSimilarityNormalized previously inlined here is centralized in
+// `stats.ts` (D2 tech-debt sweep). Re-exported so existing imports
+// of `cosineSimilarityNormalized` from this module continue to work
+// without touching the call sites. Imported locally too for use
+// inside the classifier code paths below.
+import { cosineSimilarityNormalized } from './stats.js';
+export { cosineSimilarityNormalized };
 
 /**
  * Classify a single document against a list of project centroids. Returns
