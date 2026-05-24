@@ -24,6 +24,14 @@ on-disk shape with this changelog.
   falls below 5 (where the pooled-z normal approximation is
   unreliable); otherwise use the existing z-test. Pairs in the same
   family can mix methods — the choice is per-pair, not global.
+  **Behavior change for re-runs**: existing `analysis/surface-
+  comparison.json` files re-generated against current chat-arch-data
+  may show flipped significance verdicts on small-cell pairs (some
+  previously-significant pairs become non-significant once Fisher
+  exact's more conservative tail probability replaces the z-test;
+  occasionally the reverse). The verdict change reflects more
+  accurate inference, not a regression. Run `pnpm exporter run
+  start` to regenerate.
   New helpers in `@chat-arch/analysis`:
   - `fisherExactPValue2x2(a, b, c, d)` — two-sided "minlike" Fisher
     exact via hypergeometric log-probabilities + logsumexp accumulator

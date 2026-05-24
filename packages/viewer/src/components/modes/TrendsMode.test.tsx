@@ -101,6 +101,7 @@ const surface: SurfaceComparisonFile = {
       pValue: 0.01,
       pValueAdjusted: 0.04,
       significant: true,
+      testMethod: 'z-test',
     },
   ],
 };
