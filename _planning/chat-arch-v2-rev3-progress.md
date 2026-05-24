@@ -83,8 +83,8 @@ Plan anchor: [§Phase Rev3-D](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | D1 | Saturation rule (×2/×4/×8) implemented in entity-states ledger; cap K=3 (THRESHOLDS-resident) | complete-and-merged | PR #75 (`narrativeSaturation` helper in `packages/analysis/src/narrativeRung.ts`; consumes `THRESHOLDS.narrativeRung.dismissDecay` + `maxDismissals` + `actionBanner.knowledgeDebtRepromotionGrowthMultiplier`) |
 | D2 | Per-Narrative re-promotion-penalty prior += `narrativeRung.repromotionPenalty` on each dismissal | complete-and-merged | PR #76 (`narrativePriorPenalty` helper in `packages/analysis/src/narrativeRung.ts` — composes additively with `effectivePriorForKernel`) |
 | D3 | Audit-table view in the viewer surfacing dismissal count per item | complete-and-merged | PR #77 (`NarrativeAudit` row in `packages/viewer/src/components/modes/ProjectsMode.tsx` — surfaces dismissal count + re-promotion threshold; DISMISS button posts to `/api/entity-states`; iter-1 fix column-flex footer + prefer-server-`entry` mirrored in InsightsMode) |
-| D4 | Shelved-permanently affordance + explicit "show shelved" UI toggle | in-review | PR #TBD (transient `showShelved` state + checkbox in `ProjectDetail`'s narratives header; partitions narratives via `narrativeSaturation`; safe default = OFF) |
-| D5 | Tests: cap-K behavior + family-wise α inflation documented in methodology disclosure | in-review | PR #TBD (gate test walks `dismissalCount` from cap−1 → cap and asserts shelved transition; `MethodologyDisclosure` gains family-wise correction caveat) |
+| D4 | Shelved-permanently affordance + explicit "show shelved" UI toggle | complete-and-merged | PR #78 (closes D4+D5 in one PR) |
+| D5 | Tests: cap-K behavior + family-wise α inflation documented in methodology disclosure | complete-and-merged | PR #78 (gate test walks `dismissalCount` from cap−1 → cap and asserts shelved transition; `MethodologyDisclosure` gains family-wise correction caveat) |
 
 **Gates:** a previously-dismissed Narrative re-enters the feed only after evidence growth exceeds the multiplier; capped re-promotion attempts visible in the audit table.
 
