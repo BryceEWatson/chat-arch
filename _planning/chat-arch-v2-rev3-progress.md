@@ -28,10 +28,10 @@ Plan anchor: [§Phase Rev3-A](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | A4 | Create `packages/exporter/src/db/migrations/` with migration framework (`schema_migrations` table, idempotent migration runner) — moved from `packages/schema/` since `better-sqlite3` is a Node native module and `packages/schema/` must stay browser-safe | complete-and-merged | PR #57 |
 | A5 | Initial migration: tables for `projects`, `topics`, `sessions`, `session_messages`, `session_revisions`, `narratives`, `narrative_evidence`, `narrative_sessions`, `patterns`, `project_sessions`, `project_topics`, `topic_sessions`, `findings`, `analyzers` (13 entity + 1 generic findings) | complete-and-merged | PR #57 |
 | A6 | Enable WAL mode + `synchronous=NORMAL` + `foreign_keys=ON`; document `BEGIN IMMEDIATE` single-writer contract with 50ms→1s exponential backoff retry | complete-and-merged | PR #57 |
-| A7 | THRESHOLDS additions in `packages/analysis/src/thresholds.ts`: `narrativeRung.*`, `curator.*`, `appliedRuleWatcher.*` | in-review | PR #58 |
-| A8 | SDK skeleton in `packages/exporter/src/db/` exposing typed query/write methods over the new tables | pending | |
+| A7 | THRESHOLDS additions in `packages/analysis/src/thresholds.ts`: `narrativeRung.*`, `curator.*`, `appliedRuleWatcher.*` | complete-and-merged | PR #58 |
+| A8 | SDK skeleton in `packages/exporter/src/db/` exposing typed query/write methods over the new tables | in-review | PR #TBD |
 | A9 | Extend `NuclearReset` to sweep orphan JSON files under `chat-arch-data/analysis/` | complete-and-merged | PR #53 (outcome-substrate roadmap shipped the NuclearReset extension as Phase 4 work) |
-| A10 | "NO DATA YET" landing screen renders correctly against empty DB | pending | Existing screen — verify |
+| A10 | "NO DATA YET" landing screen renders correctly against empty DB | complete-and-merged | Verified in PR #TBD — no SQLite imports in `apps/standalone/src/`; 159 standalone tests + 15 empty-state contract tests pass against post-A6 main; the SQLite substrate is exporter-only infrastructure not yet wired into page rendering. |
 | A11 | Seeded-fixture test corpus → SDK returns expected rows | pending | Gate |
 
 **Gates:** SDK returns expected rows from a seeded-fixture test corpus; empty-database initial state renders the "NO DATA YET" landing screen correctly; native-module CI spike passes.
