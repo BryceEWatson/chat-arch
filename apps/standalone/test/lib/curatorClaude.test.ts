@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   apiKeyFallbackAllowedFromEnv,
   AUTH_ENV_VARS,
+  computeAllowApiKeyFallback,
   probeClaudeAvailable,
   redactStderr,
 } from '../../src/lib/curatorClaude.js';
@@ -158,5 +159,51 @@ describe('redactStderr (iter-1 security finding — leak-prevention)', () => {
       if (origHome !== undefined) process.env['HOME'] = origHome;
       else delete process.env['HOME'];
     }
+  });
+});
+
+describe('computeAllowApiKeyFallback (F6 two-rail AND, added in exit-review cleanup PR)', () => {
+  // Both rails OFF → false.
+  it('returns false when neither rail is set', () => {
+    delete process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'];
+    expect(computeAllowApiKeyFallback(false)).toBe(false);
+    expect(computeAllowApiKeyFallback(true)).toBe(false); // server rail OFF
+  });
+
+  // Server rail ON + viewer rail OFF → false.
+  it('returns false when only server rail is ON', () => {
+    process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'] = '1';
+    expect(computeAllowApiKeyFallback(false)).toBe(false);
+    expect(computeAllowApiKeyFallback(undefined)).toBe(false);
+    expect(computeAllowApiKeyFallback(null)).toBe(false);
+  });
+
+  // Both rails ON → true (the only ON path).
+  it('returns true only when BOTH rails are explicitly ON', () => {
+    process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'] = '1';
+    expect(computeAllowApiKeyFallback(true)).toBe(true);
+  });
+
+  // Defensive: viewerOptIn must be the literal `true`, not stringly-
+  // truthy. Per the helper's docstring — malformed request body
+  // must fail closed.
+  it('rejects stringly-truthy viewerOptIn ("true", "1", 1, "yes")', () => {
+    process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'] = '1';
+    expect(computeAllowApiKeyFallback('true')).toBe(false);
+    expect(computeAllowApiKeyFallback('1')).toBe(false);
+    expect(computeAllowApiKeyFallback(1)).toBe(false);
+    expect(computeAllowApiKeyFallback('yes')).toBe(false);
+    expect(computeAllowApiKeyFallback({})).toBe(false);
+    expect(computeAllowApiKeyFallback([true])).toBe(false);
+  });
+
+  // The two-rail AND is order-independent.
+  it('flipping either rail off independently kills the allow signal', () => {
+    process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'] = '1';
+    expect(computeAllowApiKeyFallback(true)).toBe(true);
+    delete process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'];
+    expect(computeAllowApiKeyFallback(true)).toBe(false); // env off
+    process.env['CHAT_ARCH_CURATOR_API_KEY_OPT_IN'] = '1';
+    expect(computeAllowApiKeyFallback(false)).toBe(false); // viewer off
   });
 });

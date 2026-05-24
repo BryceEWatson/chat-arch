@@ -115,7 +115,13 @@ for prior phases don't need to invalidate.
     `satisfies (keyof Filter)[]` exhaustiveness check.
   - Closed-flag + deep-freeze of registered tools.
   Protocol layer (stdio transport + `@modelcontextprotocol/sdk`
-  wiring) deferred to a separate protocol PR. PRs #93+#94.
+  wiring) deferred to a separate protocol PR — tracked as H6 in
+  `_planning/chat-arch-v2-rev3-progress.md` + `_planning/chat-arch-
+  v2-rev3-plan.md` §Deferred work. Until that protocol PR lands,
+  the plan's exit phrase ("the same query returns equivalent results
+  in the viewer and from an external claude session") is verified
+  in-process only — the gate test pins SDK ≡ tool.handler
+  equivalence, not the end-to-end protocol round-trip. PRs #93+#94.
 
 - **Phase Rev3-I — Documentation hygiene (this release).**
   CLAUDE.md "Data on disk" expanded with the SQLite entity-table

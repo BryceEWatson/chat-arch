@@ -141,6 +141,22 @@ describe('permutationTestDelta', () => {
         permutationTestDelta([1, 2], [3, 4], { permutations: 0 }),
       ).not.toThrow();
     });
+
+    it('K=0 returns valid=false with a non-NaN p-value (final exit-review guard)', () => {
+      // Pre-guard: 0/0 would yield NaN p-value AND valid=true, so
+      // downstream `p < 0.05` checks silently treated NaN as false
+      // (failing open). Per final review-loop on rev3-start..main.
+      const r = permutationTestDelta([1, 2], [3, 4], { permutations: 0 });
+      expect(r.valid).toBe(false);
+      expect(Number.isNaN(r.pValueTwoSided)).toBe(false);
+      expect(r.pValueTwoSided).toBe(1);
+    });
+
+    it('K=-1 (negative) also returns valid=false', () => {
+      const r = permutationTestDelta([1, 2], [3, 4], { permutations: -1 });
+      expect(r.valid).toBe(false);
+      expect(r.pValueTwoSided).toBe(1);
+    });
   });
 
   describe('Welch-vs-permutation consistency', () => {

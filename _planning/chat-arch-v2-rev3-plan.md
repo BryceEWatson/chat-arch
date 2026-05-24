@@ -283,6 +283,23 @@ Every iter-0 and iter-1 finding survived falsification against the actual codeba
 - **LLM-based sentiment** (locked spec §15; v2.1 scope still)
 - **Remote MCP-over-HTTP** (Phase Rev3-H ships localhost-bind only; remote is a separate amendment if ever)
 
+## Deferred work (recorded by the final exit-review-loop on Rev3)
+
+The final exit-criterion `/review-loop` over `git diff rev3-start..main`
+flagged one item as load-bearing-deferred rather than complete:
+
+- **H6 — Stdio transport + `@modelcontextprotocol/sdk` wiring.**
+  Phase Rev3-H shipped the MCP server scaffold (factory, working-
+  dir scoping, read-only allowlist, SDK tool wiring, localhost-bind
+  policy primitives) AND the H5 in-process equivalence gate
+  (tool.handler(args) ≡ direct SDK call). What it did NOT ship is
+  the protocol layer that lets an actual external claude session
+  reach those tools — that requires picking + integrating the
+  MCP-SDK stdio transport, deciding the JSON-Schema arg shape +
+  return envelope, and writing an end-to-end gate that round-trips
+  through the protocol. Tracked as row H6 (`dropped`) on the
+  progress tracker; the H5 row carries the matching cross-ref.
+
 ## Net
 
 Iter-0 Rev 3 was a wholesale rethink that overrode locked decisions. Iter-1 Rev 3 is **additive proposals** that respect the locked v2 spec's substrate (JSON sidecars), entity model (Project / Topic / Narrative / Pattern / Sentiment), four-surface IA, and tier model. The good ideas — confidence ladder, three loop closures, generator/falsifier discipline, provenance fields, outcome-correlation — land within existing surfaces and reuse existing infrastructure (`THRESHOLDS`, `MethodologyDisclosure`, `insights-ack`, `knowledge-debt-state`, `resolveClaude`). Two strategic items (SQLite substrate, MCP server / agent orchestration) remain as user-decision lock-break questions in §0.

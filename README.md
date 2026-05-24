@@ -284,6 +284,10 @@ packages/
                      build time) and the viewer (at runtime).
   viewer/            React viewer. Mounts against
                      /chat-arch-data/manifest.json.
+  mcp-server/        @chat-arch/mcp-server — read-only MCP surface
+                     over the SQLite SDK (Phase Rev3-H scaffold;
+                     stdio / @modelcontextprotocol/sdk transport
+                     wiring deferred to a follow-on protocol PR).
 design-system/       Supergraphic Panel source — prose spec + token
                      generator. Mirrored to chat-arch.dev/design-system/
                      at build time.
@@ -293,6 +297,13 @@ scripts/             One-off audit + diagnostic scripts (e.g.
   mine-corrections/  Claude Code skill that drives the LLM stages of
                      the corrections pipeline. Invoked locally via
                      /api/mine-corrections.
+  mine-decisions/    Skill driving the decisions LLM stages.
+  curate/            Phase Rev3-F curator skill — ranks tier-2/3
+                     narratives into analysis/curator-feed.json.
+  falsify/           Phase Rev3-F falsifier skill — verifies
+                     finding evidenceChains; writes
+                     analysis/falsifier-verdicts.json.
+  chat-answer/       Drives /api/chat-answer (Q&A over corpus).
 ```
 
 ### Corrections (dev-only mining)

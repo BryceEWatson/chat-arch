@@ -154,7 +154,7 @@ describe('evaluateAppliedPatternWatcher', () => {
     });
   });
 
-  describe('recurring (negative/mixed narrative after encoding)', () => {
+  describe('recurring (negative narrative after encoding)', () => {
     it('returns recurring on first negative narrative after encoding', () => {
       const result = evaluateAppliedPatternWatcher({
         pattern: pattern(),
@@ -174,14 +174,14 @@ describe('evaluateAppliedPatternWatcher', () => {
         projectSessions: [session(1), session(5), session(10)],
         projectNarratives: [
           narrative(10, 'negative'),
-          narrative(3, 'mixed'), // earliest
+          narrative(3, 'negative'), // earliest
           narrative(7, 'negative'),
         ],
         now: now(11),
       });
       expect(result.kind).toBe('recurring');
       if (result.kind === 'recurring') {
-        expect(result.recurrenceNarrativeId).toBe('n_3_mixed');
+        expect(result.recurrenceNarrativeId).toBe('n_3_negative');
       }
     });
 
@@ -202,8 +202,10 @@ describe('evaluateAppliedPatternWatcher', () => {
       // Stat-rigor iter-1 finding: the original `!== 'positive'`
       // implementation admitted `'neutral'` (the default class for
       // low-signal sessions) as recurrence — would close watchers on
-      // ambient noise. The allow-list `['negative', 'mixed']`
-      // pins the intent.
+      // ambient noise. The allow-list `['negative']` (originally
+      // `['negative', 'mixed']`; 'mixed' dropped in the final
+      // exit-review because the Narrative schema doesn't define
+      // it) pins the intent.
       for (const noisy of ['neutral', 'unknown', 'negatve' /* typo */]) {
         const result = evaluateAppliedPatternWatcher({
           pattern: pattern(),

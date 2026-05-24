@@ -74,10 +74,14 @@ export interface AssertLocalhostBindInput {
  *
  * Rules:
  *   1. `kind` must be `'stdio'` or `'tcp'`.
- *   2. For `tcp`, `host` MUST be one of `127.0.0.1` / `::1` /
- *      `localhost` (case-sensitive — DNS resolution is the
- *      caller's concern; a literal that bypasses our allowlist
- *      via DNS is the caller's bug).
+ *   2. For `tcp`, `host` MUST be a loopback IP literal — one of
+ *      `127.0.0.1` / `::1` / `::ffff:127.0.0.1` (case-sensitive).
+ *      The hostname `localhost` is REJECTED because /etc/hosts
+ *      (or the Windows hosts file) could redirect it to a non-
+ *      loopback address, at which point the policy would approve
+ *      a bind reachable off-host. Per adversarial review on PR #94
+ *      iter-1: callers who want hostname-based binding must
+ *      resolve the name themselves and pass the resulting IP.
  *   3. For `tcp`, `port` MUST be an integer in `[1, 65535]`. Port
  *      0 is rejected because it asks the OS to pick — fine for
  *      tests, but a real server should pin its port deliberately.

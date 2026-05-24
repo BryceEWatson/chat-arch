@@ -34,6 +34,7 @@
  */
 
 import {
+  backfillNarrativeProvenance,
   openDb,
   runMigrations,
   MIGRATIONS,
@@ -280,16 +281,43 @@ async function migrateLegacyJsonIfPresent(db: Database): Promise<void> {
 async function relocateLegacyDbIfPresent(): Promise<void> {
   const legacy = legacyDbPath();
   const target = dbPath();
-  if (existsSync(target) || !existsSync(legacy)) return;
+  // Two cases:
+  //   1. target empty + legacy present → relocate (one-shot move).
+  //   2. target non-empty + legacy present → UNLINK the legacy file
+  //      unconditionally. Per the final review-loop on rev3-start..
+  //      main: if a chat-arch.db (or .db-wal / .db-shm) is ever re-
+  //      introduced under `public/chat-arch-data/` (restored backup,
+  //      external tool, mismatched branch checkout), Astro would
+  //      serve the entire entity-states ledger at /chat-arch-data/
+  //      chat-arch.db until the new-path DB is wiped. The Rev3-A.A2
+  //      gitignore + Rev3-C.C4 security promise protects against
+  //      repo accidents; this runtime unlink protects against fresh
+  //      drops at boot time.
+  const relocate = existsSync(legacy) && !existsSync(target);
   for (const suffix of ['', '-wal', '-shm']) {
     const src = legacy + suffix;
     const dst = target + suffix;
     if (!existsSync(src)) continue;
-    try {
-      await rename(src, dst);
-    } catch {
-      // Best-effort — if rename fails, the new path opens fresh and
-      // the legacy file lingers as orphan (gitignored by *.db).
+    if (relocate) {
+      try {
+        await rename(src, dst);
+      } catch {
+        // Rename failed (cross-device, in-use). Fall through to
+        // unlink — better to drop the legacy data than to keep
+        // serving it from public/.
+        try {
+          await unlink(src);
+        } catch {
+          // Best-effort: log silently. The .gitignore wildcard
+          // prevents accidental commits.
+        }
+      }
+    } else {
+      try {
+        await unlink(src);
+      } catch {
+        // As above — best-effort.
+      }
     }
   }
 }
@@ -320,6 +348,14 @@ export async function getChatArchDb(): Promise<Database> {
     if (entityStatesIsEmpty(db)) {
       await migrateLegacyJsonIfPresent(db);
     }
+    // B5 backfill — promotes any v1 narratives to v2 with default-
+    // prior provenance. Idempotent (SELECT WHERE schema_version=1
+    // filter); cheap when the table is empty or already-v2.
+    // Per the final review-loop on rev3-start..main: this was dead
+    // code (kernel + tests existed but no production caller), so the
+    // B5 plan promise ("auto-promote v1→v2 on first DB access") was
+    // structurally unfulfilled.
+    await backfillNarrativeProvenance(db);
     cachedDb = db;
     initInFlight = null;
     return db;
