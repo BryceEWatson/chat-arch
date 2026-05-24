@@ -228,6 +228,9 @@ export async function buildReflexiveFile(
         eValueStatus: 'ci-straddles-null',
         nTreated: 0,
         nControl: 0,
+        mcnemarP: null,
+        mcnemarMethod: null,
+        discordantCount: 0,
       },
       methodology: {
         covariates: [...THRESHOLDS.matching.covariates],

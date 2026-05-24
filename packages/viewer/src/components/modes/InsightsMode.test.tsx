@@ -95,6 +95,9 @@ function reflexiveComputed(): ReflexiveResult {
     eValueStatus: 'computed',
     nTreated: 20,
     nControl: 30,
+    mcnemarP: 0.04,
+    mcnemarMethod: 'exact',
+    discordantCount: 8,
   };
 }
 
@@ -109,6 +112,9 @@ function reflexiveStraddlesNull(): ReflexiveResult {
     eValueStatus: 'ci-straddles-null',
     nTreated: 15,
     nControl: 20,
+    mcnemarP: null,
+    mcnemarMethod: null,
+    discordantCount: 0,
   };
 }
 
@@ -247,6 +253,9 @@ describe('InsightsMode', () => {
       eValueStatus: 'ci-straddles-null',
       nTreated: 3, // below display.minNForRate (8)
       nControl: 5,
+      mcnemarP: null,
+      mcnemarMethod: null,
+      discordantCount: 0,
     };
     const bundle = makeBundle({ reflexiveResult: sparse });
     render(<InsightsMode bundle={bundle} />);
