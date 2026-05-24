@@ -1,14 +1,16 @@
 // Tests for the Rev3-B B6 (computeConfidence) + B7 (effectivePrior
-// fail-safe) + narrativeTier joint-gate helper. The joint-gate
-// feasibility constants come from `THRESHOLDS.narrativeRung` (pinned
-// in PR #58); these tests freeze the contract so a future calibration
-// edit can't silently invalidate the documented feasibility proof.
+// fail-safe) + narrativeTier joint-gate helper + Rev3-D D1 saturation
+// rule. The joint-gate feasibility constants come from
+// `THRESHOLDS.narrativeRung` (pinned in PR #58); these tests freeze
+// the contract so a future calibration edit can't silently invalidate
+// the documented feasibility proof.
 
 import { describe, it, expect } from 'vitest';
 
 import {
   computeConfidence,
   effectivePriorForKernel,
+  narrativeSaturation,
   narrativeTier,
 } from './narrativeRung.js';
 import { THRESHOLDS } from './thresholds.js';
@@ -183,5 +185,81 @@ describe('narrativeTier (joint-gate dispatch)', () => {
     );
     const confidence = computeConfidence(supporting, contradicting, prior);
     expect(narrativeTier(confidence, supporting, contradicting)).toBe(3);
+  });
+});
+
+describe('narrativeSaturation (D1 — Closure B saturation rule)', () => {
+  const r = THRESHOLDS.narrativeRung;
+  const base = THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier;
+
+  it('dismissalCount=0 returns the base multiplier and is not shelved', () => {
+    const s = narrativeSaturation(0);
+    expect(s.multiplier).toBe(base);
+    expect(s.shelved).toBe(false);
+    expect(s.dismissalsConsumed).toBe(0);
+    expect(s.cap).toBe(r.maxDismissals);
+  });
+
+  it('each dismissal multiplies the bar by dismissDecay', () => {
+    // The doubling sequence the THRESHOLDS comment documents:
+    // 0 dismissals → base; 1 → base×decay; 2 → base×decay²; etc.
+    for (let k = 0; k < r.maxDismissals; k += 1) {
+      const expected = base * Math.pow(r.dismissDecay, k);
+      const s = narrativeSaturation(k);
+      expect(s.multiplier).toBeCloseTo(expected, 9);
+      expect(s.shelved).toBe(false);
+      expect(s.dismissalsConsumed).toBe(k);
+    }
+  });
+
+  it('reaching maxDismissals shelves the entity (multiplier=null)', () => {
+    const s = narrativeSaturation(r.maxDismissals);
+    expect(s.shelved).toBe(true);
+    expect(s.multiplier).toBeNull();
+    expect(s.dismissalsConsumed).toBe(r.maxDismissals);
+  });
+
+  it('dismissalCount above the cap clamps to maxDismissals + stays shelved', () => {
+    const s = narrativeSaturation(r.maxDismissals + 5);
+    expect(s.shelved).toBe(true);
+    expect(s.multiplier).toBeNull();
+    expect(s.dismissalsConsumed).toBe(r.maxDismissals);
+  });
+
+  it('floors fractional dismissalCount before comparison', () => {
+    // A ledger row corrupted by an off-spec writer that stored a
+    // fractional counter should not silently shelve early.
+    const fractionalJustUnderCap = r.maxDismissals - 0.1;
+    const s = narrativeSaturation(fractionalJustUnderCap);
+    expect(s.shelved).toBe(false);
+    expect(s.dismissalsConsumed).toBe(Math.floor(fractionalJustUnderCap));
+    expect(s.multiplier).toBeCloseTo(
+      base * Math.pow(r.dismissDecay, s.dismissalsConsumed),
+      9,
+    );
+  });
+
+  it('negative / non-finite dismissalCount collapses to baseline (defensive)', () => {
+    for (const bad of [-1, -100, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const s = narrativeSaturation(bad);
+      expect(s.multiplier).toBe(base);
+      expect(s.shelved).toBe(false);
+      expect(s.dismissalsConsumed).toBe(0);
+    }
+  });
+
+  it('THRESHOLDS contract — saturation values are tunable but the shape is locked', () => {
+    // dismissDecay must be > 1 (otherwise the bar never increases —
+    // confirms the same invariant the THRESHOLDS test asserts, but
+    // from the saturation kernel's perspective).
+    expect(r.dismissDecay).toBeGreaterThan(1);
+    // maxDismissals must be a positive integer (the saturation rule
+    // would silently always-shelve at 0).
+    expect(Number.isInteger(r.maxDismissals) && r.maxDismissals > 0).toBe(
+      true,
+    );
+    // The base growth multiplier must be > 1 (otherwise re-promotion
+    // would fire as soon as size hits the snapshot — no growth).
+    expect(base).toBeGreaterThan(1);
   });
 });
