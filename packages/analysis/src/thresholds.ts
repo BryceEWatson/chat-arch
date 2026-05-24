@@ -238,9 +238,11 @@ export const THRESHOLDS = {
     /**
      * Closure B saturation: per-Narrative growth-multiplier multiplier
      * applied on each user dismissal. Default doubling per dismissal —
-     * a 2× multiplier becomes 4× after first dismissal, 8× after the
-     * second, 16× after the third. Closes the iter-1 unbounded-nag
-     * failure mode.
+     * with base × decay^dismissalCount, the multiplier sequence is
+     * ×2 (k=0 baseline), ×4 (after 1st dismissal), ×8 (after 2nd),
+     * shelve at k=3 = `maxDismissals` (matches plan §Phase Rev3-D
+     * "×2/×4/×8 cap K=3"). Closes the iter-1 unbounded-nag failure
+     * mode.
      *
      * Parallel mechanism — kept separate: knowledge-debt clusters use
      * `actionBanner.knowledgeDebtRepromotionGrowthMultiplier` (also
@@ -254,9 +256,12 @@ export const THRESHOLDS = {
     /**
      * Cap on user dismissals before a Narrative is shelved
      * permanently. After this many dismissals the item is visible
-     * only via an explicit "show shelved" affordance.
+     * only via an explicit "show shelved" affordance. K=3 per plan
+     * §Phase Rev3-D — matches the ×2/×4/×8 multiplier sequence
+     * documented above (after the K-th dismissal we'd see ×16, which
+     * the cap pre-empts by shelving instead).
      */
-    maxDismissals: 4,
+    maxDismissals: 3,
     /**
      * Closure B family-wise correction: per-Narrative prior increases
      * by this value on each dismissal. Each re-emergence is a re-test
@@ -264,11 +269,16 @@ export const THRESHOLDS = {
      * re-promotion attempts face a stiffer Bayesian threshold.
      */
     repromotionPenalty: 1,
-    /**
-     * Cap on re-promotion attempts. Document the resulting family-
-     * wise α inflation in the curator-surface methodology disclosure.
-     */
-    maxRepromotionAttempts: 3,
+    //
+    // Historical note (PR #78 review-loop): `maxRepromotionAttempts:
+    // 3` lived here as a planned-but-never-wired sibling of
+    // `maxDismissals`. It was never consumed by any kernel or UI
+    // surface — the audit row + cap-K gate test both consult
+    // `maxDismissals` because each dismissal IS a re-promotion
+    // rejection in the current model. Removed to keep the THRESHOLDS
+    // surface honest; re-add if/when a real distinction emerges
+    // (e.g. counting only post-promotion dismissals separately).
+    //
   },
   /**
    * Rev3 curator / falsifier metrics and gates. Used by the

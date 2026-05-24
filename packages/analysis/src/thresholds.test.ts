@@ -62,13 +62,9 @@ describe('THRESHOLDS.narrativeRung (Rev3 confidence ladder)', () => {
     expect(THRESHOLDS.narrativeRung.dismissDecay).toBeGreaterThan(1);
   });
 
-  it('maxDismissals + maxRepromotionAttempts are positive ints', () => {
-    const { maxDismissals, maxRepromotionAttempts, repromotionPenalty } =
-      THRESHOLDS.narrativeRung;
+  it('maxDismissals is a positive int + repromotionPenalty is non-negative', () => {
+    const { maxDismissals, repromotionPenalty } = THRESHOLDS.narrativeRung;
     expect(Number.isInteger(maxDismissals) && maxDismissals > 0).toBe(true);
-    expect(
-      Number.isInteger(maxRepromotionAttempts) && maxRepromotionAttempts > 0,
-    ).toBe(true);
     expect(repromotionPenalty).toBeGreaterThanOrEqual(0);
   });
 
