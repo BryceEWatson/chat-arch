@@ -342,6 +342,23 @@ export const THRESHOLDS = {
      * ranking becomes noise (iter-1 stat-rigor #004).
      */
     outcomeCorrelationEvidenceMinLength: 5,
+    /**
+     * Rev3-F F4 falsifier verifier threshold. A finding is
+     * `verified` when the ratio of cited turns that come back
+     * `supports` is at least this value. Below it, the finding is
+     * `not-verified` and dropped from any user-visible surface.
+     *
+     * 0.6 (3/5 at the count-minimum) is the pre-launch default:
+     * tolerant enough that a single ambiguous turn doesn't tank a
+     * mostly-supported claim, strict enough that "half supports,
+     * half neutral" isn't enough. Re-calibrate after the F8 rolling
+     * window accumulates n=40 verdicts.
+     *
+     * The unavailable bucket (citation didn't resolve) counts as a
+     * FAILURE in the denominator — citation hygiene is part of the
+     * gate.
+     */
+    falsifierMinSupportRatio: 0.6,
   },
   /**
    * Rev3 applied-rule outcome watcher (plan §"Three closures" —

@@ -393,3 +393,18 @@ export {
   type WatcherSessionLike,
   type WatcherVerdict,
 } from './applyWatcher.js';
+
+export {
+  rankCuratorCandidates,
+  type CuratorCandidate,
+  type CuratorCandidateKind,
+  type RankedCuratorCandidate,
+  type RankerOptions,
+} from './curatorRanker.js';
+
+export {
+  aggregateFalsifierVerdicts,
+  type FalsifierResult,
+  type TurnJudgment,
+  type TurnVerdict,
+} from './falsifierVerifier.js';
