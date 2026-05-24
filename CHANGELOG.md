@@ -16,6 +16,16 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **`narrative` ack kind (Phase Rev3-C C3).** Adds `'narrative'` to
+  `apps/standalone/src/pages/api/insights-ack.ts`'s `KNOWN_KINDS`
+  allow-list. Lets the existing binary-ack ledger record one-shot "I've
+  seen this Narrative" actions. The richer state machine for narratives
+  (PENDING / INSTALLED / DISMISSED + dismissalCount + growth-multiplier
+  re-promotion) continues to live in the entity-states ledger
+  (`/api/entity-states`, added in C1+C2). Two surfaces on purpose: the
+  ack endpoint stays as a thin idempotent ack, while entity-states
+  handles the multi-state lifecycle.
+
 - **Entity-states ledger (Phase Rev3-C C1+C2).** New endpoint
   `/api/entity-states` writes to `analysis/entity-states.json` (v2
   shape) keyed by composite `(entityKind, entityId)`. Generalizes the

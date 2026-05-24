@@ -14,6 +14,7 @@ const REQUIRED_HEADER_VALUE = 'chat-arch-insights-ack';
 export type InsightsAckKind =
   | 'its-contrast'
   | 'knowledge-debt'
+  | 'narrative'
   | 'reflexive'
   | 'other';
 
