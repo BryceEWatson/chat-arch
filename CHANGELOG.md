@@ -57,9 +57,29 @@ on-disk shape with this changelog.
   Tests: 11-test SDK round-trip suite covering upsert / get / list /
   delete + the Closure-B dismissalCount auto-increment semantic +
   composite-PK independence. 7-test migration suite covering CHECK
-  constraints + PK uniqueness + index registration. 6-test fold suite
-  covering v1+v2 JSON migration, malformed-entry drops, and non-
-  clobbering collision behavior.
+  constraints + PK uniqueness + index registration. 8-test fold suite
+  covering v1+v2 JSON migration, malformed-entry drops, non-clobbering
+  collision behavior, and a path-discipline regression that asserts
+  the DB file lives OUTSIDE `apps/standalone/public/` (Astro would
+  otherwise serve the binary DB as a static asset — see the security
+  note below).
+
+  **Path discipline (security fix between iter-1 and iter-2).** The
+  SQLite DB lives at `apps/standalone/chat-arch-data/chat-arch.db` —
+  a SIBLING of `public/`, NEVER inside it. Astro's `public/` is
+  served verbatim at the URL root; a DB under `public/` would be
+  reachable at `/chat-arch-data/chat-arch.db` and expose the entire
+  ledger to anyone who can reach the dev server. The connection
+  helper relocates an existing legacy-path DB on first boot so anyone
+  who ran an earlier iteration of this branch keeps their state.
+
+  **Rollback note.** This migration is forward-only. Reverting past
+  this PR means any post-cutover writes survive only as orphan rows
+  in `apps/standalone/chat-arch-data/chat-arch.db`; the JSON sidecars
+  remain renamed as `entity-states.json.migrated-to-sqlite` /
+  `knowledge-debt-states.json.migrated-to-sqlite`. To restore the
+  pre-C4 JSON-only flow, rename the `.migrated-to-sqlite` files back
+  and discard the SQLite DB.
 
 - **`narrative` ack kind (Phase Rev3-C C3).** Adds `'narrative'` to
   `apps/standalone/src/pages/api/insights-ack.ts`'s `KNOWN_KINDS`

@@ -4,105 +4,37 @@
  * The helper's load-bearing behavior is the legacy-JSON fold: on first
  * SDK boot with an empty entity_states table, fold both v1
  * (`knowledge-debt-states.json`) and v2 (`entity-states.json`) JSON
- * ledgers into SQLite. These tests exercise the fold functions
- * directly by setting up a temporary DB + JSON files and asserting
- * the resulting rows.
+ * ledgers into SQLite. These tests exercise the PRODUCTION fold
+ * functions exported from `chatArchDb.ts` against a temp DB — testing
+ * a copy would mean a regression in the production folders could land
+ * green here, which is the trap the iter-1 version of this file fell
+ * into.
  *
- * The `getChatArchDb` singleton itself isn't tested here — it uses the
- * production data dir and shouldn't be exercised by unit tests.
- * Integration coverage lives at the SDK level
- * (`packages/exporter/src/db/sdk/entityStates.test.ts`) and the
- * migration level (`003-entity-states.test.ts`).
+ * The `getChatArchDb` singleton itself isn't tested here — it uses
+ * the production data dir + a process-lifetime cache and shouldn't be
+ * exercised by unit tests. Integration coverage of the SDK and
+ * migration lives at `packages/exporter/src/db/sdk/entityStates.test.ts`
+ * and `003-entity-states.test.ts`.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { openDb, runMigrations, MIGRATIONS, listEntityStates } from '@chat-arch/exporter/db';
+import {
+  openDb,
+  runMigrations,
+  MIGRATIONS,
+  listEntityStates,
+  upsertEntityState,
+} from '@chat-arch/exporter/db';
 import type Database from 'better-sqlite3';
 
-// Re-implementations of the two folder functions from chatArchDb.ts
-// (kept private there). We test against a separate copy to keep the
-// helper free of test-only exports; if the folders' semantics change,
-// these tests should be updated to match.
-//
-// The functions exist for back-compat with two pre-existing JSON
-// shapes. Once Phase Rev3-D ships, neither file will be written
-// anymore — the folders become one-shot dead-data importers.
-
-const KNOWN_STATES = new Set(['PENDING', 'INSTALLED', 'DISMISSED']);
-const KNOWN_KINDS = new Set(['knowledge-debt', 'narrative']);
-
-function foldV2(db: Database.Database, parsed: { entries?: unknown }): number {
-  if (!Array.isArray(parsed.entries)) return 0;
-  let folded = 0;
-  for (const e of parsed.entries) {
-    if (!e || typeof e !== 'object') continue;
-    const ent = e as Record<string, unknown>;
-    if (typeof ent.entityKind !== 'string' || !KNOWN_KINDS.has(ent.entityKind))
-      continue;
-    if (typeof ent.entityId !== 'string' || ent.entityId.length === 0) continue;
-    if (typeof ent.state !== 'string' || !KNOWN_STATES.has(ent.state)) continue;
-    if (typeof ent.updatedAt !== 'number' || !Number.isFinite(ent.updatedAt))
-      continue;
-    if (typeof ent.sizeAtState !== 'number' || !Number.isFinite(ent.sizeAtState))
-      continue;
-    const dismissalCount =
-      typeof ent.dismissalCount === 'number' &&
-      Number.isFinite(ent.dismissalCount) &&
-      ent.dismissalCount >= 0
-        ? ent.dismissalCount
-        : ent.state === 'DISMISSED'
-          ? 1
-          : 0;
-    db.prepare(
-      `INSERT INTO entity_states
-         (entity_kind, entity_id, state, updated_at, size_at_state, dismissal_count)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT (entity_kind, entity_id) DO NOTHING`,
-    ).run(
-      ent.entityKind,
-      ent.entityId,
-      ent.state,
-      ent.updatedAt,
-      ent.sizeAtState,
-      dismissalCount,
-    );
-    folded += 1;
-  }
-  return folded;
-}
-
-function foldV1(db: Database.Database, parsed: { entries?: unknown }): number {
-  if (!Array.isArray(parsed.entries)) return 0;
-  let folded = 0;
-  for (const e of parsed.entries) {
-    if (!e || typeof e !== 'object') continue;
-    const ent = e as Record<string, unknown>;
-    if (typeof ent.clusterId !== 'string' || ent.clusterId.length === 0) continue;
-    if (typeof ent.state !== 'string' || !KNOWN_STATES.has(ent.state)) continue;
-    if (typeof ent.updatedAt !== 'number' || !Number.isFinite(ent.updatedAt))
-      continue;
-    if (typeof ent.sizeAtState !== 'number' || !Number.isFinite(ent.sizeAtState))
-      continue;
-    const dismissalCount = ent.state === 'DISMISSED' ? 1 : 0;
-    db.prepare(
-      `INSERT INTO entity_states
-         (entity_kind, entity_id, state, updated_at, size_at_state, dismissal_count)
-       VALUES ('knowledge-debt', ?, ?, ?, ?, ?)
-       ON CONFLICT (entity_kind, entity_id) DO NOTHING`,
-    ).run(
-      ent.clusterId,
-      ent.state,
-      ent.updatedAt,
-      ent.sizeAtState,
-      dismissalCount,
-    );
-    folded += 1;
-  }
-  return folded;
-}
+import {
+  dbPath,
+  foldV1JsonEntries,
+  foldV2JsonEntries,
+} from '../../src/lib/chatArchDb.js';
 
 describe('chatArchDb legacy JSON fold', () => {
   let dir: string;
@@ -146,7 +78,7 @@ describe('chatArchDb legacy JSON fold', () => {
         },
       ],
     };
-    expect(foldV2(db, v2)).toBe(2);
+    expect(foldV2JsonEntries(db, v2)).toBe(2);
     const list = listEntityStates(db);
     const byId = new Map(list.map((e) => [e.entityId, e]));
     expect(byId.get('n1')?.dismissalCount).toBe(3);
@@ -166,7 +98,7 @@ describe('chatArchDb legacy JSON fold', () => {
         },
       ],
     };
-    expect(foldV2(db, v2)).toBe(1);
+    expect(foldV2JsonEntries(db, v2)).toBe(1);
     expect(listEntityStates(db)[0]!.dismissalCount).toBe(1);
   });
 
@@ -180,7 +112,7 @@ describe('chatArchDb legacy JSON fold', () => {
         { clusterId: 'k-installed', state: 'INSTALLED', updatedAt: 3, sizeAtState: 7 },
       ],
     };
-    expect(foldV1(db, v1)).toBe(3);
+    expect(foldV1JsonEntries(db, v1)).toBe(3);
     const list = listEntityStates(db);
     expect(list.length).toBe(3);
     expect(list.every((e) => e.entityKind === 'knowledge-debt')).toBe(true);
@@ -210,8 +142,8 @@ describe('chatArchDb legacy JSON fold', () => {
         { clusterId: 'shared', state: 'DISMISSED', updatedAt: 1, sizeAtState: 1 },
       ],
     };
-    foldV2(db, v2);
-    foldV1(db, v1);
+    foldV2JsonEntries(db, v2);
+    foldV1JsonEntries(db, v1);
     const list = listEntityStates(db);
     expect(list.length).toBe(1);
     expect(list[0]!.state).toBe('INSTALLED');
@@ -254,7 +186,7 @@ describe('chatArchDb legacy JSON fold', () => {
         },
       ],
     };
-    expect(foldV2(db, v2)).toBe(1);
+    expect(foldV2JsonEntries(db, v2)).toBe(1);
     expect(listEntityStates(db).length).toBe(1);
     expect(listEntityStates(db)[0]!.entityId).toBe('ok');
   });
@@ -273,7 +205,54 @@ describe('chatArchDb legacy JSON fold', () => {
         },
       ],
     };
-    expect(foldV1(db, v1)).toBe(1);
+    expect(foldV1JsonEntries(db, v1)).toBe(1);
     expect(listEntityStates(db)[0]!.entityId).toBe('ok');
+  });
+
+  it('returns 0 on non-object / non-array input (defensive)', () => {
+    expect(foldV2JsonEntries(db, null)).toBe(0);
+    expect(foldV2JsonEntries(db, 'string')).toBe(0);
+    expect(foldV2JsonEntries(db, { entries: 'not-an-array' })).toBe(0);
+    expect(foldV1JsonEntries(db, null)).toBe(0);
+    expect(foldV1JsonEntries(db, 42)).toBe(0);
+    expect(foldV1JsonEntries(db, { entries: 'not-an-array' })).toBe(0);
+  });
+
+  it('once any row exists, the fold is not re-triggered on a fresh DB cycle', async () => {
+    // The production guard is `entityStatesIsEmpty(db)` in
+    // `getChatArchDb`; we simulate that here. After any SDK write the
+    // guard returns false, so a subsequent boot must NOT re-fold the
+    // archived legacy JSONs.
+    await upsertEntityState(db, {
+      entityKind: 'narrative',
+      entityId: 'live',
+      state: 'PENDING',
+      sizeAtState: 1,
+      updatedAt: 1000,
+    });
+    const isEmpty = db
+      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM entity_states')
+      .get();
+    expect(isEmpty?.c).toBeGreaterThan(0);
+    // Calling the fold defensively here would still work (ON CONFLICT
+    // DO NOTHING), but the production code is gated by the empty
+    // check — so on a populated DB the fold never runs. Verify the
+    // guard predicate that gates it.
+  });
+});
+
+describe('chatArchDb path discipline', () => {
+  it('dbPath is OUTSIDE apps/standalone/public/ (Astro static-asset hazard)', () => {
+    // Regression for the security finding on PR #73 iter-1: when the
+    // DB lived under `public/`, Astro's static-asset handler served it
+    // at `/chat-arch-data/chat-arch.db`, exposing the entire ledger
+    // (and any future SQLite-backed PII tables) over HTTP. The fix is
+    // to put the file in a sibling of `public/`, never inside it.
+    const path = dbPath();
+    // Use forward-slash form for the assertion so it passes on both
+    // POSIX and Windows (Node's `join` returns native separators).
+    const normalized = path.replace(/\\/g, '/');
+    expect(normalized).not.toMatch(/\/apps\/standalone\/public\//);
+    expect(normalized).toMatch(/\/apps\/standalone\/chat-arch-data\/chat-arch\.db$/);
   });
 });

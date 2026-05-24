@@ -32,7 +32,6 @@ import {
   listEntityStates,
   upsertEntityState,
   type EntityStateKind,
-  type EntityStateRow,
   type EntityStateValue,
 } from '@chat-arch/exporter/db';
 
@@ -133,14 +132,6 @@ export function validateEntityStateBody(
   };
 }
 
-/**
- * Snake_case-to-camelCase shape exposed to clients. The SDK already
- * returns camelCase; this just narrows the type for the wire format.
- */
-function rowToWire(row: EntityStateRow): EntityStateRow {
-  return row;
-}
-
 export const POST: APIRoute = async ({ request }) => {
   if (!isLocalOrigin(request.headers.get('origin'))) {
     return csrfReject('cross-origin or missing Origin');
@@ -189,10 +180,7 @@ export const POST: APIRoute = async ({ request }) => {
         sizeAtState: validation.sizeAtState,
         updatedAt: Date.now(),
       });
-      const r = jsonResponse(
-        { ok: true, entry: rowToWire(row) },
-        200,
-      );
+      const r = jsonResponse({ ok: true, entry: row }, 200);
       resolveSlot(r);
       return r;
     } catch (err) {
@@ -215,7 +203,7 @@ export const GET: APIRoute = async () => {
   // state, indexed by updated_at).
   try {
     const db = await getChatArchDb();
-    const entries = listEntityStates(db).map(rowToWire);
+    const entries = listEntityStates(db);
     return jsonResponse({ ok: true, available: true, entries }, 200);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -21,6 +21,16 @@
  * preview/start; the handle lives for the life of that process and
  * closes when the process exits (the OS reclaims FDs; the WAL file
  * is checkpointed on idle).
+ *
+ * Path discipline: the SQLite file lives in `apps/standalone/
+ * chat-arch-data/` — a SIBLING of `public/`, NEVER inside it. Astro
+ * serves `public/` as static assets at the URL root, so a DB under
+ * `public/chat-arch-data/` would be reachable at `/chat-arch-data/
+ * chat-arch.db` and expose the entire ledger (plus any future
+ * SQLite-backed PII tables) to anyone who can reach the dev server.
+ * The legacy JSON sidecars stay in `public/` because the viewer
+ * fetches them via static GET; the binary DB does not need to be
+ * web-reachable.
  */
 
 import {
@@ -51,7 +61,15 @@ function dataDir(): string {
   return join(repoRoot(), 'apps', 'standalone', 'public', 'chat-arch-data');
 }
 
-function dbPath(): string {
+function dbDir(): string {
+  return join(repoRoot(), 'apps', 'standalone', 'chat-arch-data');
+}
+
+export function dbPath(): string {
+  return join(dbDir(), 'chat-arch.db');
+}
+
+function legacyDbPath(): string {
   return join(dataDir(), 'chat-arch.db');
 }
 
@@ -108,13 +126,19 @@ async function archiveAfterMigration(path: string): Promise<void> {
 }
 
 /**
- * Fold the v2 JSON shape written by the C1+C2 endpoint (PR #70). Each
- * entry already carries `entityKind` + `dismissalCount`, so the fold
- * is straightforward — we just replay each entry as a single upsert.
- * Returns the count of folded entries (used to gate the move-aside).
+ * Fold a v2-shape parsed JSON ledger into the SQLite `entity_states`
+ * table. Each entry already carries `entityKind` + `dismissalCount`,
+ * so the fold is straightforward — we just replay each entry as a
+ * single INSERT … ON CONFLICT DO NOTHING. Exported so the test file
+ * can exercise the same code path the production wrapper calls.
+ *
+ * Why a direct INSERT instead of `upsertEntityState`: the SDK's
+ * transition rule would re-set dismissalCount to 1 for any DISMISSED
+ * entry being folded — but the v2 JSON already tracks the cumulative
+ * counter (possibly >1 across re-promotions). Replay-via-upsert
+ * would clobber that history.
  */
-async function foldV2JsonLedger(db: Database): Promise<number> {
-  const parsed = await safeReadJson(v2JsonLedgerPath());
+export function foldV2JsonEntries(db: Database, parsed: unknown): number {
   if (!parsed || typeof parsed !== 'object') return 0;
   const entries = (parsed as { entries?: unknown }).entries;
   if (!Array.isArray(entries)) return 0;
@@ -152,11 +176,6 @@ async function foldV2JsonLedger(db: Database): Promise<number> {
     ) {
       continue;
     }
-    // The upsert path's transition rule would set dismissalCount to 1
-    // for any DISMISSED entry being folded — but the v2 JSON already
-    // tracks the cumulative counter (possibly >1 across re-promotions).
-    // Replay-via-upsert would clobber that history. Use a direct INSERT
-    // to preserve the original counter when present and well-formed.
     const dismissalCount =
       typeof ent.dismissalCount === 'number' &&
       Number.isFinite(ent.dismissalCount) &&
@@ -184,14 +203,12 @@ async function foldV2JsonLedger(db: Database): Promise<number> {
 }
 
 /**
- * Fold the v1 JSON shape written by the pre-C1+C2 endpoint
- * (knowledge-debt-states.json). v1 had only `clusterId` + cluster
- * semantics — synthesize `entityKind: 'knowledge-debt'`, default the
- * `dismissalCount` floor to 1 for DISMISSED entries and 0 otherwise
- * (matches the v1→v2 fallback path in PR #70's iter-1 fix).
+ * Fold a v1-shape parsed JSON ledger. v1 had only `clusterId` +
+ * cluster semantics — synthesize `entityKind: 'knowledge-debt'`,
+ * default the `dismissalCount` floor to 1 for DISMISSED entries and 0
+ * otherwise (matches the v1→v2 fallback path in PR #70's iter-1 fix).
  */
-async function foldV1LegacyLedger(db: Database): Promise<number> {
-  const parsed = await safeReadJson(v1LegacyLedgerPath());
+export function foldV1JsonEntries(db: Database, parsed: unknown): number {
   if (!parsed || typeof parsed !== 'object') return 0;
   const entries = (parsed as { entries?: unknown }).entries;
   if (!Array.isArray(entries)) return 0;
@@ -246,10 +263,35 @@ async function foldV1LegacyLedger(db: Database): Promise<number> {
  * subsequent boot doesn't re-fold and the data dir stays auditable.
  */
 async function migrateLegacyJsonIfPresent(db: Database): Promise<void> {
-  const v2Folded = await foldV2JsonLedger(db);
-  const v1Folded = await foldV1LegacyLedger(db);
+  const v2Folded = foldV2JsonEntries(db, await safeReadJson(v2JsonLedgerPath()));
+  const v1Folded = foldV1JsonEntries(db, await safeReadJson(v1LegacyLedgerPath()));
   if (v2Folded > 0) await archiveAfterMigration(v2JsonLedgerPath());
   if (v1Folded > 0) await archiveAfterMigration(v1LegacyLedgerPath());
+}
+
+/**
+ * Best-effort relocation of a SQLite DB that landed at the previous
+ * (vulnerable) path under `public/`. Anyone who ran an earlier build
+ * of this branch has populated rows at the old location; opening a
+ * fresh DB at the new path would orphan them. Moves the main file +
+ * the WAL + SHM siblings if present. Skipped if the new path already
+ * holds a DB (keeps the new state authoritative).
+ */
+async function relocateLegacyDbIfPresent(): Promise<void> {
+  const legacy = legacyDbPath();
+  const target = dbPath();
+  if (existsSync(target) || !existsSync(legacy)) return;
+  for (const suffix of ['', '-wal', '-shm']) {
+    const src = legacy + suffix;
+    const dst = target + suffix;
+    if (!existsSync(src)) continue;
+    try {
+      await rename(src, dst);
+    } catch {
+      // Best-effort — if rename fails, the new path opens fresh and
+      // the legacy file lingers as orphan (gitignored by *.db).
+    }
+  }
 }
 
 function entityStatesIsEmpty(db: Database): boolean {
@@ -271,7 +313,8 @@ export async function getChatArchDb(): Promise<Database> {
   if (initInFlight !== null) return initInFlight;
 
   initInFlight = (async () => {
-    await mkdir(dataDir(), { recursive: true });
+    await mkdir(dbDir(), { recursive: true });
+    await relocateLegacyDbIfPresent();
     const db = openDb(dbPath());
     runMigrations(db, MIGRATIONS);
     if (entityStatesIsEmpty(db)) {

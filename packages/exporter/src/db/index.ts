@@ -27,10 +27,10 @@ export type {
   RunMigrationsResult,
 } from './migrations/index.js';
 
-export {
-  WriterBusyError,
-  withWriteTransaction,
-} from './transaction.js';
-export type { WithWriteTransactionOptions } from './transaction.js';
+// `WriterBusyError` + `withWriteTransaction` are intentionally NOT
+// re-exported here — the SDK uses them internally via the relative
+// `./transaction.js` import, and no current `apps/standalone` caller
+// reaches for them directly. Add a re-export when a real consumer
+// materializes; until then, dead surface adds bundle / cognitive cost.
 
 export * from './sdk/index.js';

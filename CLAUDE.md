@@ -153,6 +153,22 @@ A "delete cloud data" action must wipe all three — they're all
 cloud-corpus-derived. See `NuclearReset.tsx` for the canonical
 sequence (Promise.allSettled of the three `clearX()` helpers).
 
+### SQLite substrate (Phase Rev3-A onward)
+
+`apps/standalone/chat-arch-data/chat-arch.db` (plus `.db-wal` and
+`.db-shm` siblings during active writes) — the entity-states ledger
+(Rev3-C C4) and downstream Rev3 substrate live here. Deliberately a
+SIBLING of `public/`, not inside it: Astro serves `public/` at the
+URL root, so a DB under `public/chat-arch-data/` would be reachable
+at `/chat-arch-data/chat-arch.db` and expose the entire ledger to
+anyone who can reach the dev server. The `*.db / *.db-wal / *.db-shm`
+gitignore patterns (Rev3-A.A2) cover this family.
+
+`clearDataDir.ts`'s kitchen-sink `wipeAll` filter already removes
+the SQLite file via the `name !== '.gitkeep'` rule when it sweeps
+the data dir; the helper opens a fresh handle on next
+`getChatArchDb` call and re-runs migrations on the empty DB.
+
 The corrections pipeline writes three files under
 `apps/standalone/public/chat-arch-data/analysis/` (all gitignored):
 

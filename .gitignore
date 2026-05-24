@@ -84,6 +84,13 @@ out/
 # single source of truth in git.
 apps/standalone/public/design-system/
 
+# Local SQLite substrate (Rev3-C). SIBLING of `public/` so the binary
+# DB doesn't get served as an Astro static asset (which would expose
+# the ledger and any future PII tables over HTTP). The `*.db*` globs
+# above already cover the file itself; this line keeps the directory
+# unstaged on a fresh clone so a `git add -A` accident can't trap it.
+apps/standalone/chat-arch-data/
+
 # Exporter output for local dev — data is on user's machine, not in repo
 apps/standalone/public/chat-arch-data/*
 # Outcome-substrate sidecars (Phase 1-4) are explicitly enumerated for
