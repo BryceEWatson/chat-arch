@@ -214,11 +214,29 @@ export async function encodePattern(
   };
 }
 
+/**
+ * Build a `Pattern` from a `Narrative` for the encode-as-pattern flow.
+ *
+ * Rev3-E E3 — the `falsifierOverride` option records the user's
+ * explicit decision to skip the future falsifier check. The flag maps
+ * to `falsifierStatus: 'skipped-by-user'` (the auditable bypass
+ * sentinel). When `false` / omitted, `falsifierStatus` is left
+ * undefined — the Rev3-F falsifier skill populates it on the next
+ * encode pass (target: `'verified'`; or `'unavailable'` if the
+ * `claude` CLI is missing / sandboxed).
+ *
+ * Default falsifier-gating per plan §Phase Rev3-E: the user does NOT
+ * opt in to a value here; the absence of `falsifierStatus` means
+ * "not yet falsified" rather than "explicitly skipped." That
+ * distinction is load-bearing for the D3 audit-style surfaces and
+ * the Rev3-F falsifier wiring.
+ */
 export function buildPatternFromNarrative(
   narrative: Narrative,
   appendedToClaudeMd: boolean,
+  options: { falsifierOverride?: boolean } = {},
 ): Pattern {
-  return {
+  const base: Pattern = {
     id: `pattern_${narrative.id}`,
     sourceNarrativeId: narrative.id,
     projectId: narrative.projectId,
@@ -227,6 +245,10 @@ export function buildPatternFromNarrative(
     encodedAt: new Date().toISOString(),
     appendedToClaudeMd,
   };
+  if (options.falsifierOverride === true) {
+    return { ...base, falsifierStatus: 'skipped-by-user' };
+  }
+  return base;
 }
 
 export function buildClaudeMdMarkdown(narrative: Narrative): string {
