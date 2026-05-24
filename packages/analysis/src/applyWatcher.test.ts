@@ -97,6 +97,27 @@ describe('evaluateAppliedPatternWatcher', () => {
       expect(result.kind).toBe('holding');
       if (result.kind === 'holding') {
         expect(result.sessionsObserved).toBe(N);
+        // Wilson 95% upper bound on failure rate given N=5 with 0
+        // observed failures ≈ 0.522. Pin the order-of-magnitude so
+        // consumers don't treat 5/5 as 50/50 evidence.
+        expect(result.failureRateUpperBound95).toBeGreaterThan(0.4);
+        expect(result.failureRateUpperBound95).toBeLessThan(0.6);
+      }
+    });
+
+    it('failureRateUpperBound95 tightens as sessionsObserved grows', () => {
+      const N = THRESHOLDS.appliedRuleWatcher.watcherSessionsN;
+      const widerN = N + 25;
+      const tight = evaluateAppliedPatternWatcher({
+        pattern: pattern(),
+        projectSessions: Array.from({ length: widerN }, (_, i) => session(i + 1)),
+        projectNarratives: [],
+        now: now(widerN + 1),
+      });
+      expect(tight.kind).toBe('holding');
+      if (tight.kind === 'holding') {
+        // 30 trials with 0 failures → Wilson upper bound ≈ 0.115.
+        expect(tight.failureRateUpperBound95).toBeLessThan(0.2);
       }
     });
 
@@ -175,6 +196,23 @@ describe('evaluateAppliedPatternWatcher', () => {
         now: now(4),
       });
       expect(result.kind).toBe('open');
+    });
+
+    it('treats `neutral` and unknown sentiments as NON-recurring (allow-list)', () => {
+      // Stat-rigor iter-1 finding: the original `!== 'positive'`
+      // implementation admitted `'neutral'` (the default class for
+      // low-signal sessions) as recurrence — would close watchers on
+      // ambient noise. The allow-list `['negative', 'mixed']`
+      // pins the intent.
+      for (const noisy of ['neutral', 'unknown', 'negatve' /* typo */]) {
+        const result = evaluateAppliedPatternWatcher({
+          pattern: pattern(),
+          projectSessions: [session(1)],
+          projectNarratives: [narrative(2, noisy)],
+          now: now(3),
+        });
+        expect(result.kind).toBe('open');
+      }
     });
 
     it('ignores recurrences generated BEFORE encoding (pre-existing problem)', () => {

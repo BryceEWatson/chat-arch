@@ -28,8 +28,26 @@
 // deterministic + testable without a DB.
 
 import { THRESHOLDS } from './thresholds.js';
+import { wilsonCI } from './stats.js';
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Closed allow-list for sentiments that count as recurrence. Tighter
+ * than `!== 'positive'` — `'neutral'` is the default class for low-
+ * signal sessions in Rev3-B's sentiment kernel, so admitting it as
+ * recurrence would silently close watchers on ambient noise.
+ *
+ * Stat-rigor iter-1 finding on PR #81 (commit 743230d): the comment
+ * promised `negative || mixed` but the code used the broader
+ * complement of `positive`. Tightening to this allow-list pins the
+ * intent so a future sentiment-kernel change can't drift the rule.
+ *
+ * Topic-overlap filtering (does the recurrence actually relate to
+ * the pattern's domain?) is deferred to Rev3-F's falsifier as the
+ * plan §"Three closures" specifies.
+ */
+const RECURRENCE_SENTIMENTS: ReadonlySet<string> = new Set(['negative', 'mixed']);
 
 /**
  * The four terminal verdicts plus the holding-open "we don't know
@@ -44,8 +62,22 @@ export type WatcherVerdict =
   /**
    * N sessions observed in the project after the pattern was applied
    * with no recurrence. Confidence-up on the original Pattern.
+   *
+   * `failureRateUpperBound95` is the Wilson 95% upper bound on the
+   * recurrence rate given `sessionsObserved` trials with zero
+   * observed failures. At the default `watcherSessionsN = 5` the
+   * bound is ~0.52 (i.e., we can't rule out a 52% recurrence rate
+   * with 5/5 clean sessions). Surfaced so consumers don't treat
+   * "5/5 clean" as the same evidence as "50/50 clean" (Wilson is
+   * well-behaved at the p̂=0 boundary). Future tuning of
+   * `watcherSessionsN` tightens this naturally. Stat-rigor iter-1
+   * finding on PR #81.
    */
-  | { readonly kind: 'holding'; readonly sessionsObserved: number }
+  | {
+      readonly kind: 'holding';
+      readonly sessionsObserved: number;
+      readonly failureRateUpperBound95: number;
+    }
   /**
    * A narrative whose sentiment indicates the original problem
    * recurred fired in the project after the pattern was applied.
@@ -169,7 +201,7 @@ export function evaluateAppliedPatternWatcher(
   let earliestRecurrenceMs = Number.POSITIVE_INFINITY;
   for (const n of input.projectNarratives) {
     if (n.projectId !== input.pattern.projectId) continue;
-    if (n.sentiment === 'positive') continue;
+    if (!RECURRENCE_SENTIMENTS.has(n.sentiment)) continue;
     const ts = Date.parse(n.generatedAt);
     if (!Number.isFinite(ts)) continue;
     if (ts <= encodedAtMs) continue;
@@ -208,7 +240,15 @@ export function evaluateAppliedPatternWatcher(
     return { kind: 'inconclusive', reason: 'project-inactive' };
   }
   if (postSessions.length >= W.watcherSessionsN) {
-    return { kind: 'holding', sessionsObserved: postSessions.length };
+    // Wilson 95% upper bound on the failure rate given
+    // `sessionsObserved` trials with zero observed failures.
+    // At N=5 this is ~0.52; at N=20 ~0.16; at N=50 ~0.07.
+    const wilson = wilsonCI(0, postSessions.length);
+    return {
+      kind: 'holding',
+      sessionsObserved: postSessions.length,
+      failureRateUpperBound95: wilson.high,
+    };
   }
 
   // Otherwise, the watch is still active — not enough signal yet.
