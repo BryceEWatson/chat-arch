@@ -335,10 +335,22 @@ function ProjectDetail({
         if (!r.ok) return;
         setNarrativeStates((prev) => {
           const next = new Map(prev);
-          // Server returns the canonical row including the bumped
-          // dismissalCount; if the response shape lands first, prefer it.
-          // Otherwise approximate locally: bump only on the
-          // PENDING/INSTALLED → DISMISSED transition.
+          // Prefer the server-returned canonical row when present
+          // (C4 SDK is authoritative — its `upsertEntityState` runs
+          // the read-old + compute-counter + write sequence inside a
+          // single BEGIN IMMEDIATE, so its `dismissalCount` reflects
+          // any prior state we may not have known about, e.g. a sibling
+          // tab dismissed first or the legacy migrator seeded a count).
+          // Fall back to local approximation only if the response
+          // didn't carry `entry` (older server, partial deploy).
+          if (r.entry !== undefined) {
+            next.set(narrativeId, {
+              state: r.entry.state,
+              sizeAtState: r.entry.sizeAtState,
+              dismissalCount: r.entry.dismissalCount ?? 0,
+            });
+            return next;
+          }
           const prior = prev.get(narrativeId);
           const wasDismissed = prior?.state === 'DISMISSED';
           const becomeDismissed = state === 'DISMISSED';
@@ -669,13 +681,11 @@ function NarrativeAudit({
   return (
     <div
       className="lcars-narrative-card__audit"
-      // Screen readers should hear "audit" framing before the counts
-      // so the numbers have context (otherwise "1 of 4" is unclear).
-      aria-label={
-        saturation.shelved
-          ? `audit — shelved after ${saturation.dismissalsConsumed} dismissals (cap ${saturation.cap})`
-          : `audit — ${saturation.dismissalsConsumed} of ${saturation.cap} dismissals`
-      }
+      // Wrapper omits aria-label so the screen reader doesn't announce
+      // dismissal counts three times (wrapper → visible counts text →
+      // button label). The "AUDIT" sentinel chip gives spoken context
+      // via plain text instead.
+      role="group"
     >
       <span className="lcars-narrative-card__audit-label">AUDIT</span>
       <span className="lcars-narrative-card__audit-counts">

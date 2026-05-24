@@ -3901,7 +3901,12 @@
 }
 .lcars-narrative-card__footer {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.lcars-narrative-card__footer > .lcars-narrative-card__action {
+  align-self: flex-end;
 }
 .lcars-narrative-card__action {
   font-family: var(--lcars-font-chrome);
@@ -3950,11 +3955,14 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-right: auto;
   font-family: var(--lcars-font-chrome);
   font-size: 10px;
   letter-spacing: 0.08em;
-  opacity: 0.75;
+  /* The audit row sits inside a column-flex footer; opacity 0.85 (was
+   * 0.75) preserves visual hierarchy below the primary action while
+   * staying within WCAG AA contrast for the `--lcars-ice` text colour
+   * over the LCARS dark surface. */
+  opacity: 0.85;
 }
 .lcars-narrative-card__audit-label {
   font-weight: 700;
