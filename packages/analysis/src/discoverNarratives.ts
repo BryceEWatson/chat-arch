@@ -178,6 +178,9 @@ function buildNarrative(
     generatedAt: isoFromMs(now),
     actionType:
       sentiment === 'positive' ? 'encode-as-pattern' : 'generate-corrective-prompt',
+    // Legacy v1 shape — Rev3-B backfill (B5) bumps existing rows to
+    // v2 with provenance + confidence populated.
+    schemaVersion: 1,
   };
 }
 

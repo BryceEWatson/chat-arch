@@ -30,6 +30,7 @@ function baseV1(overrides: Partial<Narrative> = {}): Narrative {
     evidence: [{ sessionId: 's1', anchor: 'turn:5', excerpt: 'short' }],
     generatedAt: ANCHOR_TS,
     actionType: 'encode-as-pattern',
+    schemaVersion: 1,
     ...overrides,
   };
 }
@@ -60,10 +61,15 @@ describe('Rev3-B narrative migration — dual-version contract', () => {
       expect(() => validateNarrative(baseV1())).not.toThrow();
     });
 
-    it('treats absent schemaVersion as v1 (no provenance required)', () => {
-      const n = baseV1();
-      expect(n.schemaVersion).toBeUndefined();
-      expect(() => validateNarrative(n)).not.toThrow();
+    it('runtime-defensive: absent schemaVersion (e.g. legacy JSON pre-Rev3-B) treated as v1', () => {
+      // The TS type requires schemaVersion since iter-2 (PR #66 design-
+      // coherence finding). The runtime validator still defends against
+      // legacy on-disk JSON that lacks the field — cast through unknown
+      // to exercise that defensive path.
+      const { schemaVersion: _drop, ...legacyShape } = baseV1();
+      const legacyJson = legacyShape as unknown as Narrative;
+      expect(legacyJson.schemaVersion).toBeUndefined();
+      expect(() => validateNarrative(legacyJson)).not.toThrow();
     });
 
     it('explicit schemaVersion=1 is accepted', () => {

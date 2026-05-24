@@ -87,12 +87,16 @@ export interface Narrative {
    * Wire-format version of this Narrative row.
    *   - `1`: pre-Rev3-B legacy shape (no provenance fields).
    *   - `2`: Rev3-B+ shape; provenance fields populated.
-   * Default behavior in `validateNarrative` accepts both. Backfill
-   * (B5) bumps every v1 row to v2 with `attributedTo='deterministic'`
-   * and `confidence=computeConfidence(...)` from the existing
-   * evidence count + a fresh prior.
+   * Required (matches `UnifiedSessionEntry.schemaVersion` and
+   * `AppliedImprovementsFile.schemaVersion` in the same package — the
+   * type-level requirement prevents writer footguns where omitting
+   * the field would silently skip v2 structural checks).
+   * `validateNarrative` accepts both versions. Backfill (B5) bumps
+   * every v1 row to v2 with `attributedTo='deterministic'` and
+   * `confidence=computeConfidence(...)` from the existing evidence
+   * count + a fresh prior.
    */
-  schemaVersion?: 1 | 2;
+  schemaVersion: 1 | 2;
 
   /** Provenance triple — required for schemaVersion=2. */
   provenance?: NarrativeProvenance;
