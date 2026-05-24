@@ -15,17 +15,15 @@ Code CLI, Desktop, Cowork, and claude.ai cloud-export ZIPs. Reads the
 JSONL files Claude Code writes to disk plus the ZIP you get from
 **Settings → Privacy → Export data**.
 
-**Local-first by construction.** Your transcripts never leave your machine.
-The hosted viewer at **[chat-arch.dev](https://chat-arch.dev)** is a static
-Cloudflare Pages build with no backend — it's a demo of what chat-arch
-can do. The full workshop loop (SCAN LOCAL, mine corrections, apply
-fixes) runs on a local `pnpm dev` checkout that exposes a same-origin
-`/api/rescan` endpoint so **SCAN LOCAL** can walk `~/.claude/projects/`
-and `%APPDATA%\Claude` (`localhost` only; nothing egresses). The only
-cross-origin fetch on either path is the optional Hugging Face
-model-weight download on first **Analyze Topics** run — see
-[Model-weight trust boundary](#model-weight-trust-boundary) below. No
-telemetry, no analytics beacons, no transcript upload.
+**Local-first by construction.** Your transcripts never leave your
+machine. The hosted viewer at **[chat-arch.dev](https://chat-arch.dev)**
+is a backend-less Cloudflare Pages demo of the renderer; the full
+workshop loop (SCAN LOCAL, mining, SQLite substrate, MCP server) runs
+only on a local `pnpm dev` checkout. See [Hosted vs local](#hosted-vs-local--deliberately-scoped-divergence)
+below for the per-capability split. The only cross-origin fetch on
+either path is the optional Hugging Face model-weight download on
+first **Analyze Topics** run — see [Model-weight trust boundary](#model-weight-trust-boundary)
+below. No telemetry, no analytics beacons, no transcript upload.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Live demo: chat-arch.dev](https://img.shields.io/badge/demo-chat--arch.dev-5b7cff)](https://chat-arch.dev)
@@ -43,11 +41,6 @@ The fastest path to kick the tires:
 3. Everything renders client-side — the page ships as static files with
    no server routes, so nothing you upload is transmitted anywhere.
 
-The hosted viewer can't read files from disk (it has no filesystem
-access). To index your local `~/.claude/projects/` or `%APPDATA%\Claude`
-transcripts from Claude Code CLI / Desktop / Cowork, run chat-arch
-locally via the [Quickstart](#quickstart) below and use **SCAN LOCAL**.
-
 ### Hosted vs local — deliberately scoped divergence
 
 `chat-arch.dev` is a **demo of the viewer**, not the full pipeline.
@@ -63,7 +56,7 @@ network access lands only on the local `pnpm dev` checkout.
 | **Mine decisions** + outcome-substrate sidecars | ❌ | ✅ |
 | **SQLite substrate** (`chat-arch.db` entity-states ledger, Rev3-A onward) | ❌ no Node runtime | ✅ |
 | **/curate** + **/falsify** skills (Rev3-F) | ❌ | ✅ |
-| **MCP server** (`@chat-arch/mcp-server`, Rev3-H read-only SDK surface) | ❌ | ✅ (localhost-bind only) |
+| **MCP server scaffold** (`@chat-arch/mcp-server`, Rev3-H read-only SDK + working-dir scoping + localhost-bind policy primitives) | ❌ | ⚠️ SDK + policy primitives in tree; stdio / `@modelcontextprotocol/sdk` transport wiring deferred to a follow-on PR (localhost-bind enforced when the transport lands) |
 
 The hosted viewer stays JSON-sidecar-only on purpose — keeps the
 demo zero-backend, zero-egress, zero-cost-to-run. The local
@@ -127,7 +120,7 @@ walkthrough of each ingestion path.
 ### What ships beyond the workshop loop
 
 The local-tier viewer now also surfaces an **outcome-substrate** layer
-(EXPORTER_VERSION 1.2.0) that ranks sessions by a composite outcome
+(shipped 1.2.0) that ranks sessions by a composite outcome
 score and slices the corpus six ways:
 
 | Mode | What it shows |

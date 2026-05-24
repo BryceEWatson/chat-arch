@@ -57,7 +57,13 @@ fi
 # chat-arch-data/` ignore rule), but a `--force` or wildcard-bypass
 # could let one through. Trip on any staged file under that dir
 # whose basename is NOT the tracked manifest baseline.
-STAGED_DATA="$(git diff --cached --name-only | grep "^$DATA_DIR/" | grep -v -F "$MANIFEST" || true)"
+# `grep -vxF` (NOT `-vF`) — `-x` requires whole-line match, so
+# `manifest.json.bak` / `manifest.json.old` / `manifest.json2` are
+# NOT excluded by the filter (they don't match the full path exactly)
+# and therefore get caught by the rule. Per adversarial review on
+# PR #95 — `-F` alone is a substring filter and leaks `.bak` copies
+# of the manifest (which carry the same PII as manifest.json itself).
+STAGED_DATA="$(git diff --cached --name-only | grep "^$DATA_DIR/" | grep -vxF "$MANIFEST" || true)"
 if [ -n "$STAGED_DATA" ]; then
   echo "" >&2
   echo "❌ pre-commit refusing: file(s) under $DATA_DIR/ staged:" >&2

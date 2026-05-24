@@ -199,11 +199,16 @@ includes:
 - `patterns` — extracted user-facing rules from narratives,
   including the prose body. `falsifier_status` column (Rev3-E)
   is non-PII metadata.
-- `findings` — kernel emission payloads (JSON-blob `payloadJson`
-  column) that frequently contain narrative IDs + session anchors
+- `findings` — kernel emission payloads (JSON-blob `payload_json`
+  column; the SDK row type exposes this as `payloadJson` in
+  camelCase) that frequently contain narrative IDs + session anchors
   + summary text.
 - `analyzers` — kernel run metadata (calibration state, last-run
   timestamps). Non-PII.
+- `narrative_sessions` / `project_sessions` / `project_topics` /
+  `topic_sessions` — junction tables linking the above entities.
+  No prose, but the linkage itself reveals what a narrative is
+  about / what a project covers — PII at the relational level.
 
 The `@chat-arch/mcp-server` package (Rev3-H) exposes a READ-ONLY
 SDK surface over this DB to external claude sessions; that's a
@@ -241,7 +246,7 @@ The corrections pipeline writes three files under
   skill writes during a mining pass. The viewer polls them while a
   run is in flight; the clear endpoint sweeps them up.
 
-### Outcome-substrate sidecars (Phase 1-4, EXPORTER_VERSION 1.2.0)
+### Outcome-substrate sidecars (Phase 1-4, introduced in EXPORTER_VERSION 1.2.0)
 
 Eleven additional sidecars under `apps/standalone/public/chat-arch-data/
 analysis/` (all gitignored — locally generated, may carry PII):
@@ -327,8 +332,9 @@ out of date and needs an update:
      `intent` + `observation` + `inference` columns.
    - `narrative_evidence`: verbatim turn citations.
    - `patterns`: prose body extracted from narratives.
-   - `findings`: kernel emission payloads (JSON in `payloadJson`)
-     often contain narrative IDs + session anchors + summary text.
+   - `findings`: kernel emission payloads (JSON in `payload_json`
+     column / `payloadJson` SDK field) often contain narrative IDs
+     + session anchors + summary text.
    - `sessions` + `session_messages` + `session_revisions`: raw
      transcript content.
 3. **Where can the SQLite ledger be read from?**

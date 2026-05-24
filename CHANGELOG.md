@@ -22,19 +22,20 @@ falsifier-verdicts.json, SQLite ledger in apps/standalone/chat-arch-
 data/chat-arch.db). Pre-existing sidecars stay compatible — caches
 for prior phases don't need to invalidate.
 
-### Added — Rev3 build (Phases A through I)
+### Added
 
 - **Phase Rev3-A — SQLite substrate.** `apps/standalone/chat-arch-
   data/chat-arch.db` (sibling of `public/` so it can't be served
   over HTTP). `better-sqlite3` + `sqlite-vec` deps; WAL mode +
   `synchronous=NORMAL` + `foreign_keys=ON` connection contract with
-  `BEGIN IMMEDIATE` retry. 13-entity schema (projects / topics /
-  sessions / messages / revisions / narratives / narrative_evidence
-  / patterns / project_sessions / project_topics / topic_sessions /
-  findings / analyzers) + `schema_migrations` runner. Wipe coverage
-  in `/api/clear` extends to the SQLite sibling. THRESHOLDS gains
-  `narrativeRung.*` / `curator.*` / `appliedRuleWatcher.*` blocks.
-  PRs #53-#60 + tech-debt sweep PRs #61-#65.
+  `BEGIN IMMEDIATE` retry. 14-entity schema (projects / topics /
+  sessions / messages / revisions / narratives / narrative_evidence /
+  patterns / project_sessions / project_topics / topic_sessions /
+  narrative_sessions / findings / analyzers) + `schema_migrations`
+  runner. Wipe coverage in `/api/clear` extends to the SQLite
+  sibling. THRESHOLDS gains `narrativeRung.*` / `curator.*` /
+  `appliedRuleWatcher.*` blocks. PRs #53-#60 + tech-debt sweep
+  PRs #61-#65.
 
 - **Phase Rev3-B — Narrative provenance + confidence ladder.**
   `Narrative` schema gains `intent` / `observation` / `inference`
@@ -128,7 +129,7 @@ for prior phases don't need to invalidate.
   chat-arch-data/`. `.gitignore` documents the Rev3-F sidecars
   explicitly. EXPORTER_VERSION bumped to 1.3.0.
 
-### Added
+#### Additional per-PR detail (pre-amalgamated Unreleased entries that landed in 1.3.0)
 
 - **Phase Rev3-E complete (E6 Closure-C gate test).** Integration
   test at `apps/standalone/test/integration/closure-c-applied-pattern-gate.test.ts`
