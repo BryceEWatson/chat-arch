@@ -14,7 +14,7 @@
  *     - `supportingCount` = `COUNT(*) FROM narrative_evidence
  *       WHERE narrative_id = ?` (every existing evidence row treated
  *       as supporting; legacy data has no contradiction tracking).
- *     - `contradictingCount` = 0 (no legacy contradiction info).
+ *     - `contradictingCount` = 0 — see "Deferred concerns" below.
  *     - `prior` = `THRESHOLDS.narrativeRung.defaultPrior` (legacy
  *       narratives that survived in the corpus are treated as
  *       informally calibrated; the conservative uncalibratedPrior
@@ -22,9 +22,9 @@
  *     - `confidence` = `computeConfidence(supporting, 0, prior)`.
  *     - `attributedTo` = `'deterministic'` per plan §B5.
  *     - `provenance` = synthesized placeholder ({ intent:
- *       'legacy-v1-backfill', observation: title[0..200], inference:
- *       body[0..200] }). Future kernel re-runs will overwrite with
- *       real provenance.
+ *       'legacy-v1-backfill', observation: title[0..200] or sentinel,
+ *       inference: body[0..200] or sentinel }). Future kernel re-runs
+ *       overwrite with real provenance.
  *     - `schema_version` = 2.
  *   - All writes inside a single `withWriteTransaction` for atomicity;
  *     a partial backfill never lands on disk.
@@ -35,6 +35,22 @@
  * Pure relative to the seed fixture used in tests: same input → same
  * output (no Date.now(), no PRNG, no I/O outside the passed Database
  * handle).
+ *
+ * No production caller yet: this PR ships the kernel but doesn't wire
+ * it into the analysis pipeline — `runAnalysis` is JSON-sidecar-only
+ * today and doesn't open the SQLite substrate. The wiring happens
+ * alongside the Phase Rev3-C entity-states ledger (where the SQLite
+ * read path lands) so the backfill runs once before any tier-based
+ * surface reads the v2 columns.
+ *
+ * Deferred concerns (intentionally out of scope for B5):
+ *   - **Dismissal-ledger contradictingCount.** Phase Rev3-C lands the
+ *     generalized `entity-states` ledger that tracks per-Narrative
+ *     dismissals. Until then no on-disk dismissal data exists to join,
+ *     so `contradictingCount = 0` is the only defensible default.
+ *     When Rev3-C ships, a follow-up backfill (or a new kernel) should
+ *     re-derive `contradictingCount` from the ledger and re-compute
+ *     confidence. Tracked: progress.md row B5 → re-open after C ships.
  */
 
 import type { Database } from 'better-sqlite3';
@@ -47,6 +63,14 @@ import { withWriteTransaction } from './transaction.js';
  *  placeholder. Truncate aggressively — these are placeholders only.
  *  See header doc for the rationale. */
 const PROVENANCE_PLACEHOLDER_MAX_LEN = 200;
+
+/** Sentinel substituted when a legacy v1 row has empty title or body.
+ *  The DDL allows `title TEXT NOT NULL` but doesn't enforce non-empty;
+ *  `validateNarrative` rejects schemaVersion=2 rows whose provenance
+ *  triple has an empty observation/inference. Substitute a sentinel
+ *  rather than skip the row — every v1 needs to reach v2 for the
+ *  schema-uniformity invariant downstream consumers rely on. */
+const EMPTY_FIELD_SENTINEL = '(empty — legacy v1 backfill)';
 
 export interface BackfillResult {
   /** Number of v1 rows promoted to v2. */
@@ -117,8 +141,17 @@ export async function backfillNarrativeProvenance(
       // control (evidence count is non-negative INTEGER from SQL;
       // prior is THRESHOLDS-pinned). Defensive guard regardless.
       const safeConfidence = Number.isFinite(confidence) ? confidence : 0;
-      const observation = row.title.slice(0, PROVENANCE_PLACEHOLDER_MAX_LEN);
-      const inference = row.body.slice(0, PROVENANCE_PLACEHOLDER_MAX_LEN);
+      // Substitute sentinel for empty title/body so the synthesized
+      // provenance triple satisfies the schemaVersion=2 non-empty
+      // contract in validateNarrative (PR #66 B4).
+      const observation =
+        row.title.length === 0
+          ? EMPTY_FIELD_SENTINEL
+          : row.title.slice(0, PROVENANCE_PLACEHOLDER_MAX_LEN);
+      const inference =
+        row.body.length === 0
+          ? EMPTY_FIELD_SENTINEL
+          : row.body.slice(0, PROVENANCE_PLACEHOLDER_MAX_LEN);
       update.run(
         'legacy-v1-backfill',
         observation,

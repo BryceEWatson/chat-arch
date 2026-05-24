@@ -171,7 +171,29 @@ describe('backfillNarrativeProvenance (B5)', () => {
     }
   });
 
-  it('truncates synthesized observation/inference at 200 chars (PII / placeholder boundary)', async () => {
+  it('substitutes sentinel when legacy title/body is empty (validateNarrative v2 non-empty contract)', async () => {
+    // Insert a v1 narrative with empty title + body (DDL allows
+    // empty strings; the v2 validator rejects them on provenance).
+    db.prepare(
+      `INSERT INTO narratives (id, project_id, sentiment, title, body, generated_at, action_type, schema_version)
+       VALUES ('n-empty', ?, 'positive', '', '', '2025-01-01T00:00:00Z', 'encode-as-pattern', 1)`,
+    ).run(SEED_IDS.projects.p1);
+
+    await backfillNarrativeProvenance(db);
+
+    const row = db
+      .prepare<[string], { observation: string; inference: string; schema_version: number }>(
+        `SELECT observation, inference, schema_version FROM narratives WHERE id = ?`,
+      )
+      .get('n-empty');
+    expect(row?.schema_version).toBe(2);
+    expect(row?.observation.length).toBeGreaterThan(0);
+    expect(row?.inference.length).toBeGreaterThan(0);
+    expect(row?.observation).toMatch(/legacy v1 backfill/);
+    expect(row?.inference).toMatch(/legacy v1 backfill/);
+  });
+
+  it('truncates synthesized observation/inference at 200 chars (placeholder length cap)', async () => {
     // Insert a v1 narrative with a long title and body.
     const longTitle = 'T'.repeat(500);
     const longBody = 'B'.repeat(500);
