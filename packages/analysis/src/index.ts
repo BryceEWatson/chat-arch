@@ -426,3 +426,9 @@ export {
   type CorrelationTagInput,
   type CorrelationTagVisibility,
 } from './correlationTagGate.js';
+
+export {
+  permutationTestDelta,
+  type PermutationTestOptions,
+  type PermutationTestResult,
+} from './correlationPermutation.js';
