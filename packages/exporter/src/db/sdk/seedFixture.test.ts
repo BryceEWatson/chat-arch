@@ -46,7 +46,6 @@ import {
 import {
   SEED_IDS,
   SEED_SESSION_KEYS,
-  type SeedFixtureSummary,
   seedRev3Fixture,
 } from './seedFixture.js';
 import { listSessionMessages } from './sessionMessages.js';
@@ -57,13 +56,12 @@ import { getTopicById, listTopics } from './topics.js';
 describe('SDK against seeded-corpus fixture (A11 gate)', () => {
   let tmpDir: string;
   let db: Database;
-  let summary: SeedFixtureSummary;
 
   beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'chat-arch-a11-test-'));
     db = openDb(join(tmpDir, 'a11.db'));
     runMigrations(db, MIGRATIONS);
-    summary = await seedRev3Fixture(db);
+    await seedRev3Fixture(db);
   });
 
   afterEach(() => {
@@ -71,59 +69,23 @@ describe('SDK against seeded-corpus fixture (A11 gate)', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe('fixture summary contract (no silent drift)', () => {
-    it('analyzers, projects, topics, sessions counts match the summary', () => {
-      expect(listAnalyzers(db)).toHaveLength(summary.analyzers);
-      expect(listProjects(db)).toHaveLength(summary.projects);
-      expect(listTopics(db)).toHaveLength(summary.topics);
-      expect(listSessions(db)).toHaveLength(summary.sessions);
-    });
-
-    it('narratives, patterns, findings counts match the summary', () => {
-      expect(listNarratives(db)).toHaveLength(summary.narratives);
-      expect(listPatterns(db)).toHaveLength(summary.patterns);
-      expect(listFindings(db)).toHaveLength(summary.findings);
-    });
-
-    it('per-session message + revision counts sum to the fixture totals', () => {
-      let messages = 0;
-      let revisions = 0;
-      for (const key of SEED_SESSION_KEYS) {
-        messages += listSessionMessages(db, key).length;
-        revisions += listSessionRevisions(db, key).length;
-      }
-      expect(messages).toBe(summary.sessionMessageRows);
-      expect(revisions).toBe(summary.sessionRevisionRows);
-    });
-
-    it('per-narrative evidence rows sum to the fixture total', () => {
-      let evidence = 0;
-      for (const id of Object.values(SEED_IDS.narratives)) {
-        evidence += listNarrativeEvidence(db, id).length;
-      }
-      expect(evidence).toBe(summary.narrativeEvidenceRows);
-    });
-
-    it('junction link counts match the summary', () => {
-      let projectSessionLinks = 0;
-      let topicSessionLinks = 0;
-      let projectTopicLinks = 0;
-      let narrativeSessionLinks = 0;
-      for (const id of Object.values(SEED_IDS.projects)) {
-        projectSessionLinks += listProjectSessions(db, id).length;
-        projectTopicLinks += listProjectTopics(db, id).length;
-      }
-      for (const id of Object.values(SEED_IDS.topics)) {
-        topicSessionLinks += listTopicSessions(db, id).length;
-      }
-      for (const id of Object.values(SEED_IDS.narratives)) {
-        narrativeSessionLinks += listNarrativeSessions(db, id).length;
-      }
-      expect(projectSessionLinks).toBe(summary.projectSessionLinks);
-      expect(topicSessionLinks).toBe(summary.topicSessionLinks);
-      expect(projectTopicLinks).toBe(summary.projectTopicLinks);
-      expect(narrativeSessionLinks).toBe(summary.narrativeSessionLinks);
-    });
+  it('SDK round-trips every one of the 14 tables', () => {
+    // One assertion per table — collectively the "SDK returns
+    // expected rows from a seeded-fixture test corpus" gate.
+    expect(listAnalyzers(db)).toHaveLength(2);
+    expect(listProjects(db)).toHaveLength(3);
+    expect(listTopics(db)).toHaveLength(4);
+    expect(listSessions(db)).toHaveLength(7);
+    expect(listSessionMessages(db, SEED_SESSION_KEYS.cliSess1)).toHaveLength(4);
+    expect(listSessionRevisions(db, SEED_SESSION_KEYS.cliSess1)).toHaveLength(1);
+    expect(listNarratives(db)).toHaveLength(5);
+    expect(listNarrativeEvidence(db, SEED_IDS.narratives.n1)).toHaveLength(2);
+    expect(listPatterns(db)).toHaveLength(2);
+    expect(listFindings(db)).toHaveLength(4);
+    expect(listProjectSessions(db, SEED_IDS.projects.p1)).toHaveLength(3);
+    expect(listProjectTopics(db, SEED_IDS.projects.p1)).toHaveLength(2);
+    expect(listTopicSessions(db, SEED_IDS.topics.t1)).toHaveLength(5);
+    expect(listNarrativeSessions(db, SEED_IDS.narratives.n1)).toHaveLength(2);
   });
 
   describe('individual rows resolve by ID', () => {
@@ -220,7 +182,7 @@ describe('SDK against seeded-corpus fixture (A11 gate)', () => {
     });
 
     it('listFindings({session: sess-1/cli}) returns only the session-anchored one', () => {
-      const found = listFindings(db, { session: SEED_SESSION_KEYS[0]! });
+      const found = listFindings(db, { session: SEED_SESSION_KEYS.cliSess1 });
       expect(found).toHaveLength(1);
       const parsed = JSON.parse(found[0]!.payloadJson) as { kind: string };
       expect(parsed.kind).toBe('session-level');

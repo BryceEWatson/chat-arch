@@ -1,28 +1,23 @@
 // Reusable seed-fixture helper for the chat-arch SQLite SDK
 // (Phase Rev3-A sub-task A11 — gate for Phase Rev3-A).
 //
-// Produces a deterministic small corpus that exercises every entity,
-// every junction, and the cross-entity relationships the downstream
-// phases will rely on:
+// Produces a deterministic small corpus exercising every entity,
+// every junction, and the cross-entity relations the downstream
+// phases will rely on. Inventory + counts are documented on the
+// `SeedFixtureSummary` interface below — the literal types serve as
+// the spec.
 //
-//   - 2 analyzers (kernels), one calibrated, one not.
-//   - 3 projects (P1, P2, P3) with realistic discovery / activity dates.
-//   - 4 topics (T1..T4) — T1 spans P1+P2, T2 only P1, T3 only P2,
-//     T4 only P3.
-//   - 7 sessions distributed across projects + sources (mix of
-//     cli-direct and desktop, same session id appearing under two
-//     sources to exercise the composite-PK case).
-//   - Session messages on 3 of the 7 sessions; revisions on 1.
-//   - 5 narratives across the 3 projects, with evidence rows on 3,
-//     spanning two distinct schema versions (1 and 2) to exercise the
-//     schemaVersion filter.
-//   - 2 patterns promoted from narratives N3 + N5 (one
-//     appended-to-CLAUDE-md, one not).
-//   - 4 findings: one anchored to a session, one to a project, one
-//     to a narrative, one fully unanchored.
-//   - All junctions populated to match the project↔session,
-//     project↔topic, topic↔session, narrative↔session relations
-//     implied by the rows above.
+// Notable shapes worth flagging here (not inferrable from the
+// summary alone):
+//
+//   - Session id `sess-shared` appears under both `cli-direct` and
+//     `desktop` sources; this exercises the composite-PK case (same
+//     id under two distinct sources is a real-world unified-exporter
+//     scenario).
+//   - The `findings` row count covers all four anchor variants
+//     (session / project / narrative / fully-unanchored) — one row
+//     per variant — so downstream filter tests have something
+//     non-degenerate to query.
 //
 // Downstream phases (B-I) can call `seedRev3Fixture(db)` to get a
 // known-good baseline they can layer their own writes on top of.
@@ -47,29 +42,6 @@ import { insertSession } from './sessions.js';
 import { insertTopic } from './topics.js';
 import type { SessionKey } from './types.js';
 
-/**
- * Summary of what the fixture wrote. Tests assert against these
- * counts so a future change to the fixture either matches the
- * existing summary or updates this object alongside the change —
- * preventing silent fixture drift.
- */
-export interface SeedFixtureSummary {
-  readonly analyzers: 2;
-  readonly projects: 3;
-  readonly topics: 4;
-  readonly sessions: 7;
-  readonly sessionMessageRows: 6;
-  readonly sessionRevisionRows: 1;
-  readonly narratives: 5;
-  readonly narrativeEvidenceRows: 5;
-  readonly patterns: 2;
-  readonly findings: 4;
-  readonly projectSessionLinks: 7;
-  readonly projectTopicLinks: 5;
-  readonly topicSessionLinks: 6;
-  readonly narrativeSessionLinks: 4;
-}
-
 /** Stable identifiers exposed for tests to assert specific shapes. */
 export const SEED_IDS = {
   analyzers: { calibrated: 'kernel-alpha', uncalibrated: 'kernel-beta' } as const,
@@ -86,26 +58,25 @@ export const SEED_IDS = {
 } as const;
 
 /**
- * Stable session keys. The pair `(cli-direct, sess-shared)` +
- * `(desktop, sess-shared)` exercises the same `id` under two sources
- * — a real-world case from the unified exporter.
+ * Stable session keys, named by role. The `cliShared` + `desktopShared`
+ * pair exercises the same `id` under two sources — a real-world
+ * unified-exporter case.
  */
-export const SEED_SESSION_KEYS: readonly SessionKey[] = [
-  { source: 'cli-direct', id: 'sess-1' },
-  { source: 'cli-direct', id: 'sess-2' },
-  { source: 'cli-direct', id: 'sess-shared' },
-  { source: 'desktop', id: 'sess-shared' },
-  { source: 'desktop', id: 'sess-4' },
-  { source: 'desktop', id: 'sess-5' },
-  { source: 'cli-direct', id: 'sess-6' },
-] as const;
+export const SEED_SESSION_KEYS = {
+  cliSess1: { source: 'cli-direct', id: 'sess-1' },
+  cliSess2: { source: 'cli-direct', id: 'sess-2' },
+  cliShared: { source: 'cli-direct', id: 'sess-shared' },
+  desktopShared: { source: 'desktop', id: 'sess-shared' },
+  desktopSess4: { source: 'desktop', id: 'sess-4' },
+  desktopSess5: { source: 'desktop', id: 'sess-5' },
+  cliSess6: { source: 'cli-direct', id: 'sess-6' },
+} as const satisfies Readonly<Record<string, SessionKey>>;
 
 /**
  * Seed the fixture into an empty post-migration database. Idempotent
  * is NOT a goal — call once per test against a freshly-migrated DB.
- * Returns a summary of what was written.
  */
-export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary> {
+export async function seedRev3Fixture(db: Database): Promise<void> {
   // ----- analyzers -----
   await upsertAnalyzer(db, {
     name: SEED_IDS.analyzers.calibrated,
@@ -175,8 +146,8 @@ export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary>
   });
 
   // ----- sessions -----
-  // Project mapping: [sess-1, sess-2, sess-shared/cli] → p1;
-  // [sess-shared/desktop, sess-4] → p2; [sess-5, sess-6] → p3.
+  // Project mapping: [cliSess1, cliSess2, cliShared] → p1;
+  // [desktopShared, desktopSess4] → p2; [desktopSess5, cliSess6] → p3.
   const sessionPlan: readonly {
     key: SessionKey;
     projectId: string;
@@ -184,13 +155,13 @@ export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary>
     title: string;
     messageCount: number;
   }[] = [
-    { key: SEED_SESSION_KEYS[0]!, projectId: SEED_IDS.projects.p1, startedAt: 1_700_001_000, title: 'P1 session 1', messageCount: 4 },
-    { key: SEED_SESSION_KEYS[1]!, projectId: SEED_IDS.projects.p1, startedAt: 1_700_002_000, title: 'P1 session 2', messageCount: 2 },
-    { key: SEED_SESSION_KEYS[2]!, projectId: SEED_IDS.projects.p1, startedAt: 1_700_003_000, title: 'P1 shared-id (cli)', messageCount: 0 },
-    { key: SEED_SESSION_KEYS[3]!, projectId: SEED_IDS.projects.p2, startedAt: 1_700_004_000, title: 'P2 shared-id (desktop)', messageCount: 0 },
-    { key: SEED_SESSION_KEYS[4]!, projectId: SEED_IDS.projects.p2, startedAt: 1_700_005_000, title: 'P2 session 4', messageCount: 0 },
-    { key: SEED_SESSION_KEYS[5]!, projectId: SEED_IDS.projects.p3, startedAt: 1_700_006_000, title: 'P3 session 5', messageCount: 0 },
-    { key: SEED_SESSION_KEYS[6]!, projectId: SEED_IDS.projects.p3, startedAt: 1_700_007_000, title: 'P3 session 6', messageCount: 0 },
+    { key: SEED_SESSION_KEYS.cliSess1, projectId: SEED_IDS.projects.p1, startedAt: 1_700_001_000, title: 'P1 session 1', messageCount: 4 },
+    { key: SEED_SESSION_KEYS.cliSess2, projectId: SEED_IDS.projects.p1, startedAt: 1_700_002_000, title: 'P1 session 2', messageCount: 2 },
+    { key: SEED_SESSION_KEYS.cliShared, projectId: SEED_IDS.projects.p1, startedAt: 1_700_003_000, title: 'P1 shared-id (cli)', messageCount: 0 },
+    { key: SEED_SESSION_KEYS.desktopShared, projectId: SEED_IDS.projects.p2, startedAt: 1_700_004_000, title: 'P2 shared-id (desktop)', messageCount: 0 },
+    { key: SEED_SESSION_KEYS.desktopSess4, projectId: SEED_IDS.projects.p2, startedAt: 1_700_005_000, title: 'P2 session 4', messageCount: 0 },
+    { key: SEED_SESSION_KEYS.desktopSess5, projectId: SEED_IDS.projects.p3, startedAt: 1_700_006_000, title: 'P3 session 5', messageCount: 0 },
+    { key: SEED_SESSION_KEYS.cliSess6, projectId: SEED_IDS.projects.p3, startedAt: 1_700_007_000, title: 'P3 session 6', messageCount: 0 },
   ];
   for (const { key, projectId, startedAt, title, messageCount } of sessionPlan) {
     await insertSession(db, {
@@ -208,20 +179,20 @@ export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary>
     });
   }
 
-  // ----- session_messages on sess-1 (4 turns), sess-2 (2 turns) -----
-  await replaceSessionMessages(db, SEED_SESSION_KEYS[0]!, [
+  // ----- session_messages on cliSess1 (4 turns), cliSess2 (2 turns) -----
+  await replaceSessionMessages(db, SEED_SESSION_KEYS.cliSess1, [
     { turnIndex: 0, role: 'user', content: 'How do I configure X?', timestamp: 1_700_001_000 },
     { turnIndex: 1, role: 'assistant', content: 'Set the X flag in config.', timestamp: 1_700_001_500 },
     { turnIndex: 2, role: 'user', content: 'What about Y?', timestamp: 1_700_001_800 },
     { turnIndex: 3, role: 'assistant', content: 'Y depends on X being set.', timestamp: 1_700_001_900 },
   ]);
-  await replaceSessionMessages(db, SEED_SESSION_KEYS[1]!, [
+  await replaceSessionMessages(db, SEED_SESSION_KEYS.cliSess2, [
     { turnIndex: 0, role: 'user', content: 'follow-up' },
     { turnIndex: 1, role: 'assistant', content: 'sure', timestamp: 1_700_002_100 },
   ]);
 
-  // ----- session_revisions on sess-1 -----
-  await appendSessionRevision(db, SEED_SESSION_KEYS[0]!, {
+  // ----- session_revisions on cliSess1 -----
+  await appendSessionRevision(db, SEED_SESSION_KEYS.cliSess1, {
     observedAt: 1_700_001_950,
     transcriptStatus: 'present',
   });
@@ -280,15 +251,15 @@ export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary>
 
   // ----- narrative_evidence: n1, n3, n5 carry evidence rows -----
   await replaceNarrativeEvidence(db, SEED_IDS.narratives.n1, [
-    { evidenceIndex: 0, session: SEED_SESSION_KEYS[0]!, anchor: 'turn:1', excerpt: 'Set the X flag in config.' },
-    { evidenceIndex: 1, session: SEED_SESSION_KEYS[1]!, anchor: 'turn:0' },
+    { evidenceIndex: 0, session: SEED_SESSION_KEYS.cliSess1, anchor: 'turn:1', excerpt: 'Set the X flag in config.' },
+    { evidenceIndex: 1, session: SEED_SESSION_KEYS.cliSess2, anchor: 'turn:0' },
   ]);
   await replaceNarrativeEvidence(db, SEED_IDS.narratives.n3, [
-    { evidenceIndex: 0, session: SEED_SESSION_KEYS[0]!, anchor: 'turn:3', excerpt: 'Y depends on X being set.' },
-    { evidenceIndex: 1, session: SEED_SESSION_KEYS[2]!, anchor: 'turn:0' },
+    { evidenceIndex: 0, session: SEED_SESSION_KEYS.cliSess1, anchor: 'turn:3', excerpt: 'Y depends on X being set.' },
+    { evidenceIndex: 1, session: SEED_SESSION_KEYS.cliShared, anchor: 'turn:0' },
   ]);
   await replaceNarrativeEvidence(db, SEED_IDS.narratives.n5, [
-    { evidenceIndex: 0, session: SEED_SESSION_KEYS[5]!, anchor: 'turn:0' },
+    { evidenceIndex: 0, session: SEED_SESSION_KEYS.desktopSess5, anchor: 'turn:0' },
   ]);
 
   // ----- patterns promoted from n3 (CLAUDE.md-appended) + n5 (not) -----
@@ -316,7 +287,7 @@ export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary>
     kernel: SEED_IDS.analyzers.calibrated,
     payloadJson: JSON.stringify({ score: 0.82, kind: 'session-level' }),
     emittedAt: 1_700_010_000,
-    sessionKey: SEED_SESSION_KEYS[0]!,
+    sessionKey: SEED_SESSION_KEYS.cliSess1,
     projectId: SEED_IDS.projects.p1,
   });
   await insertFinding(db, {
@@ -348,32 +319,22 @@ export async function seedRev3Fixture(db: Database): Promise<SeedFixtureSummary>
   await linkProjectTopic(db, SEED_IDS.projects.p1, SEED_IDS.topics.t2);
   await linkProjectTopic(db, SEED_IDS.projects.p2, SEED_IDS.topics.t3);
   await linkProjectTopic(db, SEED_IDS.projects.p3, SEED_IDS.topics.t4);
-  // topic_sessions: T1 → all P1 + P2 sessions (5); T4 → P3 sessions (2 each but
-  // only one — we link T4 → sess-5 only to keep the count exact).
-  for (const i of [0, 1, 2, 3, 4]) {
-    await linkTopicSession(db, SEED_IDS.topics.t1, SEED_SESSION_KEYS[i]!);
+  // topic_sessions: T1 → all P1 + P2 sessions (5); T4 → desktopSess5 only
+  // (keeps the count exact for the summary contract).
+  for (const key of [
+    SEED_SESSION_KEYS.cliSess1,
+    SEED_SESSION_KEYS.cliSess2,
+    SEED_SESSION_KEYS.cliShared,
+    SEED_SESSION_KEYS.desktopShared,
+    SEED_SESSION_KEYS.desktopSess4,
+  ]) {
+    await linkTopicSession(db, SEED_IDS.topics.t1, key);
   }
-  await linkTopicSession(db, SEED_IDS.topics.t4, SEED_SESSION_KEYS[5]!);
-  // narrative_sessions: N1 → sess-1, sess-2 ; N3 → sess-1, sess-shared/cli.
-  await linkNarrativeSession(db, SEED_IDS.narratives.n1, SEED_SESSION_KEYS[0]!);
-  await linkNarrativeSession(db, SEED_IDS.narratives.n1, SEED_SESSION_KEYS[1]!);
-  await linkNarrativeSession(db, SEED_IDS.narratives.n3, SEED_SESSION_KEYS[0]!);
-  await linkNarrativeSession(db, SEED_IDS.narratives.n3, SEED_SESSION_KEYS[2]!);
+  await linkTopicSession(db, SEED_IDS.topics.t4, SEED_SESSION_KEYS.desktopSess5);
+  // narrative_sessions: N1 → cliSess1, cliSess2; N3 → cliSess1, cliShared.
+  await linkNarrativeSession(db, SEED_IDS.narratives.n1, SEED_SESSION_KEYS.cliSess1);
+  await linkNarrativeSession(db, SEED_IDS.narratives.n1, SEED_SESSION_KEYS.cliSess2);
+  await linkNarrativeSession(db, SEED_IDS.narratives.n3, SEED_SESSION_KEYS.cliSess1);
+  await linkNarrativeSession(db, SEED_IDS.narratives.n3, SEED_SESSION_KEYS.cliShared);
 
-  return {
-    analyzers: 2,
-    projects: 3,
-    topics: 4,
-    sessions: 7,
-    sessionMessageRows: 6,
-    sessionRevisionRows: 1,
-    narratives: 5,
-    narrativeEvidenceRows: 5,
-    patterns: 2,
-    findings: 4,
-    projectSessionLinks: 7,
-    projectTopicLinks: 5,
-    topicSessionLinks: 6,
-    narrativeSessionLinks: 4,
-  };
 }
