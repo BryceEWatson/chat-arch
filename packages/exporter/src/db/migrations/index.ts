@@ -11,10 +11,12 @@
 import type { Migration } from './types.js';
 import { initialSchemaMigration } from './001-initial-schema.js';
 import { narrativeProvenanceMigration } from './002-narrative-provenance.js';
+import { entityStatesMigration } from './003-entity-states.js';
 
 export const MIGRATIONS: readonly Migration[] = [
   initialSchemaMigration,
   narrativeProvenanceMigration,
+  entityStatesMigration,
 ];
 
 export { runMigrations } from './runner.js';

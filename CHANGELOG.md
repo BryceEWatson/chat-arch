@@ -16,6 +16,71 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **SQLite-backed entity-states ledger (Phase Rev3-C C4).** The
+  entity-states ledger introduced in C1+C2 (PR #70) now persists to
+  a new `entity_states` SQLite table instead of the JSON sidecar.
+
+  Components shipped:
+  - **Migration 003 (`entity_states` table)** with composite PK
+    `(entity_kind, entity_id)`, CHECK constraints on `entity_kind` /
+    `state` / `dismissal_count`, and a descending `updated_at` index
+    for fast "most recent first" lists.
+  - **SDK module `packages/exporter/src/db/sdk/entityStates.ts`**
+    exposing `getEntityState` / `listEntityStates` /
+    `upsertEntityState` / `deleteEntityState`. The upsert runs the
+    whole read-old + compute-counter + write sequence inside a single
+    `BEGIN IMMEDIATE` transaction so concurrent writers can't tear
+    the dismissalCount semantics established in C1+C2 iter-1.
+  - **New `@chat-arch/exporter/db` subpath export** so the standalone
+    Astro app can import just the substrate primitives (connection +
+    migrations + SDK) without pulling in the source-specific export
+    modules.
+  - **Standalone DB connection helper** at
+    `apps/standalone/src/lib/chatArchDb.ts` — process-lifetime cached
+    handle that lazy-opens, runs migrations, and folds any pre-
+    existing legacy JSON ledgers (v1 `knowledge-debt-states.json` +
+    v2 `entity-states.json` from C1+C2) into the SQLite table on
+    first access. Folded files get renamed with a
+    `.migrated-to-sqlite` suffix so a user inspecting the data dir
+    post-migration can see what happened.
+  - **Endpoint cutover** — `apps/standalone/src/pages/api/
+    entity-states.ts` POST now writes through the SDK. The GET path
+    grew an `entries: EntityStateEntry[]` field so the viewer client
+    can read the full ledger from the API instead of the static JSON
+    file.
+  - **Viewer client API-first read ladder** — `loadEntityStates`
+    fetches `/api/entity-states` first, falls back to the v2 JSON
+    sidecar (PR #70 path), then to the legacy v1 sidecar (pre-PR-#70
+    path). All three rungs preserve user state across the C1→C2→C4
+    rename + persistence cutover.
+
+  Tests: 11-test SDK round-trip suite covering upsert / get / list /
+  delete + the Closure-B dismissalCount auto-increment semantic +
+  composite-PK independence. 7-test migration suite covering CHECK
+  constraints + PK uniqueness + index registration. 8-test fold suite
+  covering v1+v2 JSON migration, malformed-entry drops, non-clobbering
+  collision behavior, and a path-discipline regression that asserts
+  the DB file lives OUTSIDE `apps/standalone/public/` (Astro would
+  otherwise serve the binary DB as a static asset — see the security
+  note below).
+
+  **Path discipline (security fix between iter-1 and iter-2).** The
+  SQLite DB lives at `apps/standalone/chat-arch-data/chat-arch.db` —
+  a SIBLING of `public/`, NEVER inside it. Astro's `public/` is
+  served verbatim at the URL root; a DB under `public/` would be
+  reachable at `/chat-arch-data/chat-arch.db` and expose the entire
+  ledger to anyone who can reach the dev server. The connection
+  helper relocates an existing legacy-path DB on first boot so anyone
+  who ran an earlier iteration of this branch keeps their state.
+
+  **Rollback note.** This migration is forward-only. Reverting past
+  this PR means any post-cutover writes survive only as orphan rows
+  in `apps/standalone/chat-arch-data/chat-arch.db`; the JSON sidecars
+  remain renamed as `entity-states.json.migrated-to-sqlite` /
+  `knowledge-debt-states.json.migrated-to-sqlite`. To restore the
+  pre-C4 JSON-only flow, rename the `.migrated-to-sqlite` files back
+  and discard the SQLite DB.
+
 - **`narrative` ack kind (Phase Rev3-C C3).** Adds `'narrative'` to
   `apps/standalone/src/pages/api/insights-ack.ts`'s `KNOWN_KINDS`
   allow-list. Lets the existing binary-ack ledger record one-shot "I've

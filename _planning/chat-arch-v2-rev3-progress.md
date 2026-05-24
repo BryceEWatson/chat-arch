@@ -67,7 +67,7 @@ Plan anchor: [§Phase Rev3-C](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | C1 | Rename `knowledge-debt-state.ts` ledger to `entity-states.ts` (generalize over narrative + knowledge-debt items) | complete-and-merged | PR #70 |
 | C2 | Migrate state shape — handle Narrative IDs + knowledge-debt IDs under one entry shape; preserve back-compat read | complete-and-merged | PR #70 (server reads legacy `knowledge-debt-states.json` when v2 file absent; viewer client mirrors the fallback) |
 | C3 | Add `narrative` kind to `insights-ack.ts` KNOWN_KINDS allow-list for binary-ack case | in-review | PR #71 |
-| C4 | Wire the new entity-states ledger to read/write through the SQLite SDK (not a separate JSON file going forward) | pending | |
+| C4 | Wire the new entity-states ledger to read/write through the SQLite SDK (not a separate JSON file going forward) | in-review | PR #TBD (migration 003 + entityStates SDK module + standalone DB connection helper with legacy v1+v2 JSON fold + endpoint cutover + viewer client API-first read with JSON-sidecar fallback) |
 | C5 | Tests: dismiss-then-evidence-grows-then-re-promote round-trip on a Narrative | pending | Gate |
 
 **Gates:** a surfaced Narrative can be dismissed and re-promoted via the existing growth-multiplier mechanism.

@@ -1,18 +1,17 @@
 /**
- * Rev3-C C1+C2 — client for the `/api/entity-states` endpoint and the
- * on-disk `analysis/entity-states.json` ledger (v2 shape).
+ * Rev3-C C1+C2+C4 — client for the `/api/entity-states` endpoint.
  *
- * Generalizes the previous `knowledgeDebtStateClient`. The on-disk
- * ledger now distinguishes entries by composite key
- * `(entityKind, entityId)` — knowledge-debt clusters AND narratives
- * share one ledger.
+ * Generalizes the previous `knowledgeDebtStateClient`. Entries are
+ * keyed by the composite `(entityKind, entityId)` — knowledge-debt
+ * clusters AND narratives share one ledger.
  *
- * Back-compat read: `loadEntityStates` first tries the new file; if
- * it doesn't exist, it falls back to the legacy
- * `analysis/knowledge-debt-states.json` (v1 shape) and synthesizes
- * `entityKind: 'knowledge-debt'` on the way through. Once any state
- * change goes through `setEntityState`, the server writes the new
- * file and the fallback path stops firing.
+ * Read ladder (see `loadEntityStates` below for the implementation):
+ * SQLite-backed `/api/entity-states` (top rung as of C4) → legacy v2
+ * JSON sidecar (C1+C2) → legacy v1 sidecar (pre-C1). The JSON
+ * sidecars are no longer written by the server — the SQLite table is
+ * authoritative — but the static-fetch fallbacks remain so a user
+ * who hasn't yet triggered a post-cutover write (and any static
+ * deploy that lacks the API route) still sees their saved state.
  */
 
 const ENTITY_STATES_PATH = '/api/entity-states';
@@ -137,22 +136,48 @@ async function fetchJsonOrNull(url: string): Promise<unknown> {
   }
 }
 
+/**
+ * Rev3-C C4 — entity-states are now served by the
+ * `/api/entity-states` GET endpoint, backed by SQLite. The viewer
+ * fetches the API in preference to any static JSON sidecar. If the
+ * API isn't reachable (static deploy, no dev server) we fall back to
+ * the legacy v2 JSON sidecar (from C1+C2) and then to the original
+ * v1 sidecar — same back-compat ladder as PR #70, just with SQLite
+ * as the new top rung.
+ */
 export async function loadEntityStates(
   baseUrl: string,
 ): Promise<EntityStatesFile | null> {
+  // Top rung: the SDK-backed API. Returns `{ ok, available, entries }`
+  // on success. The route is dev-server-only — on a static deploy it
+  // 404s and we fall through to the JSON sidecar fallback.
+  const apiResp = (await fetchJsonOrNull('/api/entity-states')) as
+    | { ok?: unknown; entries?: unknown }
+    | null;
+  if (
+    apiResp !== null &&
+    typeof apiResp === 'object' &&
+    apiResp.ok === true &&
+    Array.isArray(apiResp.entries)
+  ) {
+    return {
+      schemaVersion: 2,
+      generatedAt: Date.now(),
+      entries: apiResp.entries as EntityStateEntry[],
+    };
+  }
+
+  // Legacy fallback 1 — v2 JSON sidecar written by C1+C2.
   const v2 = (await fetchJsonOrNull(
     joinUrl(baseUrl, 'analysis/entity-states.json'),
   )) as (EntityStatesFile & { schemaVersion?: number }) | null;
   if (v2 !== null && Array.isArray(v2.entries)) {
-    // Refuse to render a file whose schemaVersion is set to something
-    // we don't know. `undefined` is tolerated for forward-compat with
-    // earlier writers. A future v3 file would otherwise be silently
-    // downgraded into v2-only fields here.
     if (v2.schemaVersion !== undefined && v2.schemaVersion !== 2) {
       return null;
     }
     return v2;
   }
+  // Legacy fallback 2 — v1 JSON sidecar written pre-C1+C2.
   const v1 = (await fetchJsonOrNull(
     joinUrl(baseUrl, 'analysis/knowledge-debt-states.json'),
   )) as { generatedAt?: unknown; entries?: unknown } | null;

@@ -14,6 +14,10 @@
     "./export": {
       "types": "./dist/export/index.d.ts",
       "import": "./dist/export/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.js"
     }
   },
   "bin": {
