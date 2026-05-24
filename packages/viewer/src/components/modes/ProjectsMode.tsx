@@ -7,6 +7,7 @@ import type {
   ProjectSentiment,
 } from '@chat-arch/schema';
 import { isUnassignedProject } from '@chat-arch/schema';
+import { BlurredPii } from '../BlurredPii.js';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
 import { SessionCard } from '../SessionCard.js';
@@ -425,7 +426,11 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
   return (
     <article
       className={`lcars-narrative-card lcars-narrative-card--${accent}`}
-      aria-label={`${narrative.sentiment} narrative: ${narrative.title}`}
+      // PII-safe aria-label: sentiment + sentinel only. The title is
+      // PII-blurred by default (B9) so it can't be in the article's
+      // accessible name where a screen-reader would announce it
+      // unconditionally.
+      aria-label={`${narrative.sentiment} narrative (title PII-blurred until revealed)`}
     >
       <header className="lcars-narrative-card__header">
         <span
@@ -433,9 +438,15 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
         >
           {narrative.sentiment.toUpperCase()}
         </span>
-        <h4 className="lcars-narrative-card__title">{narrative.title}</h4>
+        <h4 className="lcars-narrative-card__title">
+          <BlurredPii label="narrative title">{narrative.title}</BlurredPii>
+        </h4>
       </header>
-      {narrative.body && <p className="lcars-narrative-card__body">{narrative.body}</p>}
+      {narrative.body && (
+        <p className="lcars-narrative-card__body">
+          <BlurredPii label="narrative body">{narrative.body}</BlurredPii>
+        </p>
+      )}
       {narrative.evidence.length > 0 && (
         <ul className="lcars-narrative-card__evidence" role="list" aria-label="evidence sessions">
           {narrative.evidence.map((e, ix) => {
@@ -446,7 +457,10 @@ function NarrativeCard({ narrative, sessionById }: NarrativeCardProps) {
                 <a
                   className="lcars-narrative-card__evidence-pill"
                   href={`#session/${e.sessionId}`}
-                  title={e.excerpt ?? label}
+                  // Don't expose the evidence excerpt via the hover
+                  // title attribute (B9 — excerpt is per-narrative
+                  // PII; reveal happens via the BlurredPii body above).
+                  title={label}
                 >
                   ▸ {label}
                 </a>

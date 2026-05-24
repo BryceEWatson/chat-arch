@@ -16,6 +16,40 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Narrative-preview PII default-blur (Phase Rev3-B B9 — closes
+  Rev3-B).** New `packages/viewer/src/components/BlurredPii.tsx`
+  wraps prose-bearing narrative fields with a CSS blur + an
+  on-click reveal toggle. The blur is purely visual — the underlying
+  text remains in the DOM so screen-readers + search-on-page still
+  work, with an aria-live announcement of the blur state so
+  keyboard-only users discover the reveal button without first
+  finding the blurred prose.
+
+  Wired into `packages/viewer/src/components/modes/ProjectsMode.tsx`:
+  - Narrative `title` wrapped in `BlurredPii label="narrative title"`.
+  - Narrative `body` wrapped in `BlurredPii label="narrative body"`.
+  - The article's `aria-label` no longer leaks the title (changed
+    from `"${sentiment} narrative: ${title}"` to
+    `"${sentiment} narrative (title PII-blurred until revealed)"`).
+  - Evidence pill `title` hover-tooltip no longer leaks the excerpt
+    (was `e.excerpt ?? label`; now just `label`). The full excerpt
+    surfaces via the reveal-toggled body, not via hover.
+
+  Reveal state is per-component-instance (not persisted) by design:
+  closing and re-opening a card re-blurs. Persisting would defeat
+  the "default safe" framing; a future "always reveal" workspace
+  preference could land separately if the friction is too high.
+
+  9 tests in `BlurredPii.test.tsx`: blurred-by-default with content
+  in DOM, aria-hidden on blurred content, Reveal button labeling,
+  click-to-reveal state flip, click-to-hide flip-back, default
+  "PII content" label, `initialRevealed` test hook, className
+  passthrough, screen-reader-only state announcement.
+
+  CSS in `packages/viewer/src/styles.css` — `filter: blur(4px)` on
+  the blurred state, with `user-select: none` to prevent
+  accidental copy-paste of blurred text.
+
 - **Narrative provenance backfill kernel (Phase Rev3-B B5).** New
   module `packages/exporter/src/db/backfillNarrativeProvenance.ts`.
   One-shot promotion of legacy schemaVersion=1 narrative rows to
