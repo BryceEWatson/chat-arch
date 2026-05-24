@@ -1,7 +1,7 @@
 // Tests for Rev3 THRESHOLDS additions (sub-task A7 — narrativeRung,
-// curator, closureC). The plan pins specific values for stat-rigor
-// reasons; these tests freeze that contract so a casual edit doesn't
-// silently break the joint-gate feasibility proof.
+// curator, appliedRuleWatcher). The plan pins specific values for
+// stat-rigor reasons; these tests freeze that contract so a casual
+// edit doesn't silently break the joint-gate feasibility proof.
 
 import { describe, expect, it } from 'vitest';
 
@@ -117,10 +117,10 @@ describe('THRESHOLDS.curator (Rev3 curator / falsifier metrics)', () => {
   });
 });
 
-describe('THRESHOLDS.closureC (Rev3 applied-rule outcome watcher)', () => {
+describe('THRESHOLDS.appliedRuleWatcher (Rev3 applied-rule outcome watcher — Closure C)', () => {
   it('watcher caps are positive: N sessions, wall-clock days, stale-project days', () => {
     const { watcherSessionsN, watcherWallClockDays, staleProjectDays } =
-      THRESHOLDS.closureC;
+      THRESHOLDS.appliedRuleWatcher;
     expect(watcherSessionsN).toBeGreaterThan(0);
     expect(watcherWallClockDays).toBeGreaterThan(0);
     expect(staleProjectDays).toBeGreaterThan(0);
@@ -129,7 +129,7 @@ describe('THRESHOLDS.closureC (Rev3 applied-rule outcome watcher)', () => {
   it('staleProjectDays < watcherWallClockDays (stale-out must precede wall-clock close)', () => {
     // Otherwise a project that goes idle at day 31 still has the
     // watcher running until day 60 — no early-invalidation.
-    const { watcherWallClockDays, staleProjectDays } = THRESHOLDS.closureC;
+    const { watcherWallClockDays, staleProjectDays } = THRESHOLDS.appliedRuleWatcher;
     expect(staleProjectDays).toBeLessThan(watcherWallClockDays);
   });
 });

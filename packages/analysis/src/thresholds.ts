@@ -241,6 +241,14 @@ export const THRESHOLDS = {
      * a 2× multiplier becomes 4× after first dismissal, 8× after the
      * second, 16× after the third. Closes the iter-1 unbounded-nag
      * failure mode.
+     *
+     * Parallel mechanism — kept separate: knowledge-debt clusters use
+     * `actionBanner.knowledgeDebtRepromotionGrowthMultiplier` (also
+     * default 2) for the same saturation policy on a different entity
+     * domain (clusters vs Narratives). The two are intentionally
+     * NOT unified so per-domain calibration can tune each independently
+     * once empirical re-promotion data lands per entity type. A future
+     * audit should re-check whether they should converge.
      */
     dismissDecay: 2,
     /**
@@ -326,15 +334,21 @@ export const THRESHOLDS = {
     outcomeCorrelationEvidenceMinLength: 5,
   },
   /**
-   * Rev3 Closure C — applied-rule outcome watcher. After a Pattern
-   * is `encode-as-pattern`'d and (optionally) appended to CLAUDE.md,
-   * the next-sessions watcher activates. Closes on whichever fires
-   * first: (a) N sessions observed in the target project,
-   * (b) wall-clock elapsed, (c) explicit user-side close. Project
-   * inactivity ≥ staleProjectDays before N is reached invalidates
-   * the watch entirely; a fresh watcher starts on project re-entry.
+   * Rev3 applied-rule outcome watcher (plan §"Three closures" —
+   * Closure C). After a Pattern is `encode-as-pattern`'d and
+   * (optionally) appended to CLAUDE.md, the next-sessions watcher
+   * activates. Closes on whichever fires first: (a) N sessions
+   * observed in the target project, (b) wall-clock elapsed,
+   * (c) explicit user-side close. Project inactivity ≥
+   * staleProjectDays before N is reached invalidates the watch
+   * entirely; a fresh watcher starts on project re-entry.
+   *
+   * (Closures A and B don't get their own top-level key: A graduates
+   * Narratives across `narrativeRung.tier*`; B saturates via
+   * `narrativeRung.dismissDecay` + `maxDismissals` +
+   * `repromotionPenalty`.)
    */
-  closureC: {
+  appliedRuleWatcher: {
     /** Number of post-application sessions observed before closing. */
     watcherSessionsN: 5,
     /**
