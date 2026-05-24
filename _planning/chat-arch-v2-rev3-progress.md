@@ -134,8 +134,8 @@ Plan anchor: [§Phase Rev3-G](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 
 | # | Sub-task | Status | PR / notes |
 |---|---|---|---|
-| G1 | Welch's t-test (or non-parametric permutation) implementation in `packages/analysis/src/` | pending | |
-| G2 | Outcome-correlation tag visibility gated on `\|Δ\|/SE` exceeding `curator.outcomeCorrelationSignificance` AND `evidence.length ≥ 5` | pending | |
+| G1 | Welch's t-test (or non-parametric permutation) implementation in `packages/analysis/src/` | in-review | PR #TBD (`welchsTTest` in `packages/analysis/src/welchsTTest.ts` — pure function returning `{t, delta, standardError, degreesOfFreedom, pValueTwoSided, valid}`; defensive on degenerate inputs; normal-CDF p-value approximation reuses existing `normalCdf` helper) |
+| G2 | Outcome-correlation tag visibility gated on `\|Δ\|/SE` exceeding `curator.outcomeCorrelationSignificance` AND `evidence.length ≥ 5` | in-review | PR #TBD (`evaluateCorrelationTagVisibility` in `packages/analysis/src/correlationTagGate.ts` — tagged-union verdict (`visible \| 'insufficient-evidence' \| 'below-significance' \| 'invalid-stat'`) so renderers can show distinct copy per non-shown reason) |
 | G3 | Extend `SourceAttribution.tsx` `AttributionKind` union with new rungs (`'tier1' \| 'tier2' \| 'tier3' \| 'falsifier-verified' \| 'llm-derived' \| 'deterministic-with-prior' \| 'correlation-significant'`) | pending | Single component; no parallel MethodHint |
 | G4 | Curator ranker uses correlation only as tie-breaker within a tier (does NOT promote across tiers) | pending | |
 | G5 | Falsifier runs permutation test resampling project sessions to confirm Δ unlikely under H0 | pending | |
