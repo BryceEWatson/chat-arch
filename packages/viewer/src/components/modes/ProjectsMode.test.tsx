@@ -478,6 +478,71 @@ describe('ProjectsMode show-shelved toggle (Rev3-D D4)', () => {
   });
 });
 
+describe('ProjectsMode falsifier-override checkbox (Rev3-E E3)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function positive(id: string): Narrative {
+    return {
+      id,
+      projectId: 'p1',
+      sentiment: 'positive',
+      actionType: 'encode-as-pattern',
+      title: `Title for ${id}`,
+      body: `Body for ${id}`,
+      generatedAt: '2026-01-02T00:00:00Z',
+      evidence: [],
+      schemaVersion: 1,
+    };
+  }
+
+  function negative(id: string): Narrative {
+    return { ...positive(id), sentiment: 'negative', actionType: 'corrective-prompt' };
+  }
+
+  it('renders the override checkbox only for positive narratives (encode path)', async () => {
+    renderDetail({ narratives: [positive('n-pos'), negative('n-neg')] });
+    await waitFor(() => {
+      expect(screen.getByText(/Title for n-pos/)).toBeTruthy();
+    });
+    // Two narratives total, but only the positive one renders the
+    // skip-falsifier checkbox.
+    const checkboxes = screen.queryAllByLabelText(
+      /skip falsifier verification when encoding/i,
+    );
+    expect(checkboxes.length).toBe(1);
+  });
+
+  it('checkbox is unchecked by default (safe falsifier-gating default)', async () => {
+    renderDetail({ narratives: [positive('n1')] });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/skip falsifier verification when encoding/i),
+      ).toBeTruthy();
+    });
+    const checkbox = screen.getByLabelText(
+      /skip falsifier verification when encoding/i,
+    ) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+  });
+
+  it('flipping the checkbox toggles its state for the next encode click', async () => {
+    renderDetail({ narratives: [positive('n1')] });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/skip falsifier verification when encoding/i),
+      ).toBeTruthy();
+    });
+    const checkbox = screen.getByLabelText(
+      /skip falsifier verification when encoding/i,
+    ) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+  });
+});
+
 describe('ProjectsMode cap-K integration gate (Rev3-D D5)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
