@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "generatedAt": 1699996000000,
+  "auditConfigVersion": 1,
+  "totals": { "pass": 1, "fail": 0, "inconclusive": 0 },
+  "results": [
+    {
+      "sessionId": "s-1",
+      "source": "cli-direct",
+      "lineNumber": 1,
+      "claimType": "tests-pass-claim",
+      "span": "tests pass",
+      "surroundingContext": "All tests pass after the change.",
+      "outcome": "pass",
+      "reason": "synthetic 1.1.0 fixture seed claim"
+    }
+  ]
+}

@@ -55,9 +55,13 @@ export function TrustStrip({ variant = 'landing' }: TrustStripProps = {}) {
         <RepoLink variant="inline" label="VIEW SOURCE" />
       </div>
       <div className="lcars-trust-strip__footnote">
-        One caveat: the optional <em>Analyze Topics</em> step downloads a 36 MB
-        embedding model from <code>huggingface.co</code> on first use (cached
-        after). No transcript content is ever uploaded.
+        Two caveats: (1) the optional <em>Analyze Topics</em> step downloads a
+        36 MB embedding model from <code>huggingface.co</code> on first use
+        (cached after) — no transcript content is uploaded. (2) The optional{' '}
+        <em>Chat</em> page invokes your local Claude Code CLI, which forwards
+        your question and the corpus excerpts the agent reads to Anthropic&apos;s
+        API under your existing account (you&apos;ll see a disclosure on first
+        send). Parsing, mining, audit, and analysis stay local.
       </div>
     </aside>
   );

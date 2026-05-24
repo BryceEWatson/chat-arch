@@ -1,9 +1,11 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import HideViewerSidebar from '../components/HideViewerSidebar.astro';
 import { ChatArchViewer } from '@chat-arch/viewer';
 import '@chat-arch/viewer/style.css';
 ---
-<BaseLayout title="Chat Archaeologist — Practice">
+<BaseLayout title="Chat Archaeologist — Practice" current="PRACTICE">
+  <HideViewerSidebar />
   <script is:inline>
     if (typeof window !== 'undefined' && window.location.hash !== '#practice') {
       window.history.replaceState(null, '', window.location.pathname + '#practice');

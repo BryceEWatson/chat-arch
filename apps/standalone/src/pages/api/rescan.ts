@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -86,6 +86,33 @@ function repoRoot(): string {
 }
 
 /**
+ * Probe `gh auth status` with a tight timeout. Returns true only when the
+ * GitHub CLI is installed AND authenticated — exit code 0 from gh means
+ * the active user has at least one logged-in host. Any other state (gh
+ * missing on PATH, not authenticated, transient error, killed by the
+ * timeout) returns false; the caller treats that as "skip the PR-land
+ * join" rather than failing the whole rescan.
+ *
+ * Sync because we want a single load-bearing yes/no signal before
+ * spawning the long-lived exporter; the probe completes in <200ms on a
+ * happy path and the 1.5s timeout caps the worst case.
+ */
+function probeGhAuth(): boolean {
+  try {
+    const r = spawnSync('gh', ['auth', 'status'], {
+      timeout: 1_500,
+      stdio: ['ignore', 'ignore', 'ignore'],
+      // shell:true on Windows so `gh.cmd` resolves without extension hardcoding.
+      shell: process.platform === 'win32',
+    });
+    if (r.error) return false;
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Stream the exporter as NDJSON over a single long-lived response.
  *
  * Event kinds the client handles:
@@ -117,7 +144,15 @@ function streamExporter(
   // ZIP in ~/Downloads). Rescanning local disks shouldn't require a
   // fresh cloud ZIP to be on hand; the existing cloud-manifest.json
   // is preserved in the merge.
+  //
+  // PR-land join: probe `gh auth status` up front. When authenticated,
+  // pass `--enable-pr-join` so the analysis pipeline picks up landed/
+  // merged/closed PR state. When not authenticated, emit a one-line
+  // stderr notice so the viewer's NDJSON consumer can surface why the
+  // join was skipped — the data is still useful without it.
+  const ghAuthed = probeGhAuth();
   const args = ['--silent', '--filter', '@chat-arch/exporter', 'start', 'all', '--no-cloud'];
+  if (ghAuthed) args.push('--enable-pr-join');
   const commandLine = `${cmd} ${args.join(' ')}`;
 
   const send = (obj: unknown) => {
@@ -129,6 +164,13 @@ function streamExporter(
   };
 
   send({ type: 'start', command: commandLine, startedAt: started });
+  if (!ghAuthed) {
+    send({
+      type: 'stderr',
+      line:
+        'PR-land join skipped: gh not authenticated. Run `gh auth login` to enable.',
+    });
+  }
 
   return new Promise<void>((resolvePromise) => {
     const child = spawn(cmd, args, {
@@ -204,13 +246,36 @@ function streamExporter(
       if (stderrBuf.trim().length > 0) {
         send({ type: 'stderr', line: clampLine(stderrBuf.trim()) });
       }
+      // Spawn-level failures where the child exits with a non-zero code
+      // but never wrote a byte to stdout/stderr leave the client with no
+      // detail to render — the user sees "SCAN FAILED" with no message
+      // anywhere. Synthesize a useful tail in that case so the UI has
+      // something to show. The exit code is the strongest signal: on
+      // Windows, 3221225794 / 0xC0000142 = STATUS_DLL_INIT_FAILED, which
+      // typically means the spawned process couldn't initialize (Windows
+      // resource exhaustion, antivirus interception, stale PATH on the
+      // dev-server process). Restarting the dev server usually clears it.
+      const accumulatedStderr = stderr + extraStderr;
+      const noOutput = stdout.trim().length === 0 && accumulatedStderr.trim().length === 0;
+      let synthesizedStderr = '';
+      if (!ok && noOutput) {
+        const hexCode =
+          typeof exitCode === 'number' ? `0x${(exitCode >>> 0).toString(16).toUpperCase()}` : null;
+        const codeStr = hexCode !== null ? `${exitCode} (${hexCode})` : 'unknown';
+        const winHint =
+          process.platform === 'win32' && exitCode === 0xc0000142
+            ? ' Windows STATUS_DLL_INIT_FAILED — try restarting the dev server; if that fails, run the exporter manually in a terminal: `pnpm exporter run start all --no-cloud`.'
+            : '';
+        synthesizedStderr =
+          `ERROR: the exporter process exited with code ${codeStr} without writing any output.${winHint}`;
+      }
       send({
         type: 'done',
         ok,
         exitCode,
         durationMs: Date.now() - started,
         stdoutTail: tailBytes(stdout),
-        stderrTail: tailBytes(stderr + extraStderr),
+        stderrTail: tailBytes(accumulatedStderr + (synthesizedStderr ? '\n' + synthesizedStderr : '')),
         command: commandLine,
       });
       try {

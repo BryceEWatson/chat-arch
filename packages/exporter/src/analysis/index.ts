@@ -11,6 +11,19 @@
  *   - `analysis/zombies.heuristic.json`
  *   - `analysis/meta.json`
  *
+ * Plus the Phase 1-3 outcome-substrate sidecars (wired in Wave 5):
+ *   - composite-outcomes.json    (foundation for all consumers)
+ *   - pr-land-cache.json         (gated; reads audit-results from prior run)
+ *   - config-history.json
+ *   - its-analysis.json          (reads composite + config-history)
+ *   - knowledge-debt.json + exports/knowledge-debt.md
+ *   - reflexive.json             (reads composite)
+ *   - decisions.json             (reads composite)
+ *   - archetypes.json
+ *   - project-trajectories.json  (reads composite)
+ *   - surface-comparison.json    (reads archetypes + composite)
+ *   - skill-curves.json          (reads topics)
+ *
  * Phase 7 writers do NOT land here (they live in a separate skill/package
  * per Decision 1). Never writes tier-2 filenames.
  */
@@ -19,9 +32,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
+import type {
+  ContinuumHealth,
+  SessionManifest,
+  UnifiedSessionEntry,
+} from '@chat-arch/schema';
 import { logger } from '../lib/logger.js';
 import {
+  buildContinuumHealth,
   buildDuplicatesFile,
   buildZombiesFile,
   discoverProjects,
@@ -30,6 +48,18 @@ import {
   type DuplicateInput,
 } from '@chat-arch/analysis';
 import { buildCorrectionsCandidatesFile } from './corrections.js';
+import { buildPlaybookCandidatesFile } from './playbook.js';
+import { buildCompositeOutcomesFile } from './composeOutcomesBuilder.js';
+import { buildPrLandJoin } from './prLandJoin.js';
+import { buildConfigHistoryFile } from './configHistory.js';
+import { buildItsAnalysisFile } from './itsBuilder.js';
+import { buildKnowledgeDebtFile } from './knowledgeDebtBuilder.js';
+import { buildReflexiveFile } from './reflexiveBuilder.js';
+import { buildDecisionsFile } from './decisionsBuilder.js';
+import { buildArchetypesFile } from './archetypesBuilder.js';
+import { buildProjectTrajectoriesFile } from './projectTrajectoryBuilder.js';
+import { buildSurfaceComparisonFile } from './surfaceComparisonBuilder.js';
+import { buildSkillCurvesFile } from './skillCurvesBuilder.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -40,6 +70,13 @@ export interface RunAnalysisOptions {
   exporterRunId?: string;
   /** Override gitSha detection for tests. */
   gitSha?: string | null;
+  /**
+   * Opt into the PR-land join (network step via `gh api`). Default false
+   * per plan §1.4 — the join only succeeds when (a) `gh` is authenticated
+   * and (b) a prior `runSemanticAnalysis` run has written
+   * `audit-results.json` so the builder has gh-pr-* claims to look up.
+   */
+  enablePrJoin?: boolean;
 }
 
 export interface RunAnalysisResult {
@@ -52,6 +89,18 @@ export interface RunAnalysisResult {
     topics: string;
     narratives: string;
     correctionCandidates: string;
+    continuumHealth: string;
+    playbookCandidates: string;
+    compositeOutcomes: string;
+    configHistory: string;
+    itsAnalysis: string;
+    knowledgeDebt: string;
+    reflexive: string;
+    decisions: string;
+    archetypes: string;
+    projectTrajectories: string;
+    surfaceComparison: string;
+    skillCurves: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -63,6 +112,18 @@ export interface RunAnalysisResult {
     topics: number;
     narratives: number;
     correctionCandidates: number;
+    playbookPatterns: number;
+    playbookHits: number;
+    compositeOutcomes: number;
+    configHistoryCommits: number;
+    itsContrasts: number;
+    knowledgeDebtClusters: number;
+    reflexivePairs: number;
+    decisions: number;
+    archetypes: number;
+    projectTrajectories: number;
+    surfaceCells: number;
+    skillCurves: number;
   };
 }
 
@@ -70,8 +131,15 @@ export interface RunAnalysisResult {
  * Exported so the per-source cache loaders (cli.ts, cowork.ts) can
  * gate reuse on a version match — when the on-disk entry shape
  * changes, all prior caches self-invalidate on next rescan.
+ *
+ * Bumped 1.1.0 → 1.2.0 in Phase 1 Wave 5: outcome-substrate sidecars
+ * land (composite-outcomes, its-analysis, archetypes, decisions, …)
+ * and the audit kernel ships at `AUDIT_CONFIG_VERSION = 2`. Existing
+ * 1.1.0 caches for corrections / playbook survive (their per-file
+ * heuristic versions didn't change); the audit cache invalidates by
+ * design on the version bump.
  */
-export const EXPORTER_VERSION = '0.10.0';
+export const EXPORTER_VERSION = '1.2.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -213,6 +281,235 @@ export async function runAnalysis(
     `analysis: correction-candidates.json — ${correctionsResult.correctionsFile.corrections.length} candidates from ${correctionsResult.scannedSessions} sessions (${correctionsResult.missingTranscripts} missing transcripts)`,
   );
 
+  // ---- Methods playbook (stage-1 heuristic) ----
+  // Positive counterpart to corrections — recurring user-turn phrasings
+  // (e.g. "go back to first principles", "use an adversarial review
+  // team") that the viewer's /playbook surface ranks by occurrence ×
+  // downstream pass-rate. The skill-driven encoding flow (export as
+  // prompt snippet / CLAUDE.md verb) is deferred to a follow-up PR.
+  const playbookResult = await buildPlaybookCandidatesFile(manifest, {
+    outDir: options.outDir,
+    now,
+  });
+  const playbookCandidatesPath = path.join(analysisDir, 'playbook-candidates.json');
+  await writeFile(
+    playbookCandidatesPath,
+    JSON.stringify(playbookResult.file, null, 2) + '\n',
+    'utf8',
+  );
+
+  // ---- Wave 5: outcome-substrate sidecars ----
+  //
+  // Builder order respects the data-dependency DAG:
+  //
+  //   composeOutcomes  ─┬─►  itsBuilder        (also reads configHistory)
+  //                     ├─►  reflexiveBuilder
+  //                     ├─►  decisionsBuilder
+  //                     ├─►  projectTrajectoryBuilder
+  //                     └─►  surfaceComparison (also reads archetypes)
+  //
+  //   configHistory   ───►  itsBuilder
+  //   archetypes      ───►  surfaceComparison
+  //   topics.json     ───►  skillCurves
+  //
+  // PR-land join is gated off by default (network step) — when enabled,
+  // it reads audit-results.json from a prior `runSemanticAnalysis` run
+  // (the audit-results sidecar is written downstream of us by `all.ts`).
+  // On a cold first run it will detect the absence and skip without
+  // failing the pipeline; on the next rescan the join wires through.
+  //
+  // Every new builder is fail-soft inside its own try/catch so a single
+  // builder regression cannot break the rest of the pipeline.
+
+  // composite-outcomes — foundation for downstream consumers.
+  let compositeOutcomesCount = 0;
+  try {
+    const compositeStart = Date.now();
+    const r = await buildCompositeOutcomesFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    compositeOutcomesCount = r.file.outcomes.length;
+    logger.info(
+      `analysis: composite-outcomes done — ${compositeOutcomesCount} outcomes (${r.scannedSessions} scanned, ${r.reusedSessions} reused, ${r.missingTranscripts} missing), ${Date.now() - compositeStart}ms`,
+    );
+  } catch (err) {
+    logger.warn(
+      `analysis: composite-outcomes soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const compositeOutcomesPath = path.join(analysisDir, 'composite-outcomes.json');
+
+  // PR-land join — opt-in network step; reads audit-results.json (from
+  // a prior `runSemanticAnalysis` run) and composite-outcomes.json
+  // (from above). Both gracefully missing on a cold first run.
+  if (options.enablePrJoin === true) {
+    try {
+      const prStart = Date.now();
+      const r = await buildPrLandJoin({
+        outDir: options.outDir,
+        now,
+      });
+      logger.info(
+        `analysis: pr-land join — joined=${r.joinedCount}, fetched=${r.fetchedCount}, reused=${r.reusedCount}, authError=${r.authErrorEncountered}, ${Date.now() - prStart}ms`,
+      );
+    } catch (err) {
+      logger.warn(
+        `analysis: pr-land-join soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // config-history — walks `git log` over ~/.claude (skips quietly when
+  // the dirs don't exist or aren't git worktrees).
+  let configHistoryCommits = 0;
+  try {
+    const r = await buildConfigHistoryFile({
+      outDir: options.outDir,
+      now,
+    });
+    configHistoryCommits = r.file.commits.length;
+  } catch (err) {
+    logger.warn(
+      `analysis: config-history soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const configHistoryPath = path.join(analysisDir, 'config-history.json');
+
+  // its-analysis — depends on composite-outcomes AND config-history.
+  // The builder tolerates either being absent (emits empty results).
+  let itsContrasts = 0;
+  try {
+    const sessionUpdatedAt = new Map<string, number>();
+    for (const entry of manifest.sessions) {
+      if (typeof entry.updatedAt === 'number') {
+        sessionUpdatedAt.set(entry.id, entry.updatedAt);
+      }
+    }
+    const r = await buildItsAnalysisFile({
+      outDir: options.outDir,
+      now,
+      sessionUpdatedAt,
+    });
+    itsContrasts = r.commitsAnalyzed;
+  } catch (err) {
+    logger.warn(
+      `analysis: its-analysis soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const itsPath = path.join(analysisDir, 'its-analysis.json');
+
+  // knowledge-debt — clusters first-user-turn questions across sessions
+  // and also writes a markdown export under exports/.
+  let knowledgeDebtClusters = 0;
+  try {
+    const r = await buildKnowledgeDebtFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    knowledgeDebtClusters = r.file.clusters.length;
+  } catch (err) {
+    logger.warn(
+      `analysis: knowledge-debt soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const knowledgeDebtPath = path.join(analysisDir, 'knowledge-debt.json');
+
+  // reflexive — matched-pair contrast for "touched chat-arch" sessions.
+  // Reads composite; tolerates absence.
+  let reflexivePairs = 0;
+  try {
+    const r = await buildReflexiveFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    reflexivePairs = r.file.result.pairs.length;
+  } catch (err) {
+    logger.warn(
+      `analysis: reflexive soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const reflexivePath = path.join(analysisDir, 'reflexive.json');
+
+  // decisions — LF over user + assistant turns; joins to composite.
+  let decisionsCount = 0;
+  try {
+    const r = await buildDecisionsFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    decisionsCount = r.totalCandidates;
+  } catch (err) {
+    logger.warn(
+      `analysis: decisions soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const decisionsPath = path.join(analysisDir, 'decisions.json');
+
+  // archetypes — k-means clustering of session feature vectors.
+  // Must precede surfaceComparison.
+  let archetypesCount = 0;
+  try {
+    const r = await buildArchetypesFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    archetypesCount = r.file.centroids.length;
+  } catch (err) {
+    logger.warn(
+      `analysis: archetypes soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const archetypesPath = path.join(analysisDir, 'archetypes.json');
+
+  // project-trajectories — Theil-Sen slope + Politis-Romano bootstrap.
+  let projectTrajectoriesCount = 0;
+  try {
+    const r = await buildProjectTrajectoriesFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    projectTrajectoriesCount = r.projects;
+  } catch (err) {
+    logger.warn(
+      `analysis: project-trajectories soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const projectTrajectoriesPath = path.join(analysisDir, 'project-trajectories.json');
+
+  // surface-comparison — depends on archetypes.json. Builder throws on
+  // missing archetypes; we wrap and downgrade to a soft warn so a
+  // first-run failure doesn't break the whole pipeline.
+  let surfaceCellsCount = 0;
+  try {
+    const r = await buildSurfaceComparisonFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    surfaceCellsCount = r.cellsTotal;
+  } catch (err) {
+    logger.warn(
+      `analysis: surface-comparison soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const surfaceComparisonPath = path.join(analysisDir, 'surface-comparison.json');
+
+  // skill-curves — reads topics.json (always present after the v2
+  // entity-discovery stage above).
+  let skillCurvesCount = 0;
+  try {
+    const r = await buildSkillCurvesFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    skillCurvesCount = r.topicsAnalyzed;
+  } catch (err) {
+    logger.warn(
+      `analysis: skill-curves soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const skillCurvesPath = path.join(analysisDir, 'skill-curves.json');
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -232,6 +529,19 @@ export async function runAnalysis(
           'topics.json',
           'narratives.json',
           'correction-candidates.json',
+          'continuum-health.json',
+          'playbook-candidates.json',
+          // Phase 1-3 outcome-substrate sidecars (Wave 5).
+          'composite-outcomes.json',
+          'config-history.json',
+          'its-analysis.json',
+          'knowledge-debt.json',
+          'reflexive.json',
+          'decisions.json',
+          'archetypes.json',
+          'project-trajectories.json',
+          'surface-comparison.json',
+          'skill-curves.json',
         ],
       },
     },
@@ -246,11 +556,39 @@ export async function runAnalysis(
       topics: topicsResult.topics.length,
       narratives: narrativesResult.narratives.length,
       correctionCandidates: correctionsResult.correctionsFile.corrections.length,
+      playbookPatterns: playbookResult.file.patterns.length,
+      playbookHits: playbookResult.totalHits,
+      compositeOutcomes: compositeOutcomesCount,
+      configHistoryCommits,
+      itsContrasts,
+      knowledgeDebtClusters,
+      reflexivePairs,
+      decisions: decisionsCount,
+      archetypes: archetypesCount,
+      projectTrajectories: projectTrajectoriesCount,
+      surfaceCells: surfaceCellsCount,
+      skillCurves: skillCurvesCount,
     },
   };
   const metaPath = path.join(analysisDir, 'meta.json');
   await writeFile(metaPath, JSON.stringify(metaFile, null, 2) + '\n', 'utf8');
   logger.info(`analysis: meta.json written (runId=${exporterRunId})`);
+
+  // ---- Continuum health ----
+  const priorHealth = await readPriorContinuumHealth(analysisDir);
+  const health = buildContinuumHealth(manifest, priorHealth, {
+    now,
+    scanSucceeded: true,
+  });
+  const continuumHealthPath = path.join(analysisDir, 'continuum-health.json');
+  await writeFile(
+    continuumHealthPath,
+    JSON.stringify(health, null, 2) + '\n',
+    'utf8',
+  );
+  logger.info(
+    `analysis: continuum-health.json — ${health.consecutiveSuccesses} consecutive successes, ${health.warnings.length} warnings`,
+  );
 
   return {
     analysisDir,
@@ -262,6 +600,18 @@ export async function runAnalysis(
       topics: topicsPath,
       narratives: narrativesPath,
       correctionCandidates: correctionCandidatesPath,
+      continuumHealth: continuumHealthPath,
+      playbookCandidates: playbookCandidatesPath,
+      compositeOutcomes: compositeOutcomesPath,
+      configHistory: configHistoryPath,
+      itsAnalysis: itsPath,
+      knowledgeDebt: knowledgeDebtPath,
+      reflexive: reflexivePath,
+      decisions: decisionsPath,
+      archetypes: archetypesPath,
+      projectTrajectories: projectTrajectoriesPath,
+      surfaceComparison: surfaceComparisonPath,
+      skillCurves: skillCurvesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -271,6 +621,18 @@ export async function runAnalysis(
       topics: topicsResult.topics.length,
       narratives: narrativesResult.narratives.length,
       correctionCandidates: correctionsResult.correctionsFile.corrections.length,
+      playbookPatterns: playbookResult.file.patterns.length,
+      playbookHits: playbookResult.totalHits,
+      compositeOutcomes: compositeOutcomesCount,
+      configHistoryCommits,
+      itsContrasts,
+      knowledgeDebtClusters,
+      reflexivePairs,
+      decisions: decisionsCount,
+      archetypes: archetypesCount,
+      projectTrajectories: projectTrajectoriesCount,
+      surfaceCells: surfaceCellsCount,
+      skillCurves: skillCurvesCount,
     },
   };
 }
@@ -356,6 +718,22 @@ async function readFirstHumanText(
     return entry.preview ?? null;
   } catch {
     return entry.preview ?? null;
+  }
+}
+
+/**
+ * Read the prior `continuum-health.json` sidecar. Returns null when the
+ * file is absent or unparseable — first scans and bundles imported fresh
+ * from someone else's machine both legitimately have no prior state.
+ */
+async function readPriorContinuumHealth(
+  analysisDir: string,
+): Promise<ContinuumHealth | null> {
+  try {
+    const raw = await readFile(path.join(analysisDir, 'continuum-health.json'), 'utf8');
+    return JSON.parse(raw) as ContinuumHealth;
+  } catch {
+    return null;
   }
 }
 

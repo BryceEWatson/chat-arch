@@ -22,13 +22,18 @@ describe('Sidebar (vertical variant, default) — Phase 2a IA', () => {
     expect(screen.queryByRole('button', { name: /mode DETAIL/i })).toBeNull();
   });
 
-  it('groups the nav into FIX RULES, BROWSE, ANALYTICS sections', () => {
+  it('groups the nav into FIX RULES, BROWSE, ANALYTICS, EXPORT sections', () => {
     const { container } = render(<Sidebar mode="command" onSelectMode={() => {}} />);
     const labels = container.querySelectorAll('.lcars-sidebar__group-label');
+    // Wave 4 Stream J added EXPORT as a one-item group near the end
+    // (it's an action surface, not a content roll-up). Stream I added
+    // EFFECTIVENESS + INSIGHTS as new ANALYTICS entries; the group
+    // labels grew by one (EXPORT) accordingly.
     expect(Array.from(labels).map((el) => el.textContent)).toEqual([
       'FIX RULES',
       'BROWSE',
       'ANALYTICS',
+      'EXPORT',
     ]);
   });
 
@@ -163,6 +168,7 @@ describe('Sidebar — DATA panel trigger (v2 spec §6 / D4)', () => {
       'FIX RULES',
       'BROWSE',
       'ANALYTICS',
+      'EXPORT',
       'ACTIONS',
     ]);
     expect(screen.getByRole('button', { name: /open DATA panel/i })).toBeDefined();
@@ -213,7 +219,7 @@ describe('Sidebar — Phase 4 hosted refocus (correctionsAvailable=false)', () =
     expect(screen.getByRole('button', { name: /mode PRACTICE/i })).toBeDefined();
   });
 
-  it('keeps FIX RULES, BROWSE, ANALYTICS section labels visible', () => {
+  it('keeps FIX RULES, BROWSE, ANALYTICS, EXPORT section labels visible', () => {
     const { container } = render(
       <Sidebar mode="command" onSelectMode={() => {}} correctionsAvailable={false} />,
     );
@@ -222,6 +228,7 @@ describe('Sidebar — Phase 4 hosted refocus (correctionsAvailable=false)', () =
       'FIX RULES',
       'BROWSE',
       'ANALYTICS',
+      'EXPORT',
     ]);
   });
 
@@ -237,13 +244,20 @@ describe('Sidebar — Phase 4 hosted refocus (correctionsAvailable=false)', () =
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
     // CHT stays in the bar regardless of correctionsAvailable — chat is
     // independent of the corrections data dependency. COR is the only
-    // pill the Phase 4 hosted-refocus filter drops.
+    // pill the Phase 4 hosted-refocus filter drops. Wave 4 Stream I
+    // added EFF + INS; Stream J added DEC, TRU, TRN, EXP.
     expect(Array.from(pillShorts).map((el) => el.textContent)).toEqual([
       'CHT',
       'PRC',
+      'DEC',
+      'TRU',
       'SES',
+      'EFF',
+      'INS',
+      'TRN',
       'PRJ',
       'TOP',
+      'EXP',
     ]);
   });
 
@@ -260,9 +274,10 @@ describe('Sidebar (horizontal variant)', () => {
     );
     expect(container.querySelector('.lcars-sidebar--horizontal')).toBeTruthy();
     expect(container.querySelectorAll('.lcars-sidebar__elbow').length).toBe(0);
-    // 5 mode pills (Phase 3 cut ANL/constellation and CST/cost):
-    // CHT, COR, PRC, SES, PRJ, TOP — CHT added by the chat-page ship.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
+    // 12 mode pills (Wave 4 Stream J added DEC + TRU + TRN + EXP atop
+    // Stream I's EFF + INS to the prior 6): CHT, COR, PRC, DEC, TRU,
+    // SES, EFF, INS, TRN, PRJ, TOP, EXP.
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(12);
   });
 
   it('shows only the short label in horizontal pills, in the new order', () => {
@@ -270,9 +285,22 @@ describe('Sidebar (horizontal variant)', () => {
       <Sidebar mode="command" onSelectMode={() => {}} variant="horizontal" />,
     );
     const pillShorts = container.querySelectorAll('.lcars-sidebar__pill-short');
-    expect(pillShorts.length).toBe(6);
+    expect(pillShorts.length).toBe(12);
     const texts = Array.from(pillShorts).map((el) => el.textContent);
-    expect(texts).toEqual(['CHT', 'COR', 'PRC', 'SES', 'PRJ', 'TOP']);
+    expect(texts).toEqual([
+      'CHT',
+      'COR',
+      'PRC',
+      'DEC',
+      'TRU',
+      'SES',
+      'EFF',
+      'INS',
+      'TRN',
+      'PRJ',
+      'TOP',
+      'EXP',
+    ]);
   });
 
   it('appends a DAT pill when onOpenDataPanel is provided', () => {
@@ -290,9 +318,15 @@ describe('Sidebar (horizontal variant)', () => {
       'CHT',
       'COR',
       'PRC',
+      'DEC',
+      'TRU',
       'SES',
+      'EFF',
+      'INS',
+      'TRN',
       'PRJ',
       'TOP',
+      'EXP',
       'DAT',
     ]);
     fireEvent.click(screen.getByRole('button', { name: /open DATA panel/i }));
@@ -324,7 +358,9 @@ describe('Sidebar (horizontal variant)', () => {
         onToggleAnalyticsCollapsed={() => {}}
       />,
     );
-    // CHT, COR, PRC, SES, PRJ, TOP — six pills total in horizontal mode.
-    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(6);
+    // CHT, COR, PRC, DEC, TRU, SES, EFF, INS, TRN, PRJ, TOP, EXP —
+    // twelve pills total in horizontal mode (Stream J added DEC, TRU,
+    // TRN, EXP atop Stream I's EFF + INS).
+    expect(container.querySelectorAll('.lcars-sidebar__pill').length).toBe(12);
   });
 });

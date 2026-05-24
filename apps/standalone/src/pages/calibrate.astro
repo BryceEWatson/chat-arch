@@ -1,0 +1,395 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Chat Archaeologist — Calibrate" current="CALIBRATE">
+  <main class="calibrate">
+    <header class="calibrate__head">
+      <h1>THRESHOLD CALIBRATION</h1>
+      <p class="calibrate__sub">
+        Label session pairs in the cos[<span id="band-lo">0.85</span>,
+        <span id="band-hi">1.00</span>] band as near-duplicate or not.
+        Pairs are sampled stratified by cosine bucket so the whole
+        band — including the cos &gt; 0.97 boilerplate zone — gets
+        even coverage. Labels save to the same file as
+        <code>pnpm label:threshold</code> — switch tools mid-session.
+      </p>
+      <ul id="bucket-legend" class="calibrate__buckets" hidden></ul>
+    </header>
+
+    <section id="loading" class="calibrate__state">
+      <p>Loading pairs… <span class="calibrate__dim">(scanning embeddings, ~5s on a ~1k corpus)</span></p>
+    </section>
+
+    <section id="error" class="calibrate__state" hidden>
+      <p class="calibrate__error">Couldn't load pairs.</p>
+      <pre id="error-msg" class="calibrate__error-detail"></pre>
+    </section>
+
+    <section id="empty" class="calibrate__state" hidden>
+      <p>All sampled pairs are already labeled. (<span id="done-count">0</span> total in this band.)</p>
+      <button type="button" id="show-sweep">Show precision sweep ↓</button>
+    </section>
+
+    <section id="labeler" class="calibrate__labeler" hidden>
+      <div class="calibrate__progress">
+        <span id="progress-text">0 / 0</span>
+        <div class="calibrate__progress-bar">
+          <div id="progress-fill" class="calibrate__progress-fill"></div>
+        </div>
+      </div>
+
+      <div class="calibrate__pair">
+        <div class="calibrate__cos">
+          cos = <span id="pair-cos">—</span>
+        </div>
+
+        <div class="calibrate__sessions">
+          <article class="calibrate__session calibrate__session--a">
+            <h2 id="a-title">A</h2>
+            <p id="a-preview" class="calibrate__preview"></p>
+          </article>
+
+          <article class="calibrate__session calibrate__session--b">
+            <h2 id="b-title">B</h2>
+            <p id="b-preview" class="calibrate__preview"></p>
+          </article>
+        </div>
+
+        <div class="calibrate__actions">
+          <button type="button" id="btn-y" class="calibrate__btn calibrate__btn--y">
+            <kbd>Y</kbd> near-duplicate
+          </button>
+          <button type="button" id="btn-n" class="calibrate__btn calibrate__btn--n">
+            <kbd>N</kbd> not
+          </button>
+          <button type="button" id="btn-s" class="calibrate__btn calibrate__btn--s">
+            <kbd>S</kbd> skip
+          </button>
+          <button type="button" id="btn-back" class="calibrate__btn calibrate__btn--back">
+            <kbd>B</kbd> back
+          </button>
+        </div>
+
+        <p class="calibrate__hint">
+          Gut-feel based on titles + previews — you don't need to read the full sessions.
+          Press <kbd>?</kbd> for shortcuts.
+        </p>
+      </div>
+    </section>
+
+    <section id="sweep" class="calibrate__sweep" hidden>
+      <h2>Precision sweep</h2>
+      <p class="calibrate__sub">
+        Find the row where precision crosses ~0.95 — that's your new
+        <code>DEFAULT_SEMANTIC_DUP_THRESHOLD</code>.
+      </p>
+      <table id="sweep-table" class="calibrate__sweep-table">
+        <thead>
+          <tr>
+            <th>threshold</th>
+            <th>precision [95% CI]</th>
+            <th>recall</th>
+            <th>n</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="calibrate__sub">
+        Paste this table back to me and I'll wire the chosen value into <code>duplicatesSemantic.ts</code>.
+      </p>
+    </section>
+  </main>
+</BaseLayout>
+
+<style>
+  .calibrate { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+  .calibrate__head h1 { margin-top: 0; }
+  .calibrate__sub { color: var(--lcars-dim, #888); font-size: 0.9rem; }
+  .calibrate__state { padding: 2rem 0; }
+  .calibrate__error { color: #d44; font-weight: bold; }
+  .calibrate__error-detail { background: rgba(255,80,80,0.1); padding: 0.5rem; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: pre-wrap; }
+
+  .calibrate__progress { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; }
+  .calibrate__progress-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+  .calibrate__progress-fill { height: 100%; background: var(--lcars-accent, #f80); transition: width 0.2s ease; width: 0%; }
+
+  .calibrate__cos { font-family: ui-monospace, monospace; font-size: 0.95rem; color: var(--lcars-dim, #888); margin-bottom: 1rem; }
+  .calibrate__cos span { color: var(--lcars-fg, #fff); font-weight: bold; }
+
+  .calibrate__sessions { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+  .calibrate__session { background: rgba(255,255,255,0.04); padding: 1rem; border-radius: 6px; border-left: 3px solid; min-height: 8rem; }
+  .calibrate__session--a { border-left-color: #6cc; }
+  .calibrate__session--b { border-left-color: #c6c; }
+  .calibrate__session h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+  .calibrate__preview { margin: 0; font-size: 0.9rem; line-height: 1.45; color: var(--lcars-dim-fg, #ccc); }
+
+  .calibrate__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .calibrate__btn { padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid var(--lcars-dim, #555); background: rgba(255,255,255,0.03); color: var(--lcars-fg, #fff); cursor: pointer; font-size: 0.95rem; transition: background 0.15s ease, transform 0.05s ease; }
+  .calibrate__btn:hover { background: rgba(255,255,255,0.08); }
+  .calibrate__btn:active { transform: translateY(1px); }
+  .calibrate__btn--y { border-color: #4a4; }
+  .calibrate__btn--n { border-color: #a44; }
+  .calibrate__btn kbd { display: inline-block; padding: 0 0.4em; margin-right: 0.4em; background: rgba(255,255,255,0.1); border-radius: 3px; font-family: ui-monospace, monospace; font-size: 0.85em; }
+
+  .calibrate__hint { font-size: 0.85rem; color: var(--lcars-dim, #888); margin-top: 0.5rem; }
+  .calibrate__dim { opacity: 0.6; }
+
+  .calibrate__buckets { list-style: none; padding: 0; margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--lcars-dim, #888); }
+  .calibrate__buckets li { padding: 0.2rem 0.5rem; background: rgba(255,255,255,0.04); border-radius: 3px; }
+  .calibrate__buckets li.deficit { color: #d8a; }
+
+  .calibrate__sweep-table { border-collapse: collapse; margin-top: 1rem; }
+  .calibrate__sweep-table th, .calibrate__sweep-table td { padding: 0.4rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+  .calibrate__sweep-table th { color: var(--lcars-dim, #888); font-weight: normal; }
+  .calibrate__sweep-row--target { background: rgba(76, 175, 80, 0.12); font-weight: bold; }
+</style>
+
+<script>
+  // Calibration page logic. Vanilla — no framework — to keep the page
+  // bundle tiny and the behavior obvious. Talks to /api/calibrate for
+  // pair retrieval and label persistence.
+
+  interface Pair {
+    id: string;
+    a: string;
+    b: string;
+    aTitle: string;
+    bTitle: string;
+    aPreview: string;
+    bPreview: string;
+    cos: number;
+  }
+
+  const $ = (id: string): HTMLElement => {
+    const el = document.getElementById(id);
+    if (el === null) throw new Error(`missing #${id}`);
+    return el;
+  };
+
+  const state = {
+    pairs: [] as Pair[],
+    cursor: 0,
+    total: 0,
+    labeledAtStart: 0,
+    history: [] as Array<{ pairId: string; nearDup: boolean }>,
+  };
+
+  function showOnly(...sectionIds: string[]): void {
+    const all = ['loading', 'error', 'empty', 'labeler', 'sweep'];
+    for (const id of all) {
+      $(id).hidden = !sectionIds.includes(id);
+    }
+  }
+
+  interface Bucket {
+    lo: number;
+    hi: number;
+    isLast: boolean;
+    target: number;
+    alreadyLabeled: number;
+    deficit: number;
+    sampled: number;
+  }
+
+  async function init(): Promise<void> {
+    showOnly('loading');
+    try {
+      const res = await fetch('/api/calibrate?action=init&n=100&strata=4');
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        hint?: string;
+        pairs?: Pair[];
+        labeledCount?: number;
+        total?: number;
+        band?: [number, number];
+        strata?: number;
+        buckets?: Bucket[];
+        poolSize?: number;
+      };
+      if (!data.ok || !Array.isArray(data.pairs)) {
+        $('error-msg').textContent = (data.error ?? 'unknown') + (data.hint ? '\n\n' + data.hint : '');
+        showOnly('error');
+        return;
+      }
+      state.pairs = data.pairs;
+      state.labeledAtStart = data.labeledCount ?? 0;
+      state.total = data.total ?? data.pairs.length;
+      if (Array.isArray(data.band)) {
+        $('band-lo').textContent = data.band[0].toFixed(2);
+        $('band-hi').textContent = data.band[1].toFixed(2);
+      }
+      renderBuckets(data.buckets ?? [], data.strata ?? 4);
+      if (state.pairs.length === 0) {
+        $('done-count').textContent = String(state.total);
+        showOnly('empty');
+        return;
+      }
+      state.cursor = 0;
+      showOnly('labeler');
+      render();
+    } catch (err) {
+      $('error-msg').textContent = String(err);
+      showOnly('error');
+    }
+  }
+
+  function renderBuckets(buckets: Bucket[], _strata: number): void {
+    const legend = $('bucket-legend') as HTMLUListElement;
+    legend.innerHTML = '';
+    if (buckets.length === 0) {
+      legend.hidden = true;
+      return;
+    }
+    // Per-bucket progress: "X/target labeled, deficit more needed".
+    // Highlights buckets that still need work and buckets the corpus
+    // can't fill (deficit > 0 but sampled < deficit — out of pairs).
+    for (const b of buckets) {
+      const li = document.createElement('li');
+      const close = b.isLast ? ']' : ')';
+      const remaining = b.deficit;
+      let label = `[${b.lo.toFixed(4)}, ${b.hi.toFixed(4)}${close}: ${b.alreadyLabeled}/${b.target} labeled`;
+      if (remaining > 0) label += `, ${remaining} more needed`;
+      if (b.deficit > 0 && b.sampled < b.deficit) {
+        label += ` (corpus only has ${b.sampled})`;
+      }
+      li.textContent = label;
+      if (remaining > 0) li.classList.add('deficit');
+      legend.appendChild(li);
+    }
+    legend.hidden = false;
+  }
+
+  function render(): void {
+    const p = state.pairs[state.cursor];
+    if (p === undefined) {
+      // Finished — auto-load the sweep.
+      void showSweep();
+      return;
+    }
+    const totalPosition = state.labeledAtStart + state.cursor + 1;
+    $('progress-text').textContent = `${totalPosition} / ${state.total}`;
+    const fill = $('progress-fill') as HTMLElement;
+    fill.style.width = `${(totalPosition / Math.max(1, state.total)) * 100}%`;
+
+    $('pair-cos').textContent = p.cos.toFixed(3);
+    $('a-title').textContent = p.aTitle;
+    $('b-title').textContent = p.bTitle;
+    $('a-preview').textContent = p.aPreview;
+    $('b-preview').textContent = p.bPreview;
+  }
+
+  async function label(nearDup: boolean): Promise<void> {
+    const p = state.pairs[state.cursor];
+    if (p === undefined) return;
+    try {
+      await fetch('/api/calibrate', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-requested-with': 'chat-arch-calibrate',
+        },
+        body: JSON.stringify({ pairId: p.id, nearDup, cos: p.cos }),
+      });
+      state.history.push({ pairId: p.id, nearDup });
+      state.cursor += 1;
+      render();
+    } catch (err) {
+      // Per-keypress label fail is recoverable — show the error inline
+      // but don't advance, so the user can retry the same pair.
+      console.error('label save failed', err);
+      $('error-msg').textContent = `Save failed on ${p.id}: ${String(err)}\nYou can retry the same key.`;
+      $('error').hidden = false;
+    }
+  }
+
+  function skip(): void {
+    state.cursor += 1;
+    render();
+  }
+
+  function back(): void {
+    if (state.cursor > 0) {
+      state.cursor -= 1;
+      state.history.pop();
+      render();
+    }
+  }
+
+  async function showSweep(): Promise<void> {
+    showOnly('sweep');
+    try {
+      const res = await fetch('/api/calibrate?action=sweep');
+      const data = (await res.json()) as {
+        ok: boolean;
+        sweep: Array<{
+          threshold: number;
+          precision: number;
+          ciLow: number;
+          ciHigh: number;
+          recall: number;
+          n: number;
+        }>;
+      };
+      const tbody = $('sweep-table').querySelector('tbody');
+      if (tbody === null) return;
+      tbody.innerHTML = '';
+      // Mark the highest-precision row whose CI lower bound clears 0.90
+      // (still has reasonable recall) — a useful visual default for the
+      // "where does precision *statistically* cross our quality bar"
+      // question. Using the lower bound (not the point estimate) so a
+      // 0.96-with-CI-of-[0.70,0.99] row doesn't masquerade as the answer.
+      const targetIdx = data.sweep.findIndex((r) => r.ciLow >= 0.9 && r.n >= 5);
+      for (let i = 0; i < data.sweep.length; i++) {
+        const r = data.sweep[i]!;
+        const tr = document.createElement('tr');
+        if (i === targetIdx) tr.classList.add('calibrate__sweep-row--target');
+        tr.innerHTML =
+          `<td>${r.threshold.toFixed(2)}</td>` +
+          `<td>${r.precision.toFixed(2)} [${r.ciLow.toFixed(2)}–${r.ciHigh.toFixed(2)}]</td>` +
+          `<td>${r.recall.toFixed(2)}</td>` +
+          `<td>${r.n}</td>`;
+        tbody.appendChild(tr);
+      }
+      if (data.sweep.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="opacity:0.6">(no labels yet — label at least 20 pairs to see a useful sweep)</td></tr>';
+      }
+    } catch (err) {
+      console.error('sweep load failed', err);
+    }
+  }
+
+  // Keyboard handlers — global, with input/textarea guard so any future
+  // text input on the page doesn't intercept.
+  document.addEventListener('keydown', (ev) => {
+    const target = ev.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    const key = ev.key.toLowerCase();
+    if (key === 'y') { ev.preventDefault(); void label(true); }
+    else if (key === 'n') { ev.preventDefault(); void label(false); }
+    else if (key === 's') { ev.preventDefault(); skip(); }
+    else if (key === 'b' || ev.key === 'ArrowLeft') { ev.preventDefault(); back(); }
+    else if (key === '?') {
+      alert(
+        'Keyboard shortcuts:\n' +
+          '  y — near-duplicate\n' +
+          '  n — not a duplicate\n' +
+          '  s — skip (no label written)\n' +
+          '  b / ←  — back one pair\n' +
+          '  ? — this help'
+      );
+    }
+  });
+
+  // Click handlers
+  $('btn-y').addEventListener('click', () => void label(true));
+  $('btn-n').addEventListener('click', () => void label(false));
+  $('btn-s').addEventListener('click', () => skip());
+  $('btn-back').addEventListener('click', () => back());
+  $('show-sweep').addEventListener('click', () => void showSweep());
+
+  void init();
+</script>

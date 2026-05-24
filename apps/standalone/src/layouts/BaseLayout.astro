@@ -1,8 +1,21 @@
 ---
 interface Props {
   title: string;
+  /**
+   * Active surface name passed down to AppSidebar so it can mark the
+   * matching pill with aria-current=page. Values: TODAY / AUDIT /
+   * HEALTH / DRAFTS / SESSIONS / PROJECTS / TOPICS / PRACTICE.
+   */
+  current?: string;
+  /**
+   * Opt out of the app-wide sidebar. Used by /design-system, which
+   * owns its own .lcars-root + .walkthrough__toc chrome and would
+   * otherwise paint two competing left rails.
+   */
+  hideSidebar?: boolean;
 }
-const { title } = Astro.props;
+const { title, current, hideSidebar = false } = Astro.props;
+import AppSidebar from '../components/AppSidebar.astro';
 
 // Self-hosted fonts via @fontsource. Replaces the Google Fonts <link>
 // we used to emit from <head>. Google's CSS was fetching from
@@ -55,9 +68,97 @@ import '@fontsource/jetbrains-mono/600.css';
         -moz-osx-font-smoothing: grayscale;
         text-rendering: optimizeLegibility;
       }
+      /* app-shell: CSS grid hosting the AppSidebar in column 1 and the
+         page content in column 2. The sidebar's own `data-collapsed`
+         attribute drives the grid template via the attribute selector
+         below — keep the two in sync without JS reaching back into
+         the grid. */
+      .app-shell {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        min-height: 100vh;
+      }
+      .app-shell:has(.app-sidebar[data-collapsed='true']) {
+        grid-template-columns: 64px 1fr;
+      }
+      @media (max-width: 899px) {
+        .app-shell {
+          grid-template-columns: 64px 1fr;
+        }
+      }
+      .app-shell__main {
+        min-width: 0;
+      }
+      .app-shell--no-sidebar {
+        display: block;
+      }
+      /* DEMO badge — peach pill, sits top-right of the panel/section
+         being demo'd. Same accent as the destructive DATA chip on
+         the sidebar, signals "this is not your data." Aria/screen-
+         reader signaling is on the wrapping <section aria-label=…>;
+         this badge is the visual half of the pair. */
+      .demo-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        background: #FF9933;
+        color: #000000;
+        border-radius: 0 8px 8px 0;
+        font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        line-height: 1.6;
+      }
+      /* Demo region visual differentiation. The peach DEMO badge
+         alone is too easy to miss when a page mixes real and demo
+         sections side-by-side (Priya persona-eval finding #2:
+         AUDIT CONCERNS rendering REAL data sat next to a demo
+         WORKSHOP LOOP with no visual cue distinguishing them).
+         Subtle peach left-rule + tint flags the demo region without
+         shouting; the badge remains the explicit signal. */
+      .today__hero-demo,
+      .today__row-demo {
+        position: relative;
+        padding-left: 12px;
+        border-left: 3px solid rgba(255, 153, 51, 0.55);
+        background: linear-gradient(
+          90deg,
+          rgba(255, 153, 51, 0.06) 0%,
+          rgba(255, 153, 51, 0) 60%
+        );
+      }
+      /* sr-only — visually hidden but read by screen readers. Lifted
+         from the canonical accessibility utility class. Reused by the
+         demo regions to announce "Example data, not your data" so
+         assistive tech doesn't confuse the demo for real values. */
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
     </style>
   </head>
   <body>
-    <slot />
+    {hideSidebar ? (
+      <div class="app-shell app-shell--no-sidebar">
+        <main class="app-shell__main">
+          <slot />
+        </main>
+      </div>
+    ) : (
+      <div class="app-shell">
+        <AppSidebar current={current} />
+        <div class="app-shell__main">
+          <slot />
+        </div>
+      </div>
+    )}
   </body>
 </html>

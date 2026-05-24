@@ -89,6 +89,12 @@ export {
 } from './discoverClusters.js';
 
 export {
+  discoverClustersDbscan,
+  type DiscoverClustersDbscanOptions,
+  type DiscoverClustersDbscanResult,
+} from './discoverClustersDbscan.js';
+
+export {
   reduceOutliers,
   type ReduceOutliersAssignment,
   type ReduceOutliersLabelEntry,
@@ -98,6 +104,7 @@ export {
 
 export {
   computeCoherence,
+  type CoherenceMetric,
   type CoherenceOptions,
   type CoherenceScores,
 } from './coherence.js';
@@ -138,9 +145,222 @@ export {
 } from './kmeansCluster.js';
 
 export {
+  CORRECTION_LFS,
   HEURISTIC_RECALL_VERSION,
+  computeLfFiringStats,
   detectCorrectionCandidates,
+  runLabelingFunction,
+  type LabelingFunction,
   type TurnPair,
 } from './detectCorrectionCandidates.js';
 
+export {
+  PLAYBOOK_HEURISTIC_VERSION,
+  PLAYBOOK_PATTERN_META,
+  detectPlaybookCandidates,
+  type PlaybookTurnInput,
+  type PlaybookKernelHit,
+} from './detectPlaybookCandidates.js';
+
+export {
+  DECISION_HEURISTIC_VERSION,
+  DECISION_LFS,
+  detectDecisions,
+  runLabelingFunction as runDecisionLabelingFunction,
+  type DecisionLabelingFunction,
+  type DecisionTurnPair,
+} from './detectDecisions.js';
+
 export { clusterByThreshold } from './clusterRules.js';
+
+export {
+  buildContinuumHealth,
+  type BuildContinuumHealthOptions,
+} from './continuumHealth.js';
+
+export {
+  DEFAULT_DISCOVERY_WEIGHTS,
+  DEFAULT_TOKEN_INTENSITY_CAP,
+  DEFAULT_TOOL_DIVERSITY_CAP,
+  computeDiscoveryScore,
+  scoreManifest,
+  type AppliedImprovementLite,
+  type DiscoveryScoreContext,
+  type DiscoveryScoreOptions,
+  type DiscoveryScoreResult,
+  type DiscoveryScoreWeights,
+} from './discoveryScore.js';
+
+export {
+  AFFIRMATION_PATTERNS,
+  AUDIT_CONFIG_VERSION,
+  CLAIM_PATTERNS,
+  DEFAULT_VERIFIER_WINDOWS,
+  PUSHBACK_PATTERNS,
+  SURROUNDING_CONTEXT_CHARS,
+  type ClaimPattern,
+  type VerifierWindows,
+} from './auditConfig.js';
+
+export {
+  binaryFromScore,
+  composeOutcome,
+  extractPrimitives,
+  logitFromPrimitives,
+  weightsHashFnv,
+  type ComposeOutcomeOptions,
+  type CompositePrimitives,
+  type LogitContributions,
+  type UpgradeOutcomeMetricsSnapshot,
+} from './composeOutcome.js';
+
+export {
+  extractClaims,
+  type AssistantMessage,
+  type ExtractClaimsResult,
+} from './auditClaims.js';
+
+export {
+  DEFAULT_SEMANTIC_DUP_THRESHOLD,
+  buildSemanticDuplicates,
+  type BuildSemanticDuplicatesOptions,
+  type SemanticDupInput,
+  type SemanticDupLinkage,
+} from './duplicatesSemantic.js';
+
+export {
+  DEFAULT_P_NEAR_DUP_TARGET,
+  ISOTONIC_MIN_LABELS,
+  MIN_LABELS_FOR_FIT,
+  MIN_PER_CLASS_FOR_FIT,
+  evaluateCalibration,
+  fitCalibration,
+  fitIsotonic,
+  fitPlatt,
+  sampleByCurveUncertainty,
+  type CalibrationCurve,
+  type CalibrationKnot,
+  type IsotonicCurve,
+  type LabelPoint,
+  type PlattCurve,
+} from './calibration.js';
+
+export {
+  DEFAULT_NUM_PERM,
+  buildMinhashDuplicates,
+  buildPermutationCoefficients,
+  buildSignature as buildMinhashSignature,
+  estimateJaccard,
+  murmurhash3_32,
+  shingles,
+  type BuildMinhashDuplicatesOptions,
+  type DuplicatesMinhashCluster,
+  type DuplicatesMinhashFile,
+  type MinhashInput,
+  type MinhashSignature,
+} from './duplicatesMinhash.js';
+
+export {
+  discoverTopicsLocal,
+  type DiscoverTopicsLocalOptions,
+  type DiscoverTopicsLocalResult,
+} from './discoverTopicsLocal.js';
+
+export {
+  buildUpgradeOutcomes,
+  type BuildUpgradeOutcomesOptions,
+} from './upgradeOutcomes.js';
+
+export {
+  verifyOneClaim,
+  verifySessions,
+  type TimelineEvent,
+  type VerifyClaimsOptions,
+  type VerifyResult,
+  type VerifySessionInput,
+} from './auditEvidence.js';
+
+export {
+  buildDailyBrief,
+  type BriefThresholds,
+  type DailyBriefInputs,
+  type DailyBriefResult,
+} from './dailyBrief.js';
+
+export {
+  THRESHOLDS,
+  type Thresholds,
+} from './thresholds.js';
+
+export {
+  euclidean,
+  ewma,
+  matchedPair1NN,
+  mean,
+  sigmoid,
+  variance,
+  wilsonCI,
+} from './stats.js';
+
+export {
+  DEFAULT_BLOG_CLUSTER_THRESHOLD,
+  DEFAULT_BLOG_DISCOVERY_THRESHOLD,
+  DEFAULT_MIN_CLUSTER_SIZE,
+  DEFAULT_NARRATIVE_ARC_DAYS,
+  buildBlogCandidates,
+  type BuildBlogCandidatesOptions,
+} from './blogCandidates.js';
+
+export {
+  runItsAnalysis,
+  type ItsConfigCommit,
+  type ItsOutcomeInput,
+  type ItsResult,
+  type ItsSnapshot,
+  type RunItsAnalysisOptions,
+} from './itsAnalysis.js';
+
+export {
+  detectKnowledgeDebt,
+  renderObsidianMarkdown,
+  type DetectKnowledgeDebtOptions,
+  type KnowledgeDebtCluster,
+  type KnowledgeDebtEntry,
+} from './detectKnowledgeDebt.js';
+
+export {
+  computeReflexive,
+  type CovariateFn,
+  type EValueStatus,
+  type ReflexiveEntry,
+  type ReflexivePair,
+  type ReflexiveResult,
+} from './computeReflexive.js';
+
+export {
+  detectArchetypes,
+  type ArchetypeCentroid,
+  type ArchetypesResult,
+  type DetectArchetypesOptions,
+  type SessionToolStats,
+} from './detectArchetypes.js';
+
+export {
+  bootstrapSlope,
+  politisWhiteBlockLength,
+  theilSen,
+  type BootstrapResult,
+  type BootstrapSlopeOptions,
+  type BootstrapStatus,
+} from './trajectoryBootstrap.js';
+
+export {
+  analyzeSkillCurves,
+  benjaminiHochberg,
+  mannKendall,
+  type AnalyzeSkillCurvesOptions,
+  type SkillCurveClassification,
+  type SkillCurvePoint,
+  type SkillCurveResult,
+  type SkillCurveSeries,
+} from './skillCurve.js';

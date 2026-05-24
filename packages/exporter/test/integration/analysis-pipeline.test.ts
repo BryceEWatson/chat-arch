@@ -128,7 +128,9 @@ describe('Phase 6 analysis pipeline integration', () => {
     expect(meta.counts.sessions).toBe(sessions.length);
 
     // (d) browser.files lists Phase-6 tier-1 files + Phase 2 v2 entity sidecars
-    //     + correction-candidates.json (stage-1 heuristic recall).
+    //     + correction-candidates.json (stage-1 heuristic recall)
+    //     + playbook-candidates.json (positive-knowledge mining)
+    //     + Phase 1-3 outcome-substrate sidecars (EXPORTER_VERSION 1.2.0).
     expect(meta.tiers.browser.files.sort()).toEqual(
       [
         'duplicates.exact.json',
@@ -137,6 +139,18 @@ describe('Phase 6 analysis pipeline integration', () => {
         'topics.json',
         'narratives.json',
         'correction-candidates.json',
+        'continuum-health.json',
+        'playbook-candidates.json',
+        'composite-outcomes.json',
+        'config-history.json',
+        'its-analysis.json',
+        'knowledge-debt.json',
+        'reflexive.json',
+        'decisions.json',
+        'archetypes.json',
+        'project-trajectories.json',
+        'surface-comparison.json',
+        'skill-curves.json',
       ].sort(),
     );
     // Phase 6 does not populate the `local` tier.

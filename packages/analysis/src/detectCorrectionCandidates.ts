@@ -8,6 +8,29 @@
  *
  * Pure. No I/O, no LLM. Deterministic given identical input.
  *
+ * Internal model — labeling functions (LFs):
+ *
+ *   Each pattern family is exposed as a named labeling function (an
+ *   `LabelingFunction` object: `name`, `kind`, `scope`, regexes,
+ *   matchScope flag). The kernel iterates `CORRECTION_LFS` rather than
+ *   inlining regex arrays into the scan loop. This is the "Snorkel-
+ *   style data programming" shape (Ratner et al., VLDB 2017) without
+ *   the framework dependency — each LF returns hits with metadata,
+ *   the kernel unions them. Today the union is a simple "fire if any
+ *   LF fires"; switching to a label model later would be a one-line
+ *   change at the union site.
+ *
+ *   Why bother with the abstraction over inline regexes:
+ *   - **Diagnostics for free.** `computeLfFiringStats` walks already-
+ *     extracted `Correction[]` and counts per-LF firings + pairwise
+ *     agreement — answers "which LF is dead weight?" and "which two
+ *     LFs always co-fire and could be collapsed?" without recomputing.
+ *   - **Per-LF testability.** Tests can target individual LFs in
+ *     isolation rather than asserting on the full extractor's union.
+ *   - **Programmatic enumeration.** `CORRECTION_LFS` is a public
+ *     export — downstream audit/viewer code can list available LFs,
+ *     show counts, or surface coverage gaps. No reflection needed.
+ *
  * Adversarial-validation note: surface-form patterns mis-fire on
  *   - "no, that worked!"  → 'no' is affirmative-sense
  *   - "stop the dev server" → imperative-stop targeting tool, not behavior
@@ -38,6 +61,13 @@ import type {
  *   2 — broadened explicit-no negation, added soft-redirect and
  *       want-prefer families, added `just|please` to imperative-override
  *       (2026-05 audit, see scripts/audit-correction-recall.mjs)
+ *
+ * Note: the 2026-05 LF refactor (extracted pattern families into
+ * CORRECTION_LFS + added diagnostics) did NOT bump the version because
+ * the kernel's per-turn output is byte-identical to v2 — same patterns,
+ * same iteration order, same dedup behavior. Bumping would force a
+ * costly full-corpus rescan with no payoff. Bump only when the actual
+ * recall set changes.
  */
 export const HEURISTIC_RECALL_VERSION = 2;
 
@@ -52,80 +82,140 @@ export interface TurnPair {
   precedingAssistantText: string | null;
 }
 
-const STOP_PATTERNS: ReadonlyArray<RegExp> = [
-  /\b(stop|quit|cease)\b\s+(adding|generating|writing|using|making|doing|including)\b/i,
-  /\bplease\s+(stop|don'?t)\b/i,
-];
-
 /**
- * Negation directed at the assistant's behavior. The original whitelist
- * (add/generate/write/use/make/do/include/create/put) under-recalled —
- * the audit at scripts/audit-correction-recall.mjs found 150 non-firing
- * turns where `don't/never` was followed by verbs OUTSIDE that whitelist
- * (change, refactor, assume, bother, touch, mention, repeat, …) — many of
- * those are real corrections. Rather than enumerate every possible verb,
- * we now match `don't/never + any 2+ char word` and exclude a tiny set of
- * non-correction phrases (`don't worry`, `don't mind`, `don't think`, …)
- * that the LLM stage would otherwise have to spend tokens rejecting.
+ * One labeling function — a named bundle of patterns that searches a
+ * scoped window of user text and emits hits tagged with a kind.
+ *
+ *   - `name`      stable identifier; used in diagnostics and tests.
+ *   - `kind`      `CorrectionSignalKind` emitted on hit. Multiple LFs
+ *                 MAY emit the same kind (e.g. two LFs both labeled
+ *                 'explicit-no') — `name` is the diagnostic-level
+ *                 identifier, `kind` is the downstream label.
+ *   - `scope`     `'full'` searches the whole user text; `'prefix'`
+ *                 searches only the first POSITIONAL_PREFIX_LEN chars
+ *                 (the "lead" of the message, where sentence-initial
+ *                 markers like 'actually,' or 'wait,' are meaningful).
+ *   - `patterns`  RegExp[] OR-joined — any one match counts as a hit.
+ *   - `caseSensitive` defaults to false (regex `i` flag). The
+ *                 frustration LF uses `true` because ALL-CAPS is
+ *                 itself the signal.
+ *
+ * Pure data: LFs hold no state, can be created at module scope, and
+ * are safe to expose to viewer/diagnostic code.
  */
+export interface LabelingFunction {
+  readonly name: string;
+  readonly kind: CorrectionSignalKind;
+  readonly scope: 'full' | 'prefix';
+  readonly patterns: ReadonlyArray<RegExp>;
+}
+
 const NEGATION_EXCLUSIONS = '(?:worry|mind|think|know|believe|wanna|want|see|forget|hesitate|tell|matter)';
-const NEGATION_PATTERNS: ReadonlyArray<RegExp> = [
-  // Targeted whitelist (kept for back-compat / explicit anchoring).
-  /\b(don'?t|do not|never)\b\s+(add|generate|write|use|make|do|include|create|put)\b/i,
-  /\bno+,?\s+(don'?t|not)\b/i,
-  // Broadened negation: don't/never + any verb-like token, with a small
-  // exclusion list for common non-corrective idioms.
-  new RegExp(
-    `\\b(don'?t|do not|never)\\b\\s+(?!${NEGATION_EXCLUSIONS}\\b)[a-z]{2,}\\b`,
-    'i',
-  ),
-];
-
-const INSTEAD_PATTERNS: ReadonlyArray<RegExp> = [
-  /\binstead of\b/i,
-  /\brather than\b/i,
-  /\bnot\b.+\bbut\b/i,
-];
-
-const IMPERATIVE_OVERRIDE_PATTERNS: ReadonlyArray<RegExp> = [
-  /^\s*(always|never|only|prefer|just|please)\b/i,
-  /\b(use|prefer)\s+\w+\s+(not|over|instead of)\b/i,
-];
-
-const FRUSTRATION_PATTERNS: ReadonlyArray<RegExp> = [
-  /!{2,}/,
-  /\?{2,}/,
-  /\b(NO|STOP|DON'?T)\b/, // caps-locked, not case-insensitive
-  /\b(again|still)\b.*\b(told|said|asked)\b/i,
-];
 
 /**
- * Soft pivots. The user steers the assistant somewhere else without
- * outright negation. Audit found ~177 missed corrections shaped this
- * way (`actually,…`, `wait,…`, `let's …`). The `let's` arm intentionally
- * matches both directives (`let's regenerate`) and concessions (`let's
- * not include`); `let's not` falls under the negation pattern too, but
- * the duplicate phrase-key dedupe in scanTurn collapses overlap.
+ * The labeling-function registry. Order is preserved in diagnostics
+ * output but doesn't affect correctness (LF firing is set-based, not
+ * sequential). New LFs should be appended; renaming an LF requires a
+ * `HEURISTIC_RECALL_VERSION` bump if the rename changes which sessions
+ * fire (cache invalidation).
  */
-const SOFT_REDIRECT_PATTERNS: ReadonlyArray<RegExp> = [
-  /^\s*(actually|wait|hmm+|hold on|hang on|nope|nah)\b/i,
-  /^\s*let'?s\s+\w+/i,
-];
-
-/**
- * First-person preference statements. Audit found 80 missed corrections
- * shaped as "I want X", "I'd prefer Y", "I would like Z". These are
- * weaker signals than explicit-no but the LLM stage still classifies
- * many as actionable corrections (the user IS expressing a behavioral
- * preference, just politely).
- */
-const WANT_PREFER_PATTERNS: ReadonlyArray<RegExp> = [
-  /\bi\s+(want|need|prefer|wish)\b/i,
-  /\bi'?d\s+(rather|prefer|like)\b/i,
-  /\bi\s+would\s+(like|prefer|rather)\b/i,
+export const CORRECTION_LFS: ReadonlyArray<LabelingFunction> = [
+  {
+    name: 'explicit-stop.imperative',
+    kind: 'explicit-stop',
+    scope: 'full',
+    patterns: [
+      /\b(stop|quit|cease)\b\s+(adding|generating|writing|using|making|doing|including)\b/i,
+      /\bplease\s+(stop|don'?t)\b/i,
+    ],
+  },
+  {
+    name: 'explicit-no.whitelist',
+    kind: 'explicit-no',
+    scope: 'full',
+    patterns: [
+      // Targeted whitelist (kept for back-compat / explicit anchoring).
+      /\b(don'?t|do not|never)\b\s+(add|generate|write|use|make|do|include|create|put)\b/i,
+      /\bno+,?\s+(don'?t|not)\b/i,
+    ],
+  },
+  {
+    name: 'explicit-no.broadened',
+    kind: 'explicit-no',
+    scope: 'full',
+    // Broadened negation: don't/never + any verb-like token, with a small
+    // exclusion list for common non-corrective idioms. Audit found 150
+    // missed turns where `don't/never` was followed by verbs OUTSIDE the
+    // whitelist (change, refactor, assume, bother, touch, mention, …).
+    patterns: [
+      new RegExp(
+        `\\b(don'?t|do not|never)\\b\\s+(?!${NEGATION_EXCLUSIONS}\\b)[a-z]{2,}\\b`,
+        'i',
+      ),
+    ],
+  },
+  {
+    name: 'instead-of',
+    kind: 'instead-of',
+    scope: 'prefix',
+    patterns: [/\binstead of\b/i, /\brather than\b/i, /\bnot\b.+\bbut\b/i],
+  },
+  {
+    name: 'imperative-override',
+    kind: 'imperative-override',
+    scope: 'full',
+    patterns: [
+      /^\s*(always|never|only|prefer|just|please)\b/i,
+      /\b(use|prefer)\s+\w+\s+(not|over|instead of)\b/i,
+    ],
+  },
+  {
+    name: 'frustration',
+    kind: 'frustration',
+    scope: 'full',
+    // Note the third pattern is intentionally case-sensitive — caps-
+    // locked NO/STOP/DON'T is itself the signal, lower-case wouldn't
+    // distinguish from neutral usage.
+    patterns: [
+      /!{2,}/,
+      /\?{2,}/,
+      /\b(NO|STOP|DON'?T)\b/,
+      /\b(again|still)\b.*\b(told|said|asked)\b/i,
+    ],
+  },
+  {
+    name: 'soft-redirect',
+    kind: 'soft-redirect',
+    scope: 'prefix',
+    // Audit found ~177 missed corrections shaped this way (`actually,…`,
+    // `wait,…`, `let's …`). The `let's` arm matches both directives and
+    // concessions; the duplicate phrase-key dedupe in scanTurn collapses
+    // overlap with negation patterns.
+    patterns: [
+      /^\s*(actually|wait|hmm+|hold on|hang on|nope|nah)\b/i,
+      /^\s*let'?s\s+\w+/i,
+    ],
+  },
+  {
+    name: 'want-prefer',
+    kind: 'want-prefer',
+    scope: 'full',
+    // First-person preference statements. Audit found 80 missed
+    // corrections shaped as "I want X", "I'd prefer Y", "I would like Z".
+    // Weaker signals than explicit-no but the LLM stage classifies many
+    // as actionable.
+    patterns: [
+      /\bi\s+(want|need|prefer|wish)\b/i,
+      /\bi'?d\s+(rather|prefer|like)\b/i,
+      /\bi\s+would\s+(like|prefer|rather)\b/i,
+    ],
+  },
 ];
 
 interface HeuristicHit {
+  /** The LF that fired (diagnostic-level identifier). */
+  lfName: string;
+  /** Schema-level signal kind emitted to the Correction. */
   kind: CorrectionSignalKind;
   phrase: string;
 }
@@ -137,32 +227,24 @@ function scanTurn(userText: string): HeuristicHit[] {
   const seenPhrases = new Set<string>();
   const prefix = userText.slice(0, POSITIONAL_PREFIX_LEN);
 
-  const fire = (
-    kind: CorrectionSignalKind,
-    patterns: ReadonlyArray<RegExp>,
-    scope: 'full' | 'prefix',
-  ): void => {
-    const haystack = scope === 'prefix' ? prefix : userText;
-    for (const pat of patterns) {
+  for (const lf of CORRECTION_LFS) {
+    const haystack = lf.scope === 'prefix' ? prefix : userText;
+    for (const pat of lf.patterns) {
       const m = haystack.match(pat);
       if (m !== null) {
         const phrase = m[0].slice(0, 80);
-        const key = `${kind}:${phrase.toLowerCase()}`;
+        // Dedup by (kind, phrase) so two LFs emitting the same kind on
+        // the same phrase produce one signal — preserves byte-identical
+        // output with the pre-LF-refactor implementation, which scanned
+        // each kind in series and skipped repeat phrases per kind.
+        const key = `${lf.kind}:${phrase.toLowerCase()}`;
         if (!seenPhrases.has(key)) {
           seenPhrases.add(key);
-          hits.push({ kind, phrase });
+          hits.push({ lfName: lf.name, kind: lf.kind, phrase });
         }
       }
     }
-  };
-
-  fire('explicit-stop', STOP_PATTERNS, 'full');
-  fire('explicit-no', NEGATION_PATTERNS, 'full');
-  fire('instead-of', INSTEAD_PATTERNS, 'prefix');
-  fire('imperative-override', IMPERATIVE_OVERRIDE_PATTERNS, 'full');
-  fire('frustration', FRUSTRATION_PATTERNS, 'full');
-  fire('soft-redirect', SOFT_REDIRECT_PATTERNS, 'prefix');
-  fire('want-prefer', WANT_PREFER_PATTERNS, 'full');
+  }
 
   return hits;
 }
@@ -189,12 +271,20 @@ export function detectCorrectionCandidates(
     const hits = scanTurn(t.userText);
 
     // Repeat-instruction pass: 4-gram windows from prior user turns.
+    // Not modeled as a CORRECTION_LFS entry because it's session-scoped
+    // (depends on earlier turns), not turn-local. Diagnostic-level
+    // counters in computeLfFiringStats include it under the synthetic
+    // name 'repeat-instruction.session-gram'.
     if (t.userTurnIndex > 0) {
       const grams = extractContentGrams(t.userText, 4);
       for (const g of grams) {
         const earlier = seenInstructionGrams.get(g);
         if (earlier !== undefined && earlier < t.userTurnIndex) {
-          hits.push({ kind: 'repeat-instruction', phrase: g });
+          hits.push({
+            lfName: 'repeat-instruction.session-gram',
+            kind: 'repeat-instruction',
+            phrase: g,
+          });
           break;
         }
       }
@@ -229,6 +319,72 @@ export function detectCorrectionCandidates(
   }
 
   return out;
+}
+
+/**
+ * Single-LF probe — runs ONE labeling function against a user-text
+ * string and returns its hits. Exposed so tests + audit scripts can
+ * target individual LFs in isolation; production code should use
+ * `detectCorrectionCandidates` instead.
+ */
+export function runLabelingFunction(
+  lf: LabelingFunction,
+  userText: string,
+): ReadonlyArray<{ kind: CorrectionSignalKind; phrase: string }> {
+  const prefix = userText.slice(0, POSITIONAL_PREFIX_LEN);
+  const haystack = lf.scope === 'prefix' ? prefix : userText;
+  const hits: { kind: CorrectionSignalKind; phrase: string }[] = [];
+  const seen = new Set<string>();
+  for (const pat of lf.patterns) {
+    const m = haystack.match(pat);
+    if (m === null) continue;
+    const phrase = m[0].slice(0, 80);
+    const key = phrase.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push({ kind: lf.kind, phrase });
+  }
+  return hits;
+}
+
+/**
+ * Per-LF firing diagnostics over a set of already-extracted Corrections.
+ *
+ *   - `firingsByKind`     count of Corrections that fired each signal
+ *                         kind. Keyed by `CorrectionSignalKind`, not LF
+ *                         name — multiple LFs of the same kind are summed
+ *                         (e.g. `explicit-no.whitelist` and
+ *                         `explicit-no.broadened` both contribute to
+ *                         `explicit-no`).
+ *   - `agreement`         pairwise co-fire count: how many corrections
+ *                         fired BOTH kinds. Useful for spotting LFs that
+ *                         are effectively duplicates (always co-fire) vs.
+ *                         orthogonal (rarely overlap).
+ *
+ * Walks `Correction[]` (the kernel's existing output) rather than
+ * re-running the scan, so this is cheap to call from audit scripts
+ * without re-doing the full extraction.
+ */
+export function computeLfFiringStats(corrections: ReadonlyArray<Correction>): {
+  firingsByKind: ReadonlyMap<CorrectionSignalKind, number>;
+  agreement: ReadonlyMap<string, number>;
+  totalCorrections: number;
+} {
+  const firingsByKind = new Map<CorrectionSignalKind, number>();
+  const agreement = new Map<string, number>();
+  for (const c of corrections) {
+    const kinds = new Set<CorrectionSignalKind>();
+    for (const s of c.signals) kinds.add(s.kind);
+    for (const k of kinds) firingsByKind.set(k, (firingsByKind.get(k) ?? 0) + 1);
+    const sorted = [...kinds].sort();
+    for (let i = 0; i < sorted.length; i += 1) {
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        const key = `${sorted[i]}|${sorted[j]}`;
+        agreement.set(key, (agreement.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  return { firingsByKind, agreement, totalCorrections: corrections.length };
 }
 
 const STOPWORDS = new Set([

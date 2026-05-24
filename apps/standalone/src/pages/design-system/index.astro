@@ -13,7 +13,14 @@ const fontFamilies = Object.entries(tokens.font.family);
 const radii = Object.entries(tokens.radius);
 const durations = Object.entries(tokens.duration);
 ---
-<BaseLayout title="Supergraphic Panel — design system">
+<BaseLayout title="Supergraphic Panel — design system" hideSidebar={true}>
+  {/*
+    Exempt from the app-wide AppSidebar. The design-system page owns
+    its own .lcars-root chrome + .walkthrough__toc left rail; rendering
+    a second left rail on top would create two competing nav columns.
+    The SYSTEM > DESIGN SYSTEM entry in the app sidebar still routes
+    TO this page from every other surface.
+  */}
   <div class="lcars-root walkthrough" id="ds-root">
     <header class="lcars-top-bar ds-top">
       <div class="lcars-top-bar__left">

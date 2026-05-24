@@ -1,0 +1,39 @@
+---
+// Hides the viewer's LCARS L-sidebar on routes that mount the React
+// viewer (/sessions, /projects, /topics, /practice). Used in concert
+// with AppSidebar so the app has a single vertical nav rail (the new
+// app-wide left sidebar) instead of two competing rails (AppSidebar
+// + the viewer's L-sidebar).
+//
+// What this hides:
+//   * `.lcars-sidebar` (desktop / tablet L-corner sidebar)
+//   * `.lcars-sidebar--horizontal` (mobile pill-bar variant)
+//
+// What this preserves:
+//   * `.lcars-top-bar` — search + SCAN LOCAL / UPLOAD ZIP / tier
+//     indicator / earthdate. Those are toolbar actions on the viewer
+//     itself, not navigation, so they remain useful inside the
+//     viewer's main column.
+//
+// The grid override re-anchors the viewer's top-bar + content column
+// to the single-column layout after the sidebar disappears.
+---
+<style is:global>
+  .lcars-sidebar,
+  .lcars-sidebar--horizontal {
+    display: none !important;
+  }
+
+  .lcars-frame {
+    grid-template-columns: 1fr !important;
+  }
+
+  @media (min-width: 900px) {
+    .lcars-top-bar {
+      grid-column: 1 / -1 !important;
+    }
+    .lcars-content-column {
+      grid-column: 1 / -1 !important;
+    }
+  }
+</style>

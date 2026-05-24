@@ -1,0 +1,605 @@
+---
+// RESULTS — cross-corpus outcomes view. The first new surface explicitly
+// designed for "what's working / what's not across all my chats."
+//
+// Aggregates three existing sidecars: audit-results.json (F-layer claim
+// verifier verdicts), audit-summary.json (cross-session rollup by claim
+// type + project), and upgrade-outcomes.json (corrections-loop closure
+// signal: did the patched rule recur?). No new exporter pipeline —
+// this is purely a new view over data we already produce on every scan.
+//
+// "Working" and "not working" are split into two columns so the page
+// reads at a glance: which projects, claim types, and sessions are
+// converging on verified outcomes, and which are not. Per project
+// memory `feedback_positioning_by_features` — the layout IS the pitch.
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import {
+  readAuditResults,
+  readAuditSummary,
+  readUpgradeOutcomes,
+} from '../lib/readSidecars.ts';
+import type { AuditResult, ClaimType } from '@chat-arch/schema';
+
+const auditResults = await readAuditResults();
+const auditSummary = await readAuditSummary();
+const outcomes = await readUpgradeOutcomes();
+
+// --- session-level aggregation ---
+// We don't need this from a sidecar — 1154 audit results aggregate in
+// O(N) at render time and avoid a schema bump.
+interface SessionRow {
+  sessionId: string;
+  pass: number;
+  fail: number;
+  inconclusive: number;
+  total: number;
+  passRate: number;
+}
+function aggregateBySession(results: readonly AuditResult[]): SessionRow[] {
+  const m = new Map<string, { pass: number; fail: number; inconclusive: number }>();
+  for (const r of results) {
+    const slot = m.get(r.sessionId) ?? { pass: 0, fail: 0, inconclusive: 0 };
+    slot[r.outcome] += 1;
+    m.set(r.sessionId, slot);
+  }
+  const rows: SessionRow[] = [];
+  for (const [sessionId, s] of m) {
+    const total = s.pass + s.fail + s.inconclusive;
+    rows.push({
+      sessionId,
+      pass: s.pass,
+      fail: s.fail,
+      inconclusive: s.inconclusive,
+      total,
+      passRate: total === 0 ? 0 : s.pass / total,
+    });
+  }
+  return rows;
+}
+
+// Minimum claims per session to qualify for the working/not-working
+// leaderboards — without a floor, a session with 1 verified claim out
+// of 1 reads as "100% working" and crowds out genuinely high-volume
+// successes. 3 is the smallest sample size where pass/fail can disagree.
+const MIN_CLAIMS_FOR_LEADERBOARD = 3;
+const TOP_N_SESSIONS = 8;
+
+const sessionRows = auditResults
+  ? aggregateBySession(auditResults.results).filter((r) => r.total >= MIN_CLAIMS_FOR_LEADERBOARD)
+  : [];
+const topWorkingSessions = [...sessionRows]
+  .sort((a, b) => {
+    if (b.passRate !== a.passRate) return b.passRate - a.passRate;
+    return b.pass - a.pass;
+  })
+  .slice(0, TOP_N_SESSIONS);
+const topBrokenSessions = [...sessionRows]
+  .sort((a, b) => {
+    if (a.passRate !== b.passRate) return a.passRate - b.passRate;
+    return b.fail - a.fail;
+  })
+  .slice(0, TOP_N_SESSIONS);
+
+// --- claim-type rollup ---
+// audit-summary.byClaimType is keyed by claim type → pass/fail/inconc.
+// Compute pass rate (pass / total) per claim type and split into
+// working (pass rate ≥ 0.5) vs not-working (< 0.5) columns.
+interface ClaimTypeRow {
+  claimType: ClaimType;
+  pass: number;
+  fail: number;
+  inconclusive: number;
+  total: number;
+  passRate: number;
+}
+const claimTypeRows: ClaimTypeRow[] = auditSummary
+  ? (Object.entries(auditSummary.byClaimType) as readonly [ClaimType, { pass: number; fail: number; inconclusive: number }][])
+      .map(([claimType, s]) => {
+        const total = s.pass + s.fail + s.inconclusive;
+        return {
+          claimType,
+          pass: s.pass,
+          fail: s.fail,
+          inconclusive: s.inconclusive,
+          total,
+          passRate: total === 0 ? 0 : s.pass / total,
+        };
+      })
+      .filter((r) => r.total > 0)
+  : [];
+const workingClaimTypes = [...claimTypeRows]
+  .filter((r) => r.passRate >= 0.5)
+  .sort((a, b) => b.passRate - a.passRate);
+const brokenClaimTypes = [...claimTypeRows]
+  .filter((r) => r.passRate < 0.5)
+  .sort((a, b) => a.passRate - b.passRate);
+
+// --- project rollup ---
+interface ProjectRow {
+  project: string;
+  pass: number;
+  fail: number;
+  inconclusive: number;
+  total: number;
+  passRate: number;
+}
+const projectRows: ProjectRow[] = auditSummary?.byProject
+  ? Object.entries(auditSummary.byProject)
+      .map(([project, s]) => {
+        const total = s.pass + s.fail + s.inconclusive;
+        return {
+          project,
+          pass: s.pass,
+          fail: s.fail,
+          inconclusive: s.inconclusive,
+          total,
+          passRate: total === 0 ? 0 : s.pass / total,
+        };
+      })
+      .filter((r) => r.total > 0)
+  : [];
+const workingProjects = [...projectRows]
+  .filter((r) => r.passRate >= 0.3)
+  .sort((a, b) => b.passRate - a.passRate);
+const brokenProjects = [...projectRows]
+  .filter((r) => r.passRate < 0.3)
+  .sort((a, b) => a.passRate - b.passRate);
+
+// --- loop closure ---
+// Mirror readWorkshopStatus' rollup so the headline KPI matches the
+// TODAY page. Avoids the import + extra read by computing in-place.
+let closed = 0;
+let totalWithSignal = 0;
+let recurredCount = 0;
+for (const o of outcomes?.outcomes ?? []) {
+  if (o.observedSessionIds.length === 0) continue;
+  totalWithSignal += 1;
+  if (o.recurred) recurredCount += 1;
+  else closed += 1;
+}
+const loopClosureRate = totalWithSignal === 0 ? null : closed / totalWithSignal;
+const appliedOutcomes = outcomes?.outcomes.length ?? 0;
+
+function fmtPct(rate: number): string {
+  return `${(rate * 100).toFixed(0)}%`;
+}
+function fmtSid(sid: string): string {
+  return sid.slice(0, 8);
+}
+---
+<BaseLayout title="Chat Archaeologist — Results" current="RESULTS">
+  <main class="results">
+    <header class="results__header">
+      <h1>RESULTS</h1>
+      <p class="results__lede">
+        Cross-corpus outcomes: what's working and what isn't across every chat
+        you've ever had. Drives off F-layer claim audits and the
+        corrections-loop closure ledger — no new pipeline, just a different
+        cut of the data the exporter already produces.
+      </p>
+    </header>
+
+    {auditResults === null ? (
+      <section class="results__empty">
+        <h2>No audit results yet</h2>
+        <p>
+          The audit verifier needs <code>analysis/audit-results.json</code>{' '}
+          on disk. Click <strong>SCAN LOCAL</strong> from the DATA panel — the
+          exporter runs the audit pass automatically as part of <code>all</code>.
+        </p>
+      </section>
+    ) : (
+      <>
+        <section class="results__overall">
+          <h2 class="results__section-h">OVERALL</h2>
+          <div class="results__overall-grid">
+            <div class="results__kpi">
+              <span class="results__kpi-label">claim-pass rate</span>
+              <span class="results__kpi-value">
+                {fmtPct(auditResults.totals.pass / Math.max(1, auditResults.totals.pass + auditResults.totals.fail + auditResults.totals.inconclusive))}
+              </span>
+              <span class="results__kpi-sub">
+                <code>{auditResults.totals.pass}</code> pass ·{' '}
+                <code>{auditResults.totals.fail}</code> fail ·{' '}
+                <code>{auditResults.totals.inconclusive}</code> inconclusive
+              </span>
+            </div>
+            <div class="results__kpi">
+              <span class="results__kpi-label">loop closure</span>
+              <span class="results__kpi-value">
+                {loopClosureRate === null ? '—' : fmtPct(loopClosureRate)}
+              </span>
+              <span class="results__kpi-sub">
+                {totalWithSignal === 0 ? (
+                  <span>no observed windows yet · run more sessions after applies</span>
+                ) : (
+                  <span>
+                    <code>{closed}</code> patches stuck ·{' '}
+                    <code>{recurredCount}</code> recurred (of{' '}
+                    <code>{totalWithSignal}</code> with signal)
+                  </span>
+                )}
+              </span>
+            </div>
+            <div class="results__kpi">
+              <span class="results__kpi-label">corrections applied</span>
+              <span class="results__kpi-value">{appliedOutcomes}</span>
+              <span class="results__kpi-sub">
+                {appliedOutcomes === 0
+                  ? <span>none yet · mine + APPLY a pattern to start the loop</span>
+                  : <span>tracked in upgrade-outcomes.json</span>
+                }
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <div class="results__columns">
+          {/* ============ WORKING column ============ */}
+          <section class="results__column results__column--working">
+            <h2 class="results__section-h">WORKING</h2>
+
+            <section class="results__block">
+              <h3>By claim type ↑</h3>
+              {workingClaimTypes.length === 0 ? (
+                <p class="results__nope">None above 50% pass rate yet.</p>
+              ) : (
+                <ul class="results__rate-list">
+                  {workingClaimTypes.map((r) => (
+                    <li>
+                      <code class="results__rate-key">{r.claimType}</code>
+                      <span class="results__rate-bar">
+                        <span class="results__rate-bar-fill" style={`width:${r.passRate * 100}%`}></span>
+                      </span>
+                      <span class="results__rate-pct">{fmtPct(r.passRate)}</span>
+                      <span class="results__rate-n">({r.pass}/{r.total})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section class="results__block">
+              <h3>By project ↑</h3>
+              {workingProjects.length === 0 ? (
+                <p class="results__nope">No project above 30% pass rate yet.</p>
+              ) : (
+                <ul class="results__rate-list">
+                  {workingProjects.map((r) => (
+                    <li>
+                      <code class="results__rate-key">{r.project}</code>
+                      <span class="results__rate-bar">
+                        <span class="results__rate-bar-fill" style={`width:${r.passRate * 100}%`}></span>
+                      </span>
+                      <span class="results__rate-pct">{fmtPct(r.passRate)}</span>
+                      <span class="results__rate-n">({r.pass}/{r.total})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section class="results__block">
+              <h3>Top sessions ↑ <small>(≥{MIN_CLAIMS_FOR_LEADERBOARD} claims)</small></h3>
+              {topWorkingSessions.length === 0 ? (
+                <p class="results__nope">Not enough sessions with verified claims yet.</p>
+              ) : (
+                <ul class="results__session-list">
+                  {topWorkingSessions.map((r) => (
+                    <li>
+                      <code class="results__sid">[SID:{fmtSid(r.sessionId)}…]</code>
+                      <span class="results__sess-counts">
+                        <span class="results__sess-pass">{r.pass} pass</span>
+                        {r.fail > 0 ? <span class="results__sess-fail"> · {r.fail} fail</span> : null}
+                        {r.inconclusive > 0 ? <span class="results__sess-inc"> · {r.inconclusive} inc</span> : null}
+                      </span>
+                      <span class="results__rate-pct">{fmtPct(r.passRate)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </section>
+
+          {/* ============ NOT WORKING column ============ */}
+          <section class="results__column results__column--broken">
+            <h2 class="results__section-h">NOT WORKING</h2>
+
+            <section class="results__block">
+              <h3>By claim type ↓</h3>
+              {brokenClaimTypes.length === 0 ? (
+                <p class="results__nope">Every claim type passes ≥50% — nice.</p>
+              ) : (
+                <ul class="results__rate-list">
+                  {brokenClaimTypes.map((r) => (
+                    <li>
+                      <code class="results__rate-key">{r.claimType}</code>
+                      <span class="results__rate-bar results__rate-bar--broken">
+                        <span class="results__rate-bar-fill results__rate-bar-fill--broken" style={`width:${(1 - r.passRate) * 100}%`}></span>
+                      </span>
+                      <span class="results__rate-pct results__rate-pct--broken">{fmtPct(r.passRate)}</span>
+                      <span class="results__rate-n">({r.pass}/{r.total})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section class="results__block">
+              <h3>By project ↓</h3>
+              {brokenProjects.length === 0 ? (
+                <p class="results__nope">No project below 30% pass rate.</p>
+              ) : (
+                <ul class="results__rate-list">
+                  {brokenProjects.map((r) => (
+                    <li>
+                      <code class="results__rate-key">{r.project}</code>
+                      <span class="results__rate-bar results__rate-bar--broken">
+                        <span class="results__rate-bar-fill results__rate-bar-fill--broken" style={`width:${(1 - r.passRate) * 100}%`}></span>
+                      </span>
+                      <span class="results__rate-pct results__rate-pct--broken">{fmtPct(r.passRate)}</span>
+                      <span class="results__rate-n">({r.pass}/{r.total})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section class="results__block">
+              <h3>Top sessions ↓ <small>(≥{MIN_CLAIMS_FOR_LEADERBOARD} claims)</small></h3>
+              {topBrokenSessions.length === 0 ? (
+                <p class="results__nope">No broken sessions yet.</p>
+              ) : (
+                <ul class="results__session-list">
+                  {topBrokenSessions.map((r) => (
+                    <li>
+                      <code class="results__sid">[SID:{fmtSid(r.sessionId)}…]</code>
+                      <span class="results__sess-counts">
+                        {r.fail > 0 ? <span class="results__sess-fail">{r.fail} fail</span> : null}
+                        {r.pass > 0 ? <span class="results__sess-pass">{r.fail > 0 ? ' · ' : ''}{r.pass} pass</span> : null}
+                        {r.inconclusive > 0 ? <span class="results__sess-inc"> · {r.inconclusive} inc</span> : null}
+                      </span>
+                      <span class="results__rate-pct results__rate-pct--broken">{fmtPct(r.passRate)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </section>
+        </div>
+
+        <p class="results__footer">
+          <a href="/audit">drill into the full audit table →</a>
+        </p>
+      </>
+    )}
+  </main>
+</BaseLayout>
+
+<style>
+  main.results {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+    color: #FFCC99;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .results__header h1 {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 32px;
+    margin: 0 0 8px;
+  }
+  .results__lede {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #FFCC99cc;
+    margin: 0 0 24px;
+    max-width: 720px;
+  }
+
+  .results__empty {
+    border: 1px solid #FFCC9944;
+    padding: 24px;
+    border-radius: 4px;
+    background: #0a0a0a;
+  }
+  .results__empty code {
+    background: #FFCC9911;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .results__section-h {
+    font-family: 'Antonio', sans-serif;
+    letter-spacing: 0.12em;
+    font-size: 14px;
+    color: #FFCC99;
+    margin: 0 0 12px;
+  }
+
+  /* OVERALL */
+  .results__overall {
+    margin-bottom: 28px;
+  }
+  .results__overall-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .results__kpi {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9933;
+    padding: 16px;
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+  }
+  .results__kpi-label {
+    font-size: 11px;
+    color: #FFCC9999;
+    letter-spacing: 0.08em;
+  }
+  .results__kpi-value {
+    font-family: 'Antonio', sans-serif;
+    font-size: 36px;
+    line-height: 1.1;
+    margin: 6px 0;
+    color: #FFCC99;
+  }
+  .results__kpi-sub {
+    font-size: 11px;
+    color: #FFCC9999;
+  }
+  .results__kpi-sub code {
+    background: #FFCC9911;
+    padding: 0 4px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #FFCC99;
+  }
+
+  /* TWO-COLUMN WORKING / NOT WORKING */
+  .results__columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 800px) {
+    .results__columns { grid-template-columns: 1fr; }
+  }
+  .results__column {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9933;
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .results__column--working {
+    border-left: 3px solid rgba(136, 224, 136, 0.45);
+  }
+  .results__column--broken {
+    border-left: 3px solid rgba(240, 128, 128, 0.45);
+  }
+
+  .results__block {
+    margin-bottom: 20px;
+  }
+  .results__block:last-child {
+    margin-bottom: 0;
+  }
+  .results__block h3 {
+    font-family: 'Antonio', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: #FFCC9999;
+    margin: 0 0 8px;
+    font-weight: 700;
+  }
+  .results__block h3 small {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #FFCC9966;
+    letter-spacing: 0.06em;
+    margin-left: 6px;
+  }
+
+  /* RATE LIST (claim-type + project) */
+  .results__rate-list, .results__session-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .results__rate-list li {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) 60px 36px 44px;
+    gap: 8px;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid #FFCC9922;
+  }
+  .results__rate-list li:last-child {
+    border-bottom: none;
+  }
+  .results__rate-key {
+    color: #FFCC99;
+    font-size: 11px;
+  }
+  .results__rate-bar {
+    height: 6px;
+    background: #FFCC9911;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .results__rate-bar-fill {
+    display: block;
+    height: 100%;
+    background: rgba(136, 224, 136, 0.5);
+  }
+  .results__rate-bar-fill--broken {
+    background: rgba(240, 128, 128, 0.5);
+  }
+  .results__rate-pct {
+    color: #88e088;
+    font-weight: 600;
+    font-size: 11px;
+    text-align: right;
+  }
+  .results__rate-pct--broken {
+    color: #f08080;
+  }
+  .results__rate-n {
+    color: #FFCC9966;
+    font-size: 10px;
+    text-align: right;
+  }
+
+  /* SESSION LIST */
+  .results__session-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid #FFCC9922;
+    flex-wrap: wrap;
+  }
+  .results__session-list li:last-child {
+    border-bottom: none;
+  }
+  .results__sid {
+    color: #FFCC99cc;
+    font-size: 11px;
+  }
+  .results__sess-counts {
+    flex: 1;
+    font-size: 11px;
+    color: #FFCC9999;
+  }
+  .results__sess-pass { color: #88e088; }
+  .results__sess-fail { color: #f08080; }
+  .results__sess-inc { color: #ffd680; }
+
+  .results__nope {
+    font-size: 12px;
+    color: #FFCC9966;
+    font-style: italic;
+    margin: 0;
+  }
+
+  .results__footer {
+    margin-top: 24px;
+    font-size: 13px;
+  }
+  .results__footer a {
+    color: #FFCC99;
+    text-decoration: none;
+    border-bottom: 1px dashed #FFCC9955;
+  }
+</style>

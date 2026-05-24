@@ -80,27 +80,51 @@ Per-package alternatives:
 
 - `pnpm --filter @chat-arch/viewer <script>` for viewer-only runs
 - `pnpm --filter @chat-arch/standalone dev` to boot the dev server
-  on port 4324 (via `pnpm dev` at root)
+  on port 4321 (via `pnpm dev` at root — Astro's default)
 
 ## Shape of the workspace
 
 ```
 apps/standalone/     Astro shell + /api/rescan + /api/clear endpoints
                      + /api/mine-corrections + /api/clear-corrections
+                     + /api/mine-decisions + /api/generate-exports
+                     + /api/insights-ack + /api/knowledge-debt-state
+                     + /api/apply-correction + /api/regen-brief
 packages/schema/     UnifiedSessionEntry + manifest + correction types
+                     + outcome-substrate types (composite-outcome,
+                     decision, archetype, narrative, pattern)
 packages/exporter/   CLI + parsers + analysis writers + sub-CLIs
                      (embed-cli, ingest-configs-cli,
                       cluster-corrections-cli)
+                     + src/export/ Obsidian-targeted export submodule
+                     (post-mortems, knowledge-debt)
 packages/analysis/   Shared cloud-mapping + clustering +
-                     correction-recall kernels
-packages/viewer/     React viewer (mount target)
-scripts/             One-off audits (audit-correction-recall.mjs)
+                     correction-recall kernels + outcome-substrate
+                     kernels (composeOutcome, audit*, thresholds,
+                     statsShared, itsAnalysis, computeReflexive,
+                     surfaceComparisonBuilder, etc.)
+packages/viewer/     React viewer (mount target) + 6 outcome-substrate
+                     modes (Effectiveness / Insights / Decisions /
+                     Trust / Trends / Export) + MethodologyDisclosure
+                     + SourceAttribution
+scripts/             One-off audits (audit-correction-recall.mjs) +
+                     lint scripts (lint-causal-copy.mjs,
+                     lint-thresholds-imports.mjs, lint-fixture-pii.mjs)
 .claude/skills/
   mine-corrections/  Skill driving the corrections LLM stages
+  mine-decisions/    Skill driving the decisions LLM stages (stub UI
+                     until LLM pipeline lands; see Phase Rev3-F)
+  chat-arch-thrash-detect/  NOT in this repo — lives under
+                            ~/.claude/skills/ as a global hook
+                            (writes thrash-fires.json into the
+                            chat-arch corpus when CHATARCH_THRASH_-
+                            DETECT=1 is set)
 ```
 
 Viewer imports from `@chat-arch/analysis`, not `@chat-arch/exporter`
-subpaths — the exporter's `exports` field only declares the root.
+subpaths. The exporter's `exports` field declares two entry points
+(`.` for the main runtime and `./export` for the Obsidian-targeted
+export submodule); viewer code should stay off both.
 
 ## Versioning
 
@@ -141,3 +165,49 @@ The corrections pipeline writes three files under
 - `correction-status-${requestId}.json` — per-run progress files the
   skill writes during a mining pass. The viewer polls them while a
   run is in flight; the clear endpoint sweeps them up.
+
+### Outcome-substrate sidecars (Phase 1-4, EXPORTER_VERSION 1.2.0)
+
+Eleven additional sidecars under `apps/standalone/public/chat-arch-data/
+analysis/` (all gitignored — locally generated, may carry PII):
+
+- `composite-outcomes.json` — per-session composite score + binary
+  good/bad classification. PII: session IDs + scores. Foundation; every
+  Phase 1-3 surface reads it.
+- `pr-land-cache.json` — `gh api` PR merge-state cache (opt-in via
+  `--enable-pr-join`). PII: GitHub data (org / repo / PR titles).
+- `config-history.json` — `git log` over `~/.claude/`, `~/.claude/
+  skills/`, `<project>/.claude/`. PII: commit subjects (reproducible
+  from git; not data-on-disk in the same sense as transcripts).
+- `its-analysis.json` — interrupted-time-series contrasts of composite
+  score around config changes. Aggregate numbers, not PII; gitignored
+  conservatively.
+- `knowledge-debt.json` + `chat-arch-data/exports/knowledge-debt.md` —
+  clustered recurring first-user-turn questions. PII: user questions
+  verbatim.
+- `reflexive.json` — matched-pair contrast for "touched chat-arch"
+  sessions. PII: session IDs + composite scores.
+- `decisions.json` — extracted decisions (LF candidates) joined to
+  composite outcome. PII: decision prose.
+- `archetypes.json` — k-means workflow-archetype centroids + per-
+  session assignments. PII: session-archetype mapping.
+- `project-trajectories.json` — Theil-Sen slope per project +
+  block-bootstrap CI. PII: project name + composite score series.
+- `surface-comparison.json` — `(source, archetype)` cell aggregates +
+  Holm-Bonferroni pairwise tests. Aggregate numbers; gitignored
+  conservatively.
+- `skill-curves.json` — per-topic weekly ask-count series + Mann-
+  Kendall trend test with BH-FDR. PII: topic + time series.
+
+The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
+and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
+#12 post-mortems + knowledge-debt) are also gitignored. The wildcard
+`apps/standalone/public/chat-arch-data/*` covers them all; the
+explicit entries in `.gitignore` exist as auditable documentation.
+
+**Producer of `thrash-fires.json`:** the
+`chat-arch-thrash-detect` skill at
+`~/.claude/skills/chat-arch-thrash-detect/` (a global Claude Code
+hook), NOT in this repo. The hook is gated on
+`CHATARCH_THRASH_DETECT=1`. The chat-arch corpus only consumes the
+sidecar; producing it is out-of-tree.

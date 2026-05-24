@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "generatedAt": 1699996000000,
+  "exporterVersion": "1.1.0",
+  "exporterRunId": "deadbeef-1111-2222-3333-444455556666",
+  "tiers": {
+    "browser": {
+      "generatedAt": 1699996000000,
+      "files": [
+        "duplicates.exact.json",
+        "zombies.heuristic.json",
+        "projects.json",
+        "topics.json",
+        "narratives.json",
+        "correction-candidates.json",
+        "continuum-health.json",
+        "playbook-candidates.json"
+      ]
+    }
+  },
+  "counts": {
+    "sessions": 1,
+    "duplicatesExact": { "clusters": 0, "sessions": 0 },
+    "zombies": { "active": 1, "dormant": 0, "zombie": 0 },
+    "projects": 1,
+    "topics": 0,
+    "narratives": 0,
+    "correctionCandidates": 0,
+    "playbookPatterns": 0,
+    "playbookHits": 0
+  }
+}

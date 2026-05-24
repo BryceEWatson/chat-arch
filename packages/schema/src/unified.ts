@@ -372,10 +372,20 @@ export interface UnifiedSessionEntry {
     modelsUsed: readonly string[];
     topTools: Readonly<Record<string, number>>;
   };
+
+  /**
+   * v2 / schemaVersion 4: 0..1 score from the offline "discovery"
+   * scorer (token intensity + tool diversity + correction-applied-after
+   * + gitBranch → PR overlap). High score = candidate for the blog-draft
+   * pipeline. Absent on pre-v4 manifests AND on entries the scorer
+   * intentionally skipped (e.g. `transcriptStatus === 'pruned'`).
+   * Consumers MUST treat absence as "unknown / not scored", never as 0.
+   */
+  discoveryScore?: number;
 }
 
 export interface SessionManifest {
-  schemaVersion: 1 | 2 | 3;
+  schemaVersion: 1 | 2 | 3 | 4;
   generatedAt: number;
   counts: Readonly<Record<SessionSource, number>>;
   sessions: readonly UnifiedSessionEntry[];
@@ -383,6 +393,9 @@ export interface SessionManifest {
    * v3-only: paths (relative to manifest dir) of the analysis sidecars
    * the exporter produced this run. Optional so v1/v2 manifests still
    * satisfy the type. Consumers branch on presence.
+   *
+   * v4 adds embeddings + audit + continuum + upgrade-outcomes + blog
+   * pointers; consumers MUST tolerate absence (back-compat AC).
    */
   analysisSidecars?: {
     projects?: string;
@@ -390,6 +403,16 @@ export interface SessionManifest {
     narratives?: string;
     patterns?: string;
     practice?: string;
+    embeddingsMeta?: string;
+    embeddingsBin?: string;
+    continuumHealth?: string;
+    duplicatesSemantic?: string;
+    auditClaims?: string;
+    auditResults?: string;
+    auditSummary?: string;
+    upgradeOutcomes?: string;
+    blogCandidates?: string;
+    blogDraftsIndex?: string;
   };
 }
 
@@ -405,5 +428,10 @@ export const UNTITLED_SESSION = 'Untitled session';
  *       `patterns.json`, `practice.json`) carry the entities themselves.
  *       Consumers MUST tolerate v1/v2 manifests by treating new fields as
  *       absent (back-compat AC).
+ *  - 4: chat-arch v2 — adds `discoveryScore` on entries and extends
+ *       `analysisSidecars` to point at the embeddings sidecars,
+ *       continuum-health, semantic duplicates, audit sidecars,
+ *       upgrade-outcomes, and blog-candidate / blog-drafts indices.
+ *       Existing fields unchanged.
  */
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;

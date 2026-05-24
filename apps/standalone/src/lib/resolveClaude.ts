@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -29,11 +29,16 @@ import { join } from 'node:path';
  *
  *   1. `process.env.CLAUDE_BIN` — explicit operator override. Must
  *      point at a file that exists; otherwise fall through.
- *   2. (Windows only) `%APPDATA%\Claude\claude-code\<version>\
+ *   2. `process.env.CLAUDE_CODE_EXECPATH` — set by the Claude Code
+ *      harness/VS Code extension to the binary running the current
+ *      session. The most reliable signal when the dev server is
+ *      launched from a Claude Code shell: it points at whatever
+ *      install is actively in use (VS Code embedded, portable, etc.).
+ *   3. (Windows only) `%APPDATA%\Claude\claude-code\<version>\
  *      claude.exe` — pick the newest version directory by semver.
  *      Falls through if APPDATA is unset or the directory tree is
  *      absent.
- *   3. Bare `'claude'` — PATH-resolved by the shell (the original
+ *   4. Bare `'claude'` — PATH-resolved by the shell (the original
  *      behavior). Works when the global shim is healthy.
  *
  *   The shape returned tells the caller whether to set `shell: true`
@@ -49,7 +54,7 @@ export interface ClaudeBin {
   /** Pass to `spawn(file, args, { shell: useShell })`. */
   useShell: boolean;
   /** Tag describing which strategy hit, for logging. */
-  source: 'env' | 'appdata' | 'path';
+  source: 'env' | 'execpath' | 'appdata' | 'path';
 }
 
 function fileExists(p: string): boolean {
@@ -108,11 +113,22 @@ export function resolveClaudeBin(): ClaudeBin {
     return { file: envBin, useShell: false, source: 'env' };
   }
 
+  // Claude Code / VS Code extension sets this to the binary running the
+  // current session. When the dev server is launched from inside a
+  // Claude Code shell (the normal workflow), this is the most reliable
+  // pointer at a working install — bypasses any broken PATH shim.
+  const execPath = process.env['CLAUDE_CODE_EXECPATH'];
+  if (typeof execPath === 'string' && execPath.length > 0 && fileExists(execPath)) {
+    return { file: execPath, useShell: false, source: 'execpath' };
+  }
+
   if (process.platform === 'win32') {
     const appdata = process.env['APPDATA'];
     if (typeof appdata === 'string' && appdata.length > 0) {
       const found = pickNewestAppdataInstall(appdata);
-      if (found && fileExists(found)) {
+      // pickNewestAppdataInstall already filters via fileExists; no
+      // need to re-check here. (XN1)
+      if (found) {
         return { file: found, useShell: false, source: 'appdata' };
       }
     }

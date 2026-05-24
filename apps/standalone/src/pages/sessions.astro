@@ -1,0 +1,27 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import HideViewerSidebar from '../components/HideViewerSidebar.astro';
+import { ChatArchViewer } from '@chat-arch/viewer';
+import '@chat-arch/viewer/style.css';
+---
+<BaseLayout title="Chat Archaeologist — Sessions" current="SESSIONS">
+  {/*
+    v2 §FD.2: the legacy viewer index is preserved here so existing
+    bookmarks keep working. `/` now renders the Today page; `/sessions`
+    is the long-form session browser. AppSidebar is rendered by
+    BaseLayout; the viewer's own L-sidebar is hidden via
+    HideViewerSidebar so the page has a single vertical rail.
+
+    Note: unlike /projects, /topics, /practice — which each have a
+    pre-hydration script that normalizes the hash to their surface —
+    /sessions is the SHARED page for SESSIONS + CHAT + CORRECTIONS +
+    DATA (the latter three sidebar links target /sessions#chat /
+    /sessions#corrections / /sessions#data). The viewer's hash
+    router reads those hashes on mount and lands in the right mode;
+    forcing a hash here would clobber those deep links.
+  */}
+  <HideViewerSidebar />
+  <main>
+    <ChatArchViewer client:load />
+  </main>
+</BaseLayout>

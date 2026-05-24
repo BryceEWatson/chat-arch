@@ -279,9 +279,10 @@ export async function atomicWriteLedger(
   ledgerPath: string,
   next: AppliedImprovementsFile,
 ): Promise<void> {
+  // Stamped tmp name so concurrent writers never race rename(). (S3)
   const tmpPath = join(
     dirname(ledgerPath),
-    '.applied-improvements.json.tmp',
+    `.applied-improvements.json.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   );
   await writeFile(tmpPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
   await rename(tmpPath, ledgerPath);
@@ -430,8 +431,14 @@ export const POST: APIRoute = async ({ request }) => {
       return r;
     }
   } catch (err) {
-    rejectInFlight(err);
-    throw err;
+    // Resolve the slot with a 500 (don't reject it). The slot promise
+    // has no .catch attached anywhere — rejecting it surfaces as an
+    // unhandled rejection and on Node 15+ the default handler exits
+    // the process. Matches the inner-catch behavior above. (S4)
+    const message = err instanceof Error ? err.message : String(err);
+    const r = jsonResponse({ ok: false, error: message }, 500);
+    resolveInFlight(r);
+    return r;
   } finally {
     // Clear the slot only AFTER the response is resolved/rejected so
     // any second POST that observed the slot (and got 409) gets that

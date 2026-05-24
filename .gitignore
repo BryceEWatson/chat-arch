@@ -59,6 +59,11 @@ out/
 # so it ships with the repo and not as per-developer state.
 !.claude/skills/chat-answer/
 !.claude/skills/chat-answer/SKILL.md
+# Mine-decisions skill — Phase 2 #1 follow-up stub. The endpoint and
+# UI affordance are live so it must ship with the repo even while the
+# pipeline itself is unimplemented. See plan §Phase 2 #1.
+!.claude/skills/mine-decisions/
+!.claude/skills/mine-decisions/SKILL.md
 # …except (1) test fixtures, which legitimately contain a `.claude/`
 # subtree that mimics what a real Cowork session directory looks
 # like on disk. These are synthetic (redacted), vital for the
@@ -81,6 +86,24 @@ apps/standalone/public/design-system/
 
 # Exporter output for local dev — data is on user's machine, not in repo
 apps/standalone/public/chat-arch-data/*
+# Outcome-substrate sidecars (Phase 1-4) are explicitly enumerated for
+# documentation — they're already covered by the wildcard above, but
+# listing them keeps the PII surface auditable from .gitignore alone.
+apps/standalone/public/chat-arch-data/analysis/composite-outcomes.json
+apps/standalone/public/chat-arch-data/analysis/pr-land-cache.json
+apps/standalone/public/chat-arch-data/analysis/config-history.json
+apps/standalone/public/chat-arch-data/analysis/knowledge-debt.json
+apps/standalone/public/chat-arch-data/analysis/reflexive.json
+apps/standalone/public/chat-arch-data/analysis/its-analysis.json
+apps/standalone/public/chat-arch-data/analysis/decisions.json
+apps/standalone/public/chat-arch-data/analysis/archetypes.json
+apps/standalone/public/chat-arch-data/analysis/project-trajectories.json
+apps/standalone/public/chat-arch-data/analysis/surface-comparison.json
+apps/standalone/public/chat-arch-data/analysis/skill-curves.json
+apps/standalone/public/chat-arch-data/analysis/thrash-fires.json
+apps/standalone/public/chat-arch-data/exports/
+.claude/review-loop.disabled
+.claude/review-loop.disabled-roles
 # Keep empty chat-arch-data dir on fresh clones.
 !apps/standalone/public/chat-arch-data/.gitkeep
 # Track the empty default manifest. Shipping it (instead of relying on a

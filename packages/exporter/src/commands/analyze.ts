@@ -10,6 +10,8 @@ import { CURRENT_SCHEMA_VERSION } from '@chat-arch/schema';
 import { findRepoRoot } from '../lib/repo-root.js';
 import { logger } from '../lib/logger.js';
 import { runAnalysis } from '../analysis/index.js';
+import { runEmbed } from '../embeddings/index.js';
+import { runSemanticAnalysis } from '../analysis/semanticAnalysis.js';
 import { estimateCost } from '@chat-arch/analysis';
 
 /**
@@ -111,5 +113,40 @@ export async function runAnalyzeSubcommand(argv: readonly string[]): Promise<num
   logger.info(
     `analyze complete in ${Date.now() - started} ms — dup_clusters=${result.counts.duplicatesClusters} dup_sessions=${result.counts.duplicatesSessions} active=${result.counts.active} dormant=${result.counts.dormant} zombie=${result.counts.zombie} → ${result.analysisDir}`,
   );
+
+  // v2 §4 + §5: embeddings + semantic analysis. Both fail-soft so a
+  // missing Ollama (or partial sidecar) doesn't abort the analyze pass.
+  try {
+    const embedStart = Date.now();
+    const embedResult = await runEmbed({ outDir, manifest, onlyChanged: true });
+    if (embedResult.skippedReason === undefined) {
+      logger.info(
+        `analyze: embeddings in ${Date.now() - embedStart} ms — ` +
+          `embedded=${embedResult.embedded} reused=${embedResult.reused} skipped=${embedResult.skipped}`,
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      `analyze: embeddings soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  try {
+    const semStart = Date.now();
+    const semResult = await runSemanticAnalysis({ outDir, manifest });
+    logger.info(
+      `analyze: semantic-analysis in ${Date.now() - semStart} ms — ` +
+        `discovery_scored=${semResult.counts.discoveryScored} ` +
+        `discovery_high=${semResult.counts.discoveryHighScored} ` +
+        `sem_dup_clusters=${semResult.counts.semanticDupClusters} ` +
+        `local_topics=${semResult.counts.topicsLocal} ` +
+        `audit_claims=${semResult.counts.auditClaims} ` +
+        `audit_pass=${semResult.counts.auditPass} audit_fail=${semResult.counts.auditFail} ` +
+        `blog_candidates=${semResult.counts.blogCandidates}`,
+    );
+  } catch (err) {
+    logger.warn(
+      `analyze: semantic-analysis soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   return 0;
 }
