@@ -71,6 +71,16 @@ describe('welchsTTest', () => {
       expect(() => welchsTTest([], [1, 2])).not.toThrow();
       expect(() => welchsTTest([NaN, 2], [3, 4])).not.toThrow();
     });
+
+    it('returns valid=false on NaN inputs (stat-rigor iter-1 NaN guard)', () => {
+      const a = welchsTTest([1, 2, NaN, 3], [4, 5, 6]);
+      expect(a.valid).toBe(false);
+      expect(a.t).toBe(0);
+      const b = welchsTTest([1, 2, 3], [4, Number.POSITIVE_INFINITY, 6]);
+      expect(b.valid).toBe(false);
+      const c = welchsTTest([1, 2, 3], [4, Number.NEGATIVE_INFINITY, 6]);
+      expect(c.valid).toBe(false);
+    });
   });
 
   describe('Welch–Satterthwaite df', () => {

@@ -28,8 +28,10 @@ import { normalCdf } from './stats.js';
  * Result of running Welch's t against two samples. `t` is the
  * raw t-statistic; `degreesOfFreedom` is the Welch–Satterthwaite
  * approximation; `pValueTwoSided` is the two-sided p-value
- * approximated via the normal CDF (acceptable for our `df ≥ 30`
- * use case — see degradation notes in the docstring).
+ * approximated via the normal CDF (acceptable for `df ≥ 30`; below
+ * that the normal under-reports tail mass — the gate uses |t| not
+ * p, so visibility is unaffected, but consumers rendering `p`
+ * directly should treat it as conservative at small df).
  */
 export interface WelchResult {
   readonly t: number;
@@ -38,10 +40,19 @@ export interface WelchResult {
   readonly degreesOfFreedom: number;
   readonly pValueTwoSided: number;
   /**
-   * `true` when both samples have at least 2 observations AND at
-   * least one of them has nonzero variance. False results carry
-   * `t: 0, pValue: 1` — the kernel does NOT throw on degenerate
-   * inputs, just reports "no signal."
+   * `true` when the test was computable. Three branches return
+   * `valid: false`:
+   *   - either sample n < 2
+   *   - any input is NaN / non-finite
+   *   - both variances zero AND means equal (degenerate)
+   * In all three the result carries `t: 0, pValueTwoSided: 1`.
+   *
+   * Two branches return `valid: true` with an extreme t:
+   *   - both variances zero, means differ → `t: MAX_SAFE_INTEGER,
+   *     pValueTwoSided: 0` (clamped Infinity so JSON survives).
+   *
+   * The kernel does NOT throw on degenerate inputs; it reports
+   * "no signal" via `valid: false`.
    */
   readonly valid: boolean;
 }
@@ -114,6 +125,35 @@ export function welchsTTest(
       pValueTwoSided: 1,
       valid: false,
     };
+  }
+  // NaN / non-finite guard (stat-rigor iter-1 finding on PR #89).
+  // Without this, a NaN propagates through variance → mean → t,
+  // and `NaN < significanceThreshold` is `false` in the gate, so
+  // the bad row would render as visible. Clamp to valid:false here
+  // so the gate's `invalid-stat` branch fires correctly.
+  for (const x of sample1) {
+    if (!Number.isFinite(x)) {
+      return {
+        t: 0,
+        delta: 0,
+        standardError: 0,
+        degreesOfFreedom: 0,
+        pValueTwoSided: 1,
+        valid: false,
+      };
+    }
+  }
+  for (const x of sample2) {
+    if (!Number.isFinite(x)) {
+      return {
+        t: 0,
+        delta: 0,
+        standardError: 0,
+        degreesOfFreedom: 0,
+        pValueTwoSided: 1,
+        valid: false,
+      };
+    }
   }
   const a = meanAndVariance(sample1);
   const b = meanAndVariance(sample2);
