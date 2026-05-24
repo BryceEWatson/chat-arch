@@ -4,10 +4,10 @@ import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import { MethodologyDisclosure } from '../MethodologyDisclosure.js';
 import { CopyMarkdownButton } from '../CopyMarkdownButton.js';
 import {
-  loadKnowledgeDebtStates,
-  setKnowledgeDebtState,
-  type KnowledgeDebtStateValue,
-} from '../../data/knowledgeDebtStateClient.js';
+  loadEntityStates,
+  setEntityState,
+  type EntityStateValue,
+} from '../../data/entityStatesClient.js';
 import type { InsightsBundle } from '../../data/insightsLoader.js';
 import { formatShortDate } from '../../util/time.js';
 import {
@@ -58,8 +58,10 @@ export interface InsightsModeProps {
    */
   onOpenDataPanel?: () => void;
   /**
-   * Wave 7 P2 #9 — base URL for the knowledge-debt-state ledger.
-   * Defaults to the standalone data root; tests override.
+   * Wave 7 P2 #9 — base URL for the entity-states ledger (formerly
+   * knowledge-debt-state; renamed in Rev3-C C1+C2 to generalize over
+   * knowledge-debt clusters AND narratives). Defaults to the standalone
+   * data root; tests override.
    */
   dataDirBaseUrl?: string;
 }
@@ -154,23 +156,26 @@ export function InsightsMode({
     });
   };
 
-  // Wave 7 P2 #9 — knowledge-debt cluster states. Loaded once on mount
-  // from the on-disk ledger; updates fire through the same single-
-  // flight POST endpoint. PENDING is the implicit default for any
-  // cluster not in the ledger.
+  // Rev3-C C1+C2 — entity-states ledger (knowledge-debt clusters
+  // share it with narratives now). Loaded once on mount; updates fire
+  // through the single-flight POST endpoint. PENDING is the implicit
+  // default for any cluster not in the ledger. The client falls back
+  // to the legacy `knowledge-debt-states.json` if the new file hasn't
+  // been written yet.
   const [clusterStates, setClusterStates] = useState<
-    ReadonlyMap<string, { state: KnowledgeDebtStateValue; sizeAtState: number }>
+    ReadonlyMap<string, { state: EntityStateValue; sizeAtState: number }>
   >(new Map());
   useEffect(() => {
     let cancelled = false;
-    void loadKnowledgeDebtStates(dataDirBaseUrl).then((file) => {
+    void loadEntityStates(dataDirBaseUrl).then((file) => {
       if (cancelled || file === null) return;
       const m = new Map<
         string,
-        { state: KnowledgeDebtStateValue; sizeAtState: number }
+        { state: EntityStateValue; sizeAtState: number }
       >();
       for (const e of file.entries) {
-        m.set(e.clusterId, {
+        if (e.entityKind !== 'knowledge-debt') continue;
+        m.set(e.entityId, {
           state: e.state,
           sizeAtState: e.sizeAtState,
         });
@@ -183,17 +188,19 @@ export function InsightsMode({
   }, [dataDirBaseUrl]);
   const onClusterStateChange = (
     clusterId: string,
-    state: KnowledgeDebtStateValue,
+    state: EntityStateValue,
     currentSize: number,
   ): void => {
-    void setKnowledgeDebtState(clusterId, state, currentSize).then((r) => {
-      if (!r.ok) return;
-      setClusterStates((prev) => {
-        const next = new Map(prev);
-        next.set(clusterId, { state, sizeAtState: currentSize });
-        return next;
-      });
-    });
+    void setEntityState('knowledge-debt', clusterId, state, currentSize).then(
+      (r) => {
+        if (!r.ok) return;
+        setClusterStates((prev) => {
+          const next = new Map(prev);
+          next.set(clusterId, { state, sizeAtState: currentSize });
+          return next;
+        });
+      },
+    );
   };
 
   // Wave 6 #3b — INSTALL AS RULE handler.
@@ -329,7 +336,7 @@ export function InsightsMode({
   const effectiveClusterState = (
     clusterId: string,
     currentSize: number,
-  ): KnowledgeDebtStateValue => {
+  ): EntityStateValue => {
     const persisted = clusterStates.get(clusterId);
     if (persisted === undefined) return 'PENDING';
     if (persisted.state !== 'DISMISSED') return persisted.state;

@@ -16,6 +16,48 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Entity-states ledger (Phase Rev3-C C1+C2).** New endpoint
+  `/api/entity-states` writes to `analysis/entity-states.json` (v2
+  shape) keyed by composite `(entityKind, entityId)`. Generalizes the
+  prior `/api/knowledge-debt-state` ledger over both `knowledge-debt`
+  clusters AND `narrative` entities under one entry shape, in
+  preparation for Closure A wiring (Rev3-C C3+C4: surfacing dismiss /
+  re-promote affordances on Narratives via the same growth-multiplier
+  mechanism that already governs knowledge-debt clusters).
+
+  Back-compat read: when `entity-states.json` is absent the server
+  reads the legacy `analysis/knowledge-debt-states.json` and folds its
+  entries into v2 in-memory (entityKind synthesized to
+  `'knowledge-debt'`). The viewer client mirrors the same fallback so
+  pre-existing local state survives the rename even before the user
+  triggers a fresh write. The legacy file is left in place until the
+  first action triggers a v2 write; from that point on the v2 file is
+  authoritative and the legacy file is orphan (swept by NuclearReset's
+  recursive `analysis/` wipe).
+
+  Schema:
+  ```
+  EntityStatesFile { schemaVersion: 2, generatedAt, entries }
+  EntityStateEntry {
+    entityKind: 'knowledge-debt' | 'narrative',
+    entityId: string,
+    state: 'PENDING' | 'INSTALLED' | 'DISMISSED',
+    updatedAt: number,
+    sizeAtState: number,   // sessionIds.length for clusters,
+                           // evidence.length for narratives
+  }
+  ```
+
+  Removed: `apps/standalone/src/pages/api/knowledge-debt-state.ts`,
+  `packages/viewer/src/data/knowledgeDebtStateClient.ts`, and the
+  legacy test. `InsightsMode.tsx` now reads/writes through the new
+  client with `entityKind: 'knowledge-debt'` baked in.
+
+  Tests in `apps/standalone/test/api/entity-states.test.ts`:
+  validation for both kinds, upsert composite-key non-collision,
+  legacy-fallback migration, malformed-legacy-entry drop, v2-wins
+  precedence.
+
 - **Narrative-preview PII default-blur (Phase Rev3-B B9 — closes
   Rev3-B).** New `packages/viewer/src/components/BlurredPii.tsx`
   wraps prose-bearing narrative fields with a CSS blur + an

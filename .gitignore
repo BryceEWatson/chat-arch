@@ -101,6 +101,8 @@ apps/standalone/public/chat-arch-data/analysis/project-trajectories.json
 apps/standalone/public/chat-arch-data/analysis/surface-comparison.json
 apps/standalone/public/chat-arch-data/analysis/skill-curves.json
 apps/standalone/public/chat-arch-data/analysis/thrash-fires.json
+apps/standalone/public/chat-arch-data/analysis/entity-states.json
+apps/standalone/public/chat-arch-data/analysis/knowledge-debt-states.json
 apps/standalone/public/chat-arch-data/exports/
 .claude/review-loop.disabled
 .claude/review-loop.disabled-roles

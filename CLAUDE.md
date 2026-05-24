@@ -88,7 +88,7 @@ Per-package alternatives:
 apps/standalone/     Astro shell + /api/rescan + /api/clear endpoints
                      + /api/mine-corrections + /api/clear-corrections
                      + /api/mine-decisions + /api/generate-exports
-                     + /api/insights-ack + /api/knowledge-debt-state
+                     + /api/insights-ack + /api/entity-states
                      + /api/apply-correction + /api/regen-brief
 packages/schema/     UnifiedSessionEntry + manifest + correction types
                      + outcome-substrate types (composite-outcome,
