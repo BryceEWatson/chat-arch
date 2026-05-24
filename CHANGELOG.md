@@ -14,6 +14,120 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-24
+
+Bumped from 1.2.0 to mark the Rev3 substrate landing. The on-disk
+artifact set expands (analysis/curator-feed.json, analysis/
+falsifier-verdicts.json, SQLite ledger in apps/standalone/chat-arch-
+data/chat-arch.db). Pre-existing sidecars stay compatible — caches
+for prior phases don't need to invalidate.
+
+### Added — Rev3 build (Phases A through I)
+
+- **Phase Rev3-A — SQLite substrate.** `apps/standalone/chat-arch-
+  data/chat-arch.db` (sibling of `public/` so it can't be served
+  over HTTP). `better-sqlite3` + `sqlite-vec` deps; WAL mode +
+  `synchronous=NORMAL` + `foreign_keys=ON` connection contract with
+  `BEGIN IMMEDIATE` retry. 13-entity schema (projects / topics /
+  sessions / messages / revisions / narratives / narrative_evidence
+  / patterns / project_sessions / project_topics / topic_sessions /
+  findings / analyzers) + `schema_migrations` runner. Wipe coverage
+  in `/api/clear` extends to the SQLite sibling. THRESHOLDS gains
+  `narrativeRung.*` / `curator.*` / `appliedRuleWatcher.*` blocks.
+  PRs #53-#60 + tech-debt sweep PRs #61-#65.
+
+- **Phase Rev3-B — Narrative provenance + confidence ladder.**
+  `Narrative` schema gains `intent` / `observation` / `inference`
+  / `attributedTo` / `verifiedAt` / `confidence` / `supportingCount`
+  / `contradictingCount` / `correlatedOutcome` / `schemaVersion`
+  fields; `NarrativeEvidence` gains optional `turnIndex`. Migration
+  002 backfill kernel + `validateNarrative` accepts both shapes
+  + `computeConfidence(supporting, contradicting, prior)` helper.
+  Calibration fail-safe: kernels with `calibrationCompletedAt=null`
+  get effective prior pinned to `narrativeRung.uncalibratedPrior`.
+  PRs #66-#69.
+
+- **Phase Rev3-C — Closure A (feedback ranking).** Renamed
+  `knowledge-debt-state.ts` ledger to `entity-states.ts` (generic
+  over Narrative + knowledge-debt items); JSON sidecar deprecated
+  in favor of SQLite `entity_states` table (migration 003); legacy
+  v1+v2 JSON folded on first open. `/api/entity-states` cutover.
+  PRs #70+#71+#73+#74.
+
+- **Phase Rev3-D — Closure B (decay / re-emergence).** Saturation
+  rule (×2/×4/×8) capped at K=3, `narrativeSaturation` helper +
+  `narrativePriorPenalty` re-promotion-penalty prior. NarrativeAudit
+  row in `ProjectsMode` surfaces dismissal count + threshold;
+  `showShelved` UI toggle. Family-wise α inflation caveat surfaced
+  in `MethodologyDisclosure`. PRs #75-#78.
+
+- **Phase Rev3-E — Closure C (applied-rule outcome) + Pattern
+  falsifierStatus.** `Pattern.falsifierStatus: 'verified' |
+  'skipped-by-user' | 'unavailable'`. Migration 004 adds
+  `falsifier_status` column with CHECK constraint. Encode flow
+  defaults to falsifier-gating; override checkbox writes
+  `'skipped-by-user'`. `evaluateAppliedPatternWatcher` pure-decision
+  kernel emits 4 verdict kinds (open/holding/recurring/inconclusive).
+  PRs #79-#82.
+
+- **Phase Rev3-F — Curator + falsifier skills.** `/curate` +
+  `/falsify` skills under `.claude/skills/` driven via `claude -p`
+  (default-deny `ANTHROPIC_API_KEY` fallback). `rankCuratorCandidates`
+  ranker (tier-bucket-first sort, outcome-correlation as within-
+  tier tie-breaker only). `aggregateFalsifierVerdicts` against
+  `THRESHOLDS.curator.falsifierMinSupportRatio`. Meta-validation
+  rolling 4-week n=40 verdicts + Wilson lower bound + drift banner.
+  `CuratorFeed` component on PRACTICE surface. Subprocess infra:
+  `probeClaudeAvailable` + `runCuratorSubprocess` with 1.5s probe
+  + 50ms→1s exp backoff + env-scrub + per-spawn timeout + stderr
+  redaction. PRs #83-#88.
+
+- **Phase Rev3-G — Outcome-correlation rendering + significance
+  gate.** Welch's t-test (`welchsTTest`) + non-parametric
+  permutation back-stop (`permutationTestDelta`, xorshift32-seeded,
+  p-value clamped to `[1/(K+1), 1]`). `evaluateCorrelationTagVisibility`
+  tagged-union gate (visible / insufficient-evidence / below-
+  significance / invalid-stat). Cross-tier invariant test pins
+  "tie-break never promotes across tiers". G6 gate test composes
+  G1 + G2 + F3/G4 + G5 in a swap-test pattern. `SourceAttribution`
+  AttributionKind union extended with the new Rev3 rungs. PRs
+  #89-#92.
+
+- **Phase Rev3-H — MCP server scaffold.** New `@chat-arch/mcp-server`
+  workspace package. `createMcpServer({workingDir})` factory.
+  Security primitives:
+  - `workingDir.ts` enforces basename `chat-arch-data` + absolute
+    path + lexical-containment traversal guard with trailing-sep
+    boundary check + Windows drive-letter case normalization +
+    UNC reject.
+  - `readOnly.ts` allow-listed read verb prefixes + deny-list
+    with segment-scan against embedded write verbs.
+  - `localhostBind.ts` policy gate — loopback IP literals only,
+    no `localhost` hostname (rejected as defense-in-depth against
+    hosts-file redirect).
+  - `tools.ts` wires `@chat-arch/exporter/db` SDK as 10 MCP tools
+    (`get_<entity>` + `list_<entity>` for projects / topics /
+    narratives / patterns / findings) with full SDK-filter parity
+    (including `session: SessionKey | null` + null anchor IDs).
+  - `tools.gate.test.ts` H5 equivalence gate — `tool.handler(args)`
+    deep-equals direct SDK call across every filter key via
+    `satisfies (keyof Filter)[]` exhaustiveness check.
+  - Closed-flag + deep-freeze of registered tools.
+  Protocol layer (stdio transport + `@modelcontextprotocol/sdk`
+  wiring) deferred to a separate protocol PR. PRs #93+#94.
+
+- **Phase Rev3-I — Documentation hygiene (this release).**
+  CLAUDE.md "Data on disk" expanded with the SQLite entity-table
+  PII inventory + Narrative schemaVersion 2 prose-field expansion
+  + Rev3-F curator-feed + falsifier-verdicts sidecar entries.
+  README gains "Hosted vs local — deliberately scoped divergence"
+  capability table. `.githooks/pre-commit` extended to block any
+  `*.db`/`*.db-wal`/`*.db-shm` staging + any staged file under
+  `apps/standalone/public/chat-arch-data/` (beyond the empty
+  baseline manifest) + any staged file under `apps/standalone/
+  chat-arch-data/`. `.gitignore` documents the Rev3-F sidecars
+  explicitly. EXPORTER_VERSION bumped to 1.3.0.
+
 ### Added
 
 - **Phase Rev3-E complete (E6 Closure-C gate test).** Integration

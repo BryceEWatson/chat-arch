@@ -48,6 +48,27 @@ access). To index your local `~/.claude/projects/` or `%APPDATA%\Claude`
 transcripts from Claude Code CLI / Desktop / Cowork, run chat-arch
 locally via the [Quickstart](#quickstart) below and use **SCAN LOCAL**.
 
+### Hosted vs local — deliberately scoped divergence
+
+`chat-arch.dev` is a **demo of the viewer**, not the full pipeline.
+The hosted deploy intentionally ships only what works from a static
+Cloudflare Pages build. Everything that needs filesystem / process /
+network access lands only on the local `pnpm dev` checkout.
+
+| Capability | chat-arch.dev (hosted) | local `pnpm dev` |
+|---|---|---|
+| Render demo / Privacy-Export corpus | ✅ | ✅ |
+| **SCAN LOCAL** (read `~/.claude/projects/`) | ❌ no FS access | ✅ |
+| **Mine corrections** (`/api/mine-corrections` → `claude -p` subprocess) | ❌ no backend | ✅ |
+| **Mine decisions** + outcome-substrate sidecars | ❌ | ✅ |
+| **SQLite substrate** (`chat-arch.db` entity-states ledger, Rev3-A onward) | ❌ no Node runtime | ✅ |
+| **/curate** + **/falsify** skills (Rev3-F) | ❌ | ✅ |
+| **MCP server** (`@chat-arch/mcp-server`, Rev3-H read-only SDK surface) | ❌ | ✅ (localhost-bind only) |
+
+The hosted viewer stays JSON-sidecar-only on purpose — keeps the
+demo zero-backend, zero-egress, zero-cost-to-run. The local
+pipeline is where the actual workshop loop lives.
+
 ---
 
 ## Why

@@ -118,6 +118,11 @@ apps/standalone/public/chat-arch-data/analysis/skill-curves.json
 apps/standalone/public/chat-arch-data/analysis/thrash-fires.json
 apps/standalone/public/chat-arch-data/analysis/entity-states.json
 apps/standalone/public/chat-arch-data/analysis/knowledge-debt-states.json
+# Rev3-F curator + falsifier output. PII: narrative titles / previews
+# / claim text / cited turn excerpts. Already covered by the wildcard
+# above; listed for the same auditability reason as the others.
+apps/standalone/public/chat-arch-data/analysis/curator-feed.json
+apps/standalone/public/chat-arch-data/analysis/falsifier-verdicts.json
 apps/standalone/public/chat-arch-data/exports/
 .claude/review-loop.disabled
 .claude/review-loop.disabled-roles

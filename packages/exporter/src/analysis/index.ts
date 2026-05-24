@@ -138,8 +138,21 @@ export interface RunAnalysisResult {
  * 1.1.0 caches for corrections / playbook survive (their per-file
  * heuristic versions didn't change); the audit cache invalidates by
  * design on the version bump.
+ *
+ * Bumped 1.2.0 → 1.3.0 in Phase Rev3-I I5: the SQLite substrate
+ * (Rev3-A) + Narrative schemaVersion 2 (Rev3-B intent / observation
+ * / inference / confidence-ladder fields) + entity-states ledger
+ * cutover (Rev3-C) + Closure B/C wiring (Rev3-D/E) + curator-feed
+ * and falsifier-verdicts sidecars (Rev3-F) + Welch + correlation
+ * gate (Rev3-G) + MCP server scaffold (Rev3-H) all land together.
+ * The on-disk artifact set expands (analysis/curator-feed.json,
+ * analysis/falsifier-verdicts.json) and pre-existing sidecars stay
+ * compatible — caches for prior phases don't need to invalidate
+ * because their per-file heuristic versions didn't change. The bump
+ * is a coarse signal to operators that the bundle now reflects the
+ * Rev3 substrate, not just outcome-substrate Phase 1-4.
  */
-export const EXPORTER_VERSION = '1.2.0';
+export const EXPORTER_VERSION = '1.3.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

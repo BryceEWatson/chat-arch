@@ -1,17 +1,23 @@
 #!/bin/sh
 # chat-arch pre-commit hook — last line of defense against PII leaks
-# via apps/standalone/public/chat-arch-data/manifest.json.
+# via any populated artifact under apps/standalone/public/chat-arch-data/.
 #
-# The file is tracked by git in its empty/baseline state (schemaVersion +
-# zeroed counts + empty sessions array), but it's populated on disk by
-# `pnpm exporter run start` / the in-app SCAN LOCAL action. That
-# populated content includes session titles, previews, costs, and
-# workflow metadata — PII for the developer running the tool.
+# manifest.json is the main hazard: it's tracked in git in its
+# empty/baseline state (schemaVersion + zeroed counts + empty
+# sessions array), but populated on disk by `pnpm exporter run start`
+# / the in-app SCAN LOCAL action. Populated content includes session
+# titles, previews, costs, and workflow metadata — PII for the
+# developer running the tool.
 #
-# A staging mistake (`git add -A` / `git add .` / IDE auto-stage of all
-# modified files) can sweep the populated manifest into a commit. This
-# hook fails the commit if the staged manifest contains real session
-# entries.
+# Phase Rev3-I I3 extends this hook beyond manifest.json: any file
+# under chat-arch-data/ that is staged AND is gitignored by intent
+# (i.e., we have a `chat-arch-data/<name>` gitignore rule but it
+# slipped past via `--force` or similar) trips the hook. Belt and
+# suspenders to the .gitignore wildcard.
+#
+# A staging mistake (`git add -A` / `git add .` / IDE auto-stage of
+# all modified files) can sweep populated PII into a commit. This
+# hook fails the commit when that's detected.
 #
 # To bypass legitimately (e.g., the baseline shape itself changes):
 #   git commit --no-verify
@@ -25,16 +31,72 @@
 set -e
 
 MANIFEST="apps/standalone/public/chat-arch-data/manifest.json"
+DATA_DIR="apps/standalone/public/chat-arch-data"
+SQLITE_DIR="apps/standalone/chat-arch-data"
 
-# Is the manifest in the staged diff?
+# ─── Rule 0: Any *.db / *.db-wal / *.db-shm staged anywhere ──────
+# Belt-and-suspenders to the gitignore *.db globs. SQLite DB files
+# carry the entity-states ledger + Narrative bodies + Pattern prose
+# + Finding payloads — full PII. Per Rev3-I I3 + Rev3-A.A2 contract.
+STAGED_DBS="$(git diff --cached --name-only | grep -E '\.(db|db-wal|db-shm|sqlite|sqlite-wal|sqlite-shm)$' || true)"
+if [ -n "$STAGED_DBS" ]; then
+  echo "" >&2
+  echo "❌ pre-commit refusing: SQLite DB file(s) staged:" >&2
+  echo "$STAGED_DBS" | sed 's/^/     /' >&2
+  echo "" >&2
+  echo "   These files carry the full chat-arch entity-states ledger" >&2
+  echo "   (narratives, patterns, findings, session content) and must" >&2
+  echo "   never be committed. To recover:" >&2
+  echo "     git reset HEAD -- <path>  (for each)" >&2
+  echo "" >&2
+  exit 1
+fi
+
+# ─── Rule 1: Any populated sidecar under public/chat-arch-data/ ──
+# The dir's contents are wildcarded in .gitignore (the `public/
+# chat-arch-data/` ignore rule), but a `--force` or wildcard-bypass
+# could let one through. Trip on any staged file under that dir
+# whose basename is NOT the tracked manifest baseline.
+STAGED_DATA="$(git diff --cached --name-only | grep "^$DATA_DIR/" | grep -v -F "$MANIFEST" || true)"
+if [ -n "$STAGED_DATA" ]; then
+  echo "" >&2
+  echo "❌ pre-commit refusing: file(s) under $DATA_DIR/ staged:" >&2
+  echo "$STAGED_DATA" | sed 's/^/     /' >&2
+  echo "" >&2
+  echo "   This directory holds locally-generated PII-bearing artifacts" >&2
+  echo "   (corrections.json, decisions.json, curator-feed.json, etc.)" >&2
+  echo "   and is gitignored as a whole. Only the empty manifest.json" >&2
+  echo "   baseline belongs in git." >&2
+  echo "" >&2
+  echo "   See CLAUDE.md 'Data on disk' for the full PII inventory." >&2
+  echo "" >&2
+  exit 1
+fi
+
+# ─── Rule 2: Any file under the SQLite-substrate sibling dir ────
+# apps/standalone/chat-arch-data/ (sibling of public/) is where the
+# SQLite DB family lives — Rev3-A onward. The directory itself is
+# gitignored, but catch any stray staged file as defense-in-depth.
+STAGED_SQLITE="$(git diff --cached --name-only | grep "^$SQLITE_DIR/" || true)"
+if [ -n "$STAGED_SQLITE" ]; then
+  echo "" >&2
+  echo "❌ pre-commit refusing: file(s) under $SQLITE_DIR/ staged:" >&2
+  echo "$STAGED_SQLITE" | sed 's/^/     /' >&2
+  echo "" >&2
+  echo "   This directory holds the SQLite entity-states substrate" >&2
+  echo "   (chat-arch.db + .db-wal + .db-shm) — full PII. Nothing here" >&2
+  echo "   should be committed." >&2
+  echo "" >&2
+  exit 1
+fi
+
+# ─── Rule 3: manifest.json baseline integrity ────────────────────
+# If the manifest is staged, ensure it's still the empty baseline
+# shape (no session entries, all-zero counts).
 if ! git diff --cached --name-only | grep -q -F "$MANIFEST"; then
   exit 0
 fi
 
-# It's staged. Check whether the staged version has real session
-# entries. The baseline shape has `"sessions": []` (empty array) and
-# all-zero counts. A populated version has session objects with `"id":`
-# inside the sessions array.
 STAGED="$(git show ":$MANIFEST" 2>/dev/null || echo '')"
 
 # Heuristic 1: any session entry has an `"id":` field — populated.
