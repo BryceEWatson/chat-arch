@@ -91,9 +91,16 @@ describe('BlurredPii (Rev3-B B9 — default-blur PII previews)', () => {
     expect(wrapper?.classList.contains('lcars-pii')).toBe(true);
   });
 
-  it('includes a screen-reader-only state announcement', () => {
+  it('includes a screen-reader-only state announcement (LCARS-prefixed class)', () => {
+    // Class is `.lcars-blurred-pii__sr-only` — the LCARS-prefixed
+    // name matches the CSS rule in styles.css. The earlier `.sr-only`
+    // class was undefined in viewer's stylesheet (the only `.sr-only`
+    // lives in apps/standalone/src/pages/index.astro:135), so an
+    // unprefixed name would render the announcement as VISIBLE text
+    // next to every blurred card (iter-1 review caught this).
     const { container } = render(<BlurredPii label="narrative title">x</BlurredPii>);
-    const srOnly = container.querySelector('.sr-only');
+    const srOnly = container.querySelector('.lcars-blurred-pii__sr-only');
+    expect(srOnly).not.toBeNull();
     expect(srOnly?.textContent).toContain('narrative title');
     expect(srOnly?.textContent).toContain('PII-blurred');
   });

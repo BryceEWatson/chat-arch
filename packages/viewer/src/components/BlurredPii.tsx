@@ -87,8 +87,12 @@ export function BlurredPii({
       )}
       {/* Screen-reader-only announcement of the blur state, regardless
           of visual reveal. Lets keyboard-only users discover the
-          reveal button without first finding the blurred prose. */}
-      <span className="sr-only" aria-live="polite">
+          reveal button without first finding the blurred prose. The
+          LCARS-prefixed class is defined in `styles.css`; without
+          the matching CSS rule the announcement would render as
+          visible text (iter-1 review caught this — `.sr-only` was
+          undefined in the viewer's stylesheet). */}
+      <span className="lcars-blurred-pii__sr-only" aria-live="polite">
         {revealed ? `${label} revealed` : `${label} is PII-blurred — use the Reveal button to show`}
       </span>
     </span>

@@ -8107,3 +8107,19 @@ button.lcars-applied-summary__stale--button:focus-visible {
   outline: 2px solid #FF9966;
   outline-offset: 1px;
 }
+
+/* Visually hidden but still announced by screen-readers. Standard
+   clip + 1px size technique. Matches the pattern in
+   apps/standalone/src/pages/index.astro:135's .sr-only — kept
+   LCARS-prefixed here to avoid colliding with the page-scoped class. */
+.lcars-blurred-pii__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
