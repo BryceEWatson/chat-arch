@@ -320,6 +320,7 @@ describe('001-initial-schema migration', () => {
           '001-initial-schema',
           '002-narrative-provenance',
           '003-entity-states',
+          '004-pattern-falsifier-status',
         ]);
       } finally {
         db.close();
@@ -334,6 +335,7 @@ describe('001-initial-schema migration', () => {
           '001-initial-schema',
           '002-narrative-provenance',
           '003-entity-states',
+          '004-pattern-falsifier-status',
         ]);
       } finally {
         db.close();
