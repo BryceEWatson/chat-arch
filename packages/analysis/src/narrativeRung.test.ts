@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeConfidence,
   effectivePriorForKernel,
+  narrativePriorPenalty,
   narrativeSaturation,
   narrativeTier,
 } from './narrativeRung.js';
@@ -261,5 +262,62 @@ describe('narrativeSaturation (D1 — Closure B saturation rule)', () => {
     // The base growth multiplier must be > 1 (otherwise re-promotion
     // would fire as soon as size hits the snapshot — no growth).
     expect(base).toBeGreaterThan(1);
+  });
+});
+
+describe('narrativePriorPenalty (D2 — per-Narrative family-wise correction)', () => {
+  const penalty = THRESHOLDS.narrativeRung.repromotionPenalty;
+
+  it('returns 0 for dismissalCount=0 (no penalty before any dismissal)', () => {
+    expect(narrativePriorPenalty(0)).toBe(0);
+  });
+
+  it('returns N × repromotionPenalty for positive integer N', () => {
+    for (let k = 1; k <= 5; k += 1) {
+      expect(narrativePriorPenalty(k)).toBe(k * penalty);
+    }
+  });
+
+  it('floors fractional dismissalCount before multiplication', () => {
+    expect(narrativePriorPenalty(2.9)).toBe(2 * penalty);
+    expect(narrativePriorPenalty(1.01)).toBe(1 * penalty);
+  });
+
+  it('returns 0 on negative / non-finite inputs (defensive)', () => {
+    for (const bad of [-1, -100, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(narrativePriorPenalty(bad)).toBe(0);
+    }
+  });
+
+  it('composes additively with effectivePriorForKernel', () => {
+    // Plan-stated composition: totalPrior = basePrior + N×penalty.
+    const basePrior = effectivePriorForKernel({
+      kernel: 'k',
+      calibrationCompletedAt: 1_700_000_000_000,
+    });
+    const dismissals = 3;
+    const totalPrior = basePrior + narrativePriorPenalty(dismissals);
+    expect(totalPrior).toBe(basePrior + dismissals * penalty);
+
+    // The composed prior stiffens the Bayesian threshold: confidence
+    // falls monotonically as dismissals accumulate (same supporting +
+    // contradicting inputs).
+    const supporting = 6;
+    const contradicting = 1;
+    const baseConfidence = computeConfidence(
+      supporting,
+      contradicting,
+      basePrior,
+    );
+    const penalizedConfidence = computeConfidence(
+      supporting,
+      contradicting,
+      totalPrior,
+    );
+    expect(penalizedConfidence).toBeLessThan(baseConfidence);
+  });
+
+  it('THRESHOLDS contract — repromotionPenalty is non-negative finite', () => {
+    expect(Number.isFinite(penalty) && penalty >= 0).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 /**
  * Narrative confidence-ladder + saturation kernel (Phase Rev3-B sub-
- * tasks B6 + B7; Phase Rev3-D sub-task D1).
+ * tasks B6 + B7; Phase Rev3-D sub-tasks D1 + D2).
  *
- * Four pure helpers + their backing types:
+ * Five pure helpers + their backing types:
  *
  *   - `computeConfidence(supporting, contradicting, prior)` — B6.
  *     The Bayesian Beta-posterior-mean form pinned by
@@ -31,6 +31,15 @@
  *     `THRESHOLDS.narrativeRung.dismissDecay`; once dismissals reach
  *     `maxDismissals` the entity is permanently shelved (visible only
  *     via the Rev3-D D4 "show shelved" affordance).
+ *
+ *   - `narrativePriorPenalty(dismissalCount)` — D2. Returns the
+ *     additive prior bump a previously-dismissed Narrative pays on
+ *     each re-test. Composes with `effectivePriorForKernel` —
+ *     `totalPrior = basePrior + narrativePriorPenalty(dismissals)` —
+ *     then feeds `computeConfidence`. Each dismissal is a re-test of
+ *     the same hypothesis; the prior bump makes subsequent
+ *     re-promotion face a stiffer Bayesian threshold (family-wise α
+ *     correction, paired with D1's growth-multiplier escalation).
  *
  * Pure, browser-safe. The viewer + curator-feed + Closure-B/C wirings
  * all consume these directly.
@@ -247,4 +256,42 @@ export function narrativeSaturation(
     dismissalsConsumed: consumed,
     cap: r.maxDismissals,
   };
+}
+
+/**
+ * D2 family-wise correction. Each user dismissal raises the per-
+ * Narrative prior by `THRESHOLDS.narrativeRung.repromotionPenalty`,
+ * which makes the next re-test face a stiffer Bayesian threshold (the
+ * same hypothesis is being re-evaluated; raising the prior is the
+ * Bayesian analog of α adjustment for repeated comparisons).
+ *
+ * Composes additively with `effectivePriorForKernel`:
+ *
+ *     totalPrior = effectivePriorForKernel(opts)
+ *                + narrativePriorPenalty(dismissalCount)
+ *
+ * The composition is intentionally explicit (not a single combined
+ * helper) so a caller that wants only one of the two pieces — e.g. a
+ * cluster-side re-emergence rule that runs without the family-wise
+ * penalty, or a calibration audit that wants the unpenalized prior —
+ * can opt out without forking the kernel surface.
+ *
+ * Defensive contract (mirrors `narrativeSaturation`):
+ *
+ *   - `dismissalCount` non-finite / negative → returns 0 (no penalty).
+ *     A corrupt ledger row cannot inflate the prior to NaN/Infinity
+ *     and silently zero a tier-3 narrative's confidence.
+ *   - Fractional inputs are `Math.floor`'d before multiplication.
+ *   - Once `dismissalCount >= maxDismissals` the Narrative is shelved
+ *     (see `narrativeSaturation`); this function still returns a
+ *     defined penalty for the audit table's "if it un-shelved, what
+ *     would the prior be?" rendering. Callers that gate on shelving
+ *     should consult `narrativeSaturation` first.
+ */
+export function narrativePriorPenalty(dismissalCount: number): number {
+  if (!Number.isFinite(dismissalCount) || dismissalCount <= 0) {
+    return 0;
+  }
+  const consumed = Math.floor(dismissalCount);
+  return consumed * THRESHOLDS.narrativeRung.repromotionPenalty;
 }
