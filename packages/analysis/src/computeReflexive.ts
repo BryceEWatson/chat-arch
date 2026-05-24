@@ -68,18 +68,19 @@ export interface ReflexiveResult {
    * pair-level null `b = c` (no treatment effect on discordant pairs).
    * Respects pairing in a way the two-proportion z-test does not.
    *
-   * `null` when there are no discordant pairs (b + c = 0) — the test is
-   * undefined. Otherwise:
-   *   - Exact two-sided binomial when discordantCount < 25.
-   *   - Continuity-corrected χ² with 1 df otherwise.
+   * `null` when there are no discordant pairs (`discordantCount === 0`)
+   * — the test is undefined. Otherwise, `mcnemarMethod` indicates
+   * which test produced the p-value:
+   *   - `'exact'`: two-sided binomial when discordantCount < 25.
+   *   - `'chi-squared'`: continuity-corrected χ² with 1 df otherwise.
    *
    * Reject the null at significance α when `mcnemarP ≤ α`. This is the
    * inferential complement to `ci` (which is a delta-on-proportions CI
    * that ignores pairing).
    */
   mcnemarP: number | null;
-  /** Which method produced `mcnemarP`. `'undefined'` when null. */
-  mcnemarMethod: McNemarMethod;
+  /** Which method produced `mcnemarP`. `null` when `mcnemarP` is null. */
+  mcnemarMethod: McNemarMethod | null;
   /**
    * Count of discordant pairs (`b + c`) — the only pairs that
    * contribute to McNemar. Surfaces in the viewer's methodology
@@ -172,7 +173,7 @@ export function computeReflexive(
       nTreated,
       nControl,
       mcnemarP: null,
-      mcnemarMethod: 'undefined',
+      mcnemarMethod: null,
       discordantCount: 0,
     };
   }
@@ -196,8 +197,6 @@ export function computeReflexive(
   const ci = deltaProportionCI(pTreated, nTreated, pControl, nTreated);
   const mcnemar = mcnemarPValue(bDiscordant, cDiscordant);
   const discordantCount = bDiscordant + cDiscordant;
-  const mcnemarP =
-    mcnemar.method === 'undefined' ? null : mcnemar.p;
 
   // E-value on the CI bound NEAREST the null (RR=1). This is the
   // conservative number — the more useful one to display because the
@@ -251,8 +250,8 @@ export function computeReflexive(
     eValueStatus,
     nTreated,
     nControl,
-    mcnemarP,
-    mcnemarMethod: mcnemar.method,
+    mcnemarP: mcnemar?.p ?? null,
+    mcnemarMethod: mcnemar?.method ?? null,
     discordantCount,
   };
 }

@@ -229,7 +229,7 @@ export async function buildReflexiveFile(
         nTreated: 0,
         nControl: 0,
         mcnemarP: null,
-        mcnemarMethod: 'undefined',
+        mcnemarMethod: null,
         discordantCount: 0,
       },
       methodology: {

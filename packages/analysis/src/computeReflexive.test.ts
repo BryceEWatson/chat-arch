@@ -162,7 +162,7 @@ describe('computeReflexive', () => {
     const r = computeReflexive(entries, treatedIds, covariate);
     expect(r.discordantCount).toBe(0);
     expect(r.mcnemarP).toBeNull();
-    expect(r.mcnemarMethod).toBe('undefined');
+    expect(r.mcnemarMethod).toBeNull();
   });
 
   it('McNemar (T2): exact method for small n; chi-squared for large n', () => {

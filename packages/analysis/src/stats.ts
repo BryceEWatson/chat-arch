@@ -191,12 +191,10 @@ export function twoProportionPValue(
  * the same way). The null hypothesis is `b = c` (treatment has no
  * effect on the discordant subset).
  *
- * Returns:
- *   - When `b + c === 0`: `{ p: 1, method: 'undefined' }` (no
- *     discordant pairs → no test is meaningful).
- *   - When `b + c < 25`: exact two-sided binomial test against
- *     Binomial(n=b+c, p=0.5). This is the standard small-sample
- *     recommendation (Agresti's rule of thumb).
+ * Returns `null` when no test is meaningful — `b + c === 0` (no
+ * discordant pairs) or invalid inputs (negative / non-finite). Otherwise:
+ *   - `b + c < 25`: exact two-sided binomial test against
+ *     Binomial(n=b+c, p=0.5). Agresti's small-sample rule.
  *   - Otherwise: continuity-corrected χ² with 1 df:
  *     `χ² = (|b - c| - 1)² / (b + c)`, two-sided p via
  *     `2 * (1 - Φ(√χ²))`.
@@ -205,17 +203,17 @@ export function twoProportionPValue(
  * way that respects pairing (treating pairs as independent observations,
  * not pooling them into independent-proportion tests).
  */
-export type McNemarMethod = 'exact' | 'chi-squared' | 'undefined';
+export type McNemarMethod = 'exact' | 'chi-squared';
 
 export function mcnemarPValue(
   b: number,
   c: number,
-): { readonly p: number; readonly method: McNemarMethod } {
+): { readonly p: number; readonly method: McNemarMethod } | null {
   if (!Number.isFinite(b) || !Number.isFinite(c) || b < 0 || c < 0) {
-    return { p: 1, method: 'undefined' };
+    return null;
   }
   const n = b + c;
-  if (n === 0) return { p: 1, method: 'undefined' };
+  if (n === 0) return null;
   if (n < 25) {
     // Exact two-sided binomial against p=0.5. Compute the smaller tail
     // and double; clip to 1.

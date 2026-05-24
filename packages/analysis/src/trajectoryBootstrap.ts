@@ -159,35 +159,20 @@ function stationaryBootstrapResample(
   return out;
 }
 
-export interface PolitisWhiteOptions {
-  /**
-   * Detrend the series via Theil-Sen before computing autocovariances.
-   * Default `true` (T4 tech-debt fix). A trended series produces
-   * inflated low-lag autocovariances (R(k) picks up the trend), which
-   * pushes the Politis-White block-length estimate higher than the
-   * true correlation horizon warrants. Detrending removes the linear
-   * component so R(k) reflects residual autocorrelation only.
-   *
-   * Set to `false` for the pre-T4 behavior (mean-center only) when
-   * comparing against legacy results — not recommended for new
-   * analyses.
-   */
-  readonly detrend?: boolean;
-}
-
 /**
  * Politis-White (2004) automatic block-length selector — simplified for
  * short series.
  *
  * Steps:
- *   0. (Optional, default ON per T4) Detrend the series via Theil-Sen
- *      slope + intercept-via-median. A trended series inflates the
- *      low-lag autocovariances (R(k) reflects the trend, not residual
- *      autocorrelation), which makes the block-length estimate larger
- *      than the true correlation horizon warrants.
- *   1. Mean-center, then compute sample autocovariances R(k) at lags
- *      0..M, where M = floor(2 * sqrt(log10(N))) per the paper's
- *      lag-window prescription.
+ *   0. (T4 tech-debt fix) Detrend via Theil-Sen slope + median-residual
+ *      intercept. A trended series inflates the low-lag autocovariances
+ *      (R(k) picks up the trend, not residual autocorrelation), which
+ *      pushes the block-length estimate higher than the true correlation
+ *      horizon warrants. Detrending makes R(k) reflect residual
+ *      autocorrelation only.
+ *   1. Mean-center the detrended series, then compute sample
+ *      autocovariances R(k) at lags 0..M, where M = floor(2 *
+ *      sqrt(log10(N))) per the paper's lag-window prescription.
  *   2. Flat-top lag-window: w(k) = 1 for k <= M/2, = 2*(1 - k/M) for k in (M/2, M].
  *   3. Compute G_hat = sum_{k=1..M} w(k) * 2 * k * R(k)  (the asymptotic
  *      bias factor) and D_hat = sum_{k=-M..M} w(|k|) * R(|k|)  (the
@@ -197,31 +182,26 @@ export interface PolitisWhiteOptions {
  * Returns NaN on degenerate input (constant series, all-zero
  * autocovariances). Caller should fall back to floor(sqrt(N)).
  */
-export function politisWhiteBlockLength(
-  xs: readonly number[],
-  options: PolitisWhiteOptions = {},
-): number {
+export function politisWhiteBlockLength(xs: readonly number[]): number {
   const N = xs.length;
   if (N < 4) return Number.NaN;
 
   // Step 0 (T4): detrend before centering. Theil-Sen slope is robust to
   // outliers and matches the trajectory-bootstrap statistic. Intercept
   // chosen as the median of residuals, the standard Theil-Sen completion.
-  const detrend = options.detrend ?? true;
+  // When the slope itself is non-finite (e.g. series with only one
+  // distinct value), skip detrending and let the constant-series guard
+  // at the bottom catch it.
+  const indices = Array.from({ length: N }, (_, i) => i);
+  const slope = theilSen(indices, xs);
   let working: number[];
-  if (detrend) {
-    const indices = Array.from({ length: N }, (_, i) => i);
-    const slope = theilSen(indices, xs);
-    if (!Number.isFinite(slope)) {
-      working = xs.slice();
-    } else {
-      const residuals = xs.map((v, i) => v - slope * i);
-      const sorted = residuals.slice().sort((a, b) => a - b);
-      const intercept = median(sorted);
-      working = xs.map((v, i) => v - (intercept + slope * i));
-    }
-  } else {
+  if (!Number.isFinite(slope)) {
     working = xs.slice();
+  } else {
+    const residuals = xs.map((v, i) => v - slope * i);
+    const sorted = residuals.slice().sort((a, b) => a - b);
+    const intercept = median(sorted);
+    working = xs.map((v, i) => v - (intercept + slope * i));
   }
 
   const mu = working.reduce((s, v) => s + v, 0) / N;

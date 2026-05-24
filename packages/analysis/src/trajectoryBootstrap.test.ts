@@ -137,35 +137,36 @@ describe('politisWhiteBlockLength', () => {
     expect(Number.isNaN(politisWhiteBlockLength(xs))).toBe(true);
   });
 
-  it('T4: detrend=true (default) yields smaller block length than detrend=false on a trended series', () => {
-    // Strong linear trend + iid noise. Without detrending, the
-    // autocovariances pick up the trend and report large block lengths;
-    // with detrending, the residuals are near-iid → block length near 1.
+  it('T4: detrending produces a small block length on a trended-iid series', () => {
+    // Strong linear trend + iid noise. Pre-T4 (mean-center only), the
+    // autocovariances picked up the trend and reported large block
+    // lengths (often N/3+). Post-T4 detrending, the residuals are
+    // near-iid → block length should land in the small-block regime
+    // (≤ 5 for N=60). The test asserts the small-block outcome
+    // directly; the inflated pre-T4 value is recorded in the docs.
     const rng = mulberry32(0xc0ffee);
     const z = makeGaussian(rng);
     const xs: number[] = [];
     for (let i = 0; i < 60; i++) xs.push(0.5 * i + 2 * z());
 
-    const noDetrend = politisWhiteBlockLength(xs, { detrend: false });
-    const withDetrend = politisWhiteBlockLength(xs);
-    expect(Number.isFinite(noDetrend)).toBe(true);
-    expect(Number.isFinite(withDetrend)).toBe(true);
-    expect(withDetrend).toBeLessThan(noDetrend);
+    const b = politisWhiteBlockLength(xs);
+    expect(Number.isFinite(b)).toBe(true);
+    expect(b).toBeGreaterThanOrEqual(1);
+    expect(b).toBeLessThanOrEqual(5);
   });
 
-  it('T4: detrend=true (default) matches detrend=false on a no-trend stationary series', () => {
-    // No trend: both paths should produce similar block lengths (the
-    // Theil-Sen pre-step subtracts ~zero on iid data).
+  it('T4: detrending leaves stationary (no-trend) series alone', () => {
+    // No trend: the Theil-Sen pre-step subtracts ~zero. Block length
+    // should be the same small regime as the trended-iid case above
+    // (both have near-iid residuals).
     const rng = mulberry32(0xfeed_face);
     const z = makeGaussian(rng);
     const xs: number[] = [];
     for (let i = 0; i < 60; i++) xs.push(z());
 
-    const noDetrend = politisWhiteBlockLength(xs, { detrend: false });
-    const withDetrend = politisWhiteBlockLength(xs);
-    expect(Number.isFinite(noDetrend)).toBe(true);
-    expect(Number.isFinite(withDetrend)).toBe(true);
-    // Allow off-by-1 — both should land in the small-block regime.
-    expect(Math.abs(withDetrend - noDetrend)).toBeLessThanOrEqual(1);
+    const b = politisWhiteBlockLength(xs);
+    expect(Number.isFinite(b)).toBe(true);
+    expect(b).toBeGreaterThanOrEqual(1);
+    expect(b).toBeLessThanOrEqual(5);
   });
 });
