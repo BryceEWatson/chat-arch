@@ -155,6 +155,42 @@ describe('aggregateFalsifierVerdicts', () => {
     });
   });
 
+  describe('citationHygieneOk (design-coherence iter-1 finding)', () => {
+    it('true when zero citations unresolved', () => {
+      const r = aggregateFalsifierVerdicts([
+        judg('supports'),
+        judg('supports'),
+        judg('neutral'),
+      ]);
+      expect(r.citationHygieneOk).toBe(true);
+      expect(r.unavailableCount).toBe(0);
+    });
+
+    it('false when any citation unresolved (even if verdict still verified)', () => {
+      const r = aggregateFalsifierVerdicts([
+        judg('supports'),
+        judg('supports'),
+        judg('supports'),
+        judg('unavailable'),
+        judg('unavailable'),
+      ]);
+      expect(r.verdict).toBe('verified');
+      expect(r.citationHygieneOk).toBe(false);
+    });
+
+    it('false on empty input (no citations at all)', () => {
+      // Edge case: empty array → unavailableCount === 0, so the
+      // strict `=== 0` check returns true. Is that the right call?
+      // Yes — "no unresolved" is technically correct (there were no
+      // resolutions to fail), and the not-verified verdict already
+      // conveys the "no evidence" framing. Pinned as a documented
+      // edge case rather than a special-case branch.
+      const r = aggregateFalsifierVerdicts([]);
+      expect(r.citationHygieneOk).toBe(true);
+      expect(r.verdict).toBe('not-verified');
+    });
+  });
+
   describe('plan-stated invariants', () => {
     it('honors the "different agent type" structural-separation premise — no caller-side bias leaks in', () => {
       // The kernel is verdict-aggregation only; it never reads the

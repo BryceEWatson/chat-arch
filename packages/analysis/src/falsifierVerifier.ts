@@ -68,6 +68,15 @@ export interface FalsifierResult {
    * verified at 0.6; would now require 0.7 — re-falsify."
    */
   readonly thresholdApplied: number;
+  /**
+   * True iff zero citations failed to resolve. When false, the UI
+   * should NOT render "supported in N/M cited turns" without also
+   * disclosing the unresolved-citation count — the citation-hygiene
+   * claim in the plan §"Intelligence layer" depends on the user
+   * seeing that subset distinction. Surfaced as a derived flag so
+   * renderers don't need to re-check `unavailableCount === 0`.
+   */
+  readonly citationHygieneOk: boolean;
 }
 
 /**
@@ -96,6 +105,15 @@ export interface FalsifierResult {
  *
  * Pure function. No DB access; the caller resolves cited turns and
  * runs the per-turn LLM before invoking this aggregator.
+ *
+ * **Persistence contract for /falsify (design-coherence iter-1
+ * finding on PR #85):** the F8 meta-validation rolling window
+ * re-judges N=40 verdicts and computes Wilson lower bound vs
+ * `THRESHOLDS.curator.falsifierAccuracyFloor`. To enable that, the
+ * /falsify skill MUST persist the input `TurnJudgment[]` array
+ * alongside each `FalsifierResult` — F8 reads the per-turn
+ * judgments to re-judge, NOT the aggregate. Aggregate-only
+ * persistence would silently break F8.
  */
 export function aggregateFalsifierVerdicts(
   judgments: readonly TurnJudgment[],
@@ -136,5 +154,6 @@ export function aggregateFalsifierVerdicts(
     totalCited,
     supportRatio,
     thresholdApplied: threshold,
+    citationHygieneOk: unavailableCount === 0,
   };
 }

@@ -190,6 +190,51 @@ describe('rankCuratorCandidates', () => {
     });
   });
 
+  describe('tieBrokenByCorrelation (design-coherence iter-1 finding)', () => {
+    it('first item always has tieBrokenByCorrelation=false (no predecessor)', () => {
+      const c = candidate('only', { correlationScore: 1 });
+      const result = rankCuratorCandidates([c]);
+      expect(result[0]!.tieBrokenByCorrelation).toBe(false);
+    });
+
+    it('marks the second item true when it won by correlation tie-break', () => {
+      const lo = candidate('lo', {
+        tierScore: 1,
+        confidence: 0.5,
+        recencyScore: 0.5,
+        correlationScore: 0.2,
+      });
+      const hi = candidate('hi', {
+        tierScore: 1,
+        confidence: 0.5,
+        recencyScore: 0.5,
+        correlationScore: 0.9,
+      });
+      const result = rankCuratorCandidates([lo, hi]);
+      // hi wins by correlation tie-break.
+      expect(result[0]!.entityId).toBe('hi');
+      expect(result[0]!.tieBrokenByCorrelation).toBe(false);
+      // lo (second) lost the same tie-break.
+      expect(result[1]!.entityId).toBe('lo');
+      expect(result[1]!.tieBrokenByCorrelation).toBe(true);
+    });
+
+    it('does NOT mark items decided by composite (different tier or composite)', () => {
+      const high = candidate('high', { confidence: 0.9 });
+      const low = candidate('low', { confidence: 0.3 });
+      const result = rankCuratorCandidates([high, low]);
+      expect(result[1]!.tieBrokenByCorrelation).toBe(false);
+    });
+
+    it('does NOT mark items in a different tier as tie-broken', () => {
+      const t3 = candidate('t3', { tierScore: 1, confidence: 0.5 });
+      const t2 = candidate('t2', { tierScore: 0.5, confidence: 0.5 });
+      const result = rankCuratorCandidates([t2, t3]);
+      // t3 wins by tier, not by tie-break.
+      expect(result[1]!.tieBrokenByCorrelation).toBe(false);
+    });
+  });
+
   describe('stability on full ties', () => {
     it('preserves original input order when every score is identical', () => {
       const a = candidate('a');

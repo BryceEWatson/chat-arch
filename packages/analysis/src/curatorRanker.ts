@@ -77,6 +77,19 @@ export interface RankedCuratorCandidate extends CuratorCandidate {
   readonly rank: number;
   /** Within-tier composite (excludes the cross-tier sort key). */
   readonly compositeScore: number;
+  /**
+   * True iff this candidate's rank was decided by the correlation
+   * tie-breaker — i.e., the candidate above it in the sort had the
+   * same tier-score AND the same within-tier composite. Surfaced so
+   * F8 meta-validation can compute precision@k attribution
+   * (tie-break wins vs composite wins behave differently for the
+   * stat-rigor accounting), and for "why this rank" debugging in
+   * F9's PRACTICE feed surface.
+   *
+   * Always false for the first item in the result (no preceding
+   * candidate to tie with).
+   */
+  readonly tieBrokenByCorrelation: boolean;
 }
 
 /**
@@ -89,6 +102,16 @@ export interface RankedCuratorCandidate extends CuratorCandidate {
  * confidence one. The exact ratio is a pre-launch placeholder; the
  * F8 meta-validation rolling window provides the empirical signal
  * for re-tuning.
+ *
+ * Sample-size collapse note (stat-rigor iter-1 finding on PR #85):
+ * `confidence` is `s/(s+c+prior)` with Bayesian smoothing — so
+ * sample size IS partially encoded (e.g. `(s=2,c=0,prior=2)→0.5`
+ * vs `(s=50,c=0,prior=2)→0.96`). But the composite collapses both
+ * candidates into a single scalar, so a 10× evidence gap can be
+ * masked by a 0.3 recency swing on similar-confidence candidates.
+ * Acceptable for v1 (recency IS supposed to matter at the margin);
+ * F8 calibration will tell us whether to widen the confidence
+ * weight.
  */
 function withinTierComposite(c: CuratorCandidate): number {
   return 0.6 * c.confidence + 0.4 * c.recencyScore;
@@ -142,10 +165,26 @@ export function rankCuratorCandidates(
   const result: RankedCuratorCandidate[] = [];
   for (let rank = 0; rank < Math.min(topK, indexed.length); rank++) {
     const { c } = indexed[rank]!;
+    const composite = withinTierComposite(c);
+    // tieBrokenByCorrelation: true iff the candidate above this one
+    // had the same tier-score AND the same composite — meaning the
+    // correlation tie-breaker decided rank. Always false for the
+    // first item (no preceding candidate).
+    let tieBrokenByCorrelation = false;
+    if (rank > 0) {
+      const prev = indexed[rank - 1]!.c;
+      if (
+        prev.tierScore === c.tierScore &&
+        withinTierComposite(prev) === composite
+      ) {
+        tieBrokenByCorrelation = true;
+      }
+    }
     result.push({
       ...c,
       rank: rank + 1,
-      compositeScore: withinTierComposite(c),
+      compositeScore: composite,
+      tieBrokenByCorrelation,
     });
   }
   return result;
