@@ -3,6 +3,7 @@ import type { UnifiedSessionEntry, Project, Narrative } from '@chat-arch/schema'
 import type { ZombieProject } from '../constellation/ZombieProjectCard.js';
 import type { MergedDuplicateCluster } from '../../data/mergeDuplicates.js';
 import { EmptyState } from '../EmptyState.js';
+import { CuratorFeed } from '../CuratorFeed.js';
 import {
   LENS_BLURB,
   LENS_LABEL,
@@ -27,6 +28,14 @@ export interface PracticeModeProps {
   zombieProjects: readonly ZombieProject[];
   onSelectSession: (id: string) => void;
   onSelectProject: (id: string) => void;
+  /**
+   * Rev3-F F9 — base URL for the curator feed sidecar
+   * (`analysis/curator-feed.json`, produced by the /curate skill).
+   * The CuratorFeed component reads from `${baseUrl}/analysis/...`
+   * and renders an empty state when the file is absent. Defaults to
+   * the standalone data root.
+   */
+  dataDirBaseUrl?: string;
 }
 
 const SEVERITY_LABEL: Record<Severity, string> = {
@@ -56,6 +65,7 @@ export function PracticeMode({
   zombieProjects,
   onSelectSession,
   onSelectProject,
+  dataDirBaseUrl = 'chat-arch-data',
 }: PracticeModeProps) {
   const audit = useMemo(
     () =>
@@ -95,6 +105,12 @@ export function PracticeMode({
           links to evidence.
         </p>
       </header>
+      {/* Rev3-F F9 — curator feed top section. Renders above the
+       *  four lenses per the plan ("Curator feed surfaces as top
+       *  section on PRACTICE, NOT a new top-level surface"). Reads
+       *  the /curate skill's analysis/curator-feed.json sidecar;
+       *  renders an empty state when the skill hasn't run yet. */}
+      <CuratorFeed dataDirBaseUrl={dataDirBaseUrl} />
       {LENSES.map((lens) => {
         const findings = byLens.get(lens) ?? [];
         return (
