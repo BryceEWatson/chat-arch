@@ -79,7 +79,27 @@ export interface EntityStateEntry {
   entityId: string;
   state: EntityStateValue;
   updatedAt: number;
+  /**
+   * Snapshot of the entity's "size" at the moment of state change.
+   * Semantic differs by `entityKind`: `sessionIds.length` for
+   * knowledge-debt clusters, `evidence.length` for narratives. The
+   * generic name is preserved because Closure A's growth-multiplier
+   * re-promotion compares the live size against this snapshot
+   * regardless of which kind it represents.
+   */
   sizeAtState: number;
+  /**
+   * Phase Rev3-D Closure B counter. Incremented each time the entry
+   * transitions INTO `DISMISSED` from any non-DISMISSED state. The
+   * saturation rule (`THRESHOLDS.narrativeRung.dismissDecay`,
+   * default ×2 → ×4 → ×8, cap K = `narrativeRung.maxDismissals`)
+   * reads this counter; D2 also penalizes the Narrative's per-
+   * kernel prior by `narrativeRung.repromotionPenalty` per
+   * dismissal. Optional on read for back-compat with the legacy
+   * `knowledge-debt-states.json` ledger and v2-without-counter
+   * entries written by earlier code; defaulted to 0 when absent.
+   */
+  dismissalCount?: number;
 }
 
 export interface EntityStatesFile {
@@ -194,12 +214,18 @@ function migrateLegacyEntry(raw: LegacyClusterEntry): EntityStateEntry | null {
   if (typeof raw.sizeAtState !== 'number' || !Number.isFinite(raw.sizeAtState)) {
     return null;
   }
+  // Legacy ledger never tracked dismissalCount. If the migrated entry
+  // is in DISMISSED state we count it as one prior dismissal so the
+  // Closure-B counter starts from a defensible floor instead of 0;
+  // otherwise zero.
+  const state = raw.state as EntityStateValue;
   return {
     entityKind: 'knowledge-debt',
     entityId: raw.clusterId,
-    state: raw.state as EntityStateValue,
+    state,
     updatedAt: raw.updatedAt,
     sizeAtState: raw.sizeAtState,
+    dismissalCount: state === 'DISMISSED' ? 1 : 0,
   };
 }
 
@@ -223,6 +249,16 @@ export async function loadEntityStatesLedger(
     throw new EntityStateLedgerCorruptError(ledgerPath, err);
   }
   if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
+    throw new EntityStateLedgerCorruptError(ledgerPath);
+  }
+  // Refuse to read a file whose schemaVersion is set to something we
+  // don't recognize. `undefined` is tolerated for forward-compat with
+  // earlier writers that omitted the field. Future v3+ writers will be
+  // caught here so a v2 reader doesn't silently downgrade their data.
+  if (
+    parsed.schemaVersion !== undefined &&
+    parsed.schemaVersion !== 2
+  ) {
     throw new EntityStateLedgerCorruptError(ledgerPath);
   }
   return {
@@ -291,16 +327,28 @@ export function upsertEntityState(
   payload: ValidatedEntityState,
   now: number,
 ): { next: EntityStatesFile; entry: EntityStateEntry } {
+  const existingIx = prev.entries.findIndex(
+    (e) => e.entityKind === payload.entityKind && e.entityId === payload.entityId,
+  );
+  const existing = existingIx >= 0 ? prev.entries[existingIx]! : null;
+  // dismissalCount semantics (Closure B):
+  //   - first write OR transition into DISMISSED from a non-DISMISSED
+  //     state → increment from (existing ?? 0)
+  //   - DISMISSED → DISMISSED re-click → preserve existing count
+  //     (a re-click is not a new dismissal action)
+  //   - any other transition → carry forward, default 0
+  const priorCount = existing?.dismissalCount ?? 0;
+  const isFreshDismissal =
+    payload.state === 'DISMISSED' && existing?.state !== 'DISMISSED';
+  const dismissalCount = isFreshDismissal ? priorCount + 1 : priorCount;
   const entry: EntityStateEntry = {
     entityKind: payload.entityKind,
     entityId: payload.entityId,
     state: payload.state,
     updatedAt: now,
     sizeAtState: payload.sizeAtState,
+    dismissalCount,
   };
-  const existingIx = prev.entries.findIndex(
-    (e) => e.entityKind === payload.entityKind && e.entityId === payload.entityId,
-  );
   const entries =
     existingIx >= 0
       ? prev.entries.map((e, i) => (i === existingIx ? entry : e))

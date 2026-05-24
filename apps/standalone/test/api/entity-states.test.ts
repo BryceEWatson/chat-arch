@@ -180,6 +180,108 @@ describe('upsertEntityState', () => {
     expect(r.next.entries[1]!.sizeAtState).toBe(9);
   });
 
+  it('starts dismissalCount at 0 for a non-DISMISSED first write', () => {
+    const r = upsertEntityState(
+      empty,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'PENDING',
+        sizeAtState: 3,
+      },
+      1000,
+    );
+    expect(r.next.entries[0]!.dismissalCount).toBe(0);
+  });
+
+  it('sets dismissalCount to 1 when first write is DISMISSED', () => {
+    const r = upsertEntityState(
+      empty,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'DISMISSED',
+        sizeAtState: 3,
+      },
+      1000,
+    );
+    expect(r.next.entries[0]!.dismissalCount).toBe(1);
+  });
+
+  it('increments dismissalCount on transition INTO DISMISSED', () => {
+    // PENDING → DISMISSED bumps to 1.
+    const r1 = upsertEntityState(
+      empty,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'PENDING',
+        sizeAtState: 3,
+      },
+      1000,
+    );
+    const r2 = upsertEntityState(
+      r1.next,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'DISMISSED',
+        sizeAtState: 4,
+      },
+      2000,
+    );
+    expect(r2.next.entries[0]!.dismissalCount).toBe(1);
+    // DISMISSED → PENDING preserves the counter (re-promotion).
+    const r3 = upsertEntityState(
+      r2.next,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'PENDING',
+        sizeAtState: 8,
+      },
+      3000,
+    );
+    expect(r3.next.entries[0]!.dismissalCount).toBe(1);
+    // PENDING → DISMISSED again bumps to 2 (saturation builds up).
+    const r4 = upsertEntityState(
+      r3.next,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'DISMISSED',
+        sizeAtState: 9,
+      },
+      4000,
+    );
+    expect(r4.next.entries[0]!.dismissalCount).toBe(2);
+  });
+
+  it('does NOT increment dismissalCount on DISMISSED → DISMISSED re-click', () => {
+    const seeded = upsertEntityState(
+      empty,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'DISMISSED',
+        sizeAtState: 3,
+      },
+      1000,
+    );
+    expect(seeded.next.entries[0]!.dismissalCount).toBe(1);
+    const reclick = upsertEntityState(
+      seeded.next,
+      {
+        entityKind: 'narrative',
+        entityId: 'n1',
+        state: 'DISMISSED',
+        sizeAtState: 5,
+      },
+      2000,
+    );
+    expect(reclick.next.entries[0]!.dismissalCount).toBe(1);
+  });
+
   it('does NOT collide across kinds when entityId matches', () => {
     // Same entityId, different kinds → both entries must persist.
     const r1 = upsertEntityState(
@@ -316,6 +418,80 @@ describe('loadEntityStatesLedger — back-compat read', () => {
     );
     expect(result.entries.length).toBe(1);
     expect(result.entries[0]!.entityId).toBe('ok');
+  });
+
+  it('rejects v2 file whose schemaVersion is set to an unknown value', async () => {
+    const bogus = {
+      schemaVersion: 99,
+      generatedAt: 1500,
+      entries: [],
+    };
+    await writeFile(
+      join(dir, 'entity-states.json'),
+      JSON.stringify(bogus),
+      'utf8',
+    );
+    await expect(
+      loadEntityStatesLedger(
+        join(dir, 'entity-states.json'),
+        join(dir, 'knowledge-debt-states.json'),
+      ),
+    ).rejects.toThrow(/corrupted/);
+  });
+
+  it('tolerates a v2 file missing schemaVersion (back-compat reads)', async () => {
+    const noVersion = {
+      generatedAt: 1500,
+      entries: [
+        {
+          entityKind: 'narrative',
+          entityId: 'n1',
+          state: 'PENDING',
+          updatedAt: 1500,
+          sizeAtState: 1,
+        },
+      ],
+    };
+    await writeFile(
+      join(dir, 'entity-states.json'),
+      JSON.stringify(noVersion),
+      'utf8',
+    );
+    const result = await loadEntityStatesLedger(
+      join(dir, 'entity-states.json'),
+      join(dir, 'knowledge-debt-states.json'),
+    );
+    expect(result.entries.length).toBe(1);
+  });
+
+  it('legacy migrator seeds dismissalCount=1 for DISMISSED entries', async () => {
+    const legacy = {
+      schemaVersion: 1,
+      generatedAt: 1200,
+      entries: [
+        { clusterId: 'pending', state: 'PENDING', updatedAt: 1, sizeAtState: 2 },
+        { clusterId: 'gone', state: 'DISMISSED', updatedAt: 2, sizeAtState: 5 },
+        {
+          clusterId: 'installed',
+          state: 'INSTALLED',
+          updatedAt: 3,
+          sizeAtState: 7,
+        },
+      ],
+    };
+    await writeFile(
+      join(dir, 'knowledge-debt-states.json'),
+      JSON.stringify(legacy),
+      'utf8',
+    );
+    const result = await loadEntityStatesLedger(
+      join(dir, 'entity-states.json'),
+      join(dir, 'knowledge-debt-states.json'),
+    );
+    const byId = new Map(result.entries.map((e) => [e.entityId, e]));
+    expect(byId.get('pending')?.dismissalCount).toBe(0);
+    expect(byId.get('gone')?.dismissalCount).toBe(1);
+    expect(byId.get('installed')?.dismissalCount).toBe(0);
   });
 
   it('v2 file takes precedence even if legacy file exists', async () => {

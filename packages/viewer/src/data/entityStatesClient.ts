@@ -33,6 +33,15 @@ export interface EntityStateEntry {
    * re-promotion rule compares the live size against this snapshot.
    */
   sizeAtState: number;
+  /**
+   * Phase Rev3-D Closure B counter — number of times this entry has
+   * transitioned into `DISMISSED`. Read by the saturation rule
+   * (`THRESHOLDS.narrativeRung.dismissDecay`, default ×2/×4/×8 cap
+   * K=`narrativeRung.maxDismissals`) and by D2's per-Narrative
+   * prior penalty. Optional for back-compat with legacy ledgers and
+   * pre-counter v2 entries; readers default to 0 when absent.
+   */
+  dismissalCount?: number;
 }
 
 export interface EntityStatesFile {
@@ -91,12 +100,17 @@ function migrateLegacyToV2(parsed: {
     ) {
       continue;
     }
+    const state = raw.state as EntityStateValue;
     entries.push({
       entityKind: 'knowledge-debt',
       entityId: raw.clusterId,
-      state: raw.state as EntityStateValue,
+      state,
       updatedAt: raw.updatedAt,
       sizeAtState: raw.sizeAtState,
+      // Legacy ledger never tracked dismissal counts; seed at 1 for
+      // already-DISMISSED entries so Closure B's saturation counter
+      // starts from a defensible floor instead of 0.
+      dismissalCount: state === 'DISMISSED' ? 1 : 0,
     });
   }
   return {
@@ -128,8 +142,15 @@ export async function loadEntityStates(
 ): Promise<EntityStatesFile | null> {
   const v2 = (await fetchJsonOrNull(
     joinUrl(baseUrl, 'analysis/entity-states.json'),
-  )) as EntityStatesFile | null;
+  )) as (EntityStatesFile & { schemaVersion?: number }) | null;
   if (v2 !== null && Array.isArray(v2.entries)) {
+    // Refuse to render a file whose schemaVersion is set to something
+    // we don't know. `undefined` is tolerated for forward-compat with
+    // earlier writers. A future v3 file would otherwise be silently
+    // downgraded into v2-only fields here.
+    if (v2.schemaVersion !== undefined && v2.schemaVersion !== 2) {
+      return null;
+    }
     return v2;
   }
   const v1 = (await fetchJsonOrNull(
