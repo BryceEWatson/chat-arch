@@ -300,4 +300,100 @@ describe('ProjectsMode narrative audit (Rev3-D D3)', () => {
     expect(screen.getByText(/re-emerges at/i)).toBeTruthy();
     expect(script.recordedPosts.length).toBe(1);
   });
+
+  it('prefers the server-returned dismissalCount over the local approximation', async () => {
+    // Reviewer finding (D3 iter-1): the C4 SDK is authoritative — its
+    // `upsertEntityState` runs the read-old + compute-counter + write
+    // sequence inside a single BEGIN IMMEDIATE, so its `dismissalCount`
+    // reflects any prior state we may not have known about (sibling
+    // tab dismissed first, legacy migrator seeded a count, etc.).
+    // This test pins that the client honors `r.entry.dismissalCount`
+    // when present rather than blindly applying the local
+    // PENDING→DISMISSED-bumps-by-one heuristic.
+    const cap = THRESHOLDS.narrativeRung.maxDismissals;
+    // Override the POST response to return an entry with
+    // dismissalCount=2 — the local heuristic would compute 1 (no
+    // prior entry → 0 + 1), so the assertion below proves the
+    // server's value wins.
+    const script: FetchScript = {
+      responses: new Map<string, unknown>([
+        [
+          '/api/entity-states',
+          { ok: true, available: true, entries: [] },
+        ],
+      ]),
+      recordedPosts: [],
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (method === 'POST') {
+        let body: unknown = init?.body;
+        if (typeof body === 'string') {
+          try {
+            body = JSON.parse(body);
+          } catch {
+            /* leave raw */
+          }
+        }
+        script.recordedPosts.push({ url, body });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            entry: {
+              entityKind: 'narrative',
+              entityId: 'n1',
+              state: 'DISMISSED',
+              updatedAt: 1000,
+              sizeAtState: 4,
+              dismissalCount: 2, // server's canonical count
+            },
+          }),
+          text: async () => '',
+        } as Response;
+      }
+      // GET: empty ledger.
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, available: true, entries: [] }),
+        text: async () => '',
+      } as Response;
+    }) as unknown as typeof fetch);
+
+    const proj = project('p1', ['n1']);
+    render(
+      <ProjectsMode
+        projects={[proj]}
+        topics={[]}
+        narratives={[narrative('n1', 4)]}
+        sessions={[session('p1-s0')]}
+        selectedProjectId="p1"
+        onSelectProject={() => {}}
+        onSelectSession={() => {}}
+        dataDirBaseUrl="/test-data"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /dismiss this narrative/i }),
+      ).toBeTruthy();
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /dismiss this narrative/i }),
+    );
+    await waitFor(() => {
+      // The server returned dismissalCount=2 — the UI must reflect THAT,
+      // not the local heuristic's 1.
+      expect(
+        screen.getByText(new RegExp(`2/${cap} dismissals`)),
+      ).toBeTruthy();
+    });
+  });
 });
