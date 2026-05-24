@@ -1,12 +1,13 @@
-// `projects` table SDK + read helpers that join through the
-// junction tables (`project_sessions`, `project_topics`) to recover
-// the array-shaped relations the TS Project type exposes.
+// `projects` table SDK. Junction-table reads (project ↔ session,
+// project ↔ topic) live in `junctions.ts` — the single canonical
+// surface for the many-to-many edges. Don't re-implement them here.
 
 import type { Database } from 'better-sqlite3';
 
 import { withWriteTransaction } from '../transaction.js';
 import { NotFoundError, UniqueViolationError, isUniqueViolation } from './errors.js';
 import type { ProjectRow } from './types.js';
+import { buildUpdateSets } from './updateBuilder.js';
 
 interface RawProjectRow {
   readonly id: string;
@@ -89,8 +90,13 @@ export interface UpdateProjectInput {
   readonly displayName?: string;
   readonly lastActivityAt?: string;
   readonly sentiment?: string;
-  readonly source?: string;
 }
+
+const UPDATE_COLUMN_MAP: Readonly<Record<keyof UpdateProjectInput, string>> = {
+  displayName: 'display_name',
+  lastActivityAt: 'last_activity_at',
+  sentiment: 'sentiment',
+};
 
 export async function updateProject(
   db: Database,
@@ -98,29 +104,11 @@ export async function updateProject(
   patch: UpdateProjectInput,
 ): Promise<ProjectRow> {
   return withWriteTransaction(db, (tx) => {
-    const sets: string[] = [];
-    const args: unknown[] = [];
-    if (patch.displayName !== undefined) {
-      sets.push('display_name = ?');
-      args.push(patch.displayName);
-    }
-    if (patch.lastActivityAt !== undefined) {
-      sets.push('last_activity_at = ?');
-      args.push(patch.lastActivityAt);
-    }
-    if (patch.sentiment !== undefined) {
-      sets.push('sentiment = ?');
-      args.push(patch.sentiment);
-    }
-    if (patch.source !== undefined) {
-      sets.push('source = ?');
-      args.push(patch.source);
-    }
+    const { sets, args } = buildUpdateSets(patch, UPDATE_COLUMN_MAP);
     if (sets.length > 0) {
-      args.push(id);
       const info = tx
         .prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`)
-        .run(...args);
+        .run(...args, id);
       if (info.changes === 0) throw new NotFoundError('project', id);
     }
     const fresh = getProjectById(tx, id);
@@ -134,36 +122,4 @@ export async function deleteProject(db: Database, id: string): Promise<boolean> 
     const info = tx.prepare('DELETE FROM projects WHERE id = ?').run(id);
     return info.changes > 0;
   });
-}
-
-/**
- * Return the session keys linked to a project via `project_sessions`.
- * Reconstructs the array-shaped `sessionIds[]` that the TS Project type
- * exposes (one ID per source, dedup at the caller if needed).
- */
-export function listProjectSessionKeys(
-  db: Database,
-  projectId: string,
-): readonly { readonly source: string; readonly id: string }[] {
-  return db
-    .prepare<
-      [string],
-      { readonly session_source: string; readonly session_id: string }
-    >(
-      `SELECT session_source, session_id FROM project_sessions WHERE project_id = ? ORDER BY session_source, session_id`,
-    )
-    .all(projectId)
-    .map((row) => ({ source: row.session_source, id: row.session_id }));
-}
-
-export function listProjectTopicIds(
-  db: Database,
-  projectId: string,
-): readonly string[] {
-  return db
-    .prepare<[string], { readonly topic_id: string }>(
-      'SELECT topic_id FROM project_topics WHERE project_id = ? ORDER BY topic_id',
-    )
-    .all(projectId)
-    .map((row) => row.topic_id);
 }

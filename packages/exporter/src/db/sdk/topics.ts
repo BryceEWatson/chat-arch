@@ -1,11 +1,11 @@
-// `topics` table SDK. Universal lightweight labels — usage-only,
-// no provenance.
+// `topics` table SDK.
 
 import type { Database } from 'better-sqlite3';
 
 import { withWriteTransaction } from '../transaction.js';
 import { NotFoundError, UniqueViolationError, isUniqueViolation } from './errors.js';
 import type { TopicRow } from './types.js';
+import { buildUpdateSets } from './updateBuilder.js';
 
 interface RawTopicRow {
   readonly id: string;
@@ -74,27 +74,22 @@ export interface UpdateTopicInput {
   readonly lastSeenAt?: string;
 }
 
+const UPDATE_COLUMN_MAP: Readonly<Record<keyof UpdateTopicInput, string>> = {
+  displayName: 'display_name',
+  lastSeenAt: 'last_seen_at',
+};
+
 export async function updateTopic(
   db: Database,
   id: string,
   patch: UpdateTopicInput,
 ): Promise<TopicRow> {
   return withWriteTransaction(db, (tx) => {
-    const sets: string[] = [];
-    const args: unknown[] = [];
-    if (patch.displayName !== undefined) {
-      sets.push('display_name = ?');
-      args.push(patch.displayName);
-    }
-    if (patch.lastSeenAt !== undefined) {
-      sets.push('last_seen_at = ?');
-      args.push(patch.lastSeenAt);
-    }
+    const { sets, args } = buildUpdateSets(patch, UPDATE_COLUMN_MAP);
     if (sets.length > 0) {
-      args.push(id);
       const info = tx
         .prepare(`UPDATE topics SET ${sets.join(', ')} WHERE id = ?`)
-        .run(...args);
+        .run(...args, id);
       if (info.changes === 0) throw new NotFoundError('topic', id);
     }
     const fresh = getTopicById(tx, id);

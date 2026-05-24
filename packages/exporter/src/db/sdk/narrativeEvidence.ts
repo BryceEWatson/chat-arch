@@ -6,7 +6,7 @@
 import type { Database } from 'better-sqlite3';
 
 import { withWriteTransaction } from '../transaction.js';
-import type { NarrativeEvidenceRow } from './types.js';
+import type { NarrativeEvidenceRow, SessionKey } from './types.js';
 
 interface RawNarrativeEvidenceRow {
   readonly narrative_id: string;
@@ -45,8 +45,7 @@ export function listNarrativeEvidence(
 
 export interface InsertNarrativeEvidenceInput {
   readonly evidenceIndex: number;
-  readonly sessionSource: string;
-  readonly sessionId: string;
+  readonly session: SessionKey;
   readonly anchor?: string | null;
   readonly excerpt?: string | null;
 }
@@ -66,8 +65,8 @@ export async function replaceNarrativeEvidence(
       insert.run(
         narrativeId,
         input.evidenceIndex,
-        input.sessionSource,
-        input.sessionId,
+        input.session.source,
+        input.session.id,
         input.anchor ?? null,
         input.excerpt ?? null,
       );

@@ -7,10 +7,6 @@
 // Provenance fields land in Rev3-B (schema_version bump on narratives);
 // this file matches schema_version=1 throughout.
 
-export type Sentiment = 'positive' | 'negative' | 'mixed';
-export type TranscriptStatus = 'present' | 'pruned' | 'missing';
-export type SessionMessageRole = 'user' | 'assistant' | 'tool' | 'system';
-
 /** Composite key for a session — `(source, id)` matches the schema PK. */
 export interface SessionKey {
   readonly source: string;
@@ -160,4 +156,11 @@ export interface FindingsFilter {
   readonly topicId?: string | null;
   readonly narrativeId?: string | null;
   readonly patternId?: string | null;
+  /**
+   * Session anchor filter — pass a `SessionKey` to match findings
+   * anchored to that exact session, or `null` to match unanchored
+   * findings (where both `session_source` and `session_id` are NULL,
+   * per the both-or-neither CHECK constraint).
+   */
+  readonly session?: SessionKey | null;
 }

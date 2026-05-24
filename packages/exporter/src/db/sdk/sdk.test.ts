@@ -64,8 +64,6 @@ import {
   deleteProject,
   getProjectById,
   insertProject,
-  listProjectSessionKeys,
-  listProjectTopicIds,
   listProjects,
   updateProject,
 } from './projects.js';
@@ -79,7 +77,7 @@ import {
 } from './sessionRevisions.js';
 import {
   deleteSession,
-  getSession,
+  getSessionByKey,
   insertSession,
   listSessions,
   updateSession,
@@ -249,7 +247,7 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
         messageCount: 3,
       });
       expect(inserted.title).toBe('Session 1');
-      expect(getSession(db, key)).toEqual(inserted);
+      expect(getSessionByKey(db, key)).toEqual(inserted);
     });
 
     it('rejects bare session_source without session_id at the FK layer', async () => {
@@ -279,7 +277,7 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
       expect(listSessions(db)).toHaveLength(2);
     });
 
-    it('filters by project_id (including null) + source + time range', async () => {
+    it('filters by project_id (including null) + source', async () => {
       await insertSession(db, {
         source: 'cli-direct',
         id: 'a',
@@ -317,9 +315,8 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
       expect(listSessions(db, { projectId: null })).toHaveLength(1);
       expect(listSessions(db, { source: 'desktop' })).toHaveLength(1);
       expect(
-        listSessions(db, { startedAtMin: 1500, startedAtMax: 2500 }),
+        listSessions(db, { projectId: 'p1', source: 'desktop' }),
       ).toHaveLength(1);
-      expect(listSessions(db, { limit: 2 })).toHaveLength(2);
     });
 
     it('CASCADE deletes child messages + revisions when session removed', async () => {
@@ -461,6 +458,7 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
       });
       expect(listNarratives(db, { projectId: 'p1' })).toHaveLength(2);
       expect(listNarratives(db, { sentiment: 'positive' })).toHaveLength(1);
+      // schema_version defaulted to 1 (DDL default); the filter reaches it.
       expect(listNarratives(db, { schemaVersion: 1 })).toHaveLength(2);
       const fetched = getNarrativeById(db, 'n1');
       expect(fetched?.title).toBe('A');
@@ -494,15 +492,13 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
       await replaceNarrativeEvidence(db, 'n-ev', [
         {
           evidenceIndex: 0,
-          sessionSource: sessKey.source,
-          sessionId: sessKey.id,
+          session: sessKey,
           anchor: 'turn:5',
           excerpt: 'snippet',
         },
         {
           evidenceIndex: 1,
-          sessionSource: sessKey.source,
-          sessionId: sessKey.id,
+          session: sessKey,
           anchor: 'turn:6',
         },
       ]);
@@ -533,11 +529,7 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
         actionType: 'observe',
       });
       await replaceNarrativeEvidence(db, 'n-cascade', [
-        {
-          evidenceIndex: 0,
-          sessionSource: sessKey.source,
-          sessionId: sessKey.id,
-        },
+        { evidenceIndex: 0, session: sessKey },
       ]);
       await linkNarrativeSession(db, 'n-cascade', sessKey);
       await deleteNarrative(db, 'n-cascade');
@@ -621,10 +613,14 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
       expect(getFindingById(db, f1.id)).toEqual(f1);
       // Filter by kernel:
       expect(listFindings(db, { kernel: 'kernel-x' })).toHaveLength(2);
-      // Filter by null session_source returns the unanchored one:
-      const noSession = listFindings(db).filter((f) => f.sessionSource === null);
-      expect(noSession).toHaveLength(1);
-      expect(noSession[0]?.id).toBe(f2.id);
+      // Filter by session — anchored:
+      const anchored = listFindings(db, { session: sessKey });
+      expect(anchored).toHaveLength(1);
+      expect(anchored[0]?.id).toBe(f1.id);
+      // Filter by session: null — unanchored:
+      const unanchored = listFindings(db, { session: null });
+      expect(unanchored).toHaveLength(1);
+      expect(unanchored[0]?.id).toBe(f2.id);
       // Both-or-neither: f1 has both populated, f2 has neither:
       expect(f1.sessionSource).toBe(sessKey.source);
       expect(f1.sessionId).toBe(sessKey.id);
@@ -677,21 +673,26 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
       });
     });
 
-    it('project_sessions: link is idempotent, listProjectSessionKeys reads back', async () => {
+    it('project_sessions: link is idempotent, list reads back', async () => {
       const session = { source: 'cli-direct', id: 's1' };
       await linkProjectSession(db, 'p1', session);
       await linkProjectSession(db, 'p1', session); // idempotent
       const links = listProjectSessions(db, 'p1');
       expect(links).toHaveLength(1);
-      expect(listProjectSessionKeys(db, 'p1')).toEqual([session]);
+      expect(links[0]).toEqual({
+        projectId: 'p1',
+        sessionSource: session.source,
+        sessionId: session.id,
+      });
       expect(await unlinkProjectSession(db, 'p1', session)).toBe(true);
       expect(listProjectSessions(db, 'p1')).toHaveLength(0);
     });
 
-    it('project_topics: link, list, listProjectTopicIds round-trip', async () => {
+    it('project_topics: link, list round-trip', async () => {
       await linkProjectTopic(db, 'p1', 't1');
-      expect(listProjectTopics(db, 'p1')).toHaveLength(1);
-      expect(listProjectTopicIds(db, 'p1')).toEqual(['t1']);
+      const links = listProjectTopics(db, 'p1');
+      expect(links).toHaveLength(1);
+      expect(links[0]).toEqual({ projectId: 'p1', topicId: 't1' });
     });
 
     it('topic_sessions: link + list', async () => {
@@ -763,7 +764,7 @@ describe('chat-arch SQLite SDK round-trip (A8)', () => {
         actionType: 'observe',
       });
       await replaceNarrativeEvidence(db, 'n', [
-        { evidenceIndex: 0, sessionSource: sess.source, sessionId: sess.id },
+        { evidenceIndex: 0, session: sess },
       ]);
       await insertPattern(db, {
         id: 'pat',

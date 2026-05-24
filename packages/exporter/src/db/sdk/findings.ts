@@ -76,6 +76,15 @@ export function listFindings(
       args.push(value);
     }
   }
+  if (filter.session !== undefined) {
+    if (filter.session === null) {
+      // Both-or-neither contract — checking one column is sufficient.
+      where.push('session_source IS NULL');
+    } else {
+      where.push('session_source = ? AND session_id = ?');
+      args.push(filter.session.source, filter.session.id);
+    }
+  }
   const whereClause = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
   const sql = `SELECT ${SELECT_COLUMNS} FROM findings${whereClause} ORDER BY emitted_at DESC, id DESC`;
   const rows = db.prepare<unknown[], RawFindingRow>(sql).all(...args);

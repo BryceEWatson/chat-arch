@@ -7,6 +7,7 @@ import type { Database } from 'better-sqlite3';
 import { withWriteTransaction } from '../transaction.js';
 import { NotFoundError, UniqueViolationError, isUniqueViolation } from './errors.js';
 import type { NarrativeRow } from './types.js';
+import { buildUpdateSets } from './updateBuilder.js';
 
 interface RawNarrativeRow {
   readonly id: string;
@@ -122,7 +123,6 @@ export interface UpdateNarrativeInput {
   readonly title?: string;
   readonly body?: string;
   readonly actionType?: string;
-  readonly schemaVersion?: number;
 }
 
 const UPDATE_COLUMN_MAP: Readonly<Record<keyof UpdateNarrativeInput, string>> = {
@@ -130,7 +130,6 @@ const UPDATE_COLUMN_MAP: Readonly<Record<keyof UpdateNarrativeInput, string>> = 
   title: 'title',
   body: 'body',
   actionType: 'action_type',
-  schemaVersion: 'schema_version',
 };
 
 export async function updateNarrative(
@@ -139,20 +138,11 @@ export async function updateNarrative(
   patch: UpdateNarrativeInput,
 ): Promise<NarrativeRow> {
   return withWriteTransaction(db, (tx) => {
-    const sets: string[] = [];
-    const args: unknown[] = [];
-    for (const [k, col] of Object.entries(UPDATE_COLUMN_MAP)) {
-      const value = (patch as Record<string, unknown>)[k];
-      if (value !== undefined) {
-        sets.push(`${col} = ?`);
-        args.push(value);
-      }
-    }
+    const { sets, args } = buildUpdateSets(patch, UPDATE_COLUMN_MAP);
     if (sets.length > 0) {
-      args.push(id);
       const info = tx
         .prepare(`UPDATE narratives SET ${sets.join(', ')} WHERE id = ?`)
-        .run(...args);
+        .run(...args, id);
       if (info.changes === 0) throw new NotFoundError('narrative', id);
     }
     const fresh = getNarrativeById(tx, id);

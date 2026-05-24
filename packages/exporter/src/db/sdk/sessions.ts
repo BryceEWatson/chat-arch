@@ -1,16 +1,13 @@
-// `sessions` table SDK. Composite primary key `(source, id)` —
-// callers pass a `SessionKey` rather than a single string.
-//
-// Child-row helpers (`session_messages`, `session_revisions`) live in
-// sibling files (`sessionMessages.ts`, `sessionRevisions.ts`) — split
-// out because each child table is a distinct insertion path with its
-// own validation rather than a derivable view.
+// `sessions` table SDK. Composite primary key `(source, id)` — callers
+// pass a `SessionKey` rather than a single string. Child rows
+// (messages, revisions) live in sibling modules.
 
 import type { Database } from 'better-sqlite3';
 
 import { withWriteTransaction } from '../transaction.js';
 import { NotFoundError, UniqueViolationError, isUniqueViolation } from './errors.js';
 import type { SessionKey, SessionRow } from './types.js';
+import { buildUpdateSets } from './updateBuilder.js';
 
 interface RawSessionRow {
   readonly id: string;
@@ -53,7 +50,7 @@ function rowFromRaw(raw: RawSessionRow): SessionRow {
 const SELECT_COLUMNS =
   'id, source, raw_session_id, started_at, updated_at, duration_ms, title, title_source, preview, project_id, message_count, tokens_input, tokens_output, tokens_cache_creation, tokens_cache_read';
 
-export function getSession(db: Database, key: SessionKey): SessionRow | null {
+export function getSessionByKey(db: Database, key: SessionKey): SessionRow | null {
   const raw = db
     .prepare<[string, string], RawSessionRow>(
       `SELECT ${SELECT_COLUMNS} FROM sessions WHERE source = ? AND id = ?`,
@@ -63,14 +60,9 @@ export function getSession(db: Database, key: SessionKey): SessionRow | null {
 }
 
 export interface ListSessionsFilter {
+  /** Pass `null` to match unanchored sessions; omit to skip. */
   readonly projectId?: string | null;
   readonly source?: string;
-  /** ms since epoch — only sessions started at-or-after this point. */
-  readonly startedAtMin?: number;
-  /** ms since epoch — only sessions started before this point. */
-  readonly startedAtMax?: number;
-  /** Max rows (default unlimited). */
-  readonly limit?: number;
 }
 
 export function listSessions(
@@ -91,17 +83,8 @@ export function listSessions(
     where.push('source = ?');
     args.push(filter.source);
   }
-  if (filter.startedAtMin !== undefined) {
-    where.push('started_at >= ?');
-    args.push(filter.startedAtMin);
-  }
-  if (filter.startedAtMax !== undefined) {
-    where.push('started_at < ?');
-    args.push(filter.startedAtMax);
-  }
   const whereClause = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
-  const limitClause = filter.limit !== undefined ? ` LIMIT ${Math.max(0, Math.floor(filter.limit))}` : '';
-  const sql = `SELECT ${SELECT_COLUMNS} FROM sessions${whereClause} ORDER BY started_at DESC, source, id${limitClause}`;
+  const sql = `SELECT ${SELECT_COLUMNS} FROM sessions${whereClause} ORDER BY started_at DESC, source, id`;
   const rows = db.prepare<unknown[], RawSessionRow>(sql).all(...args);
   return rows.map(rowFromRaw);
 }
@@ -156,7 +139,7 @@ export async function insertSession(
       }
       throw err;
     }
-    const fresh = getSession(tx, { source: input.source, id: input.id });
+    const fresh = getSessionByKey(tx, { source: input.source, id: input.id });
     if (!fresh) throw new NotFoundError('session', { source: input.source, id: input.id });
     return fresh;
   });
@@ -196,23 +179,14 @@ export async function updateSession(
   patch: UpdateSessionInput,
 ): Promise<SessionRow> {
   return withWriteTransaction(db, (tx) => {
-    const sets: string[] = [];
-    const args: unknown[] = [];
-    for (const [k, col] of Object.entries(UPDATE_COLUMN_MAP)) {
-      const value = (patch as Record<string, unknown>)[k];
-      if (value !== undefined) {
-        sets.push(`${col} = ?`);
-        args.push(value);
-      }
-    }
+    const { sets, args } = buildUpdateSets(patch, UPDATE_COLUMN_MAP);
     if (sets.length > 0) {
-      args.push(key.source, key.id);
       const info = tx
         .prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE source = ? AND id = ?`)
-        .run(...args);
+        .run(...args, key.source, key.id);
       if (info.changes === 0) throw new NotFoundError('session', key);
     }
-    const fresh = getSession(tx, key);
+    const fresh = getSessionByKey(tx, key);
     if (!fresh) throw new NotFoundError('session', key);
     return fresh;
   });

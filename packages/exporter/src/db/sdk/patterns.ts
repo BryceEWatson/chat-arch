@@ -7,6 +7,7 @@ import type { Database } from 'better-sqlite3';
 import { withWriteTransaction } from '../transaction.js';
 import { NotFoundError, UniqueViolationError, isUniqueViolation } from './errors.js';
 import type { PatternRow } from './types.js';
+import { buildUpdateSets } from './updateBuilder.js';
 
 interface RawPatternRow {
   readonly id: string;
@@ -116,31 +117,38 @@ export interface UpdatePatternInput {
   readonly appendedToClaudeMd?: boolean;
 }
 
+interface UpdatePatternPersisted {
+  readonly title?: string;
+  readonly body?: string;
+  readonly appendedToClaudeMd?: number;
+}
+
+const UPDATE_COLUMN_MAP: Readonly<Record<keyof UpdatePatternPersisted, string>> = {
+  title: 'title',
+  body: 'body',
+  appendedToClaudeMd: 'appended_to_claude_md',
+};
+
 export async function updatePattern(
   db: Database,
   id: string,
   patch: UpdatePatternInput,
 ): Promise<PatternRow> {
+  // SQLite stores booleans as 0/1; transform before delegating. Only
+  // include keys actually present so exactOptionalPropertyTypes is happy.
+  const persisted: UpdatePatternPersisted = {
+    ...(patch.title !== undefined && { title: patch.title }),
+    ...(patch.body !== undefined && { body: patch.body }),
+    ...(patch.appendedToClaudeMd !== undefined && {
+      appendedToClaudeMd: patch.appendedToClaudeMd ? 1 : 0,
+    }),
+  };
   return withWriteTransaction(db, (tx) => {
-    const sets: string[] = [];
-    const args: unknown[] = [];
-    if (patch.title !== undefined) {
-      sets.push('title = ?');
-      args.push(patch.title);
-    }
-    if (patch.body !== undefined) {
-      sets.push('body = ?');
-      args.push(patch.body);
-    }
-    if (patch.appendedToClaudeMd !== undefined) {
-      sets.push('appended_to_claude_md = ?');
-      args.push(patch.appendedToClaudeMd ? 1 : 0);
-    }
+    const { sets, args } = buildUpdateSets(persisted, UPDATE_COLUMN_MAP);
     if (sets.length > 0) {
-      args.push(id);
       const info = tx
         .prepare(`UPDATE patterns SET ${sets.join(', ')} WHERE id = ?`)
-        .run(...args);
+        .run(...args, id);
       if (info.changes === 0) throw new NotFoundError('pattern', id);
     }
     const fresh = getPatternById(tx, id);
