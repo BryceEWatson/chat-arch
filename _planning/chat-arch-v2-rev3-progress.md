@@ -117,9 +117,9 @@ Plan anchor: [§Phase Rev3-F](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | F2 | Falsifier skill — structurally separate, different system prompt, different prompt template | in-review | PR #TBD (SKILL.md at `.claude/skills/falsify/` — separate agent type, neutral auditor framing; per-finding verdict pipeline with self-consistency K=3 + atomic verdict write; never re-ranks or composes with generator) |
 | F3 | Curator ranks tier-2 + tier-3 Narratives, outcome-correlation as tie-breaker only | pending | |
 | F4 | Falsifier verifies each finding's `evidenceChain` cites real session turns whose content supports the claim | pending | |
-| F5 | Subprocess fallback: `claude --version` probe at startup; 429 backoff + retry once; banner on persistent failure | pending | |
-| F6 | API-key fallback OFF by default; `chatArchCuratorApiKeyOptIn` localStorage toggle in local viewer only | pending | |
-| F7 | Atomic tmp-file + rename writes for generator + falsifier output | pending | |
+| F5 | Subprocess fallback: `claude --version` probe at startup; 429 backoff + retry once; banner on persistent failure | in-review | PR #TBD (`probeClaudeAvailable` + `runCuratorSubprocess` in `apps/standalone/src/lib/curatorClaude.ts`; 1.5s probe timeout; 50ms→1s exp backoff with `maxElapsedMs=30s`; tagged-union `RunCuratorResult` for banner dispatch) |
+| F6 | API-key fallback OFF by default; `chatArchCuratorApiKeyOptIn` localStorage toggle in local viewer only | in-review | PR #TBD (two-rail default-deny: viewer `curatorApiKeyOptIn.ts` + server `apiKeyFallbackAllowedFromEnv` env-flag; both must be ON for the env var to reach the subprocess; otherwise `ANTHROPIC_API_KEY` is scrubbed before spawn) |
+| F7 | Atomic tmp-file + rename writes for generator + falsifier output | complete-and-merged | Existing `packages/exporter/src/lib/atomicWrite.ts` (`atomicWriteJson` / `atomicWriteJsonSync`) — landed in PR #53 outcome-substrate; F1+F2 skill prompts reference it directly. No new code needed; verified the contract matches the curator/falsifier output write needs. |
 | F8 | Meta-validation: rolling 4-week n=40 verdicts; Wilson lower bound against `curator.falsifierAccuracyFloor`; banner on drift | pending | |
 | F9 | Curator feed surfaces as top section on PRACTICE (above the four lenses), NOT a new top-level surface | pending | |
 | F10 | Tests: falsifier rejection rate inside bracket; meta-accuracy stable on fixture corpus | pending | Gate |
