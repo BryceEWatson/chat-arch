@@ -16,6 +16,25 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Phase Rev3-C complete (C5 round-trip gate test).** New integration
+  test `apps/standalone/test/integration/narrative-entity-state-round-trip.test.ts`
+  exercises the full ledger pipeline on a narrative: validate POST body
+  → SDK upsert → state transition → growth-multiplier re-promotion
+  rule → re-dismiss → SDK list. Verifies the Closure-A gate stated in
+  the plan: "a surfaced Narrative can be dismissed and re-promoted via
+  the existing growth-multiplier mechanism." Three test cases:
+  - Full round-trip (PENDING → DISMISSED counter=1 → growth multiplier
+    re-promotes → PENDING preserves counter=1 → DISMISSED counter=2).
+  - Composite-key independence across two narratives (no bleed).
+  - Equivalent round-trip on a `knowledge-debt` entity (proves the
+    C1+C2 generalization didn't introduce a kind-specific path).
+
+  Closes Phase Rev3-C. Closure A (feedback ranking) is now wired
+  end-to-end through the SQLite substrate. Closure B (decay /
+  re-emergence) ships in Phase Rev3-D — the `dismissalCount`
+  counter the round-trip exercises is the foundation D1 reads to
+  drive the saturation rule (×2/×4/×8 cap K).
+
 - **SQLite-backed entity-states ledger (Phase Rev3-C C4).** The
   entity-states ledger introduced in C1+C2 (PR #70) now persists to
   a new `entity_states` SQLite table instead of the JSON sidecar.
