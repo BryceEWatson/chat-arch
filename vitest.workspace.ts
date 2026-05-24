@@ -5,5 +5,6 @@ export default defineWorkspace([
   'packages/analysis',
   'packages/exporter',
   'packages/viewer',
+  'packages/mcp-server',
   'apps/standalone',
 ]);
