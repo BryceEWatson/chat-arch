@@ -60,6 +60,42 @@ describe('resolveWorkingDir', () => {
     const wd = resolveWorkingDir(`  ${ABS}  `);
     expect(wd.absolute).toBe(path.resolve(ABS));
   });
+
+  // iter-1 hardening: adversarial review flagged UNC paths and
+  // Windows drive-letter case mismatch as containment-policy bugs.
+  describe('platform-specific hardening (iter-1)', () => {
+    const isWin = process.platform === 'win32';
+
+    it.runIf(isWin)('rejects Windows UNC paths with network-path code', () => {
+      try {
+        resolveWorkingDir('\\\\server\\share\\chat-arch-data');
+      } catch (e) {
+        expect(e).toBeInstanceOf(WorkingDirError);
+        expect((e as WorkingDirError).code).toBe('network-path');
+        return;
+      }
+      throw new Error('expected UNC path to be rejected on win32');
+    });
+
+    it.runIf(!isWin)('non-Windows platforms do not apply the UNC rule', () => {
+      // POSIX: a path starting with `\\` is not meaningful as a
+      // network path; the resolver normalizes it to something
+      // path.isAbsolute won't accept anyway. Just confirm the
+      // rule is platform-gated, not unconditional.
+      try {
+        resolveWorkingDir('\\\\server\\share\\chat-arch-data');
+      } catch (e) {
+        // Will throw with 'not-absolute' on POSIX — that's fine,
+        // the rule we're testing is that we don't get
+        // 'network-path' off-platform.
+        expect((e as WorkingDirError).code).not.toBe('network-path');
+        return;
+      }
+      // If it didn't throw at all, also acceptable (this branch
+      // doesn't run on win32 so we're not asserting a specific
+      // platform behavior beyond "no false network-path firing").
+    });
+  });
 });
 
 describe('assertPathWithinWorkingDir', () => {
@@ -129,5 +165,44 @@ describe('assertPathWithinWorkingDir', () => {
       return;
     }
     throw new Error('expected assertPathWithinWorkingDir to throw on empty');
+  });
+
+  // iter-1 hardening: Windows drive-letter case mismatch.
+  describe('Windows case-insensitive containment (iter-1)', () => {
+    const isWin = process.platform === 'win32';
+
+    it.runIf(isWin)('accepts a candidate whose drive letter case differs from the working dir', () => {
+      // Build a working dir with the drive letter in one case,
+      // then probe with the opposite case. NTFS treats both as
+      // the same volume; the kernel must too.
+      const wdUpper = resolveWorkingDir('C:\\tmp\\chat-arch-data');
+      const lowerCandidate = 'c:\\tmp\\chat-arch-data\\foo.json';
+      // Pre-fix: this would throw 'traversal' because
+      // `path.resolve` preserves the literal case and the lexical
+      // startsWith comparison would mismatch.
+      const resolved = assertPathWithinWorkingDir(wdUpper, lowerCandidate);
+      expect(typeof resolved).toBe('string');
+    });
+
+    it.runIf(isWin)('accepts an inverse drive-letter mismatch (wd lower, candidate upper)', () => {
+      const wdLower = resolveWorkingDir('c:\\tmp\\chat-arch-data');
+      const upperCandidate = 'C:\\tmp\\chat-arch-data\\nested\\bar.json';
+      const resolved = assertPathWithinWorkingDir(wdLower, upperCandidate);
+      expect(typeof resolved).toBe('string');
+    });
+
+    it.runIf(isWin)('still rejects a TRULY-outside path even with case-insensitive compare', () => {
+      // Sanity: the case-insensitive compare must not over-relax
+      // the containment rule. A path outside the WD root still
+      // throws traversal.
+      const wd = resolveWorkingDir('C:\\tmp\\chat-arch-data');
+      try {
+        assertPathWithinWorkingDir(wd, 'C:\\Windows\\System32\\config\\sam');
+      } catch (e) {
+        expect((e as WorkingDirError).code).toBe('traversal');
+        return;
+      }
+      throw new Error('expected traversal rejection');
+    });
   });
 });

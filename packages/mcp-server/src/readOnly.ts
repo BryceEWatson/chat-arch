@@ -19,6 +19,14 @@
 // verbs require a deliberate change here (which a reviewer must
 // approve).
 
+// Allowlisted read-verb prefixes. The first two (`get_`, `list_`)
+// mirror the @chat-arch/exporter/db SDK's actual method naming
+// (getSessionByKey, listProjects, etc.) — those are the verbs
+// H3 will use for its tool registrations. The remaining four
+// (`query_`, `search_`, `count_`, `describe_`) are aspirational —
+// they're standard MCP idioms that future SDK methods MAY adopt.
+// Listed here so reviewers don't have to debate the policy at
+// registration time; trimmed if H3 doesn't need them.
 const READ_VERB_PREFIXES = [
   'get_',
   'list_',
@@ -46,6 +54,17 @@ const FORBIDDEN_VERB_PREFIXES = [
   'eval_',
 ] as const;
 
+// Verb ROOTS (no trailing underscore) used by the segment-scan
+// check. Adversarial review surfaced that a name starting with a
+// read-verb (e.g. `list_`) but EMBEDDING a write-verb later in the
+// name — `list_then_delete_project`, `get_delete_all`,
+// `list_run_migration` — would pass the prefix-only forbidden
+// check. The segment scan catches it by tokenizing on `_` and
+// rejecting any segment whose value is a known write-verb root.
+const FORBIDDEN_VERB_ROOTS: ReadonlySet<string> = new Set(
+  FORBIDDEN_VERB_PREFIXES.map((prefix) => prefix.slice(0, -1)),
+);
+
 export class ReadOnlyPolicyError extends Error {
   constructor(
     message: string,
@@ -67,9 +86,11 @@ export class ReadOnlyPolicyError extends Error {
  *   1. Non-empty after trim.
  *   2. Shape: `<verb>_<noun>` (snake_case, ASCII alnum + underscore).
  *   3. Verb prefix MUST be in `READ_VERB_PREFIXES`.
- *   4. Verb prefix MUST NOT be in `FORBIDDEN_VERB_PREFIXES` (a
- *      defense-in-depth check; redundant with rule 3 but catches
- *      future additions that forget to update the allowlist).
+ *   4. NO segment in the name (split on `_`) may match a forbidden
+ *      verb root. This catches the EMBEDDED-write-verb attack
+ *      (e.g. `list_then_delete_project` would pass rule 3 because
+ *      it starts with `list_` but contains `delete` as an embedded
+ *      segment). Per adversarial review on PR #93.
  *
  * Throws `ReadOnlyPolicyError` on violation; returns the
  * lowercased / normalized name on success.
@@ -90,13 +111,16 @@ export function assertReadOnlyTool(name: string): string {
       'invalid-shape',
     );
   }
-  // Forbidden-verb check first — defense-in-depth.
-  const matchedForbidden = FORBIDDEN_VERB_PREFIXES.find((prefix) =>
-    trimmed.startsWith(prefix),
+  // Segment-scan: tokenize on `_` and reject if ANY segment is a
+  // known write-verb root. Catches both `delete_project` (prefix)
+  // and `list_then_delete_project` (embedded).
+  const segments = trimmed.split('_');
+  const embeddedForbidden = segments.find((seg) =>
+    FORBIDDEN_VERB_ROOTS.has(seg),
   );
-  if (matchedForbidden !== undefined) {
+  if (embeddedForbidden !== undefined) {
     throw new ReadOnlyPolicyError(
-      `Tool name "${name}" starts with forbidden write-verb prefix "${matchedForbidden}". MCP server is read-only.`,
+      `Tool name "${name}" contains forbidden write-verb segment "${embeddedForbidden}". MCP server is read-only — no write verbs allowed in any segment of the name.`,
       'forbidden-verb',
     );
   }

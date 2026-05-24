@@ -83,4 +83,58 @@ describe('createMcpServer', () => {
     await server.close();
     expect(server.listTools().length).toBe(0);
   });
+
+  // iter-1 hardening: closed flag + deep-freeze.
+  describe('post-close hardening (iter-1)', () => {
+    it('isClosed flips after close()', async () => {
+      const server = createMcpServer({ workingDir: ABS_WORKING_DIR });
+      expect(server.isClosed()).toBe(false);
+      await server.close();
+      expect(server.isClosed()).toBe(true);
+    });
+
+    it('rejects registerTool after close()', async () => {
+      const server = createMcpServer({ workingDir: ABS_WORKING_DIR });
+      await server.close();
+      expect(() =>
+        server.registerTool(makeTool('get_project')),
+      ).toThrowError(ReadOnlyPolicyError);
+      // Sanity: tool not registered.
+      expect(server.listTools().length).toBe(0);
+    });
+  });
+
+  describe('deep-freeze of registered tools (iter-1)', () => {
+    it('stored tool objects are frozen — caller cannot mutate name/handler/description post-registration', () => {
+      const server = createMcpServer({ workingDir: ABS_WORKING_DIR });
+      server.registerTool(makeTool('get_project'));
+      const tools = server.listTools();
+      const first = tools[0]!;
+      // Each tool is frozen; mutation attempts throw in strict
+      // mode (which Vitest enables) or silently no-op otherwise.
+      expect(Object.isFrozen(first)).toBe(true);
+      expect(() => {
+        (first as { name: string }).name = 'delete_everything';
+      }).toThrow();
+      expect(() => {
+        (first as { handler: unknown }).handler = () => Promise.resolve('owned');
+      }).toThrow();
+      // The internal registry still has the original tool.
+      expect(server.listTools()[0]!.name).toBe('get_project');
+    });
+
+    it('caller mutating the original input object does NOT affect the stored tool', () => {
+      const server = createMcpServer({ workingDir: ABS_WORKING_DIR });
+      const original = {
+        name: 'get_project',
+        description: 'original',
+        handler: async () => ({ ok: true }),
+      };
+      server.registerTool(original);
+      // The shallow copy at registration means subsequent input-
+      // object mutation does NOT leak in.
+      original.description = 'mutated';
+      expect(server.listTools()[0]!.description).toBe('original');
+    });
+  });
 });
