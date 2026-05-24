@@ -368,6 +368,31 @@ function ProjectDetail({
     );
   };
 
+  // Rev3-D D4 — show-shelved toggle state. Default OFF so high-
+  // friction narratives don't keep nag-rendering across reloads; the
+  // toggle is transient (no localStorage) so an explicit reveal is
+  // bounded to the current session.
+  const [showShelved, setShowShelved] = useState(false);
+
+  // Partition narratives into active (default rendering) vs shelved
+  // (hidden unless the toggle is on). Uses the saturation kernel as
+  // the single source of truth — never inline the cap comparison.
+  const { visibleNarratives, shelvedNarrativeIds } = useMemo(() => {
+    const shelvedIds = new Set<string>();
+    const visible: Narrative[] = [];
+    for (const n of narratives) {
+      const state = narrativeStates.get(n.id);
+      const sat = narrativeSaturation(state?.dismissalCount ?? 0);
+      if (sat.shelved) {
+        shelvedIds.add(n.id);
+        if (showShelved) visible.push(n);
+      } else {
+        visible.push(n);
+      }
+    }
+    return { visibleNarratives: visible, shelvedNarrativeIds: shelvedIds };
+  }, [narratives, narrativeStates, showShelved]);
+
   return (
     <div className="lcars-project-detail" id={`project-${project.id}`}>
       {/*
@@ -412,15 +437,46 @@ function ProjectDetail({
         className="lcars-project-detail__narratives"
         aria-label="discovered narratives"
       >
-        <h3 className="lcars-project-detail__section-title">NARRATIVES</h3>
-        {narratives.length === 0 ? (
+        <div className="lcars-project-detail__narratives-header">
+          <h3 className="lcars-project-detail__section-title">NARRATIVES</h3>
+          {/*
+            Rev3-D D4 — show-shelved toggle. Narratives whose
+            `dismissalCount >= maxDismissals` (see narrativeSaturation)
+            are hidden from the active pile by default; flipping the
+            toggle reveals them so the user can audit or re-promote.
+            Transient session-state (no localStorage) — the safe
+            default is "shelved hidden" so a high-friction narrative
+            doesn't keep reappearing across reloads.
+          */}
+          {shelvedNarrativeIds.size > 0 && (
+            <label
+              className="lcars-project-detail__shelved-toggle"
+              aria-label={
+                showShelved
+                  ? `hide ${shelvedNarrativeIds.size} shelved narratives`
+                  : `show ${shelvedNarrativeIds.size} shelved narratives`
+              }
+            >
+              <input
+                type="checkbox"
+                checked={showShelved}
+                onChange={(e) => setShowShelved(e.target.checked)}
+              />
+              <span>
+                show shelved ({shelvedNarrativeIds.size})
+              </span>
+            </label>
+          )}
+        </div>
+        {visibleNarratives.length === 0 ? (
           <p className="lcars-project-detail__empty-narratives">
-            No narratives for this project yet — narratives only emerge once a project has
-            multiple same-sentiment sessions.
+            {narratives.length === 0
+              ? 'No narratives for this project yet — narratives only emerge once a project has multiple same-sentiment sessions.'
+              : `All ${narratives.length} narrative${narratives.length === 1 ? ' is' : 's are'} shelved. Toggle "show shelved" to audit.`}
           </p>
         ) : (
           <ul className="lcars-project-detail__narrative-list" role="list">
-            {narratives.map((n) => (
+            {visibleNarratives.map((n) => (
               <li key={n.id} role="listitem">
                 <NarrativeCard
                   narrative={n}
