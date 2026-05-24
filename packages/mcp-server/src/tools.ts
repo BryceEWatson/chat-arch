@@ -27,6 +27,7 @@ import type {
   ListNarrativesFilter,
   ListPatternsFilter,
   FindingsFilter,
+  SessionKey,
 } from '@chat-arch/exporter/db';
 import {
   getFindingById,
@@ -85,15 +86,21 @@ function requireString(
   return value;
 }
 
-function requireNumber(
+/**
+ * Validator for positive-integer SQL rowid lookups. Rejects
+ * non-integers, zero, and negatives — better-sqlite3 would
+ * silently coerce them to a null lookup, hiding LLM-caller
+ * misuse. Per adversarial review on PR #94.
+ */
+function requirePositiveInteger(
   toolName: string,
   args: Readonly<Record<string, unknown>>,
   key: string,
 ): number {
   const value = args[key];
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
     throw new ToolArgError(
-      `Tool "${toolName}" requires "${key}" to be a finite number. Got: ${JSON.stringify(value)}.`,
+      `Tool "${toolName}" requires "${key}" to be a positive integer (≥ 1). Got: ${JSON.stringify(value)}.`,
     );
   }
   return value;
@@ -111,6 +118,68 @@ function optionalString(
     );
   }
   return value;
+}
+
+/**
+ * Like `optionalString`, but also accepts `null` (matches the
+ * SDK's `string | null` anchor-filter shape, where `null` means
+ * "find rows where this anchor IS NULL"). Per design-coherence +
+ * adversarial review on PR #94: the SDK exposes a 3-state filter
+ * (undefined/null/string) and the tool layer must mirror it or
+ * leak the "find unanchored rows" query path.
+ */
+function optionalStringOrNull(
+  args: Readonly<Record<string, unknown>>,
+  key: string,
+): string | null | undefined {
+  const value = args[key];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ToolArgError(
+      `Optional argument "${key}" must be null or a non-empty string when present. Got: ${JSON.stringify(value)}.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Optional session-key validator. The SDK's `FindingsFilter.session`
+ * accepts `undefined` (don't filter), `null` (find unanchored
+ * findings), or `{source, id}` (find findings for that session).
+ */
+function optionalSessionKey(
+  args: Readonly<Record<string, unknown>>,
+  key: string,
+): SessionKey | null | undefined {
+  const value = args[key];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ToolArgError(
+      `Optional argument "${key}" must be null or an object {source, id} when present. Got: ${JSON.stringify(value)}.`,
+    );
+  }
+  const v = value as Record<string, unknown>;
+  if (typeof v['source'] !== 'string' || (v['source'] as string).length === 0) {
+    throw new ToolArgError(
+      `Argument "${key}.source" must be a non-empty string. Got: ${JSON.stringify(v['source'])}.`,
+    );
+  }
+  if (typeof v['id'] !== 'string' || (v['id'] as string).length === 0) {
+    throw new ToolArgError(
+      `Argument "${key}.id" must be a non-empty string. Got: ${JSON.stringify(v['id'])}.`,
+    );
+  }
+  // Reject extra keys for symmetry with assertNoUnknownKeys.
+  for (const k of Object.keys(v)) {
+    if (k !== 'source' && k !== 'id') {
+      throw new ToolArgError(
+        `Argument "${key}" has unknown sub-key "${k}". Allowed: source, id.`,
+      );
+    }
+  }
+  return { source: v['source'] as string, id: v['id'] as string };
 }
 
 function optionalNumber(
@@ -236,13 +305,19 @@ export function registerSdkTools(
         'sentiment',
         'schemaVersion',
       ]);
-      const filter: ListNarrativesFilter = {};
       const projectId = optionalString(args, 'projectId');
       const sentiment = optionalString(args, 'sentiment');
       const schemaVersion = optionalNumber(args, 'schemaVersion');
-      if (projectId !== undefined) (filter as { projectId?: string }).projectId = projectId;
-      if (sentiment !== undefined) (filter as { sentiment?: string }).sentiment = sentiment;
-      if (schemaVersion !== undefined) (filter as { schemaVersion?: number }).schemaVersion = schemaVersion;
+      // Spread-conditional builder — each filter key is type-
+      // checked against ListNarrativesFilter directly, so a future
+      // SDK rename trips TypeScript instead of silently returning
+      // unfiltered rows. Per adversarial + simplicity review on
+      // PR #94.
+      const filter: ListNarrativesFilter = {
+        ...(projectId !== undefined && { projectId }),
+        ...(sentiment !== undefined && { sentiment }),
+        ...(schemaVersion !== undefined && { schemaVersion }),
+      };
       return listNarratives(db, filter);
     },
   });
@@ -267,13 +342,14 @@ export function registerSdkTools(
         'sourceNarrativeId',
         'appendedToClaudeMd',
       ]);
-      const filter: ListPatternsFilter = {};
       const projectId = optionalString(args, 'projectId');
       const sourceNarrativeId = optionalString(args, 'sourceNarrativeId');
       const appendedToClaudeMd = optionalBoolean(args, 'appendedToClaudeMd');
-      if (projectId !== undefined) (filter as { projectId?: string }).projectId = projectId;
-      if (sourceNarrativeId !== undefined) (filter as { sourceNarrativeId?: string }).sourceNarrativeId = sourceNarrativeId;
-      if (appendedToClaudeMd !== undefined) (filter as { appendedToClaudeMd?: boolean }).appendedToClaudeMd = appendedToClaudeMd;
+      const filter: ListPatternsFilter = {
+        ...(projectId !== undefined && { projectId }),
+        ...(sourceNarrativeId !== undefined && { sourceNarrativeId }),
+        ...(appendedToClaudeMd !== undefined && { appendedToClaudeMd }),
+      };
       return listPatterns(db, filter);
     },
   });
@@ -281,17 +357,21 @@ export function registerSdkTools(
   // ── findings ───────────────────────────────────────────────
   server.registerTool({
     name: 'get_finding',
-    description: 'Look up a finding by integer id.',
+    description:
+      'Look up a finding by positive-integer rowid.',
     handler: async (args) => {
       assertNoUnknownKeys('get_finding', args, ['id']);
-      const id = requireNumber('get_finding', args, 'id');
+      // Positive integer (not just finite number) — better-sqlite3
+      // would silently coerce 1.5 / -1 / 0 to a null rowid lookup,
+      // hiding LLM-caller misuse. Per adversarial review on PR #94.
+      const id = requirePositiveInteger('get_finding', args, 'id');
       return getFindingById(db, id);
     },
   });
   server.registerTool({
     name: 'list_findings',
     description:
-      'List findings, optionally filtered by kernel / project / topic / narrative / pattern anchors.',
+      'List findings, optionally filtered by kernel / project / topic / narrative / pattern anchors (each anchor accepts null to find unanchored rows) / session ({source, id} or null for unanchored).',
     handler: async (args) => {
       assertNoUnknownKeys('list_findings', args, [
         'kernel',
@@ -299,18 +379,27 @@ export function registerSdkTools(
         'topicId',
         'narrativeId',
         'patternId',
+        'session',
       ]);
-      const filter: FindingsFilter = {};
       const kernel = optionalString(args, 'kernel');
-      const projectId = optionalString(args, 'projectId');
-      const topicId = optionalString(args, 'topicId');
-      const narrativeId = optionalString(args, 'narrativeId');
-      const patternId = optionalString(args, 'patternId');
-      if (kernel !== undefined) (filter as { kernel?: string }).kernel = kernel;
-      if (projectId !== undefined) (filter as { projectId?: string | null }).projectId = projectId;
-      if (topicId !== undefined) (filter as { topicId?: string | null }).topicId = topicId;
-      if (narrativeId !== undefined) (filter as { narrativeId?: string | null }).narrativeId = narrativeId;
-      if (patternId !== undefined) (filter as { patternId?: string | null }).patternId = patternId;
+      // Each anchor key is `string | null | undefined` per the
+      // SDK's FindingsFilter contract — null finds rows where
+      // that anchor IS NULL ("unanchored" query path). Per
+      // design-coherence review on PR #94: dropping the null
+      // branch made the unanchored path unreachable through MCP.
+      const projectId = optionalStringOrNull(args, 'projectId');
+      const topicId = optionalStringOrNull(args, 'topicId');
+      const narrativeId = optionalStringOrNull(args, 'narrativeId');
+      const patternId = optionalStringOrNull(args, 'patternId');
+      const session = optionalSessionKey(args, 'session');
+      const filter: FindingsFilter = {
+        ...(kernel !== undefined && { kernel }),
+        ...(projectId !== undefined && { projectId }),
+        ...(topicId !== undefined && { topicId }),
+        ...(narrativeId !== undefined && { narrativeId }),
+        ...(patternId !== undefined && { patternId }),
+        ...(session !== undefined && { session }),
+      };
       return listFindings(db, filter);
     },
   });

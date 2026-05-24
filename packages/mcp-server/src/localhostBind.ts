@@ -22,13 +22,18 @@
 // the protocol PR. Keeping it pure means downstream tests can pin
 // the rule independently of any specific transport implementation.
 
-const STDIO_BIND = Object.freeze({ kind: 'stdio' as const });
-
+// Loopback IP literals only — explicitly NOT `'localhost'`. The
+// `localhost` string resolves via /etc/hosts (or Windows hosts
+// file) and a hostile or compromised hosts file could redirect it
+// to a non-loopback address — at which point the policy would
+// approve a bind reachable off-host. Requiring explicit IPs makes
+// the policy robust to hosts-file tampering. Per adversarial
+// review on PR #94. (Callers who want hostname-based binding must
+// resolve the name themselves and pass the resulting IP.)
 const LOCALHOST_LITERALS: ReadonlySet<string> = new Set([
   '127.0.0.1',
   '::1',
   '::ffff:127.0.0.1', // IPv4-mapped loopback
-  'localhost',
 ]);
 
 /**
@@ -87,7 +92,10 @@ export function assertLocalhostBind(
   input: Readonly<AssertLocalhostBindInput>,
 ): BindDescriptor {
   if (input.kind === 'stdio') {
-    return STDIO_BIND;
+    // Freeze both stdio and tcp returns for consistency — the
+    // BindDescriptor's readonly markers are TypeScript-only and
+    // erased at runtime. Per simplicity review on PR #94.
+    return Object.freeze({ kind: 'stdio' });
   }
   if (input.kind !== 'tcp') {
     throw new LocalhostBindError(
@@ -104,7 +112,7 @@ export function assertLocalhostBind(
   }
   if (!LOCALHOST_LITERALS.has(host)) {
     throw new LocalhostBindError(
-      `TCP bind host must be a loopback literal (${[...LOCALHOST_LITERALS].join(', ')}). Got: "${host}". Remote MCP-over-HTTP is descoped per plan §Rev3-H H4.`,
+      `TCP bind host must be a loopback IP literal (${[...LOCALHOST_LITERALS].join(', ')}). Got: "${host}". Remote MCP-over-HTTP is descoped per plan §Rev3-H H4; "localhost" hostname rejected because it depends on /etc/hosts resolution.`,
       'non-loopback',
     );
   }
@@ -120,7 +128,7 @@ export function assertLocalhostBind(
       'invalid-port',
     );
   }
-  return { kind: 'tcp', host, port };
+  return Object.freeze({ kind: 'tcp', host, port });
 }
 
 /**

@@ -18,12 +18,9 @@ export * from './findings.js';
 export * from './junctions.js';
 export * from './entityStates.js';
 
-// Re-export the canonical seed fixture so cross-package gate tests
-// (e.g. @chat-arch/mcp-server Phase Rev3-H H5) can share the same
-// deterministic corpus the in-package tests use, instead of
-// duplicating ~50 row inserts.
-export {
-  SEED_IDS,
-  SEED_SESSION_KEYS,
-  seedRev3Fixture,
-} from './seedFixture.js';
+// Note: `seedRev3Fixture` + `SEED_IDS` + `SEED_SESSION_KEYS` are
+// deliberately NOT re-exported here. They live behind the
+// `@chat-arch/exporter/db/fixtures` subpath instead — test
+// fixtures don't belong on the production SDK surface (IntelliSense
+// pollution + bundler ships fixture data into prod). Per design-
+// coherence + adversarial review on PR #94.

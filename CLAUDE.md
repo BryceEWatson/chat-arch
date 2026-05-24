@@ -109,11 +109,24 @@ packages/viewer/     React viewer (mount target) + 6 outcome-substrate
                      + SourceAttribution
 packages/mcp-server/ Standalone MCP server exposing @chat-arch/
                      exporter/db SDK as read-only tools to external
-                     claude sessions (Rev3-H). H1+H2 scaffold ships
-                     the workingDir scoping + read-only verb
-                     allowlist + server factory. H3 plugs the actual
-                     MCP protocol layer + SDK query tools on top;
-                     H4 enforces localhost-bind; H5 gate test.
+                     claude sessions (Rev3-H). Contents:
+                     - server.ts (createMcpServer factory),
+                     - workingDir.ts (basename+absolute-path guard
+                       + traversal check + Win drive-letter case
+                       normalization + UNC reject),
+                     - readOnly.ts (allow-listed read-verb prefixes
+                       + deny-list with embedded-verb segment-scan),
+                     - tools.ts (registerSdkTools wires 10 get_/list_
+                       MCP tools across projects/topics/narratives/
+                       patterns/findings with full SDK-filter parity),
+                     - localhostBind.ts (assertLocalhostBind policy
+                       gate — IP literals only, no hostname),
+                     - tools.gate.test.ts (H5 equivalence gate —
+                       tool result deep-equals direct SDK call).
+                     The actual MCP protocol layer (stdio transport
+                     + @modelcontextprotocol/sdk wiring) lands in a
+                     subsequent PR; this scaffold's contract is what
+                     the protocol layer plugs into.
 scripts/             One-off audits (audit-correction-recall.mjs) +
                      lint scripts (lint-causal-copy.mjs,
                      lint-thresholds-imports.mjs, lint-fixture-pii.mjs)

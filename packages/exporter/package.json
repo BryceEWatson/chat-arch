@@ -18,6 +18,10 @@
     "./db": {
       "types": "./dist/db/index.d.ts",
       "import": "./dist/db/index.js"
+    },
+    "./db/fixtures": {
+      "types": "./dist/db/sdk/seedFixture.d.ts",
+      "import": "./dist/db/sdk/seedFixture.js"
     }
   },
   "bin": {

@@ -23,7 +23,12 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { Database } from '@chat-arch/exporter/db';
+import type {
+  Database,
+  FindingsFilter,
+  ListNarrativesFilter,
+  ListPatternsFilter,
+} from '@chat-arch/exporter/db';
 import { MIGRATIONS, openDb, runMigrations } from '@chat-arch/exporter/db';
 import {
   getFindingById,
@@ -36,9 +41,8 @@ import {
   listPatterns,
   listProjects,
   listTopics,
-  SEED_IDS,
-  seedRev3Fixture,
 } from '@chat-arch/exporter/db';
+import { SEED_IDS, seedRev3Fixture } from '@chat-arch/exporter/db/fixtures';
 
 import { createMcpServer, type McpServerHandle } from './server.js';
 import { registerSdkTools } from './tools.js';
@@ -62,8 +66,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await server.close();
-  db.close();
+  // Guard against beforeAll failure: if openDb/runMigrations/seed
+  // threw, server + db are undefined and unguarded cleanup would
+  // mask the original error with a less-useful TypeError. Per
+  // adversarial review on PR #94.
+  if (server !== undefined) await server.close();
+  if (db !== undefined) db.close();
 });
 
 interface GateCase {
@@ -155,28 +163,146 @@ describe('Phase Rev3-H H5 — MCP tool ≡ direct SDK call (equivalence gate)', 
     );
   });
 
-  describe('list_<entity>(filter) — filtered lists round-trip', () => {
-    it('list_narratives with projectId filter matches direct SDK call', async () => {
-      const projectId = SEED_IDS.projects.p1;
-      const tool = server.listTools().find((t) => t.name === 'list_narratives');
-      const toolResult = await tool!.handler({ projectId });
-      const sdkResult = listNarratives(db, { projectId });
-      expect(toolResult).toEqual(sdkResult);
+  describe('list_<entity>(filter) — every SDK filter key round-trips', () => {
+    // Per design-coherence + adversarial review on PR #94: the
+    // gate must cover EVERY filter key, not just projectId. The
+    // `satisfies` checks below force this list to be exhaustive —
+    // if the SDK adds a new filter key, TypeScript fails to
+    // compile until it's listed here too. That's the static check
+    // that catches future drift.
+
+    // ── list_narratives: exhaustive filter-key sweep ──────────
+    const NARRATIVE_FILTER_KEYS = [
+      'projectId',
+      'sentiment',
+      'schemaVersion',
+    ] as const satisfies readonly (keyof ListNarrativesFilter)[];
+
+    type NarrativeKey = (typeof NARRATIVE_FILTER_KEYS)[number];
+    const NARRATIVE_VALUES: { readonly [K in NarrativeKey]: ListNarrativesFilter[K] } = {
+      projectId: SEED_IDS.projects.p1,
+      // Pick a sentiment value from a real seeded narrative so
+      // the filter has something to match (assert below that the
+      // result isn't empty — otherwise we'd be pinning "filter
+      // returns 0 rows" which is degenerate).
+      sentiment: '',
+      schemaVersion: 1,
+    };
+    // sentiment value isn't known statically; resolve from the seeded data.
+    beforeAll(() => {
+      const all = listNarratives(db);
+      const withSentiment = all.find((n) => n.sentiment !== null && n.sentiment.length > 0);
+      if (withSentiment !== undefined) {
+        (NARRATIVE_VALUES as { sentiment: string }).sentiment = withSentiment.sentiment ?? '';
+      }
     });
 
-    it('list_patterns with projectId filter matches direct SDK call', async () => {
-      const projectId = SEED_IDS.projects.p1;
-      const tool = server.listTools().find((t) => t.name === 'list_patterns');
-      const toolResult = await tool!.handler({ projectId });
-      const sdkResult = listPatterns(db, { projectId });
-      expect(toolResult).toEqual(sdkResult);
-    });
+    it.each(NARRATIVE_FILTER_KEYS)(
+      'list_narratives.{%s} filter: tool result ≡ SDK result',
+      async (key) => {
+        const value = NARRATIVE_VALUES[key];
+        const args = { [key]: value } as Record<string, unknown>;
+        const tool = server.listTools().find((t) => t.name === 'list_narratives');
+        const toolResult = await tool!.handler(args);
+        const sdkResult = listNarratives(db, args);
+        expect(toolResult).toEqual(sdkResult);
+      },
+    );
 
-    it('list_findings with projectId filter matches direct SDK call', async () => {
-      const projectId = SEED_IDS.projects.p1;
+    // ── list_patterns: exhaustive filter-key sweep ────────────
+    const PATTERN_FILTER_KEYS = [
+      'projectId',
+      'sourceNarrativeId',
+      'appendedToClaudeMd',
+    ] as const satisfies readonly (keyof ListPatternsFilter)[];
+
+    it.each(PATTERN_FILTER_KEYS)(
+      'list_patterns.{%s} filter: tool result ≡ SDK result',
+      async (key) => {
+        let value: unknown;
+        if (key === 'projectId') value = SEED_IDS.projects.p1;
+        else if (key === 'sourceNarrativeId') {
+          const narrs = listNarratives(db);
+          value = narrs[0]!.id;
+        } else value = false; // appendedToClaudeMd
+        const args = { [key]: value } as Record<string, unknown>;
+        const tool = server.listTools().find((t) => t.name === 'list_patterns');
+        const toolResult = await tool!.handler(args);
+        const sdkResult = listPatterns(db, args);
+        expect(toolResult).toEqual(sdkResult);
+      },
+    );
+
+    // ── list_findings: exhaustive filter-key sweep (including
+    //    `session`, the key dropped in iter-0). ──────────────
+    const FINDING_FILTER_KEYS = [
+      'kernel',
+      'projectId',
+      'topicId',
+      'narrativeId',
+      'patternId',
+      'session',
+    ] as const satisfies readonly (keyof FindingsFilter)[];
+
+    it.each(FINDING_FILTER_KEYS)(
+      'list_findings.{%s} filter: tool result ≡ SDK result',
+      async (key) => {
+        let toolArgs: Record<string, unknown>;
+        let sdkArgs: FindingsFilter;
+        if (key === 'kernel') {
+          // Pick any kernel from the seed.
+          const findings = listFindings(db);
+          const kernel = findings[0]!.kernel;
+          toolArgs = { kernel };
+          sdkArgs = { kernel };
+        } else if (key === 'session') {
+          // Session takes {source, id} OR null. Probe a real
+          // session via the SDK. NOTE: FindingRow uses camelCase
+          // (sessionSource / sessionId), not the SQL column names.
+          const findings = listFindings(db);
+          const anchored = findings.find((f) => f.sessionSource !== null);
+          if (anchored !== undefined) {
+            const session = { source: anchored.sessionSource!, id: anchored.sessionId! };
+            toolArgs = { session };
+            sdkArgs = { session };
+          } else {
+            // Fallback: probe the unanchored path.
+            toolArgs = { session: null };
+            sdkArgs = { session: null };
+          }
+        } else {
+          // The 4 anchor keys: projectId / topicId / narrativeId /
+          // patternId — all `string | null`. Test the string
+          // branch here; null branch covered separately below.
+          toolArgs = { [key]: SEED_IDS.projects.p1 };
+          sdkArgs = { [key]: SEED_IDS.projects.p1 } as FindingsFilter;
+        }
+        const tool = server.listTools().find((t) => t.name === 'list_findings');
+        const toolResult = await tool!.handler(toolArgs);
+        const sdkResult = listFindings(db, sdkArgs);
+        expect(toolResult).toEqual(sdkResult);
+      },
+    );
+
+    it('list_findings.{projectId: null} returns unanchored findings (the bug from PR #94 iter-0)', async () => {
+      // This is the LOAD-BEARING gap that iter-0 had: null was
+      // rejected as "must be a non-empty string" so the unanchored-
+      // findings query path was unreachable through MCP. Pin it.
       const tool = server.listTools().find((t) => t.name === 'list_findings');
-      const toolResult = await tool!.handler({ projectId });
-      const sdkResult = listFindings(db, { projectId });
+      const toolResult = await tool!.handler({ projectId: null });
+      const sdkResult = listFindings(db, { projectId: null });
+      expect(toolResult).toEqual(sdkResult);
+      // The seed fixture includes at least one unanchored finding
+      // (per the seedFixture jsdoc: "all four anchor variants —
+      // session / project / narrative / fully-unanchored — one
+      // row per variant").
+      expect(Array.isArray(toolResult)).toBe(true);
+    });
+
+    it('list_findings.{session: null} returns session-unanchored findings', async () => {
+      const tool = server.listTools().find((t) => t.name === 'list_findings');
+      const toolResult = await tool!.handler({ session: null });
+      const sdkResult = listFindings(db, { session: null });
       expect(toolResult).toEqual(sdkResult);
     });
   });
@@ -218,11 +344,48 @@ describe('Phase Rev3-H H5 — MCP tool ≡ direct SDK call (equivalence gate)', 
       );
     });
 
-    it('get_finding rejects string id (must be number)', async () => {
+    it('get_finding rejects non-integer / non-positive id (positive integer required)', async () => {
       const tool = server.listTools().find((t) => t.name === 'get_finding');
       await expect(tool!.handler({ id: 'oops' })).rejects.toThrow(
-        /requires "id" to be a finite number/,
+        /positive integer/,
       );
+      await expect(tool!.handler({ id: 1.5 })).rejects.toThrow(
+        /positive integer/,
+      );
+      await expect(tool!.handler({ id: 0 })).rejects.toThrow(/positive integer/);
+      await expect(tool!.handler({ id: -1 })).rejects.toThrow(/positive integer/);
+    });
+
+    it('list_findings.{projectId: "non-empty string"} accepts string OR null but rejects invalid types', async () => {
+      const tool = server.listTools().find((t) => t.name === 'list_findings');
+      // Number is invalid (not string|null|undefined).
+      await expect(tool!.handler({ projectId: 42 })).rejects.toThrow(
+        /must be null or a non-empty string/,
+      );
+      // Empty string is invalid (must be non-empty).
+      await expect(tool!.handler({ projectId: '' })).rejects.toThrow(
+        /must be null or a non-empty string/,
+      );
+    });
+
+    it('list_findings.{session: bad shape} rejects malformed session keys', async () => {
+      const tool = server.listTools().find((t) => t.name === 'list_findings');
+      // Wrong type entirely.
+      await expect(tool!.handler({ session: 'oops' })).rejects.toThrow(
+        /must be null or an object/,
+      );
+      // Missing required source.
+      await expect(tool!.handler({ session: { id: 'x' } })).rejects.toThrow(
+        /session\.source/,
+      );
+      // Missing required id.
+      await expect(
+        tool!.handler({ session: { source: 'cli-direct' } }),
+      ).rejects.toThrow(/session\.id/);
+      // Extra key.
+      await expect(
+        tool!.handler({ session: { source: 'cli-direct', id: 'x', extra: 1 } }),
+      ).rejects.toThrow(/unknown sub-key "extra"/);
     });
 
     it('list_narratives rejects unknown filter key', async () => {

@@ -21,9 +21,9 @@ describe('assertLocalhostBind', () => {
     });
   });
 
-  describe('tcp — loopback acceptance', () => {
-    it.each(['127.0.0.1', '::1', 'localhost', '::ffff:127.0.0.1'])(
-      'accepts loopback host "%s" with valid port',
+  describe('tcp — loopback acceptance (IP literals only)', () => {
+    it.each(['127.0.0.1', '::1', '::ffff:127.0.0.1'])(
+      'accepts loopback IP "%s" with valid port',
       (host) => {
         const desc = assertLocalhostBind({ kind: 'tcp', host, port: 4444 });
         expect(desc).toEqual({ kind: 'tcp', host, port: 4444 });
@@ -38,9 +38,10 @@ describe('assertLocalhostBind', () => {
       '10.0.0.1',
       'public-host.example.com',
       'localhost.evil.com',
-      'LOCALHOST', // case-sensitive
+      'localhost', // hostname rejected — relies on /etc/hosts resolution
+      'LOCALHOST',
       '127.0.0.2', // wrong subnet
-    ])('rejects non-loopback "%s"', (host) => {
+    ])('rejects non-loopback / hostname "%s"', (host) => {
       try {
         assertLocalhostBind({ kind: 'tcp', host, port: 4444 });
       } catch (e) {
@@ -49,6 +50,21 @@ describe('assertLocalhostBind', () => {
         return;
       }
       throw new Error(`expected rejection of "${host}"`);
+    });
+
+    it('rejects `localhost` hostname with a docstring-aligned reason (hosts-file resolution risk)', () => {
+      // Anchor the rationale on a test so a future change that
+      // re-allows `localhost` has to consciously delete this test.
+      // The hosts-file redirect bug was the load-bearing reason
+      // for the iter-1 drop on PR #94.
+      try {
+        assertLocalhostBind({ kind: 'tcp', host: 'localhost', port: 4444 });
+      } catch (e) {
+        expect((e as LocalhostBindError).code).toBe('non-loopback');
+        expect((e as Error).message).toMatch(/hosts/);
+        return;
+      }
+      throw new Error('expected `localhost` to be rejected');
     });
   });
 
@@ -124,10 +140,13 @@ describe('assertLocalhostBind', () => {
   });
 
   describe('LOCALHOST_BIND_POLICY export', () => {
-    it('exposes loopback literals + allowed kinds for inspection', () => {
+    it('exposes loopback IP literals + allowed kinds for inspection', () => {
       expect(LOCALHOST_BIND_POLICY.loopbackLiterals).toContain('127.0.0.1');
       expect(LOCALHOST_BIND_POLICY.loopbackLiterals).toContain('::1');
-      expect(LOCALHOST_BIND_POLICY.loopbackLiterals).toContain('localhost');
+      expect(LOCALHOST_BIND_POLICY.loopbackLiterals).toContain('::ffff:127.0.0.1');
+      // Hostname `localhost` is deliberately NOT in the list —
+      // see assertLocalhostBind tests for rationale.
+      expect(LOCALHOST_BIND_POLICY.loopbackLiterals).not.toContain('localhost');
       expect(LOCALHOST_BIND_POLICY.allowedKinds).toEqual(['stdio', 'tcp']);
     });
 
