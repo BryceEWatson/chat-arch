@@ -16,6 +16,19 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **`cosineSimilarity` triplication consolidated (tech-debt D2).**
+  The previously-triplicated cosine implementations now live in
+  `packages/analysis/src/stats.ts`:
+  - `cosineSimilarity(a, b)` — general form with magnitude division
+    (replaces the byte-identical copies in `clusterRules.ts` and
+    `embeddings/index.ts`).
+  - `cosineSimilarityNormalized(a, b)` — fast-path dot product for
+    pre-normalized inputs (relocated from `classifyByEmbedding.ts`).
+  - New `NumericVector` type — `Float32Array | Float64Array |
+    readonly number[]`.
+  Existing imports continue to work via re-exports from
+  `classifyByEmbedding.ts` and `embeddings/index.ts`. Behavior
+  byte-identical to pre-D2 main; pure consolidation.
 - **Fisher's exact at small-n in surface-comparison (tech-debt T3).**
   `SurfacePairwiseTest` now carries a `testMethod: 'z-test' |
   'fisher-exact'` field, and per-pair test selection in

@@ -19,26 +19,11 @@
  * Acceptable: n is in the low hundreds at the upper bound for our usage.
  */
 
-/**
- * Un-normalized cosine similarity. We accept arbitrary Float32Array
- * inputs (the correction pipeline does not pre-normalize Ollama
- * outputs), so we divide by both magnitudes here.
- */
-function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  const len = Math.min(a.length, b.length);
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < len; i += 1) {
-    const x = a[i] as number;
-    const y = b[i] as number;
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
+// cosineSimilarity previously inlined here is centralized in
+// `stats.ts` (D2 tech-debt sweep) — the correction-pipeline-fed
+// Ollama vectors are un-normalized, so we use the general form
+// rather than `cosineSimilarityNormalized`.
+import { cosineSimilarity } from './stats.js';
 
 /**
  * Cluster vectors via agglomerative single-linkage cosine similarity.

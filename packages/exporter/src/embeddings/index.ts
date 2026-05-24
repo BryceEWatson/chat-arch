@@ -121,21 +121,11 @@ export async function embed(texts: string[], opts: EmbedOptions = {}): Promise<F
   return results;
 }
 
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  const len = Math.min(a.length, b.length);
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < len; i++) {
-    const x = a[i] as number;
-    const y = b[i] as number;
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
+// cosineSimilarity is re-exported from @chat-arch/analysis (D2 tech-debt
+// sweep — the previously-inlined implementation here was byte-identical
+// to the one in packages/analysis/src/clusterRules.ts). Consumers of
+// this module's `cosineSimilarity` export continue to work unchanged.
+export { cosineSimilarity } from '@chat-arch/analysis';
 
 export { isOllamaAvailable, embedOne, embedBatch } from './ollama.js';
 export type { EmbedOneOptions, EmbedBatchOptions } from './ollama.js';

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   bhFdrAdjust,
+  cosineSimilarity,
+  cosineSimilarityNormalized,
   euclidean,
   ewma,
   expectedCellCounts2x2,
@@ -378,5 +380,65 @@ describe('expectedCellCounts2x2', () => {
     // E(good, A) = 50*30/100 = 15 (≥ 5 → use z-test).
     const expectedLarge = expectedCellCounts2x2(50, 50, 20, 10);
     expect(Math.min(...expectedLarge)).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('cosineSimilarity (un-normalized)', () => {
+  it('returns 1 on identical non-unit vectors', () => {
+    expect(cosineSimilarity([3, 4], [3, 4])).toBeCloseTo(1, 9);
+    expect(cosineSimilarity([1, 2, 3], [1, 2, 3])).toBeCloseTo(1, 9);
+  });
+  it('returns 0 on orthogonal vectors', () => {
+    expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0, 9);
+  });
+  it('returns -1 on opposite-direction vectors', () => {
+    expect(cosineSimilarity([1, 2, 3], [-1, -2, -3])).toBeCloseTo(-1, 9);
+  });
+  it('scale invariant — magnitudes cancel in the denominator', () => {
+    const a = [1, 2, 3];
+    const b = [2, 4, 6];
+    expect(cosineSimilarity(a, b)).toBeCloseTo(1, 9);
+  });
+  it('returns 0 when either vector is all-zero (no signal, conservative fallback)', () => {
+    expect(cosineSimilarity([0, 0, 0], [1, 2, 3])).toBe(0);
+    expect(cosineSimilarity([1, 2, 3], [0, 0, 0])).toBe(0);
+  });
+  it('handles Float32Array inputs', () => {
+    const a = new Float32Array([1, 2, 3]);
+    const b = new Float32Array([4, 5, 6]);
+    // dot = 4+10+18 = 32; |a|=√14; |b|=√77; cos = 32 / √1078 ≈ 0.9746
+    expect(cosineSimilarity(a, b)).toBeCloseTo(0.9746, 3);
+  });
+  it('iterates to min(a.length, b.length) when lengths differ', () => {
+    // [1,2,3] vs [1,2]: only [1,2] vs [1,2] compared. cos = 1.
+    expect(cosineSimilarity([1, 2, 3], [1, 2])).toBeCloseTo(1, 9);
+  });
+});
+
+describe('cosineSimilarityNormalized (unit-vector fast path)', () => {
+  it('equals dot product for pre-normalized vectors', () => {
+    // Unit vectors at 45° and 0°: dot = cos 45° ≈ 0.7071.
+    const a = [Math.SQRT1_2, Math.SQRT1_2];
+    const b = [1, 0];
+    expect(cosineSimilarityNormalized(a, b)).toBeCloseTo(0.7071, 3);
+  });
+  it('returns 1 on identical unit vectors', () => {
+    const v = [Math.SQRT1_2, Math.SQRT1_2];
+    expect(cosineSimilarityNormalized(v, v)).toBeCloseTo(1, 9);
+  });
+  it('returns 0 on orthogonal unit vectors', () => {
+    expect(cosineSimilarityNormalized([1, 0], [0, 1])).toBe(0);
+  });
+  it('handles Float32Array inputs', () => {
+    const a = new Float32Array([1, 0, 0]);
+    const b = new Float32Array([0, 1, 0]);
+    expect(cosineSimilarityNormalized(a, b)).toBe(0);
+  });
+  it('iterates to min(a.length, b.length) — non-defensive on non-unit inputs', () => {
+    // The function does NOT normalize — it returns dot(a, b) directly.
+    // On non-unit vectors this is wrong (vs full cosineSimilarity), and
+    // that's the documented contract: pass unit vectors, or use the
+    // general form instead.
+    expect(cosineSimilarityNormalized([3, 4], [3, 4])).toBe(25);
   });
 });
