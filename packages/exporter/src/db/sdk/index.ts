@@ -16,3 +16,4 @@ export * from './narrativeEvidence.js';
 export * from './patterns.js';
 export * from './findings.js';
 export * from './junctions.js';
+export * from './entityStates.js';

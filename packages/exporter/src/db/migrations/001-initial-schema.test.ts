@@ -319,6 +319,7 @@ describe('001-initial-schema migration', () => {
         expect(first.applied).toEqual([
           '001-initial-schema',
           '002-narrative-provenance',
+          '003-entity-states',
         ]);
       } finally {
         db.close();
@@ -332,6 +333,7 @@ describe('001-initial-schema migration', () => {
         expect(second.alreadyApplied).toEqual([
           '001-initial-schema',
           '002-narrative-provenance',
+          '003-entity-states',
         ]);
       } finally {
         db.close();

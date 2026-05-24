@@ -1,27 +1,40 @@
 /**
- * Rev3-C C1+C2 — `/api/entity-states` endpoint.
+ * Rev3-C C4 — `/api/entity-states` endpoint, SQLite-backed.
  *
- * Generalizes the original `/api/knowledge-debt-state` ledger into a
- * shape that handles knowledge-debt clusters AND narratives under one
- * entry shape. Same CSRF + single-flight + atomic-write posture.
- * Ledger:
+ * Persistence cutover from C1+C2: the v2 JSON sidecar
+ * (`analysis/entity-states.json`) is no longer the source of truth.
+ * All reads + writes go through the `entity_states` table via the
+ * `@chat-arch/exporter/db` SDK. The legacy JSON files
+ * (`knowledge-debt-states.json` v1 + `entity-states.json` v2) are
+ * folded into the SQLite table on first DB access — see
+ * `apps/standalone/src/lib/chatArchDb.ts` for the fold + move-aside.
  *
- *   chat-arch-data/analysis/entity-states.json (v2)
+ * Endpoint shape:
+ *   POST /api/entity-states  — upsert one entry. CSRF-gated +
+ *     single-flight. Same body shape as PR #70.
+ *   GET  /api/entity-states  — return the full ledger as
+ *     `{ ok, available, entries: EntityStateEntry[] }`. The viewer's
+ *     `loadEntityStates` client fetches this in place of the prior
+ *     static JSON sidecar.
  *
- * Composite key: (entityKind, entityId).
- *
- * Back-compat read: if `entity-states.json` is missing but the legacy
- * `knowledge-debt-states.json` exists on disk, its entries are folded
- * into the in-memory ledger with `entityKind: 'knowledge-debt'` and
- * `entityId = clusterId`. The legacy file is left in place; the first
- * write produces a fresh `entity-states.json` carrying both old and
- * new entries.
+ * The POST validator + composite-key semantics still live here
+ * (pure functions, easy to unit-test); the SDK handles persistence
+ * including the dismissalCount transition rule (same semantics as
+ * the in-memory upsertEntityState that landed in C1+C2 iter-1).
  */
 
 import type { APIRoute } from 'astro';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+
+import {
+  getChatArchDb,
+} from '../../lib/chatArchDb.js';
+import {
+  listEntityStates,
+  upsertEntityState,
+  type EntityStateKind,
+  type EntityStateRow,
+  type EntityStateValue,
+} from '@chat-arch/exporter/db';
 
 export const prerender = false;
 
@@ -61,52 +74,6 @@ function jsonResponse(body: unknown, status: number): Response {
 }
 
 let inFlight: Promise<Response> | null = null;
-
-function repoRoot(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  return resolve(here, '..', '..', '..', '..', '..');
-}
-
-function standaloneDataDir(): string {
-  return join(repoRoot(), 'apps', 'standalone', 'public', 'chat-arch-data');
-}
-
-export type EntityStateKind = 'knowledge-debt' | 'narrative';
-export type EntityStateValue = 'PENDING' | 'INSTALLED' | 'DISMISSED';
-
-export interface EntityStateEntry {
-  entityKind: EntityStateKind;
-  entityId: string;
-  state: EntityStateValue;
-  updatedAt: number;
-  /**
-   * Snapshot of the entity's "size" at the moment of state change.
-   * Semantic differs by `entityKind`: `sessionIds.length` for
-   * knowledge-debt clusters, `evidence.length` for narratives. The
-   * generic name is preserved because Closure A's growth-multiplier
-   * re-promotion compares the live size against this snapshot
-   * regardless of which kind it represents.
-   */
-  sizeAtState: number;
-  /**
-   * Phase Rev3-D Closure B counter. Incremented each time the entry
-   * transitions INTO `DISMISSED` from any non-DISMISSED state. The
-   * saturation rule (`THRESHOLDS.narrativeRung.dismissDecay`,
-   * default ×2 → ×4 → ×8, cap K = `narrativeRung.maxDismissals`)
-   * reads this counter; D2 also penalizes the Narrative's per-
-   * kernel prior by `narrativeRung.repromotionPenalty` per
-   * dismissal. Optional on read for back-compat with the legacy
-   * `knowledge-debt-states.json` ledger and v2-without-counter
-   * entries written by earlier code; defaulted to 0 when absent.
-   */
-  dismissalCount?: number;
-}
-
-export interface EntityStatesFile {
-  schemaVersion: 2;
-  generatedAt: number;
-  entries: EntityStateEntry[];
-}
 
 const KNOWN_KINDS: ReadonlySet<EntityStateKind> = new Set([
   'knowledge-debt',
@@ -166,199 +133,12 @@ export function validateEntityStateBody(
   };
 }
 
-interface NodeFsError extends Error {
-  code?: string;
-}
-
-function isMissingFile(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as NodeFsError).code === 'ENOENT'
-  );
-}
-
-export class EntityStateLedgerCorruptError extends Error {
-  constructor(public readonly path: string, cause?: unknown) {
-    super(
-      `entity-states ledger appears corrupted at ${path}; refusing to overwrite.` +
-        (cause instanceof Error ? ` ${cause.message}` : ''),
-    );
-    this.name = 'EntityStateLedgerCorruptError';
-  }
-}
-
 /**
- * Legacy v1 entry shape from `knowledge-debt-states.json`. Defined
- * locally (not imported) so removing the legacy endpoint doesn't
- * couple the two files — they're related by file format only.
+ * Snake_case-to-camelCase shape exposed to clients. The SDK already
+ * returns camelCase; this just narrows the type for the wire format.
  */
-interface LegacyClusterEntry {
-  clusterId: unknown;
-  state: unknown;
-  updatedAt: unknown;
-  sizeAtState: unknown;
-}
-
-/**
- * Fold a legacy v1 entry into a v2 entry. Returns null if the entry
- * is malformed; the load path drops such entries silently rather than
- * throwing on otherwise-readable legacy data.
- */
-function migrateLegacyEntry(raw: LegacyClusterEntry): EntityStateEntry | null {
-  if (typeof raw.clusterId !== 'string' || raw.clusterId.length === 0) return null;
-  if (typeof raw.state !== 'string' || !KNOWN_STATES.has(raw.state as EntityStateValue)) {
-    return null;
-  }
-  if (typeof raw.updatedAt !== 'number' || !Number.isFinite(raw.updatedAt)) return null;
-  if (typeof raw.sizeAtState !== 'number' || !Number.isFinite(raw.sizeAtState)) {
-    return null;
-  }
-  // Legacy ledger never tracked dismissalCount. If the migrated entry
-  // is in DISMISSED state we count it as one prior dismissal so the
-  // Closure-B counter starts from a defensible floor instead of 0;
-  // otherwise zero.
-  const state = raw.state as EntityStateValue;
-  return {
-    entityKind: 'knowledge-debt',
-    entityId: raw.clusterId,
-    state,
-    updatedAt: raw.updatedAt,
-    sizeAtState: raw.sizeAtState,
-    dismissalCount: state === 'DISMISSED' ? 1 : 0,
-  };
-}
-
-export async function loadEntityStatesLedger(
-  ledgerPath: string,
-  legacyPath: string,
-): Promise<EntityStatesFile> {
-  let raw: string;
-  try {
-    raw = await readFile(ledgerPath, 'utf8');
-  } catch (err) {
-    if (isMissingFile(err)) {
-      return await readLegacyLedger(legacyPath);
-    }
-    throw new EntityStateLedgerCorruptError(ledgerPath, err);
-  }
-  let parsed: Partial<EntityStatesFile> | null = null;
-  try {
-    parsed = JSON.parse(raw) as Partial<EntityStatesFile>;
-  } catch (err) {
-    throw new EntityStateLedgerCorruptError(ledgerPath, err);
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
-    throw new EntityStateLedgerCorruptError(ledgerPath);
-  }
-  // Refuse to read a file whose schemaVersion is set to something we
-  // don't recognize. `undefined` is tolerated for forward-compat with
-  // earlier writers that omitted the field. Future v3+ writers will be
-  // caught here so a v2 reader doesn't silently downgrade their data.
-  if (
-    parsed.schemaVersion !== undefined &&
-    parsed.schemaVersion !== 2
-  ) {
-    throw new EntityStateLedgerCorruptError(ledgerPath);
-  }
-  return {
-    schemaVersion: 2,
-    generatedAt:
-      typeof parsed.generatedAt === 'number' ? parsed.generatedAt : Date.now(),
-    entries: parsed.entries as EntityStateEntry[],
-  };
-}
-
-async function readLegacyLedger(legacyPath: string): Promise<EntityStatesFile> {
-  let raw: string;
-  try {
-    raw = await readFile(legacyPath, 'utf8');
-  } catch (err) {
-    if (isMissingFile(err)) {
-      return { schemaVersion: 2, generatedAt: Date.now(), entries: [] };
-    }
-    // Legacy ledger present but unreadable — surface as corrupt so the
-    // user's prior state isn't silently dropped.
-    throw new EntityStateLedgerCorruptError(legacyPath, err);
-  }
-  let parsed: { entries?: unknown; generatedAt?: unknown } | null = null;
-  try {
-    parsed = JSON.parse(raw) as { entries?: unknown; generatedAt?: unknown };
-  } catch (err) {
-    throw new EntityStateLedgerCorruptError(legacyPath, err);
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.entries)) {
-    throw new EntityStateLedgerCorruptError(legacyPath);
-  }
-  const migrated: EntityStateEntry[] = [];
-  for (const e of parsed.entries) {
-    const m = migrateLegacyEntry(e as LegacyClusterEntry);
-    if (m !== null) migrated.push(m);
-  }
-  return {
-    schemaVersion: 2,
-    generatedAt:
-      typeof parsed.generatedAt === 'number' ? parsed.generatedAt : Date.now(),
-    entries: migrated,
-  };
-}
-
-async function atomicWriteEntityStatesLedger(
-  ledgerPath: string,
-  next: EntityStatesFile,
-): Promise<void> {
-  const tmpPath = join(
-    dirname(ledgerPath),
-    `.entity-states.json.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  );
-  await writeFile(tmpPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
-  await rename(tmpPath, ledgerPath);
-}
-
-/**
- * Upsert an entity-state entry keyed by (entityKind, entityId). Always
- * writes — re-clicks update `updatedAt` so the viewer can show the
- * most recent action.
- *
- * Exported for unit tests.
- */
-export function upsertEntityState(
-  prev: EntityStatesFile,
-  payload: ValidatedEntityState,
-  now: number,
-): { next: EntityStatesFile; entry: EntityStateEntry } {
-  const existingIx = prev.entries.findIndex(
-    (e) => e.entityKind === payload.entityKind && e.entityId === payload.entityId,
-  );
-  const existing = existingIx >= 0 ? prev.entries[existingIx]! : null;
-  // dismissalCount semantics (Closure B):
-  //   - first write OR transition into DISMISSED from a non-DISMISSED
-  //     state → increment from (existing ?? 0)
-  //   - DISMISSED → DISMISSED re-click → preserve existing count
-  //     (a re-click is not a new dismissal action)
-  //   - any other transition → carry forward, default 0
-  const priorCount = existing?.dismissalCount ?? 0;
-  const isFreshDismissal =
-    payload.state === 'DISMISSED' && existing?.state !== 'DISMISSED';
-  const dismissalCount = isFreshDismissal ? priorCount + 1 : priorCount;
-  const entry: EntityStateEntry = {
-    entityKind: payload.entityKind,
-    entityId: payload.entityId,
-    state: payload.state,
-    updatedAt: now,
-    sizeAtState: payload.sizeAtState,
-    dismissalCount,
-  };
-  const entries =
-    existingIx >= 0
-      ? prev.entries.map((e, i) => (i === existingIx ? entry : e))
-      : [...prev.entries, entry];
-  const next: EntityStatesFile = {
-    schemaVersion: 2,
-    generatedAt: now,
-    entries,
-  };
-  return { next, entry };
+function rowToWire(row: EntityStateRow): EntityStateRow {
+  return row;
 }
 
 export const POST: APIRoute = async ({ request }) => {
@@ -400,21 +180,17 @@ export const POST: APIRoute = async ({ request }) => {
       resolveSlot(r);
       return r;
     }
-    const sidecarDir = join(standaloneDataDir(), 'analysis');
-    const ledgerPath = join(sidecarDir, 'entity-states.json');
-    const legacyPath = join(sidecarDir, 'knowledge-debt-states.json');
     try {
-      await mkdir(sidecarDir, { recursive: true });
-      const prev = await loadEntityStatesLedger(ledgerPath, legacyPath);
-      const { next, entry } = upsertEntityState(prev, validation, Date.now());
-      await atomicWriteEntityStatesLedger(ledgerPath, next);
+      const db = await getChatArchDb();
+      const row = await upsertEntityState(db, {
+        entityKind: validation.entityKind,
+        entityId: validation.entityId,
+        state: validation.state,
+        sizeAtState: validation.sizeAtState,
+        updatedAt: Date.now(),
+      });
       const r = jsonResponse(
-        {
-          ok: true,
-          ledgerPath,
-          entriesCount: next.entries.length,
-          entry,
-        },
+        { ok: true, entry: rowToWire(row) },
         200,
       );
       resolveSlot(r);
@@ -430,9 +206,22 @@ export const POST: APIRoute = async ({ request }) => {
   }
 };
 
-export const GET: APIRoute = () => {
-  return new Response(JSON.stringify({ ok: true, available: true }), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  });
+export const GET: APIRoute = async () => {
+  // Always include `entries` so the viewer client doesn't need a
+  // separate static fetch. The `available` field stays for legacy
+  // health-check callers; the cost of always listing is bounded by
+  // the table size, which never exceeds the user's count of touched
+  // narratives + knowledge-debt clusters (low hundreds in steady
+  // state, indexed by updated_at).
+  try {
+    const db = await getChatArchDb();
+    const entries = listEntityStates(db).map(rowToWire);
+    return jsonResponse({ ok: true, available: true, entries }, 200);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return jsonResponse(
+      { ok: false, available: false, error: message, entries: [] },
+      500,
+    );
+  }
 };

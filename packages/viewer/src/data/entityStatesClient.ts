@@ -137,22 +137,48 @@ async function fetchJsonOrNull(url: string): Promise<unknown> {
   }
 }
 
+/**
+ * Rev3-C C4 — entity-states are now served by the
+ * `/api/entity-states` GET endpoint, backed by SQLite. The viewer
+ * fetches the API in preference to any static JSON sidecar. If the
+ * API isn't reachable (static deploy, no dev server) we fall back to
+ * the legacy v2 JSON sidecar (from C1+C2) and then to the original
+ * v1 sidecar — same back-compat ladder as PR #70, just with SQLite
+ * as the new top rung.
+ */
 export async function loadEntityStates(
   baseUrl: string,
 ): Promise<EntityStatesFile | null> {
+  // Top rung: the SDK-backed API. Returns `{ ok, available, entries }`
+  // on success. The route is dev-server-only — on a static deploy it
+  // 404s and we fall through to the JSON sidecar fallback.
+  const apiResp = (await fetchJsonOrNull('/api/entity-states')) as
+    | { ok?: unknown; entries?: unknown }
+    | null;
+  if (
+    apiResp !== null &&
+    typeof apiResp === 'object' &&
+    apiResp.ok === true &&
+    Array.isArray(apiResp.entries)
+  ) {
+    return {
+      schemaVersion: 2,
+      generatedAt: Date.now(),
+      entries: apiResp.entries as EntityStateEntry[],
+    };
+  }
+
+  // Legacy fallback 1 — v2 JSON sidecar written by C1+C2.
   const v2 = (await fetchJsonOrNull(
     joinUrl(baseUrl, 'analysis/entity-states.json'),
   )) as (EntityStatesFile & { schemaVersion?: number }) | null;
   if (v2 !== null && Array.isArray(v2.entries)) {
-    // Refuse to render a file whose schemaVersion is set to something
-    // we don't know. `undefined` is tolerated for forward-compat with
-    // earlier writers. A future v3 file would otherwise be silently
-    // downgraded into v2-only fields here.
     if (v2.schemaVersion !== undefined && v2.schemaVersion !== 2) {
       return null;
     }
     return v2;
   }
+  // Legacy fallback 2 — v1 JSON sidecar written pre-C1+C2.
   const v1 = (await fetchJsonOrNull(
     joinUrl(baseUrl, 'analysis/knowledge-debt-states.json'),
   )) as { generatedAt?: unknown; entries?: unknown } | null;
