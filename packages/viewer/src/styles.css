@@ -3945,6 +3945,30 @@
   color: var(--lcars-violet);
 }
 
+/* Rev3-E E3 — falsifier-skip override checkbox in the encode-as-
+ * pattern flow. Sits in the NarrativeCard footer above the primary
+ * action button (positive narratives only). Visually quieter than
+ * the action button so the safe default (unchecked) doesn't pull
+ * attention away from the encode CTA. */
+.lcars-narrative-card__falsifier-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  opacity: 0.78;
+  cursor: pointer;
+  user-select: none;
+}
+.lcars-narrative-card__falsifier-skip input {
+  cursor: pointer;
+}
+.lcars-narrative-card__falsifier-skip input:disabled {
+  cursor: not-allowed;
+}
+
 /* Rev3-D D4 — narratives section header + show-shelved toggle. The
  * header sits above the narrative list and holds the section title +
  * an optional shelved-count toggle on the right. Toggle is only

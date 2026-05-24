@@ -553,6 +553,14 @@ function NarrativeCard({
   const [actionPhase, setActionPhase] = useState<'idle' | 'running' | 'ok' | 'error'>('idle');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  // Rev3-E E3 — explicit falsifier-skip override for the
+  // encode-as-pattern flow. Default OFF — the safe path is to let the
+  // future Rev3-F falsifier verify the claim before the pattern surfaces
+  // as load-bearing. Checking the box records the bypass as
+  // `falsifierStatus: 'skipped-by-user'` in the persisted Pattern so
+  // the audit table can tell why this pattern lacks verification.
+  const [falsifierOverride, setFalsifierOverride] = useState(false);
+
   const isAvailable = available !== false; // null (unknown) optimistically allows
   const actionDisabled = actionPhase === 'running' || available === false;
 
@@ -560,11 +568,15 @@ function NarrativeCard({
     setActionPhase('running');
     setActionMessage(null);
     try {
-      const pattern = buildPatternFromNarrative(narrative, false);
+      const pattern = buildPatternFromNarrative(narrative, false, {
+        falsifierOverride,
+      });
       const result = await encodePattern(pattern);
       setActionPhase('ok');
       setActionMessage(
-        `Saved pattern (${result.patternsCount} total) to ${result.sidecarPath}.`,
+        falsifierOverride
+          ? `Saved pattern (${result.patternsCount} total) to ${result.sidecarPath} — falsifier skipped per override.`
+          : `Saved pattern (${result.patternsCount} total) to ${result.sidecarPath}.`,
       );
     } catch (err) {
       setActionPhase('error');
@@ -663,6 +675,23 @@ function NarrativeCard({
           auditState={auditState}
           onStateChange={onStateChange}
         />
+        {isPositive && (
+          // Rev3-E E3 — explicit override for the future falsifier
+          // check. Only renders for positive narratives (the
+          // encode-as-pattern path). The negative path goes to
+          // GENERATE CORRECTIVE PROMPT which doesn't produce a
+          // Pattern row, so the override doesn't apply.
+          <label className="lcars-narrative-card__falsifier-skip">
+            <input
+              type="checkbox"
+              checked={falsifierOverride}
+              onChange={(e) => setFalsifierOverride(e.target.checked)}
+              disabled={actionDisabled}
+              aria-label="skip falsifier verification when encoding"
+            />
+            <span>skip falsifier (record as skipped-by-user)</span>
+          </label>
+        )}
         <button
           type="button"
           className="lcars-narrative-card__action"
