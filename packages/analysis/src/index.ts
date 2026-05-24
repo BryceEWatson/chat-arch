@@ -293,11 +293,14 @@ export {
 } from './thresholds.js';
 
 export {
+  bhFdrAdjust,
   euclidean,
   ewma,
   matchedPair1NN,
   mean,
+  normalCdf,
   sigmoid,
+  twoProportionPValue,
   variance,
   wilsonCI,
 } from './stats.js';

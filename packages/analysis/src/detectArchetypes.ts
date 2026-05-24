@@ -121,6 +121,8 @@ export function detectArchetypes(
   const seed = opts.seed ?? 42;
   const archetypeMinSize =
     opts.archetypeMinSize ?? THRESHOLDS.clustering.archetypeMinSize;
+  const silhouetteFloor =
+    opts.silhouetteFloor ?? THRESHOLDS.clustering.silhouetteMin;
 
   if (sessions.length === 0) {
     return {
@@ -206,6 +208,21 @@ export function detectArchetypes(
       assignments: Object.fromEntries(sessions.map((s) => [s.sessionId, null])),
       silhouette: Number.NaN,
       chosenK: 0,
+      archetypeVersion: 0,
+    };
+  }
+
+  // Silhouette gate: if the best k still falls below the floor, the
+  // clustering is "no signal — refusing to label." Surface the observed
+  // silhouette + chosen k so callers / methodology disclosure can show
+  // *why* there are no centroids, but emit no archetype assignments.
+  // This is the T5 fix; the option existed but was previously unwired.
+  if (best.silhouette < silhouetteFloor) {
+    return {
+      centroids: [],
+      assignments: Object.fromEntries(sessions.map((s) => [s.sessionId, null])),
+      silhouette: best.silhouette,
+      chosenK: best.k,
       archetypeVersion: 0,
     };
   }

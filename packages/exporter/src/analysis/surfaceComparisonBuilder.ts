@@ -25,7 +25,7 @@ import type {
   SessionManifest,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
-import { THRESHOLDS, wilsonCI } from '@chat-arch/analysis';
+import { THRESHOLDS, twoProportionPValue, wilsonCI } from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
 import { atomicWriteJson } from '../lib/atomicWrite.js';
 import type { ArchetypesFile } from './archetypesBuilder.js';
@@ -131,46 +131,11 @@ async function loadCompositeOutcomes(
   return out;
 }
 
-/**
- * Standard normal CDF via the Abramowitz & Stegun 7.1.26 approximation
- * of erf. Mirrors the implementation in `skillCurve.ts`; inlined here
- * because that's an internal helper of the analysis package.
- */
-function normalCdf(x: number): number {
-  const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * ax);
-  const y =
-    1 -
-    (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t +
-      0.254829592) *
-      t) *
-      Math.exp(-ax * ax);
-  return 0.5 * (1 + sign * y);
-}
-
-/**
- * Pooled two-proportion z-test. Returns the two-sided p-value of the
- * null hypothesis p_a = p_b. Pooled estimate is the standard form for
- * this test under H_0.
- */
-function twoProportionPValue(
-  good_a: number,
-  n_a: number,
-  good_b: number,
-  n_b: number,
-): number {
-  if (n_a <= 0 || n_b <= 0) return 1;
-  const pA = good_a / n_a;
-  const pB = good_b / n_b;
-  const pPool = (good_a + good_b) / (n_a + n_b);
-  if (pPool === 0 || pPool === 1) return 1;
-  const se = Math.sqrt(pPool * (1 - pPool) * (1 / n_a + 1 / n_b));
-  if (se === 0) return 1;
-  const z = (pA - pB) / se;
-  // Two-sided.
-  return 2 * (1 - normalCdf(Math.abs(z)));
-}
+// `normalCdf` + `twoProportionPValue` previously inlined here are now
+// imported from `@chat-arch/analysis` (T1/D2 tech-debt sweep). The
+// previous inline implementation had a missing `/√2` scaling in
+// `normalCdf` — see the doc comment on the centralized version. This
+// builder now inherits the correct two-sided p-value calculation.
 
 /**
  * Holm-Bonferroni step-down. Returns adjusted p-values in input order.
