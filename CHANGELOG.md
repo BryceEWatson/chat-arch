@@ -16,6 +16,36 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Narrative confidence-ladder helpers (Phase Rev3-B B6 + B7).**
+  New module `packages/analysis/src/narrativeRung.ts` exports:
+  - `computeConfidence(supporting, contradicting, prior)` — the
+    Bayesian Beta-posterior mean form pinned by
+    `THRESHOLDS.narrativeRung` (`supporting / (supporting +
+    contradicting + prior)`). Returns NaN on invalid inputs;
+    clamps to `[0, 1]`.
+  - `effectivePriorForKernel({ kernel, calibrationCompletedAt })`
+    — B7 calibration fail-safe. Returns `uncalibratedPrior` (20)
+    when `calibrationCompletedAt == null`; else
+    `priorByKernel[kernel] ?? defaultPrior` (2). Cold-start
+    protection: an uncalibrated kernel can't promote a finding
+    to tier-3 on its first few observations.
+  - `narrativeTier(confidence, supporting, contradicting)` — joint-
+    gate dispatcher returning the highest reachable tier (0–3) per
+    the floor / supporting-count / (tier-3-only) contradicting-cap
+    rules in `THRESHOLDS.narrativeRung`. Single source of truth
+    for tier decisions; callers should NEVER inline the threshold
+    comparisons.
+  - All three re-exported from `@chat-arch/analysis`.
+
+  18 new tests in `narrativeRung.test.ts` cover the joint-gate
+  feasibility proof (the PR #58 contract that tier3=0.66 + count
+  cap is satisfiable at supporting=6, contradicting=1, prior=2 →
+  6/9=0.667 ≥ 0.66), the cold-start protection (uncalibrated +
+  moderate evidence can't reach tier-3), end-to-end equivalence
+  (calibrated kernel + tier-3 minimum count DOES reach tier-3),
+  invalid-input fallbacks, and the tier-2-fallback when contradicting
+  exceeds the cap.
+
 - **Narrative provenance schema (Phase Rev3-B B1+B2+B3+B4+B8).**
   `packages/schema/src/narrative.ts` extends the `Narrative` type
   with optional `schemaVersion`, `provenance` (intent/observation/
