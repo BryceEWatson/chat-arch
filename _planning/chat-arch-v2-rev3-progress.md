@@ -113,8 +113,8 @@ Plan anchor: [§Phase Rev3-F](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 
 | # | Sub-task | Status | PR / notes |
 |---|---|---|---|
-| F1 | `/curate` skill scaffolded under `.claude/skills/` driven by `claude -p` via `resolveClaude.ts` | pending | |
-| F2 | Falsifier skill — structurally separate, different system prompt, different prompt template | pending | |
+| F1 | `/curate` skill scaffolded under `.claude/skills/` driven by `claude -p` via `resolveClaude.ts` | in-review | PR #TBD (SKILL.md at `.claude/skills/curate/` — frontmatter + 4-stage pipeline scaffold referencing F3 ranker kernel + F4 falsifier hand-off + F8 meta-validation + F9 PRACTICE surface) |
+| F2 | Falsifier skill — structurally separate, different system prompt, different prompt template | in-review | PR #TBD (SKILL.md at `.claude/skills/falsify/` — separate agent type, neutral auditor framing; per-finding verdict pipeline with self-consistency K=3 + atomic verdict write; never re-ranks or composes with generator) |
 | F3 | Curator ranks tier-2 + tier-3 Narratives, outcome-correlation as tie-breaker only | pending | |
 | F4 | Falsifier verifies each finding's `evidenceChain` cites real session turns whose content supports the claim | pending | |
 | F5 | Subprocess fallback: `claude --version` probe at startup; 429 backoff + retry once; banner on persistent failure | pending | |
