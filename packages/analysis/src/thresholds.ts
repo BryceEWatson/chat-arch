@@ -162,6 +162,194 @@ export const THRESHOLDS = {
     /** Minimum user-turn count to flag a session as a turn-outlier. */
     turnOutlierMin: 50,
   },
+  /**
+   * Rev3 confidence ladder for Narratives. Bayesian smoothing per the
+   * formula `confidence = supporting / (supporting + contradicting +
+   * prior)`. Three rungs (tier1=candidate, tier2=established,
+   * tier3=promotable) gate visibility, curator-feed eligibility, and
+   * `encode-as-pattern` action eligibility respectively.
+   *
+   * Joint-gate feasibility: tier3 uses 0.66 (not 0.75) so the
+   * confidence gate + contradicting-cap are jointly satisfiable at
+   * the count-minimum `supporting=6, contradicting=1` (with
+   * defaultPrior=2 → 6/(6+1+2)=0.667 ≥ 0.66 ✓ AND 1 ≤ ceil(6/6)=1 ✓).
+   * Iter-1 stat-rigor finding #001 demonstrated 0.75 + count cap was
+   * infeasible.
+   *
+   * Calibration plan: hand-label n ≥ 100 narratives per kernel, ≥30
+   * held-out, MDE ±0.10 false-promotion-rate at 80% power α=0.05.
+   * Refit defaultPrior + per-kernel priors as Bayesian updates of
+   * the prior itself; document the resulting credible interval, not
+   * a point estimate. Track calibration history alongside
+   * `composite.weights`.
+   *
+   * Pre-launch placeholders below — re-calibrate when corpus has the
+   * first 100 narratives in a candidate kernel.
+   */
+  narrativeRung: {
+    /** Tier-1 (candidate) confidence floor. */
+    tier1: 0.33,
+    /** Tier-2 (established) confidence floor — curator-feed eligible. */
+    tier2: 0.5,
+    /** Tier-3 (promotable) confidence floor — action eligible. */
+    tier3: 0.66,
+    /** Tier-1 additional gate: minimum supporting evidence count. */
+    tier1SupportingMin: 1,
+    /** Tier-2 additional gate: minimum supporting evidence count. */
+    tier2SupportingMin: 2,
+    /** Tier-3 additional gate: minimum supporting evidence count. */
+    tier3SupportingMin: 6,
+    /**
+     * Tier-3 additional gate: contradicting ≤ ceil(supporting /
+     * contradictingCapDivisor). At divisor=6, supporting=6 allows
+     * contradicting≤1, supporting=12 allows ≤2, etc.
+     */
+    contradictingCapDivisor: 6,
+    /**
+     * Default Bayesian prior when a kernel doesn't override it via
+     * `priorByKernel`. From the ShopForge precedent — light prior so
+     * a kernel with 1 supporting and 0 contradicting lands at
+     * confidence 1/(1+0+2)=0.33, exactly the tier-1 floor.
+     */
+    defaultPrior: 2,
+    /**
+     * Calibration fail-safe: a kernel whose
+     * `analyzers.calibration_completed_at` is NULL has its effective
+     * prior pinned to this very-high value, making tier-3 unreachable
+     * (1/(1+0+20)=0.048 ≪ tier3). Banner-state surfaces "kernel X
+     * uncalibrated — tier-3 promotion disabled" so the missing
+     * calibration is visible, not silent.
+     */
+    uncalibratedPrior: 20,
+    /**
+     * Per-kernel prior overrides. Empty at v1; populated after
+     * per-kernel calibration. Lookup falls back to `defaultPrior`
+     * when the kernel name isn't present.
+     */
+    priorByKernel: {} as Readonly<Record<string, number>>,
+    /**
+     * Per-kernel minimum-sessions floor for cold-start honesty.
+     * Kernels report "uncalibrated" when corpus < their floor; their
+     * findings cannot exceed tier-1 until the threshold is met.
+     * Empty at v1; populated as kernel-specific calibration runs
+     * inform the floor.
+     */
+    minSessionsByKernel: {} as Readonly<Record<string, number>>,
+    /**
+     * Closure B saturation: per-Narrative growth-multiplier multiplier
+     * applied on each user dismissal. Default doubling per dismissal —
+     * a 2× multiplier becomes 4× after first dismissal, 8× after the
+     * second, 16× after the third. Closes the iter-1 unbounded-nag
+     * failure mode.
+     */
+    dismissDecay: 2,
+    /**
+     * Cap on user dismissals before a Narrative is shelved
+     * permanently. After this many dismissals the item is visible
+     * only via an explicit "show shelved" affordance.
+     */
+    maxDismissals: 4,
+    /**
+     * Closure B family-wise correction: per-Narrative prior increases
+     * by this value on each dismissal. Each re-emergence is a re-test
+     * of the same hypothesis; raising the prior makes subsequent
+     * re-promotion attempts face a stiffer Bayesian threshold.
+     */
+    repromotionPenalty: 1,
+    /**
+     * Cap on re-promotion attempts. Document the resulting family-
+     * wise α inflation in the curator-surface methodology disclosure.
+     */
+    maxRepromotionAttempts: 3,
+  },
+  /**
+   * Rev3 curator / falsifier metrics and gates. Used by the
+   * `/curate` and `/falsify` skills (Rev3-F) and consumed by the
+   * curator-surface methodology disclosure.
+   */
+  curator: {
+    /**
+     * Precision@k window — the top-k items the curator surfaces
+     * whose engagement is tallied. k=10 per plan §Validation metrics.
+     */
+    precisionAtKWindow: 10,
+    /**
+     * Engagement horizon: a surfaced item counts as a "hit" only if
+     * a user action (star / explicit-action / engagedAt event)
+     * occurs within this many days of first surfacing. Items whose
+     * window hasn't closed are excluded from both numerator and
+     * denominator (per iter-1 stat-rigor finding #006).
+     */
+    precisionAtKHorizonDays: 7,
+    /**
+     * Precision@k success threshold. Re-calibrate after the first
+     * calibration window once empirical engagement data lands.
+     */
+    precisionAtKTarget: 0.3,
+    /**
+     * Falsifier rejection-rate acceptance bracket — pre-launch
+     * placeholder. 4-week empirical calibration window analogous to
+     * `CHATARCH_THRASH_DETECT`; re-derive from observed data.
+     * Rejection rate below `[0]` = falsifier under-rejecting (false
+     * negatives leak); above `[1]` = over-rejecting (good findings
+     * killed). `as const` tuple so consumers see a fixed shape.
+     */
+    falsifierRejectionBracket: [0.2, 0.5] as readonly [number, number],
+    /**
+     * Falsifier meta-accuracy floor. Triggered on rolling 4-week
+     * window (n=40 verdicts re-judged by user or different model
+     * role). Banner-state fires when Wilson lower bound drops below
+     * this value. NOT a point estimate on n=10/week — that fires
+     * ~26% of weeks on noise at true accuracy 0.9 (iter-1 finding
+     * stat-rigor #003).
+     */
+    falsifierAccuracyFloor: 0.8,
+    /** Rolling-window length for falsifier meta-accuracy in weeks. */
+    falsifierAccuracyWindowWeeks: 4,
+    /** Rolling-window N (verdicts spot-checked) for falsifier meta-accuracy. */
+    falsifierAccuracyWindowN: 40,
+    /**
+     * Outcome-correlation significance gate. `|Δ|/SE` (Welch's t /
+     * permutation difference) must exceed this value before the
+     * correlation tag is visible in the SourceAttribution
+     * side-column. Pre-launch placeholder ≈ 1.96 (two-sided α=0.05);
+     * calibrate empirically after first ~50 correlations are
+     * computed.
+     */
+    outcomeCorrelationSignificance: 1.96,
+    /**
+     * Outcome-correlation evidence-length floor. Tie-breaker is
+     * gated on `evidence.length ≥ outcomeCorrelationEvidenceMinLength`
+     * — below this the SE on the cited-side mean dominates and the
+     * ranking becomes noise (iter-1 stat-rigor #004).
+     */
+    outcomeCorrelationEvidenceMinLength: 5,
+  },
+  /**
+   * Rev3 Closure C — applied-rule outcome watcher. After a Pattern
+   * is `encode-as-pattern`'d and (optionally) appended to CLAUDE.md,
+   * the next-sessions watcher activates. Closes on whichever fires
+   * first: (a) N sessions observed in the target project,
+   * (b) wall-clock elapsed, (c) explicit user-side close. Project
+   * inactivity ≥ staleProjectDays before N is reached invalidates
+   * the watch entirely; a fresh watcher starts on project re-entry.
+   */
+  closureC: {
+    /** Number of post-application sessions observed before closing. */
+    watcherSessionsN: 5,
+    /**
+     * Wall-clock cap. Timeout emits a `WATCH_INCONCLUSIVE` Narrative
+     * at low feed priority — not silence.
+     */
+    watcherWallClockDays: 60,
+    /**
+     * Project-inactivity threshold (days). If the target project
+     * goes this long without a session BEFORE watcherSessionsN is
+     * reached, the watcher is invalidated. A fresh watcher starts
+     * on project re-entry.
+     */
+    staleProjectDays: 30,
+  },
 } as const;
 
 export type Thresholds = typeof THRESHOLDS;
