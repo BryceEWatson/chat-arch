@@ -294,6 +294,13 @@ export {
 } from './thresholds.js';
 
 export {
+  computeConfidence,
+  effectivePriorForKernel,
+  narrativeTier,
+  type EffectivePriorOptions,
+} from './narrativeRung.js';
+
+export {
   bhFdrAdjust,
   cosineSimilarity,
   cosineSimilarityNormalized,

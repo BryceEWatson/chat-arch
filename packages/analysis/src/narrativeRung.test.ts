@@ -1,0 +1,187 @@
+// Tests for the Rev3-B B6 (computeConfidence) + B7 (effectivePrior
+// fail-safe) + narrativeTier joint-gate helper. The joint-gate
+// feasibility constants come from `THRESHOLDS.narrativeRung` (pinned
+// in PR #58); these tests freeze the contract so a future calibration
+// edit can't silently invalidate the documented feasibility proof.
+
+import { describe, it, expect } from 'vitest';
+
+import {
+  computeConfidence,
+  effectivePriorForKernel,
+  narrativeTier,
+} from './narrativeRung.js';
+import { THRESHOLDS } from './thresholds.js';
+
+describe('computeConfidence (B6 — Bayesian Beta-posterior mean)', () => {
+  it('returns supporting / (supporting + contradicting + prior)', () => {
+    // Joint-gate feasibility proof from PR #58 / THRESHOLDS:
+    // supporting=6, contradicting=1, prior=2 → 6/9 = 0.667 ≥ tier3 (0.66).
+    expect(computeConfidence(6, 1, 2)).toBeCloseTo(6 / 9, 9);
+    expect(computeConfidence(1, 0, 2)).toBeCloseTo(1 / 3, 9); // tier1=0.33
+    expect(computeConfidence(3, 0, 3)).toBeCloseTo(0.5, 9); // tier2=0.5
+  });
+
+  it('returns 0 when supporting=0', () => {
+    expect(computeConfidence(0, 5, 2)).toBe(0);
+    expect(computeConfidence(0, 0, 2)).toBe(0);
+  });
+
+  it('approaches 1 as supporting dominates', () => {
+    const c = computeConfidence(1000, 0, 2);
+    expect(c).toBeGreaterThan(0.99);
+    expect(c).toBeLessThanOrEqual(1);
+  });
+
+  it('clamps to [0, 1] (defensive)', () => {
+    const c = computeConfidence(100, 0, 2);
+    expect(c).toBeLessThanOrEqual(1);
+    expect(c).toBeGreaterThanOrEqual(0);
+  });
+
+  it('returns NaN on invalid inputs (negative counts, non-finite prior, prior<=0)', () => {
+    expect(Number.isNaN(computeConfidence(-1, 0, 2))).toBe(true);
+    expect(Number.isNaN(computeConfidence(0, -1, 2))).toBe(true);
+    expect(Number.isNaN(computeConfidence(1, 0, 0))).toBe(true);
+    expect(Number.isNaN(computeConfidence(1, 0, -2))).toBe(true);
+    expect(Number.isNaN(computeConfidence(1, 0, Number.NaN))).toBe(true);
+    expect(Number.isNaN(computeConfidence(1, 0, Number.POSITIVE_INFINITY))).toBe(true);
+    expect(Number.isNaN(computeConfidence(Number.NaN, 0, 2))).toBe(true);
+  });
+
+  it('joint-gate feasibility at the count-minimum (PR #58 proof)', () => {
+    // The tier-3 floor (0.66) was specifically chosen so that:
+    //   supporting=tier3SupportingMin (6),
+    //   contradicting=ceil(6/contradictingCapDivisor)=ceil(6/6)=1,
+    //   prior=defaultPrior (2)
+    // both pass the confidence gate AND the contradicting-cap gate.
+    // This test fails loudly if a future calibration breaks that.
+    const { tier3, tier3SupportingMin, contradictingCapDivisor, defaultPrior } =
+      THRESHOLDS.narrativeRung;
+    const supporting = tier3SupportingMin;
+    const contradicting = Math.ceil(supporting / contradictingCapDivisor);
+    const confidence = computeConfidence(supporting, contradicting, defaultPrior);
+    expect(confidence).toBeGreaterThanOrEqual(tier3);
+  });
+});
+
+describe('effectivePriorForKernel (B7 — calibration fail-safe)', () => {
+  it('returns uncalibratedPrior when calibrationCompletedAt is null', () => {
+    expect(
+      effectivePriorForKernel({
+        kernel: 'kernel-x',
+        calibrationCompletedAt: null,
+      }),
+    ).toBe(THRESHOLDS.narrativeRung.uncalibratedPrior);
+  });
+
+  it('returns uncalibratedPrior when calibrationCompletedAt is undefined', () => {
+    expect(
+      effectivePriorForKernel({
+        kernel: 'kernel-x',
+        calibrationCompletedAt: undefined,
+      }),
+    ).toBe(THRESHOLDS.narrativeRung.uncalibratedPrior);
+  });
+
+  it('returns defaultPrior for a calibrated kernel without a per-kernel override', () => {
+    // priorByKernel is empty at v1 per THRESHOLDS, so any kernel name
+    // falls through to the default.
+    expect(
+      effectivePriorForKernel({
+        kernel: 'never-overridden',
+        calibrationCompletedAt: 1_700_000_000_000,
+      }),
+    ).toBe(THRESHOLDS.narrativeRung.defaultPrior);
+  });
+
+  it('uncalibrated prior makes tier-3 unreachable even at substantial supporting count', () => {
+    // PR #58 contract: uncalibratedPrior=20 should make tier-3 unreachable
+    // even at supporting=5x tier3SupportingMin (30) with 0 contradicting.
+    //   confidence = 30 / (30 + 0 + 20) = 0.6 < tier3 (0.66)
+    const prior = effectivePriorForKernel({
+      kernel: 'k',
+      calibrationCompletedAt: null,
+    });
+    const supporting = THRESHOLDS.narrativeRung.tier3SupportingMin * 5;
+    const confidence = computeConfidence(supporting, 0, prior);
+    expect(confidence).toBeLessThan(THRESHOLDS.narrativeRung.tier3);
+  });
+});
+
+describe('narrativeTier (joint-gate dispatch)', () => {
+  it('returns 0 when no tier is reachable', () => {
+    // supporting=0 fails tier1's count gate (min=1) → tier 0.
+    expect(narrativeTier(0.5, 0, 0)).toBe(0);
+    // confidence below tier1 floor → tier 0 regardless of counts.
+    expect(narrativeTier(0.1, 100, 0)).toBe(0);
+  });
+
+  it('returns 1 at the tier-1 minimum (supporting=1, confidence=tier1)', () => {
+    const { tier1, tier1SupportingMin } = THRESHOLDS.narrativeRung;
+    expect(narrativeTier(tier1, tier1SupportingMin, 0)).toBe(1);
+  });
+
+  it('returns 2 at the tier-2 minimum', () => {
+    const { tier2, tier2SupportingMin } = THRESHOLDS.narrativeRung;
+    expect(narrativeTier(tier2, tier2SupportingMin, 0)).toBe(2);
+  });
+
+  it('returns 3 at the tier-3 minimum with contradicting at the cap', () => {
+    // The PR #58 joint-gate proof. supporting=6, contradicting=1 (cap),
+    // confidence=0.667 (above floor 0.66).
+    const { tier3, tier3SupportingMin, contradictingCapDivisor } =
+      THRESHOLDS.narrativeRung;
+    const supporting = tier3SupportingMin;
+    const contradicting = Math.ceil(supporting / contradictingCapDivisor);
+    // Use a confidence just above tier3 floor.
+    expect(narrativeTier(tier3 + 0.001, supporting, contradicting)).toBe(3);
+  });
+
+  it('degrades from tier-3 to tier-2 when contradicting exceeds the cap', () => {
+    // Same supporting=6 confidence>tier3, but contradicting=2 exceeds
+    // cap of 1 → contradicting-cap gate fails → fall through to tier-2.
+    expect(narrativeTier(0.7, 6, 2)).toBe(2);
+  });
+
+  it('returns 0 on invalid inputs', () => {
+    expect(narrativeTier(Number.NaN, 5, 0)).toBe(0);
+    expect(narrativeTier(0.5, Number.NaN, 0)).toBe(0);
+    expect(narrativeTier(0.5, 5, Number.NaN)).toBe(0);
+    expect(narrativeTier(-0.1, 5, 0)).toBe(0);
+    expect(narrativeTier(1.1, 5, 0)).toBe(0);
+    expect(narrativeTier(0.5, -1, 0)).toBe(0);
+    expect(narrativeTier(0.5, 5, -1)).toBe(0);
+  });
+
+  it('end-to-end: uncalibrated kernel unreachable to tier-3 at the count-minimum and moderately above', () => {
+    // The uncalibratedPrior protects against COLD-START — a kernel
+    // that just started running can't promote a finding to tier-3 on
+    // its first few observations. At extremely high supporting counts
+    // (hundreds), the prior gets dominated by evidence — by design,
+    // since at that scale the cold-start risk is over. Test the
+    // load-bearing range: tier3SupportingMin through 5× minimum.
+    const prior = effectivePriorForKernel({
+      kernel: 'k',
+      calibrationCompletedAt: null,
+    });
+    const min = THRESHOLDS.narrativeRung.tier3SupportingMin;
+    for (const supporting of [min, min * 2, min * 3, min * 5]) {
+      const confidence = computeConfidence(supporting, 0, prior);
+      expect(narrativeTier(confidence, supporting, 0)).toBeLessThan(3);
+    }
+  });
+
+  it('end-to-end: calibrated kernel + tier-3 minimum count reaches tier 3', () => {
+    const prior = effectivePriorForKernel({
+      kernel: 'k',
+      calibrationCompletedAt: 1_700_000_000_000,
+    });
+    const supporting = THRESHOLDS.narrativeRung.tier3SupportingMin;
+    const contradicting = Math.ceil(
+      supporting / THRESHOLDS.narrativeRung.contradictingCapDivisor,
+    );
+    const confidence = computeConfidence(supporting, contradicting, prior);
+    expect(narrativeTier(confidence, supporting, contradicting)).toBe(3);
+  });
+});
