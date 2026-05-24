@@ -605,46 +605,68 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     // progress instead of a stale UI. We can't re-attach to the
     // original POST's stream from a new connection, but the status
     // file gives us everything that matters.
-    (async function attachIfBusy() {
+    //
+    // XN3 refactor: named function with an explicit `deps` object
+    // (rather than the previous IIFE closing over module-scope state).
+    // Dependencies are surfaced in one place so a future Vite-bundled
+    // module extraction can lift this verbatim. The function is still
+    // invoked once at module-load time below.
+    async function attachIfBusy(deps) {
       try {
         const res = await fetch('/api/mine-corrections', { method: 'GET' });
         if (!res.ok) return;
         const body = await res.json();
         if (body && body.busy === true && typeof body.busyRequestId === 'string') {
-          showProgress('mine corrections (resumed)');
-          setButtonsDisabled(true);
-          startElapsedTicker(Date.now());
+          deps.showProgress('mine corrections (resumed)');
+          deps.setButtonsDisabled(true);
+          deps.startElapsedTicker(Date.now());
           const requestId = body.busyRequestId;
-          await pollMineStatus(requestId);
-          statusPollTimer = setInterval(async () => {
-            await pollMineStatus(requestId);
+          await deps.pollMineStatus(requestId);
+          deps.setStatusPollTimer(setInterval(async () => {
+            await deps.pollMineStatus(requestId);
             // When the status file flips to complete/error, refresh.
             try {
               const r = await fetch(`/chat-arch-data/analysis/correction-status-${requestId}.json`, { cache: 'no-store' });
               if (!r.ok) return;
               const s = await r.json();
               if (s && (s.status === 'complete' || s.status === 'error')) {
-                clearInterval(statusPollTimer);
-                statusPollTimer = null;
+                deps.clearStatusPollTimer();
                 if (s.status === 'complete') {
-                  setStatus('mine corrections complete — refreshing…', false);
-                  hideProgress();
-                  reloadSoon();
+                  deps.setStatus('mine corrections complete — refreshing…', false);
+                  deps.hideProgress();
+                  deps.reloadSoon();
                 } else {
-                  hideProgress();
-                  setButtonsDisabled(false);
-                  setStatus(`mine corrections failed${s.error ? ': ' + String(s.error).slice(0, 200) : ''}`, true);
+                  deps.hideProgress();
+                  deps.setButtonsDisabled(false);
+                  deps.setStatus(`mine corrections failed${s.error ? ': ' + String(s.error).slice(0, 200) : ''}`, true);
                 }
               }
             } catch {
               // Transient — keep polling.
             }
-          }, 1500);
+          }, 1500));
         }
       } catch {
         // No backend / network error — silently skip the attach.
       }
-    })();
+    }
+
+    void attachIfBusy({
+      showProgress,
+      setButtonsDisabled,
+      startElapsedTicker,
+      pollMineStatus,
+      setStatus,
+      hideProgress,
+      reloadSoon,
+      setStatusPollTimer: (handle) => { statusPollTimer = handle; },
+      clearStatusPollTimer: () => {
+        if (statusPollTimer !== null) {
+          clearInterval(statusPollTimer);
+          statusPollTimer = null;
+        }
+      },
+    });
   </script>
 </BaseLayout>
 
