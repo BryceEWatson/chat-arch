@@ -3,6 +3,8 @@ import {
   bhFdrAdjust,
   euclidean,
   ewma,
+  expectedCellCounts2x2,
+  fisherExactPValue2x2,
   matchedPair1NN,
   mcnemarPValue,
   mean,
@@ -295,5 +297,86 @@ describe('mcnemarPValue', () => {
       expect(ab!.p).toBeCloseTo(ba!.p, 9);
       expect(ab!.method).toBe(ba!.method);
     }
+  });
+});
+
+describe('fisherExactPValue2x2', () => {
+  it('returns 1 on a degenerate (zero-margin) table', () => {
+    expect(fisherExactPValue2x2(0, 0, 5, 5)).toBe(1); // row 1 = 0
+    expect(fisherExactPValue2x2(5, 5, 0, 0)).toBe(1); // row 2 = 0
+    expect(fisherExactPValue2x2(0, 5, 0, 5)).toBe(1); // col 1 = 0
+    expect(fisherExactPValue2x2(5, 0, 5, 0)).toBe(1); // col 2 = 0
+  });
+
+  it('returns 1 on non-integer or negative inputs', () => {
+    expect(fisherExactPValue2x2(1.5, 2, 3, 4)).toBe(1);
+    expect(fisherExactPValue2x2(-1, 2, 3, 4)).toBe(1);
+  });
+
+  it('R fisher.test benchmark: matrix(c(8,2,1,5), nrow=2) → p ≈ 0.0349', () => {
+    // R: > fisher.test(matrix(c(8,2,1,5), nrow=2))$p.value → 0.03495
+    // Table laid out as [[a=8, b=2], [c=1, d=5]] with marginals
+    // R1=10, R2=6, C1=9, C2=7, N=16.
+    const p = fisherExactPValue2x2(8, 2, 1, 5);
+    expect(p).toBeGreaterThan(0.03);
+    expect(p).toBeLessThan(0.04);
+  });
+
+  it('R fisher.test benchmark: matrix(c(5,5,5,5), nrow=2) → p = 1', () => {
+    // Balanced 2x2: no signal, p ≈ 1.
+    const p = fisherExactPValue2x2(5, 5, 5, 5);
+    expect(p).toBeCloseTo(1, 6);
+  });
+
+  it('strong signal: 20/0 vs 0/20 → very small p', () => {
+    // Perfect separation, n=40.
+    const p = fisherExactPValue2x2(20, 0, 0, 20);
+    expect(p).toBeLessThan(1e-10);
+  });
+
+  it('symmetry under row/column swap', () => {
+    // Swap rows or columns → same p (Fisher exact is row/col-swap invariant).
+    const base = fisherExactPValue2x2(3, 7, 8, 2);
+    expect(fisherExactPValue2x2(8, 2, 3, 7)).toBeCloseTo(base, 9);
+    expect(fisherExactPValue2x2(7, 3, 2, 8)).toBeCloseTo(base, 9);
+  });
+
+  it('clipped to [0, 1] (no floating-point overflow)', () => {
+    for (const tbl of [[1, 1, 1, 1], [10, 10, 10, 10], [50, 50, 50, 50]] as const) {
+      const p = fisherExactPValue2x2(tbl[0]!, tbl[1]!, tbl[2]!, tbl[3]!);
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('expectedCellCounts2x2', () => {
+  it('returns row-sum × col-sum / N for each of the 4 cells', () => {
+    // nA=10, nB=20, goodA=4, goodB=12 → total good=16, total bad=14, N=30.
+    // E(good, A) = 10 * 16 / 30 = 5.333
+    // E(bad,  A) = 10 * 14 / 30 = 4.667
+    // E(good, B) = 20 * 16 / 30 = 10.667
+    // E(bad,  B) = 20 * 14 / 30 = 9.333
+    const [eA_good, eA_bad, eB_good, eB_bad] = expectedCellCounts2x2(10, 20, 4, 12);
+    expect(eA_good).toBeCloseTo(5.333, 2);
+    expect(eA_bad).toBeCloseTo(4.667, 2);
+    expect(eB_good).toBeCloseTo(10.667, 2);
+    expect(eB_bad).toBeCloseTo(9.333, 2);
+  });
+
+  it('returns [0,0,0,0] on N=0', () => {
+    expect(expectedCellCounts2x2(0, 0, 0, 0)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("Fisher-vs-z gate at min(expected) < 5", () => {
+    // Small-n case: nA=8, nB=8, goodA=7, goodB=1 → goodTotal=8, badTotal=8.
+    // E(good, A) = 8*8/16 = 4 (< 5 → use Fisher).
+    const expected = expectedCellCounts2x2(8, 8, 7, 1);
+    expect(Math.min(...expected)).toBeLessThan(5);
+
+    // Large-n case: nA=50, nB=50, goodA=20, goodB=10 → goodTotal=30, badTotal=70.
+    // E(good, A) = 50*30/100 = 15 (≥ 5 → use z-test).
+    const expectedLarge = expectedCellCounts2x2(50, 50, 20, 10);
+    expect(Math.min(...expectedLarge)).toBeGreaterThanOrEqual(5);
   });
 });

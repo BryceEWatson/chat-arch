@@ -150,6 +150,59 @@ describe('buildSurfaceComparisonFile', () => {
     expect(onDisk.cells).toHaveLength(2);
     expect(onDisk.pairwise[0].pValue).toBeLessThan(0.05);
     expect(onDisk.pairwise[0].pValueAdjusted).toBeLessThan(0.05);
+    // T3: a 10v10 cell pair with goodA=8, goodB=2 → expected counts
+    // E(good, A) = 10*10/20 = 5, E(good, B) = 5, E(bad, A) = 5, E(bad, B) = 5.
+    // All ≥ 5 → z-test branch.
+    expect(onDisk.pairwise[0].testMethod).toBe('z-test');
+  });
+
+  it('T3: uses Fisher exact when min expected cell count < 5', async () => {
+    const outDir = path.join(tmpRoot, 'fisher');
+    await mkdir(path.join(outDir, 'analysis'), { recursive: true });
+
+    // Two small cells: cli-direct n=8 (7 good, 1 bad); cloud n=8 (1 good,
+    // 7 bad). Both ≥ minNForRate=8 to qualify for pairwise; row sums
+    // R1=8, R2=8, col sums C1=8 (good), C2=8 (bad), N=16.
+    // E(good, A) = 8*8/16 = 4 < 5 → Fisher branch triggers.
+    const sessions: UnifiedSessionEntry[] = [];
+    const assignments: Record<string, string> = {};
+    const compositeRows: Array<{ sessionId: string; binary: 'good' | 'bad' | 'unknown' }> = [];
+    for (let i = 0; i < 8; i += 1) {
+      const id = `cli-${i}`;
+      sessions.push(makeEntry(id, 'cli-direct'));
+      assignments[id] = 'archetype-0';
+      compositeRows.push({ sessionId: id, binary: i < 7 ? 'good' : 'bad' });
+    }
+    for (let i = 0; i < 8; i += 1) {
+      const id = `cloud-${i}`;
+      sessions.push(makeEntry(id, 'cloud'));
+      assignments[id] = 'archetype-0';
+      compositeRows.push({ sessionId: id, binary: i < 1 ? 'good' : 'bad' });
+    }
+
+    await writeArchetypes(outDir, assignments);
+    await writeComposite(outDir, compositeRows);
+
+    const manifest: SessionManifest = {
+      schemaVersion: 4,
+      generatedAt: 0,
+      counts: { 'cli-direct': 8, 'cli-desktop': 0, cowork: 0, cloud: 8 },
+      sessions,
+    } as SessionManifest;
+
+    const result = await buildSurfaceComparisonFile(manifest, { outDir, now: 1 });
+
+    expect(result.cellsTotal).toBe(2);
+    expect(result.cellsDisplayable).toBe(2);
+    expect(result.pairsTested).toBe(1);
+
+    const onDisk = JSON.parse(
+      await readFile(path.join(outDir, 'analysis', 'surface-comparison.json'), 'utf8'),
+    );
+    // Fisher exact for [[7,1],[1,7]] → p ≈ 0.0103.
+    expect(onDisk.pairwise[0].testMethod).toBe('fisher-exact');
+    expect(onDisk.pairwise[0].pValue).toBeGreaterThan(0.005);
+    expect(onDisk.pairwise[0].pValue).toBeLessThan(0.02);
   });
 
   it('reuse-ish: deterministic over identical input (re-run = same output)', async () => {

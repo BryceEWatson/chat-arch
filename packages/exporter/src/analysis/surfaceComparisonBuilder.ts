@@ -25,7 +25,13 @@ import type {
   SessionManifest,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
-import { THRESHOLDS, twoProportionPValue, wilsonCI } from '@chat-arch/analysis';
+import {
+  expectedCellCounts2x2,
+  fisherExactPValue2x2,
+  THRESHOLDS,
+  twoProportionPValue,
+  wilsonCI,
+} from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
 import { atomicWriteJson } from '../lib/atomicWrite.js';
 import type { ArchetypesFile } from './archetypesBuilder.js';
@@ -56,6 +62,15 @@ export interface SurfacePairwiseTest {
   pValueAdjusted: number;
   /** `pAdjusted < familyAlpha`. */
   significant: boolean;
+  /**
+   * Which test produced `pValue`:
+   *   - `'z-test'`: pooled two-proportion z (large-sample).
+   *   - `'fisher-exact'`: Fisher's exact two-sided (small-sample —
+   *     min expected cell count < 5, where z is unreliable).
+   * Surfaces in the viewer's methodology disclosure so the user can
+   * see which inference rule fired per pair.
+   */
+  testMethod: 'z-test' | 'fisher-exact';
 }
 
 export interface SurfaceComparisonFile {
@@ -208,17 +223,35 @@ export async function buildSurfaceComparisonFile(
   }
   cells.sort((a, b) => a.key.localeCompare(b.key));
 
-  // Pairwise tests over cells that BOTH clear minN.
+  // Pairwise tests over cells that BOTH clear minN. T3: switch from
+  // pooled z-test to Fisher's exact when any expected cell count < 5
+  // (the canonical small-sample rule — z's normal approximation is
+  // unreliable there). The choice is per-pair, not global, so a single
+  // family can mix methods; the methodology disclosure records which
+  // method fired per pair.
   const displayable = cells.filter((c) => c.meetsDisplayN);
   const rawPs: number[] = [];
   const pairKeys: Array<{ a: string; b: string }> = [];
+  const pairMethods: Array<'z-test' | 'fisher-exact'> = [];
   for (let i = 0; i < displayable.length; i += 1) {
     for (let j = i + 1; j < displayable.length; j += 1) {
       const A = displayable[i]!;
       const B = displayable[j]!;
-      const p = twoProportionPValue(A.good, A.n, B.good, B.n);
+      const minExpected = Math.min(
+        ...expectedCellCounts2x2(A.n, B.n, A.good, B.good),
+      );
+      let p: number;
+      let method: 'z-test' | 'fisher-exact';
+      if (minExpected < 5) {
+        p = fisherExactPValue2x2(A.good, A.n - A.good, B.good, B.n - B.good);
+        method = 'fisher-exact';
+      } else {
+        p = twoProportionPValue(A.good, A.n, B.good, B.n);
+        method = 'z-test';
+      }
       rawPs.push(p);
       pairKeys.push({ a: A.key, b: B.key });
+      pairMethods.push(method);
     }
   }
   const adjusted = holmBonferroni(rawPs);
@@ -230,6 +263,7 @@ export async function buildSurfaceComparisonFile(
       pValue: p,
       pValueAdjusted: adj,
       significant: adj < familyAlpha,
+      testMethod: pairMethods[idx]!,
     };
   });
 

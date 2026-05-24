@@ -16,6 +16,20 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Fisher's exact at small-n in surface-comparison (tech-debt T3).**
+  `SurfacePairwiseTest` now carries a `testMethod: 'z-test' |
+  'fisher-exact'` field, and per-pair test selection in
+  `surfaceComparisonBuilder` follows the canonical small-sample rule:
+  use Fisher's exact two-sided test when any expected cell count
+  falls below 5 (where the pooled-z normal approximation is
+  unreliable); otherwise use the existing z-test. Pairs in the same
+  family can mix methods — the choice is per-pair, not global.
+  New helpers in `@chat-arch/analysis`:
+  - `fisherExactPValue2x2(a, b, c, d)` — two-sided "minlike" Fisher
+    exact via hypergeometric log-probabilities + logsumexp accumulator
+    (numerically stable for N well beyond what chat-arch surfaces).
+  - `expectedCellCounts2x2(nA, nB, goodA, goodB)` — returns the four
+    expected cell counts so callers apply the < 5 gate uniformly.
 - **McNemar test in reflexive matched-pair contrast (tech-debt T2).**
   `ReflexiveResult` now carries `mcnemarP`, `mcnemarMethod`
   (`'exact'` | `'chi-squared'` | `'undefined'`), and `discordantCount`
