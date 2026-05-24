@@ -123,7 +123,7 @@ describe('mergeSources', () => {
     const m = mergeSources(cowork, cli, cloud, 50000);
     expect(m.sessions).toHaveLength(3);
     expect(m.counts).toEqual({ cowork: 1, 'cli-direct': 1, 'cli-desktop': 0, cloud: 1 });
-    expect(m.schemaVersion).toBe(3);
+    expect(m.schemaVersion).toBe(4);
     expect(m.generatedAt).toBe(50000);
   });
 
@@ -148,7 +148,7 @@ describe('mergeSources', () => {
     const m = mergeSources([], [], []);
     expect(m.sessions).toEqual([]);
     expect(m.counts).toEqual({ cowork: 0, 'cli-direct': 0, 'cli-desktop': 0, cloud: 0 });
-    expect(m.schemaVersion).toBe(3);
+    expect(m.schemaVersion).toBe(4);
   });
 
   it('sorts sessions by updatedAt descending', () => {

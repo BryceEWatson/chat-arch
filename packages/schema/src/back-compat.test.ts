@@ -8,8 +8,8 @@ import { CURRENT_SCHEMA_VERSION, UNTITLED_SESSION } from './unified.js';
  * map on the manifest, but v1 and v2 manifests must still parse.
  */
 describe('SessionManifest back-compat', () => {
-  it('CURRENT_SCHEMA_VERSION is 3', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+  it('CURRENT_SCHEMA_VERSION is 4', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
   });
 
   it('accepts a v1 manifest (no cost-estimate fields, no v2 sidecars)', () => {
@@ -107,6 +107,50 @@ describe('SessionManifest back-compat', () => {
     expect(round.sessions[0]?.projectId).toBe('proj_abc');
     expect(round.sessions[0]?.topicIds).toEqual(['topic_1', 'topic_2']);
     expect(round.analysisSidecars?.projects).toBe('analysis/projects.json');
+  });
+
+  it('accepts a v4 manifest with discoveryScore + v2-pipeline sidecars', () => {
+    const v4: SessionManifest = {
+      schemaVersion: 4,
+      generatedAt: 1714521600000,
+      counts: { cloud: 0, cowork: 1, 'cli-direct': 0, 'cli-desktop': 0 },
+      analysisSidecars: {
+        projects: 'analysis/projects.json',
+        embeddingsBin: 'analysis/embeddings.bin',
+        embeddingsMeta: 'analysis/embeddings.meta.json',
+        continuumHealth: 'analysis/continuum-health.json',
+        duplicatesSemantic: 'analysis/duplicates.semantic.json',
+        auditClaims: 'analysis/audit-claims.json',
+        auditResults: 'analysis/audit-results.json',
+        auditSummary: 'analysis/audit-summary.json',
+        upgradeOutcomes: 'analysis/upgrade-outcomes.json',
+        blogCandidates: 'analysis/blog-candidates.json',
+        blogDraftsIndex: 'analysis/blog-drafts/index.json',
+      },
+      sessions: [
+        {
+          id: 'e',
+          source: 'cowork',
+          rawSessionId: 'local_e',
+          startedAt: 0,
+          updatedAt: 0,
+          durationMs: 0,
+          title: 't',
+          titleSource: 'manifest',
+          preview: null,
+          userTurns: 1,
+          model: 'claude-opus-4-7',
+          cwdKind: 'vm',
+          totalCostUsd: null,
+          discoveryScore: 0.82,
+        },
+      ],
+    };
+    const round = JSON.parse(JSON.stringify(v4)) as SessionManifest;
+    expect(round.schemaVersion).toBe(4);
+    expect(round.sessions[0]?.discoveryScore).toBe(0.82);
+    expect(round.analysisSidecars?.embeddingsBin).toBe('analysis/embeddings.bin');
+    expect(round.analysisSidecars?.auditSummary).toBe('analysis/audit-summary.json');
   });
 
   it('UnifiedSessionEntry accepts v3 FK fields without losing v1 minimal shape', () => {

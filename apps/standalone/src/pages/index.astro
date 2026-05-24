@@ -1,17 +1,898 @@
 ---
+// v2 §FD.1 — TODAY page. Reframed against research/refocus-plan.md
+// north star: "Find the rules Claude keeps breaking. Patch your
+// CLAUDE.md / skills. Prove the loop closed." The hero panel is the
+// workshop-loop status (corrections to apply, applies made, loop
+// closure rate). Audit concerns + brief content are demoted below.
+export const prerender = false;
+
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { ChatArchViewer } from '@chat-arch/viewer';
-import '@chat-arch/viewer/style.css';
+import {
+  listBlogDraftSlugs,
+  readContinuumHealth,
+  readCorrectionCandidatesSummary,
+  readLatestBrief,
+  readTopAuditConcerns,
+  readWorkshopStatus,
+} from '../lib/readSidecars.ts';
+import {
+  makeDemoBlogDraftSlugs,
+  makeDemoTopAuditConcerns,
+  makeDemoWorkshopStatus,
+} from '../lib/demoFixtures.ts';
+
+const NOW = Date.now();
+const workshop = await readWorkshopStatus(NOW);
+const concerns = await readTopAuditConcerns(5);
+const drafts = await listBlogDraftSlugs();
+const brief = await readLatestBrief();
+const health = await readContinuumHealth();
+const candidatesSummary = await readCorrectionCandidatesSummary();
+const candidateCount = candidatesSummary?.candidateCount ?? 0;
+
+// 3-state detection for the WORKSHOP LOOP hero:
+//   (1) workshopMined — corrections.json has patterns OR applied-improvements
+//       has entries. Real workshop status renders normally.
+//   (2) workshopJustScanned — the exporter has populated
+//       `correction-candidates.json` (candidateCount > 0) but mining
+//       hasn't run yet, so workshop counts are all 0. This is the
+//       "scan done, mine next" state — render a real-data card with
+//       a clear CTA to MINE CORRECTIONS, NOT the demo grid (the demo
+//       reads as "your scan didn't work" when the real story is
+//       "your scan worked, now run mining").
+//   (3) workshopUnscanned — neither candidates nor patterns exist
+//       (fresh install / hosted demo / brand-new clone). Demo grid
+//       fires with full DEMO badge + aria-label.
+// Memory: feedback_positioning_by_features — show the loop in motion,
+// don't describe it. The (2) state previously fell through to (3),
+// which was actively confusing once we'd verified the scan ran.
+const workshopHasPatterns =
+  workshop.unappliedPatternCount > 0 ||
+  workshop.appliedPatternCount > 0 ||
+  workshop.recurringAfterApplyCount > 0;
+const workshopJustScanned = !workshopHasPatterns && candidateCount > 0;
+const workshopUnscanned = !workshopHasPatterns && candidateCount === 0;
+// Demo grid only fires for the truly-unscanned case now.
+const workshopEmpty = workshopUnscanned;
+const draftsEmpty = drafts.length === 0;
+const concernsEmpty = concerns.length === 0;
+
+// View binding — when a surface is empty, swap in the demo. Same JSX
+// renders against either source; the demo path adds the badge + sr-only.
+const wsView = workshopEmpty ? makeDemoWorkshopStatus() : workshop;
+const draftsView = draftsEmpty ? makeDemoBlogDraftSlugs() : drafts;
+const concernsView = concernsEmpty ? makeDemoTopAuditConcerns() : concerns;
+
+const draftFinals = draftsView.filter((d) => !d.isPrompt).length;
+const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
 ---
-<BaseLayout title="Chat Archaeologist">
-  <main>
-    <ChatArchViewer client:load />
-    {/*
-      Hint paragraph removed — it lived below the viewer and pushed the
-      document 50+px past the viewport, creating a vestigial scrollbar
-      on the empty state. The viewer's own ErrorState copy already
-      covers the same "run the exporter / upload / load demo" guidance,
-      so the trailing hint was duplicative anyway.
-    */}
+<BaseLayout title="Chat Archaeologist — Today" current="TODAY">
+  <main class="today">
+    <header class="today__header">
+      <h1>TODAY</h1>
+      <p class="today__date">
+        {new Date(NOW).toISOString().slice(0, 10)}
+        {brief !== null ? <span class="today__chip">brief at {brief.date}</span> : null}
+      </p>
+      <div class="today__actions">
+        <button id="action-rescan" type="button">RESCAN</button>
+        <button id="action-mine" type="button">MINE CORRECTIONS</button>
+        <button id="action-brief" type="button">REGEN BRIEF</button>
+        <span id="action-status" class="today__action-status"></span>
+      </div>
+
+      <div id="action-progress" class="today__progress" hidden aria-live="polite">
+        <div class="today__progress-row">
+          <span class="today__progress-spinner" aria-hidden="true"></span>
+          <span class="today__progress-label" id="progress-label"></span>
+          <span class="today__progress-elapsed" id="progress-elapsed"></span>
+        </div>
+        <div class="today__progress-phase" id="progress-phase"></div>
+        <div class="today__progress-bar" id="progress-bar" hidden>
+          <div class="today__progress-bar-fill" id="progress-bar-fill"></div>
+        </div>
+        <pre class="today__progress-log" id="progress-log" hidden></pre>
+      </div>
+    </header>
+
+    {/* ======================= WORKSHOP LOOP ======================= */}
+    {/* Three states:
+          (a) workshopJustScanned — real data exists (candidates from
+              exporter) but mining hasn't classified them yet. Render
+              a real-data card pointing at MINE CORRECTIONS. NO demo
+              badge, NO fake metrics.
+          (b) workshopEmpty (unscanned) — fresh install / hosted demo.
+              Demo modifier + DEMO badge + aria-label + sr-only.
+          (c) mined — render real workshop status with normal chrome. */}
+    {workshopJustScanned ? (
+      <section
+        class="today__hero today__hero--scanned"
+        aria-label="Scan complete — mine corrections next to populate the workshop loop"
+      >
+        <h2>
+          WORKSHOP LOOP
+          <span class="today__hero-status">· SCAN COMPLETE · MINE NEXT</span>
+        </h2>
+        <p class="today__hero-lede">
+          The exporter found{' '}
+          <code>{candidateCount.toLocaleString()}</code> correction candidate{candidateCount === 1 ? '' : 's'}
+          {candidatesSummary && candidatesSummary.sessionsScanned > 0 ? (
+            <>
+              {' '}across <code>{candidatesSummary.sessionsScanned.toLocaleString()}</code> of{' '}
+              <code>{candidatesSummary.sessionsInManifest.toLocaleString()}</code> sessions
+            </>
+          ) : null}
+          . Click <strong>MINE CORRECTIONS</strong> to classify them into patterns — each pattern is a
+          CLAUDE.md / skill / agent fix you can review and APPLY.
+        </p>
+        <p class="today__hero-cta">
+          <button id="action-mine-cta" type="button" class="today__hero-cta-btn">
+            MINE CORRECTIONS →
+          </button>
+          <span class="today__hero-cta-hint">
+            Typically 1–3 minutes depending on candidate count.
+          </span>
+        </p>
+      </section>
+    ) : (
+      <section
+        class={`today__hero${workshopEmpty ? ' today__hero--demo' : ''}`}
+        aria-label={workshopEmpty
+          ? 'Example data — your real WORKSHOP LOOP populates after running /mine-corrections'
+          : undefined}
+      >
+        {workshopEmpty ? (
+          <span class="sr-only">Example data, not your data:</span>
+        ) : null}
+        <h2>
+          WORKSHOP LOOP
+          {workshopEmpty ? <span class="demo-badge">DEMO</span> : null}
+        </h2>
+        <div class="today__hero-grid">
+          <div class="today__metric today__metric--big">
+            <span class="today__metric-label">to APPLY</span>
+            <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
+            <span class="today__metric-sub">new patterns waiting for review</span>
+          </div>
+          <div class="today__metric">
+            <span class="today__metric-label">applied total</span>
+            <span class="today__metric-value">{wsView.appliedPatternCount}</span>
+            <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
+          </div>
+          <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
+            <span class="today__metric-label">still recurring</span>
+            <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
+            <span class="today__metric-sub">
+              {wsView.recurringAfterApplyCount > 0
+                ? 'rules patched but Claude still breaks them'
+                : 'no patched rule recurring'}
+            </span>
+          </div>
+          <div class="today__metric">
+            <span class="today__metric-label">loop closure</span>
+            <span class="today__metric-value">
+              {wsView.loopClosureRate === null
+                ? '—'
+                : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
+            </span>
+            <span class="today__metric-sub">
+              {wsView.loopClosureRate === null
+                ? 'no observed windows yet'
+                : 'patches that stuck (no recurrence in window)'}
+            </span>
+          </div>
+        </div>
+
+        {wsView.topUnapplied.length > 0 ? (
+          <div class="today__queue">
+            <h3>NEXT TO REVIEW · top {wsView.topUnapplied.length} by confidence</h3>
+            <ul>
+              {wsView.topUnapplied.map((p) => (
+                <li>
+                  <span class="today__confidence">
+                    {(p.confidence * 100).toFixed(0)}%
+                  </span>
+                  <span class="today__rule">{p.canonicalRule}</span>
+                  <span class="today__scope">
+                    ({p.occurrenceCount}× · scope={p.scope.kind})
+                  </span>
+                  <a href={`/sessions#corrections`}>review →</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {wsView.recentApplies.length > 0 ? (
+          <div class="today__applies">
+            <h3>RECENT APPLIES</h3>
+            <ul>
+              {wsView.recentApplies.map((a) => (
+                <li>
+                  <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
+                  · {a.ruleSummary}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
+    )}
+
+    {/* ======================= DRAFTS READY ======================= */}
+    <section class="today__row">
+      <h2>BLOG DRAFTS</h2>
+      {draftsEmpty ? (
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real BLOG DRAFTS populate after the candidate selector emits any"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <p class="today__row-summary">
+            <span class="demo-badge">DEMO</span>
+            <a href="/blog-drafts">
+              {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+            </a>
+          </p>
+        </section>
+      ) : (
+        <p class="today__row-summary">
+          <a href="/blog-drafts">
+            {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+          </a>
+        </p>
+      )}
+    </section>
+
+    {/* ======================= AUDIT CONCERNS (demoted) ======================= */}
+    <section class="today__row">
+      <h2>AUDIT CONCERNS · top {concernsView.length}</h2>
+      {concernsEmpty ? (
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real AUDIT CONCERNS populate after the F-layer verifier runs"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <span class="demo-badge">DEMO</span>
+          <ul class="today__concerns">
+            {concernsView.map((c) => (
+              <li>
+                <code class="today__concern-type">{c.claimType}</code>
+                <span class="today__concern-span">claimed "{c.span}"</span>
+                <span class="today__concern-reason">— {c.reason}</span>
+                <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <ul class="today__concerns">
+          {concernsView.map((c) => (
+            <li>
+              <code class="today__concern-type">{c.claimType}</code>
+              <span class="today__concern-span">claimed "{c.span}"</span>
+              <span class="today__concern-reason">— {c.reason}</span>
+              <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p class="today__row-summary">
+        <a href="/audit">full audit table →</a>
+      </p>
+    </section>
+
+    {/* ======================= CORPUS HEALTH (footer-y) ======================= */}
+    <section class="today__row today__row--footer">
+      <h2>CORPUS HEALTH</h2>
+      {health === null ? (
+        <p>No continuum snapshot.</p>
+      ) : (
+        <p>
+          <code>{health.consecutiveSuccesses}</code> consecutive successful scans ·
+          {' '}<code>{health.entriesByStatus.ok}</code> ok ·
+          {' '}<code>{health.entriesByStatus.missing}</code> missing ·
+          {' '}<code>{health.entriesByStatus.crashed}</code> crashed ·
+          {' '}<code>{health.entriesByStatus.pruned}</code> pruned
+          {health.warnings.length > 0 ? (
+            <span class="today__warn"> · {health.warnings.length} warning(s)</span>
+          ) : null}
+          {' · '}<a href="/health">/health →</a>
+        </p>
+      )}
+    </section>
+
+    {brief !== null ? (
+      <details class="today__raw">
+        <summary>raw daily brief markdown</summary>
+        <pre>{brief.markdown}</pre>
+      </details>
+    ) : null}
   </main>
+
+  <script is:inline>
+    // Wire the action buttons against the per-endpoint streams.
+    //
+    // /api/rescan and /api/mine-corrections both return NDJSON
+    // (start / stdout / stderr / phase / done). The mine-corrections
+    // skill additionally writes a status file at
+    //   /chat-arch-data/analysis/correction-status-${requestId}.json
+    // that we poll for stage-level progress (claude -p stdout doesn't
+    // expose internal stages). /api/regen-brief is a fast synchronous
+    // JSON endpoint so we just POST and reload on success.
+    const status = document.getElementById('action-status');
+    const progressEl = document.getElementById('action-progress');
+    const labelEl = document.getElementById('progress-label');
+    const elapsedEl = document.getElementById('progress-elapsed');
+    const phaseEl = document.getElementById('progress-phase');
+    const barEl = document.getElementById('progress-bar');
+    const barFillEl = document.getElementById('progress-bar-fill');
+    const logEl = document.getElementById('progress-log');
+    const buttons = [
+      document.getElementById('action-rescan'),
+      document.getElementById('action-mine'),
+      document.getElementById('action-brief'),
+      document.getElementById('action-mine-cta'),
+    ].filter(Boolean);
+
+    const STAGE_LABELS = {
+      starting: 'starting',
+      classifying: 'classifying candidates',
+      'ingesting-configs': 'ingesting config history',
+      embedding: 'embedding patterns',
+      clustering: 'clustering corrections',
+      proposing: 'proposing upgrades',
+      'tagging-topics': 'tagging topics',
+      writing: 'writing corrections.json',
+      complete: 'complete',
+      error: 'error',
+    };
+
+    let elapsedTimer = null;
+    let statusPollTimer = null;
+
+    function setStatus(text, isError) {
+      if (!status) return;
+      status.textContent = text;
+      status.style.color = isError ? '#f08080' : '#88e088';
+    }
+
+    function setButtonsDisabled(disabled) {
+      for (const b of buttons) b.disabled = disabled;
+    }
+
+    function formatElapsed(startedAt) {
+      const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${s.toString().padStart(2, '0')} elapsed`;
+    }
+
+    function showProgress(label) {
+      progressEl.hidden = false;
+      labelEl.textContent = label;
+      phaseEl.textContent = '';
+      barEl.hidden = true;
+      logEl.hidden = true;
+      logEl.textContent = '';
+      elapsedEl.textContent = '0:00 elapsed';
+      setStatus('', false);
+    }
+
+    function hideProgress() {
+      progressEl.hidden = true;
+      if (elapsedTimer !== null) {
+        clearInterval(elapsedTimer);
+        elapsedTimer = null;
+      }
+      if (statusPollTimer !== null) {
+        clearInterval(statusPollTimer);
+        statusPollTimer = null;
+      }
+    }
+
+    function startElapsedTicker(startedAt) {
+      if (elapsedTimer !== null) clearInterval(elapsedTimer);
+      elapsedEl.textContent = formatElapsed(startedAt);
+      elapsedTimer = setInterval(() => {
+        elapsedEl.textContent = formatElapsed(startedAt);
+      }, 1000);
+    }
+
+    function setPhase(phase, current, total) {
+      const friendly = STAGE_LABELS[phase] || phase;
+      let line = `· ${friendly}`;
+      if (typeof current === 'number' && typeof total === 'number' && total > 0) {
+        line += ` (${current}/${total})`;
+        barEl.hidden = false;
+        barFillEl.style.width = `${Math.min(100, (current / total) * 100)}%`;
+      }
+      phaseEl.textContent = line;
+    }
+
+    function appendLog(line) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) return;
+      logEl.hidden = false;
+      // Keep last 6 lines only — this region is a heartbeat, not a transcript.
+      const next = (logEl.textContent + '\n' + trimmed)
+        .split('\n')
+        .filter((l) => l.length > 0);
+      logEl.textContent = next.slice(-6).join('\n');
+    }
+
+    function reloadSoon() {
+      // Brief delay so "complete" is visible before the page refreshes.
+      setTimeout(() => window.location.reload(), 800);
+    }
+
+    async function pollMineStatus(requestId) {
+      try {
+        const res = await fetch(
+          `/chat-arch-data/analysis/correction-status-${requestId}.json`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) return;
+        const body = await res.json();
+        if (body && typeof body.status === 'string') {
+          const p = body.progress || {};
+          setPhase(body.status, p.current, p.total);
+          if (typeof p.phase === 'string' && p.phase.length > 0) {
+            appendLog(`[${body.status}] ${p.phase}`);
+          }
+        }
+      } catch {
+        // Status file may not exist yet (skill hasn't reached Stage 0)
+        // or may be mid-write — both are fine, keep polling.
+      }
+    }
+
+    async function streamNdjson(url, header, label, opts) {
+      const { onStart, onPhase, onLine, onDone } = opts || {};
+      showProgress(label);
+      setButtonsDisabled(true);
+      const startedAt = Date.now();
+      startElapsedTicker(startedAt);
+
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'X-Requested-With': header, 'content-type': 'application/json' },
+          body: '{}',
+        });
+      } catch (err) {
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`${label} failed: ${(err && err.message) || err}`, true);
+        return;
+      }
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`${label} failed: ${res.status} ${body.slice(0, 160)}`, true);
+        return;
+      }
+
+      if (!res.body) {
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`${label} started (no stream available — reload to see results)`, false);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let terminalOk = null;
+      let terminalErr = '';
+
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split('\n');
+          buf = parts.pop() ?? '';
+          for (const raw of parts) {
+            const line = raw.trim();
+            if (line.length === 0) continue;
+            let evt;
+            try { evt = JSON.parse(line); } catch { continue; }
+            if (evt.type === 'start') {
+              if (onStart) onStart(evt);
+            } else if (evt.type === 'phase') {
+              if (onPhase) onPhase(evt);
+              else setPhase(evt.phase, evt.ix, evt.total);
+            } else if (evt.type === 'stdout' || evt.type === 'stderr') {
+              if (onLine) onLine(evt);
+              else appendLog(evt.line);
+            } else if (evt.type === 'done') {
+              terminalOk = evt.ok === true;
+              if (!terminalOk) {
+                terminalErr = (evt.stderrTail || evt.stdoutTail || '').trim().slice(-400);
+              }
+              if (onDone) onDone(evt);
+            }
+          }
+        }
+      } catch (err) {
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`${label} stream broke: ${(err && err.message) || err}`, true);
+        return;
+      }
+
+      if (terminalOk === true) {
+        setPhase('complete');
+        setStatus(`${label} complete — refreshing…`, false);
+        hideProgress();
+        reloadSoon();
+      } else {
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`${label} failed${terminalErr ? ': ' + terminalErr.slice(0, 200) : ''}`, true);
+      }
+    }
+
+    async function runMine() {
+      await streamNdjson(
+        '/api/mine-corrections',
+        'chat-arch-mine-corrections',
+        'mine corrections',
+        {
+          onStart(evt) {
+            // The headless claude -p stream is mostly silent; the
+            // skill's status file is the real progress source.
+            if (statusPollTimer !== null) clearInterval(statusPollTimer);
+            pollMineStatus(evt.requestId);
+            statusPollTimer = setInterval(() => pollMineStatus(evt.requestId), 1500);
+            if (evt.autoWindow && typeof evt.autoWindow.candidateCount === 'number') {
+              const w = evt.autoWindow;
+              appendLog(
+                `auto-window: ${w.mode} · ${w.candidateCount} candidate${w.candidateCount === 1 ? '' : 's'} · ~${w.windowDays} day${w.windowDays === 1 ? '' : 's'}`,
+              );
+            }
+          },
+        },
+      );
+    }
+
+    async function runRescan() {
+      await streamNdjson('/api/rescan', 'chat-arch-rescan', 'rescan', {});
+    }
+
+    async function runRegenBrief() {
+      showProgress('regen brief');
+      setButtonsDisabled(true);
+      const startedAt = Date.now();
+      startElapsedTicker(startedAt);
+      setPhase('writing');
+      try {
+        const res = await fetch('/api/regen-brief', {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'chat-arch-regen-brief', 'content-type': 'application/json' },
+          body: '{}',
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          hideProgress();
+          setButtonsDisabled(false);
+          setStatus(`regen brief failed: ${res.status} ${body.slice(0, 160)}`, true);
+          return;
+        }
+        setPhase('complete');
+        setStatus('regen brief complete — refreshing…', false);
+        hideProgress();
+        reloadSoon();
+      } catch (err) {
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`regen brief failed: ${(err && err.message) || err}`, true);
+      }
+    }
+
+    document.getElementById('action-rescan')?.addEventListener('click', () => { void runRescan(); });
+    document.getElementById('action-mine')?.addEventListener('click', () => { void runMine(); });
+    // In-hero CTA on the scanned-but-not-mined state shares the handler.
+    document.getElementById('action-mine-cta')?.addEventListener('click', () => { void runMine(); });
+    document.getElementById('action-brief')?.addEventListener('click', () => { void runRegenBrief(); });
+
+    // On page load, if a mining run is already in flight from a prior
+    // tab/session, attach to its status file so the user sees live
+    // progress instead of a stale UI. We can't re-attach to the
+    // original POST's stream from a new connection, but the status
+    // file gives us everything that matters.
+    (async function attachIfBusy() {
+      try {
+        const res = await fetch('/api/mine-corrections', { method: 'GET' });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (body && body.busy === true && typeof body.busyRequestId === 'string') {
+          showProgress('mine corrections (resumed)');
+          setButtonsDisabled(true);
+          startElapsedTicker(Date.now());
+          const requestId = body.busyRequestId;
+          await pollMineStatus(requestId);
+          statusPollTimer = setInterval(async () => {
+            await pollMineStatus(requestId);
+            // When the status file flips to complete/error, refresh.
+            try {
+              const r = await fetch(`/chat-arch-data/analysis/correction-status-${requestId}.json`, { cache: 'no-store' });
+              if (!r.ok) return;
+              const s = await r.json();
+              if (s && (s.status === 'complete' || s.status === 'error')) {
+                clearInterval(statusPollTimer);
+                statusPollTimer = null;
+                if (s.status === 'complete') {
+                  setStatus('mine corrections complete — refreshing…', false);
+                  hideProgress();
+                  reloadSoon();
+                } else {
+                  hideProgress();
+                  setButtonsDisabled(false);
+                  setStatus(`mine corrections failed${s.error ? ': ' + String(s.error).slice(0, 200) : ''}`, true);
+                }
+              }
+            } catch {
+              // Transient — keep polling.
+            }
+          }, 1500);
+        }
+      } catch {
+        // No backend / network error — silently skip the attach.
+      }
+    })();
+  </script>
 </BaseLayout>
+
+<style>
+  main.today {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+    color: #FFCC99;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .today__header h1 {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 32px;
+    margin: 0 0 4px;
+  }
+  .today__date {
+    font-size: 13px; color: #FFCC9999; margin: 0 0 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .today__chip {
+    background: #FFCC9911; padding: 2px 8px; border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  }
+  .today__actions { display: flex; gap: 12px; align-items: center; margin-bottom: 32px; }
+  .today__actions button {
+    background: #FFCC99; color: #0a0a0a; border: none; padding: 8px 16px;
+    font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 12px;
+    cursor: pointer; border-radius: 2px;
+  }
+  .today__actions button:hover { background: #ffd680; }
+  .today__actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .today__action-status { font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+
+  .today__progress {
+    margin: -16px 0 24px;
+    padding: 12px 14px;
+    border: 1px solid #FFCC9944;
+    border-left: 3px solid #FFCC99;
+    background: linear-gradient(90deg, rgba(255, 204, 153, 0.06) 0%, rgba(255, 204, 153, 0) 70%);
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .today__progress-row {
+    display: flex; align-items: center; gap: 10px;
+    color: #FFCC99;
+  }
+  .today__progress-spinner {
+    width: 10px; height: 10px;
+    border: 2px solid #FFCC9955;
+    border-top-color: #FFCC99;
+    border-radius: 50%;
+    animation: today-spin 0.9s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes today-spin { to { transform: rotate(360deg); } }
+  .today__progress-label { font-weight: 600; letter-spacing: 0.04em; }
+  .today__progress-elapsed { margin-left: auto; color: #FFCC9999; font-size: 11px; }
+  .today__progress-phase {
+    margin-top: 6px; color: #FFCC99cc; font-size: 12px; min-height: 1em;
+  }
+  .today__progress-bar {
+    margin-top: 8px;
+    height: 4px;
+    background: #FFCC9922;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .today__progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: #FFCC99;
+    transition: width 0.4s ease-out;
+  }
+  .today__progress-log {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: #0a0a0a;
+    border: 1px solid #FFCC9922;
+    border-radius: 2px;
+    color: #FFCC9988;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .today__hero {
+    border: 1px solid #FFCC9944;
+    background: linear-gradient(180deg, #0a0a0a, #050505);
+    padding: 24px;
+    border-radius: 4px;
+    margin-bottom: 32px;
+  }
+  /* Demo modifier on the WHOLE hero section — the peach left-rule +
+     subtle horizontal tint mirror the .today__hero-demo / .today__row-demo
+     treatment defined in BaseLayout, but layered ON TOP of the hero's
+     dark vertical gradient (two stacked backgrounds) so the section
+     keeps its dark fill instead of being replaced by a peach wash. */
+  .today__hero--demo {
+    padding-left: 12px;
+    border-left: 3px solid rgba(255, 153, 51, 0.55);
+    background:
+      linear-gradient(90deg, rgba(255, 153, 51, 0.06) 0%, rgba(255, 153, 51, 0) 60%),
+      linear-gradient(180deg, #0a0a0a, #050505);
+  }
+  /* Scanned-but-not-mined modifier. Different cue from --demo (which
+     warns "fake values"): a sunflower-gold left-rule + tint signals
+     "real data, action required" — the visual conveys "you're in the
+     loop, your next move is MINE." Mirrors the demo's two-gradient
+     layering so the hero keeps its dark fill. */
+  .today__hero--scanned {
+    padding-left: 12px;
+    border-left: 3px solid rgba(255, 204, 153, 0.6);
+    background:
+      linear-gradient(90deg, rgba(255, 204, 153, 0.05) 0%, rgba(255, 204, 153, 0) 60%),
+      linear-gradient(180deg, #0a0a0a, #050505);
+  }
+  .today__hero-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #FFCC99cc;
+    letter-spacing: 0.08em;
+    margin-left: 8px;
+    font-weight: normal;
+  }
+  .today__hero-lede {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #FFCC99cc;
+    margin: 0 0 16px;
+  }
+  .today__hero-lede code {
+    background: #FFCC9911;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #FFCC99;
+  }
+  .today__hero-lede strong {
+    color: #FFCC99;
+    font-weight: 700;
+  }
+  .today__hero-cta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0;
+    flex-wrap: wrap;
+  }
+  .today__hero-cta-btn {
+    background: #FFCC99;
+    color: #0a0a0a;
+    border: none;
+    padding: 10px 20px;
+    font-family: 'Antonio', sans-serif;
+    letter-spacing: 0.1em;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .today__hero-cta-btn:hover {
+    background: #ffd680;
+  }
+  .today__hero-cta-hint {
+    font-size: 11px;
+    color: #FFCC9999;
+    font-style: italic;
+  }
+  .today__hero h2 {
+    font-family: 'Antonio', sans-serif; letter-spacing: 0.12em;
+    font-size: 14px; color: #FFCC99; margin: 0 0 16px;
+  }
+  .today__hero-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+  }
+  .today__metric {
+    background: #0a0a0a; border: 1px solid #FFCC9933; padding: 16px;
+    border-radius: 3px; display: flex; flex-direction: column;
+  }
+  .today__metric--big { border-color: #FFCC9988; }
+  .today__metric--warn { border-color: #ffaa3388; }
+  .today__metric--warn .today__metric-value { color: #ffd680; }
+  .today__metric-label { font-size: 11px; color: #FFCC9999; letter-spacing: 0.08em; }
+  .today__metric-value {
+    font-family: 'Antonio', sans-serif; font-size: 36px; line-height: 1.1;
+    margin: 6px 0; color: #FFCC99;
+  }
+  .today__metric-sub { font-size: 11px; color: #FFCC9999; }
+
+  .today__empty { color: #FFCC99cc; font-size: 14px; line-height: 1.6; }
+  .today__empty code { background: #FFCC9911; padding: 1px 6px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .today__empty-note { font-size: 12px; color: #FFCC9999; font-style: italic; margin-top: 12px; }
+
+  .today__queue, .today__applies { margin-top: 16px; }
+  .today__queue h3, .today__applies h3 {
+    font-family: 'Antonio', sans-serif; font-size: 12px; letter-spacing: 0.1em;
+    color: #FFCC9999; margin: 0 0 8px;
+  }
+  .today__queue ul, .today__applies ul {
+    list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  }
+  .today__queue li {
+    padding: 6px 0; border-bottom: 1px solid #FFCC9922;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .today__queue li:last-child { border-bottom: none; }
+  .today__confidence { color: #FFCC99; font-weight: 600; min-width: 40px; }
+  .today__rule { flex: 1; color: #FFCC99cc; }
+  .today__scope { color: #FFCC9999; font-size: 11px; }
+  .today__queue a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
+  .today__applies li { padding: 4px 0; color: #FFCC99cc; }
+  .today__applies code { color: #FFCC9999; }
+
+  .today__row { margin-bottom: 28px; }
+  .today__row--footer { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #FFCC9933; }
+  .today__row h2 {
+    font-family: 'Antonio', sans-serif; font-size: 13px; letter-spacing: 0.12em;
+    color: #FFCC99; margin: 0 0 8px;
+  }
+  .today__row code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FFCC99; }
+  .today__row-empty { color: #FFCC9999; font-size: 13px; }
+  .today__row-summary { font-size: 13px; }
+  .today__row-summary a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
+
+  .today__concerns { list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .today__concerns li { padding: 4px 0; color: #FFCC99cc; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+  .today__concern-type { color: #ffd680; font-size: 11px; }
+  .today__concern-span { color: #FFCC99; }
+  .today__concern-reason { color: #FFCC9999; }
+  .today__concern-sid { color: #FFCC9966; font-size: 11px; }
+  .today__warn { color: #ffd680; }
+
+  .today__raw { margin-top: 32px; font-size: 12px; color: #FFCC9999; }
+  .today__raw summary { cursor: pointer; padding: 6px 0; font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; }
+  .today__raw pre {
+    background: #0a0a0a; border: 1px solid #FFCC9922; padding: 12px 16px;
+    margin-top: 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap;
+  }
+</style>

@@ -232,7 +232,7 @@ export function UploadPanel({
       )}
       {onLoadDemo && variant === 'prominent' && (
         <p className="lcars-upload-panel__hint lcars-upload-panel__hint--demo">
-          No export handy? Load the bundled fixture — about 100 hand-written fake conversations
+          No export handy? Load the bundled fixture — about 120 hand-written fake conversations
           — so you can try the filters, sparkline, and analysis tab. Nothing is stored server-side.
         </p>
       )}

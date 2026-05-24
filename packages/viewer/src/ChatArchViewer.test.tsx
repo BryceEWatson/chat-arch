@@ -596,4 +596,37 @@ describe('ChatArchViewer', () => {
     const zombieChips = document.querySelectorAll('.lcars-chip--zombie');
     expect(zombieChips.length).toBeGreaterThan(0);
   });
+
+  // Hash-routed action / surface entry points consumed by the standalone
+  // app's AppSidebar pills (/sessions#data, /sessions#corrections). The
+  // strip used to rely on these implicitly; the new sidebar relies on
+  // them explicitly — without them the DATA pill is a dead link and the
+  // CORRECTIONS pill lands the user on SESSIONS, not the CORRECTIONS
+  // surface. Tests guard both behaviors so the contract survives.
+  describe('hash routing — action + surface entry points', () => {
+    it('opens the DataPanel modal when location.hash is #data on mount', async () => {
+      window.location.hash = '#data';
+      render(<ChatArchViewer manifest={sampleManifest} />);
+      await waitFor(() =>
+        expect(screen.getByRole('dialog', { name: /data sources panel/i })).toBeDefined(),
+      );
+      // Action hash — the viewer strips it so a back-nav / reload doesn't
+      // re-fire the open.
+      await waitFor(() => expect(window.location.hash).toBe(''));
+    });
+
+    it('routes to the CORRECTIONS surface when location.hash is #corrections on mount', async () => {
+      window.location.hash = '#corrections';
+      render(<ChatArchViewer manifest={sampleManifest} />);
+      // CORRECTIONS sidebar item carries aria-current=page when the mode
+      // is active — same contract as PROJECTS/TOPICS/PRACTICE.
+      await waitFor(() => {
+        const item = screen.getByRole('button', { name: /mode CORRECTIONS/i });
+        expect(item.getAttribute('aria-current')).toBe('page');
+      });
+      // Hash persists so a reload re-routes.
+      expect(window.location.hash).toBe('#corrections');
+      window.location.hash = '';
+    });
+  });
 });

@@ -4,6 +4,11 @@ import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import {
+  assertDataDirContained,
+  handleDataDirGuardError,
+} from '../../lib/dataDirGuard.js';
 
 /**
  * Opt this route into server rendering. The rest of the site is static
@@ -612,16 +617,6 @@ function runClaudeOnce(
   };
 
   return new Promise<SpawnOutcome>((resolvePromise) => {
-    // shell:true on Windows so `claude.cmd` resolves without us
-    // hardcoding the extension — same pattern rescan.ts uses for
-    // pnpm.cmd.
-    // shell:true on Windows means cmd.exe re-parses the joined argv string,
-    // so a multi-word prompt with leading slash + flags must be quoted or
-    // claude will see each flag as its own option. Wrap the prompt in quotes
-    // and escape any embedded double-quotes so the entire slash-command line
-    // reaches claude as a single arg.
-    const isWin = process.platform === 'win32';
-    const promptArg = isWin ? `"${prompt.replace(/"/g, '\\"')}"` : prompt;
     // Pre-authorize the tools the skill needs so it doesn't stall on
     // per-tool approval prompts in headless mode. Whitelist (not full
     // bypass) keeps the spawn under tool-level scrutiny: only Read /
@@ -629,18 +624,25 @@ function runClaudeOnce(
     // Risk is bounded by this endpoint's CSRF gate (local origin only)
     // and the skill's project-local write scope.
     const allowedTools = 'Read Write Edit Bash Task Glob Grep';
-    const child = spawn(
-      'claude',
-      ['--allowedTools', allowedTools, '-p', promptArg],
-      {
-        cwd: repoRoot(),
-        env: process.env,
-        shell: isWin,
-        // Detach stdin so claude's "no stdin data received in 3s" probe
-        // resolves immediately.
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+
+    // Resolve the claude binary via the central helper. It checks
+    // CLAUDE_BIN → CLAUDE_CODE_EXECPATH → %APPDATA%\Claude\claude-code\
+    // → bare 'claude' on PATH, in that order — so we get a working
+    // install even when the global npm shim is broken (auto-updater
+    // mid-flight leaves `claude.exe.old.*` files with no current .exe).
+    // When the resolver returns an absolute path, spawn without a shell
+    // so the OS launches the .exe directly and Node's arg array is
+    // passed verbatim (no cmd.exe special-char surprises). Only the
+    // PATH-fallback branch uses shell:true so PATHEXT can resolve
+    // `claude.cmd`.
+    const bin = resolveClaudeBin();
+    const args = ['--allowedTools', allowedTools, '-p', prompt];
+    const child = spawn(bin.file, args, {
+      cwd: repoRoot(),
+      env: process.env,
+      shell: bin.useShell,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let stdoutBuf = '';
     let stderrBuf = '';
@@ -675,10 +677,14 @@ function runClaudeOnce(
       return lastFragment;
     };
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    // stdio: ['ignore', 'pipe', 'pipe'] above guarantees stdout/stderr
+    // are present at runtime; spawn's return type narrows them to
+    // possibly-null for the general case, so a non-null assertion is
+    // load-bearing for TypeScript but a no-op at runtime.
+    child.stdout!.on('data', (chunk: Buffer) => {
       stdoutBuf = drain(stdoutBuf, chunk.toString('utf8'), 'stdout', stdoutFull);
     });
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr!.on('data', (chunk: Buffer) => {
       stderrBuf = drain(stderrBuf, chunk.toString('utf8'), 'stderr', stderrFull);
     });
 
@@ -835,10 +841,13 @@ interface MineRequestBody {
 
 async function parseParams(body: MineRequestBody): Promise<MineParams> {
   const rawDir = body.dataDir;
-  const dataDir =
+  const candidate =
     typeof rawDir === 'string' && rawDir.trim().length > 0
       ? rawDir
       : DEFAULT_DATA_DIR;
+  // Throws DataDirGuardError on `..`-traversal; POST handler converts
+  // to a 400 response. (S1)
+  const dataDir = assertDataDirContained(candidate, repoRoot());
 
   // Honor an explicit windowDays override. Otherwise compute auto-window
   // from manifest + correction-candidates + any prior corrections.json.
@@ -941,7 +950,14 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  const params = await parseParams(body);
+  let params: MineParams;
+  try {
+    params = await parseParams(body);
+  } catch (e) {
+    const r = handleDataDirGuardError(e); // (XN2)
+    if (r) return r;
+    throw e;
+  }
 
   // If auto-window resolved to "idle" (nothing new to mine), short-circuit
   // before we even spawn claude. The viewer renders this as a clean
@@ -1022,10 +1038,18 @@ export const POST: APIRoute = async ({ request }) => {
  */
 export const GET: APIRoute = async ({ url }) => {
   const dirParam = url.searchParams.get('dataDir');
-  const dataDir =
+  const candidate =
     typeof dirParam === 'string' && dirParam.trim().length > 0
       ? dirParam
       : DEFAULT_DATA_DIR;
+  let dataDir: string;
+  try {
+    dataDir = assertDataDirContained(candidate, repoRoot()); // (S1)
+  } catch (e) {
+    const r = handleDataDirGuardError(e); // (XN2)
+    if (r) return r;
+    throw e;
+  }
   const selParam = url.searchParams.get('selection');
   const selection: 'recent' | 'backfill' | 'all' =
     selParam === 'all'

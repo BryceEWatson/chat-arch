@@ -111,7 +111,7 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
           extended tier is what LLM-assisted analysis over your full transcript corpus would add:
           semantic similarity, why a project stalled, problems you re-solved months apart,
           reusable prompt templates, cost post-mortems, and candidate Claude-Code skills
-          synthesized from your actual usage. Those need a local pass because running an LLM over
+          synthesized from your actual usage. Those need a local pass — running an LLM over
           every session isn&apos;t something a browser tab should do (cost, privacy, throughput)
           — but the tool that runs that pass isn&apos;t written yet. This sheet is the preview.
         </p>

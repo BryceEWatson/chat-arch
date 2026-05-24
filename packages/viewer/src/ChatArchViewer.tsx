@@ -36,13 +36,42 @@ import {
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
 import { PracticeMode } from './components/modes/PracticeMode.js';
+import { EffectivenessMode } from './components/modes/EffectivenessMode.js';
+import { InsightsMode } from './components/modes/InsightsMode.js';
+import { DecisionsMode } from './components/modes/DecisionsMode.js';
+import { TrustMode } from './components/modes/TrustMode.js';
+import { TrendsMode } from './components/modes/TrendsMode.js';
+import { ExportMode } from './components/modes/ExportMode.js';
 import { CorrectionsPanel } from './components/CorrectionsPanel.js';
 import { fetchManifest } from './data/fetch.js';
 import {
   loadAppliedImprovementsFile,
   loadCorrectionsFile,
 } from './data/correctionsLoader.js';
-import type { CorrectionsFile } from '@chat-arch/schema';
+import { loadCompositeOutcomesFile } from './data/outcomesLoader.js';
+import {
+  loadInsightsBundle,
+  type InsightsBundle,
+} from './data/insightsLoader.js';
+import { loadDecisionsFile } from './data/decisionsLoader.js';
+import {
+  loadTrendsBundle,
+  type TrendsBundle,
+} from './data/trendsLoader.js';
+import {
+  loadExportsManifest,
+  type ExportManifest,
+} from './data/exportsLoader.js';
+import {
+  loadInsightsAcks,
+  type InsightsAcksFile,
+} from './data/insightsAckClient.js';
+import { ActionItemsBanner, type TopItem } from './components/ActionItemsBanner.js';
+import type {
+  CompositeOutcomesFile,
+  CorrectionsFile,
+  DecisionsFile,
+} from '@chat-arch/schema';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
 import { computeV2Entities } from './data/computeV2Entities.js';
@@ -61,6 +90,7 @@ import {
   buildDuplicateClusters as buildDuplicateClustersAnalysis,
   buildZombieProjects,
   firstHumanText,
+  THRESHOLDS,
   type DuplicateInput,
 } from '@chat-arch/analysis';
 import {
@@ -104,6 +134,14 @@ const HASH_TOPICS = '#topics';
 const HASH_TOPIC_PREFIX = '#topic/';
 const HASH_PRACTICE = '#practice';
 const HASH_CHAT = '#chat';
+const HASH_CORRECTIONS = '#corrections';
+const HASH_EFFECTIVENESS = '#effectiveness';
+const HASH_INSIGHTS = '#insights';
+// Action hash — opens the DataPanel modal and strips itself so a
+// back-nav / reload doesn't re-fire the open. Mirrors the standalone
+// app's `/sessions#data` deep-link from the AppSidebar SYSTEM > DATA
+// pill — without a handler here the pill is a dead link.
+const HASH_DATA = '#data';
 // One-time flag: when absent (i.e. a returning user pre-chat-page never
 // stored it), the default landing remains the prior `command` mode so
 // existing bookmarks don't suddenly land somewhere unfamiliar. Fresh
@@ -196,6 +234,30 @@ function readPracticeHash(): boolean {
 function readChatHash(): boolean {
   if (typeof window === 'undefined') return false;
   return window.location.hash === HASH_CHAT;
+}
+
+/** Same shape as readChatHash — flat boolean surface entry. */
+function readCorrectionsHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_CORRECTIONS;
+}
+
+/** Outcome-substrate trajectory surface — no detail dimension. */
+function readEffectivenessHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_EFFECTIVENESS;
+}
+
+/** Outcome-substrate descriptive-contrast surface — no detail dimension. */
+function readInsightsHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_INSIGHTS;
+}
+
+/** Action hash — open the DataPanel modal. Stripped after firing. */
+function readDataHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_DATA;
 }
 
 /**
@@ -307,11 +369,17 @@ export function ChatArchViewer({
     // default-landing heuristic (fresh installs → `chat`, returning
     // users → `command`) when no hash is recognized.
     if (readChatHash()) return 'chat';
+    if (readCorrectionsHash()) return 'corrections';
     const proj = readProjectsHash();
     if (proj.surface === 'projects') return 'projects';
     const top = readTopicsHash();
     if (top.surface === 'topics') return 'topics';
     if (readPracticeHash()) return 'practice';
+    if (readEffectivenessHash()) return 'effectiveness';
+    if (readInsightsHash()) return 'insights';
+    // #data is an action hash, not a surface mode — it opens the
+    // DataPanel via the sync useEffect and strips itself. Mode falls
+    // through to defaultLandingMode so the underlying page is sane.
     return defaultLandingMode();
   });
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
@@ -398,6 +466,44 @@ export function ChatArchViewer({
     useState<CorrectionsFile | null>(null);
   const [correctionsRouteHydrated, setCorrectionsRouteHydrated] =
     useState(false);
+
+  // --- Phase 1 outcome-substrate sidecars (Wave 4 Stream I) ---
+  //
+  // EffectivenessMode reads `analysis/composite-outcomes.json`; InsightsMode
+  // reads `its-analysis.json` + `knowledge-debt.json` + `reflexive.json` +
+  // `config-history.json`. All loaders return null on 404 / parse failure
+  // so a missing kernel never blocks viewer startup; the modes render the
+  // upstream empty state in that case.
+  const [compositeOutcomes, setCompositeOutcomes] =
+    useState<CompositeOutcomesFile | null>(null);
+  const [insightsBundle, setInsightsBundle] = useState<InsightsBundle>({
+    configHistory: null,
+    its: null,
+    knowledgeDebt: null,
+    reflexive: null,
+  });
+
+  // --- Phase 2/3/4 outcome-substrate sidecars (Wave 4 Stream J) ---
+  //
+  // DECISIONS reads `analysis/decisions.json`; TRUST reads the same file
+  // (joined trustCalibration cells); TRENDS reads four sidecars; EXPORT
+  // reads `analysis/exports/manifest.json`. All loaders return null on
+  // 404 / parse failure.
+  const [decisionsFile, setDecisionsFile] = useState<DecisionsFile | null>(
+    null,
+  );
+  const [trendsBundle, setTrendsBundle] = useState<TrendsBundle>({
+    trajectories: null,
+    archetypes: null,
+    surfaceComparison: null,
+    skillCurves: null,
+  });
+  const [exportsManifest, setExportsManifest] =
+    useState<ExportManifest | null>(null);
+  // Wave 6 #3c — insights-acks ledger, drives the per-item ACK
+  // suppression in InsightsMode AND the action-items banner.
+  const [insightsAcks, setInsightsAcks] =
+    useState<InsightsAcksFile | null>(null);
 
   // --- Phase 3 semantic-classification state ---
   //
@@ -628,6 +734,22 @@ export function ChatArchViewer({
       setSelectedTopicId(top.selectedTopicId);
       const onPractice = readPracticeHash();
       const onChat = readChatHash();
+      const onCorrections = readCorrectionsHash();
+      const onEffectiveness = readEffectivenessHash();
+      const onInsights = readInsightsHash();
+      // #data is an action, not a surface — open the panel and strip
+      // the hash so a back-nav / reload doesn't re-fire the open. Done
+      // BEFORE the unrecognized-hash branch below so the strip doesn't
+      // race with that path.
+      if (readDataHash()) {
+        setDataPanelOpen(true);
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + window.location.search,
+        );
+        return;
+      }
       if (id) {
         setMode('detail');
       } else if (proj.surface === 'projects') {
@@ -638,6 +760,12 @@ export function ChatArchViewer({
         setMode('practice');
       } else if (onChat) {
         setMode('chat');
+      } else if (onCorrections) {
+        setMode('corrections');
+      } else if (onEffectiveness) {
+        setMode('effectiveness');
+      } else if (onInsights) {
+        setMode('insights');
       } else {
         // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
         // `#constellation` bookmark would otherwise sit in the URL
@@ -667,7 +795,10 @@ export function ChatArchViewer({
             prev === 'projects' ||
             prev === 'topics' ||
             prev === 'practice' ||
-            prev === 'chat'
+            prev === 'chat' ||
+            prev === 'corrections' ||
+            prev === 'effectiveness' ||
+            prev === 'insights'
           ) {
             const stashed = priorModeBeforeDetailRef.current;
             if (prev === 'detail' && stashed) {
@@ -744,6 +875,36 @@ export function ChatArchViewer({
         setCorrectionsRouteHydrated(true);
       });
     }
+    // Phase 1 outcome-substrate sidecars: fetch in parallel with
+    // corrections so first paint already has the bundle when the user
+    // lands directly on EFFECTIVENESS or INSIGHTS via deep link. All
+    // failures resolve to null inside the loaders.
+    loadCompositeOutcomesFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setCompositeOutcomes(f);
+    });
+    loadInsightsBundle(dataRoot).then((bundle) => {
+      if (cancelled) return;
+      setInsightsBundle(bundle);
+    });
+    // Stream J — DECISIONS / TRUST share decisions.json, TRENDS pulls
+    // four sidecars in parallel, EXPORT pulls the export manifest.
+    loadDecisionsFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setDecisionsFile(f);
+    });
+    loadTrendsBundle(dataRoot).then((bundle) => {
+      if (cancelled) return;
+      setTrendsBundle(bundle);
+    });
+    loadExportsManifest(dataRoot).then((m) => {
+      if (cancelled) return;
+      setExportsManifest(m);
+    });
+    loadInsightsAcks(dataRoot).then((f) => {
+      if (cancelled) return;
+      setInsightsAcks(f);
+    });
     return () => {
       cancelled = true;
     };
@@ -777,6 +938,145 @@ export function ChatArchViewer({
     correctionsRoute,
     mode,
   ]);
+
+  // Wave 6 #4 — action-items banner counts. Derived from the same
+  // sidecars the modes consume, so a SCAN that refreshes the files
+  // also refreshes the banner.
+  const unclassifiedDecisionsCount = useMemo(() => {
+    if (decisionsFile === null) return 0;
+    let n = 0;
+    for (const d of decisionsFile.decisions) {
+      if (d.classification === null) n += 1;
+    }
+    return n;
+  }, [decisionsFile]);
+  const knowledgeDebtClusterCount = useMemo(
+    () => insightsBundle.knowledgeDebt?.clusters.length ?? 0,
+    [insightsBundle],
+  );
+  const unacknowledgedItsCount = useMemo(() => {
+    const its = insightsBundle.its;
+    if (its === null) return 0;
+    const ackedKeys = new Set<string>();
+    for (const e of insightsAcks?.entries ?? []) {
+      if (e.kind === 'its-contrast') ackedKeys.add(e.id);
+    }
+    let n = 0;
+    for (const r of its.results) {
+      // Only count rows that would render — pre + post above the
+      // display floor AND a non-zero-overlap CI (i.e., the row would
+      // get an ACKNOWLEDGE pill).
+      if (
+        r.pre.n < THRESHOLDS.display.minNForRate ||
+        r.post.n < THRESHOLDS.display.minNForRate
+      ) {
+        continue;
+      }
+      const clearEffect =
+        (r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
+        (r.deltaCI.low < 0 && r.deltaCI.high < 0);
+      if (!clearEffect) continue;
+      const key = `${r.sha}:${r.path}`;
+      if (!ackedKeys.has(key)) n += 1;
+    }
+    return n;
+  }, [insightsBundle, insightsAcks]);
+
+  // Wave 7 P1 #5 — Top-3 representatives + trust mis-calibration flag.
+  // Computed here so the banner is a pure renderer over the sidecar
+  // data. The same heuristic the modes use to flag rows surfaces the
+  // headline candidates.
+  const topActionItems = useMemo<readonly TopItem[]>(() => {
+    const out: TopItem[] = [];
+    // Highest-confidence + largest knowledge-debt cluster.
+    const debt = insightsBundle.knowledgeDebt;
+    if (debt !== null && debt.clusters.length > 0) {
+      const top = [...debt.clusters].sort((a, b) => {
+        const ca = a.confidence === 'high' ? 1 : 0;
+        const cb = b.confidence === 'high' ? 1 : 0;
+        if (ca !== cb) return cb - ca;
+        return b.sessionIds.length - a.sessionIds.length;
+      })[0];
+      if (top !== undefined) {
+        const q =
+          top.canonicalQuestion.length > 80
+            ? top.canonicalQuestion.slice(0, 77) + '…'
+            : top.canonicalQuestion;
+        out.push({
+          kind: 'knowledge-debt',
+          headline: `recurring question (${top.sessionIds.length} sessions) — ${q}`,
+          detail: `confidence ${top.confidence}`,
+          mode: 'insights',
+        });
+      }
+    }
+    // Biggest |delta| disjoint-CI ITS contrast.
+    const its = insightsBundle.its;
+    if (its !== null) {
+      const clear = its.results
+        .filter(
+          (r) =>
+            r.pre.n >= THRESHOLDS.display.minNForRate &&
+            r.post.n >= THRESHOLDS.display.minNForRate &&
+            ((r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
+              (r.deltaCI.low < 0 && r.deltaCI.high < 0)),
+        )
+        .sort((a, b) => Math.abs(b.deltaGoodShare) - Math.abs(a.deltaGoodShare));
+      const top = clear[0];
+      if (top !== undefined) {
+        const pp = Math.round(top.deltaGoodShare * 100);
+        out.push({
+          kind: 'its',
+          headline: `${top.subject || top.path} shifted good-share ${pp >= 0 ? '+' : ''}${pp} pp`,
+          detail: `commit ${top.sha.slice(0, 7)}`,
+          mode: 'insights',
+        });
+      }
+    }
+    return out;
+  }, [insightsBundle]);
+
+  // Trust mis-calibration flag — pure read from the decisions file.
+  // Mirrors the logic in TrustMode without duplicating the full 2×2
+  // build (we only need the boolean here).
+  const trustMisCalibrationFired = useMemo(() => {
+    if (decisionsFile === null) return false;
+    const minN = THRESHOLDS.trustCell.minN;
+    let aL = 0,
+      aN = 0,
+      oL = 0,
+      oN = 0;
+    for (const d of decisionsFile.decisions) {
+      const tc = d.trustCalibration;
+      if (tc === null || tc === undefined) continue;
+      if (tc.acceptedAssistant) {
+        if (tc.landed) aL += 1;
+        else aN += 1;
+      } else {
+        if (tc.landed) oL += 1;
+        else oN += 1;
+      }
+    }
+    const aTotal = aL + aN;
+    const oTotal = oL + oN;
+    if (aL < minN || aN < minN || oL < minN || oN < minN) return false;
+    if (aTotal === 0 || oTotal === 0) return false;
+    const pA = aL / aTotal;
+    const pO = oL / oTotal;
+    // Wilson CI inline (we don't want to depend on the analysis package here).
+    const wilson = (p: number, n: number) => {
+      const z = 1.96;
+      const z2 = z * z;
+      const denom = 1 + z2 / n;
+      const centre = (p + z2 / (2 * n)) / denom;
+      const radius =
+        (z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / denom;
+      return { low: centre - radius, high: centre + radius };
+    };
+    const ciA = wilson(pA, aTotal);
+    const ciO = wilson(pO, oTotal);
+    return ciA.high < ciO.low || ciO.high < ciA.low;
+  }, [decisionsFile]);
 
   // --- fetch manifest ---
   useEffect(() => {
@@ -1961,12 +2261,15 @@ export function ChatArchViewer({
     } else {
       // Prefer lines that mention ERROR (the exporter's structured
       // failure signal) over banner / WARN noise that precedes them.
-      const fallback = result.error ?? result.stderrTail ?? 'unknown error';
+      // `||` (not `??`) so an empty-string stderrTail falls through —
+      // a spawn-level failure where the child wrote zero bytes used to
+      // produce "Rescan failed: " with no detail.
+      const fallback = result.error || result.stderrTail || 'unknown error';
       const errorLines = fallback
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => /\bERROR\b/i.test(l));
-      const detail =
+      let detail =
         errorLines.length > 0
           ? errorLines.slice(0, 2).join(' · ')
           : fallback
@@ -1975,6 +2278,16 @@ export function ChatArchViewer({
               .filter(Boolean)
               .slice(-2)
               .join(' · ');
+      // Last-resort: even after filtering, the detail can come out empty
+      // (e.g. fallback was nothing but blank lines). Synthesize one from
+      // the exit code so the user has SOMETHING actionable.
+      if (detail.length === 0) {
+        const exitStr =
+          typeof result.exitCode === 'number'
+            ? ` (exit ${result.exitCode} / 0x${(result.exitCode >>> 0).toString(16).toUpperCase()})`
+            : '';
+        detail = `the exporter exited with no output${exitStr}`;
+      }
       const msg = `Rescan failed: ${detail}`;
       setRescanToast(msg);
       setRescanBanner({ kind: 'error', message: msg });
@@ -2234,6 +2547,15 @@ export function ChatArchViewer({
     baseMode === 'topics' ||
     baseMode === 'practice' ||
     baseMode === 'corrections' ||
+    // Phase 1 outcome-substrate surfaces have their own chrome and
+    // don't consume the shared session-filter rails — same reasoning
+    // as practice/corrections/chat.
+    baseMode === 'effectiveness' ||
+    baseMode === 'insights' ||
+    baseMode === 'decisions' ||
+    baseMode === 'trust' ||
+    baseMode === 'trends' ||
+    baseMode === 'export' ||
     // Chat is its own surface — it manages its own sidebar (chat list),
     // its own input bar, and doesn't consume the shared session-filter
     // chrome. Add to isV2Surface so UpperPanel/MidBar/FilterBar hide
@@ -2469,6 +2791,18 @@ export function ChatArchViewer({
                   window.history.pushState(null, '', HASH_PRACTICE);
                 }
               }
+              // Phase 1 outcome-substrate surfaces — same single-hash
+              // contract as practice / corrections.
+              if (m === 'effectiveness') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_EFFECTIVENESS);
+                }
+              }
+              if (m === 'insights') {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', HASH_INSIGHTS);
+                }
+              }
               // Chat-page §3: CHAT is its own self-contained surface.
               // The chat-list lives inside the surface; the only
               // routable state at the viewer level is "are we on the
@@ -2608,6 +2942,15 @@ export function ChatArchViewer({
               ) : (
                 <>
                   <div className="lcars-mode-area__base" hidden={showDetailOverlay}>
+                    <ActionItemsBanner
+                      unclassifiedDecisions={unclassifiedDecisionsCount}
+                      knowledgeDebtClusters={knowledgeDebtClusterCount}
+                      unacknowledgedItsContrasts={unacknowledgedItsCount}
+                      trustMisCalibrationFired={trustMisCalibrationFired}
+                      topItems={topActionItems}
+                      currentMode={baseMode}
+                      onNavigate={(m) => setMode(m)}
+                    />
                     {baseMode === 'command' ? (
                       sessionsView === 'timeline' ? (
                         <TimelineMode sessions={filteredSorted} onSelect={onSelect} />
@@ -2668,6 +3011,61 @@ export function ChatArchViewer({
                             );
                           }
                         }}
+                      />
+                    ) : baseMode === 'effectiveness' ? (
+                      <EffectivenessMode
+                        outcomes={compositeOutcomes}
+                        sessionUpdatedAt={
+                          new Map(
+                            activeManifest.sessions.map(
+                              (s) =>
+                                [s.id, s.updatedAt ?? s.startedAt ?? 0] as const,
+                            ),
+                          )
+                        }
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                        configHistory={insightsBundle.configHistory}
+                      />
+                    ) : baseMode === 'insights' ? (
+                      <InsightsMode
+                        bundle={insightsBundle}
+                        acks={insightsAcks}
+                        onSelectSession={(id) => {
+                          setPriorModeBeforeDetail('insights');
+                          onSelect(id);
+                        }}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                      />
+                    ) : baseMode === 'decisions' ? (
+                      <DecisionsMode
+                        file={decisionsFile}
+                        onSelectSession={(id) => {
+                          setPriorModeBeforeDetail('decisions');
+                          onSelect(id);
+                        }}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                      />
+                    ) : baseMode === 'trust' ? (
+                      <TrustMode
+                        file={decisionsFile}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                      />
+                    ) : baseMode === 'trends' ? (
+                      <TrendsMode
+                        trajectories={trendsBundle.trajectories}
+                        archetypes={trendsBundle.archetypes}
+                        surfaceComparison={trendsBundle.surfaceComparison}
+                        skillCurves={trendsBundle.skillCurves}
+                        onSelectSession={(id) => {
+                          setPriorModeBeforeDetail('trends');
+                          onSelect(id);
+                        }}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
+                      />
+                    ) : baseMode === 'export' ? (
+                      <ExportMode
+                        manifest={exportsManifest}
+                        onOpenDataPanel={() => setDataPanelOpen(true)}
                       />
                     ) : baseMode === 'corrections' ? (
                       <CorrectionsPanel

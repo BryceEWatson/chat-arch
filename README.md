@@ -103,6 +103,32 @@ walkthrough of each ingestion path.
 > bottom for multi-provider alternatives if Claude isn't your primary
 > assistant.
 
+### What ships beyond the workshop loop
+
+The local-tier viewer now also surfaces an **outcome-substrate** layer
+(EXPORTER_VERSION 1.2.0) that ranks sessions by a composite outcome
+score and slices the corpus six ways:
+
+| Mode | What it shows |
+| ---- | ------------- |
+| **Results** (`/results`) | Cross-corpus claim-pass rate by claim type / project / session + loop-closure rollup (shipped 1.1.0) |
+| **Playbook** (`/playbook`) | Recurring user-turn phrasings ranked by occurrence × downstream pass-rate; COPY AS MARKDOWN handoff (shipped 1.1.0) |
+| **Effectiveness** | Per-session composite score (test/build/PR/affirmation signals) + time-series |
+| **Insights** | Interrupted-time-series contrasts of composite score around `.claude/` config changes |
+| **Decisions** | Extracted decisions joined to downstream composite outcome |
+| **Trust** | Pairwise `(source, archetype)` comparison via Holm-Bonferroni |
+| **Trends** | Per-project trajectory (Theil-Sen + block-bootstrap CI) + skill-curve trends |
+| **Export** | Obsidian-targeted markdown export (post-mortems + knowledge-debt) |
+
+Eleven gitignored analysis sidecars under
+`apps/standalone/public/chat-arch-data/analysis/` back these modes:
+`composite-outcomes.json`, `pr-land-cache.json`, `config-history.json`,
+`its-analysis.json`, `knowledge-debt.json`, `reflexive.json`,
+`decisions.json`, `archetypes.json`, `project-trajectories.json`,
+`surface-comparison.json`, `skill-curves.json`. Every mode ships a
+`MethodologyDisclosure` panel + cell-level `SourceAttribution` labels
+so derivations are auditable.
+
 ### Requirements
 
 | Tool | Version          |

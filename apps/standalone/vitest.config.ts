@@ -1,13 +1,13 @@
-import { defineConfig } from 'vitest/config';
+import { getViteConfig } from 'astro/config';
 
 /**
- * Vitest config for the standalone Astro app. Scoped to `test/`
- * because the API endpoints under `src/pages/api/` import Astro
- * types — we test them by importing only the pure helpers each
- * exports (CSRF predicates, path checks, ranking math), not the
- * `POST` handlers themselves.
+ * Vitest config for the standalone Astro app. Uses `getViteConfig`
+ * so Astro components (`*.astro`) can be imported and rendered via
+ * `experimental_AstroContainer` in component tests. The API endpoint
+ * tests under `test/api/` import only pure helpers and are unaffected
+ * by the Astro pipeline.
  */
-export default defineConfig({
+export default getViteConfig({
   test: {
     name: '@chat-arch/standalone',
     include: ['test/**/*.test.ts'],

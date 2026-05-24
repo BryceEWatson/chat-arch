@@ -84,12 +84,46 @@ export type Mode =
   /** Correction-mining surface: clustered patterns + proposed CLAUDE.md upgrades. */
   | 'corrections'
   /**
+   * Phase 1 outcome-substrate expansion #4: trajectory chart over the
+   * composite-outcome score (weekly mean + EWMA + Wilson-CI ribbon on
+   * the binarized-good share). Reads `analysis/composite-outcomes.json`.
+   */
+  | 'effectiveness'
+  /**
+   * Phase 1 outcome-substrate expansions #2 + #11 + #14 collected into
+   * one descriptive-contrast surface: config-window snapshots,
+   * recurring-question clusters, reflexive matched-pair contrast.
+   * Reads `analysis/its-analysis.json` + `knowledge-debt.json` +
+   * `reflexive.json` + `config-history.json`.
+   */
+  | 'insights'
+  /**
    * Agentic Q&A + opportunity-finding over the corpus. The "chat with
    * your archive" surface — drives `/api/chat-answer`, which spawns the
    * local Claude Code CLI against the `chat-answer` skill. Driven by
    * `#chat` hash.
    */
-  | 'chat';
+  | 'chat'
+  /**
+   * Stream J #1: DECISIONS surface — table of LLM-classified decisions
+   * grouped by topic, joined to composite outcomes via outcomeRef.
+   */
+  | 'decisions'
+  /**
+   * Stream J #10: TRUST surface — 2×2 accept/override × landed/didn't,
+   * with Wilson CIs and a mis-calibration flag.
+   */
+  | 'trust'
+  /**
+   * Stream J #5: TRENDS surface — project trajectory + workflow
+   * archetypes + cross-surface comparison + skill curves.
+   */
+  | 'trends'
+  /**
+   * Stream J #7: EXPORT surface — checklist of export kinds with
+   * filters; GENERATE drives `/api/generate-exports`.
+   */
+  | 'export';
 
 /** Generic async-fetch state. Used uniformly for manifest + drill-in fetches. */
 export type FetchState<T> =
@@ -158,11 +192,23 @@ export const MODE_COLOR: Record<Mode, string> = {
   topics: 'var(--lcars-ice)',
   practice: 'var(--lcars-violet)',
   corrections: 'var(--lcars-peach)',
+  // Phase 1 outcome-substrate surfaces — share the ANALYTICS group's
+  // accent palette so the active-mode dot reads as part of the
+  // analytics-side IA, distinct from the FIX RULES corrections accent.
+  effectiveness: 'var(--lcars-ice)',
+  insights: 'var(--lcars-violet)',
   // Chat picks up the design-system's sunflower yellow at chrome level
   // (matches "talk to it" affordance — the user's primary verb for this
   // surface) — distinct from the projects accent so the active-mode dot
   // doesn't blur the two.
   chat: 'var(--lcars-sunflower)',
+  // Stream J surfaces — placed under FIX RULES (decisions, trust),
+  // ANALYTICS (trends), and standalone (export). Accent reuses
+  // existing palette tokens.
+  decisions: 'var(--lcars-peach)',
+  trust: 'var(--lcars-peach)',
+  trends: 'var(--lcars-ice)',
+  export: 'var(--lcars-butterscotch)',
 };
 
 /**

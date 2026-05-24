@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { detectCorrectionCandidates, type TurnPair } from './detectCorrectionCandidates.js';
+import {
+  CORRECTION_LFS,
+  computeLfFiringStats,
+  detectCorrectionCandidates,
+  runLabelingFunction,
+  type TurnPair,
+} from './detectCorrectionCandidates.js';
 
 function turn(
   i: number,
@@ -195,5 +201,99 @@ describe('detectCorrectionCandidates — output shape', () => {
     const a = detectCorrectionCandidates([turn(3, "don't add foo")]);
     const b = detectCorrectionCandidates([turn(3, "don't add foo")]);
     expect(a[0]?.id).toBe(b[0]?.id);
+  });
+});
+
+describe('CORRECTION_LFS', () => {
+  it('exposes the full LF registry with unique names and known kinds', () => {
+    const names = new Set<string>();
+    for (const lf of CORRECTION_LFS) {
+      expect(lf.name.length).toBeGreaterThan(0);
+      expect(names.has(lf.name)).toBe(false);
+      names.add(lf.name);
+      expect(['full', 'prefix']).toContain(lf.scope);
+      expect(lf.patterns.length).toBeGreaterThan(0);
+    }
+    // Every documented signal kind should be represented by at least
+    // one LF — this catches accidental kind deletions during refactor.
+    const kinds = new Set(CORRECTION_LFS.map((lf) => lf.kind));
+    expect(kinds.has('explicit-stop')).toBe(true);
+    expect(kinds.has('explicit-no')).toBe(true);
+    expect(kinds.has('instead-of')).toBe(true);
+    expect(kinds.has('imperative-override')).toBe(true);
+    expect(kinds.has('frustration')).toBe(true);
+    expect(kinds.has('soft-redirect')).toBe(true);
+    expect(kinds.has('want-prefer')).toBe(true);
+  });
+});
+
+describe('runLabelingFunction', () => {
+  it('runs a single LF in isolation and reports its hit kind/phrase', () => {
+    const lf = CORRECTION_LFS.find((l) => l.name === 'imperative-override');
+    expect(lf).toBeDefined();
+    const hits = runLabelingFunction(lf!, 'Always use kebab-case for filenames');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]?.kind).toBe('imperative-override');
+    expect(hits[0]?.phrase.toLowerCase()).toContain('always');
+  });
+
+  it('returns no hits when the LF does not match', () => {
+    const lf = CORRECTION_LFS.find((l) => l.name === 'imperative-override');
+    expect(lf).toBeDefined();
+    const hits = runLabelingFunction(lf!, 'That worked perfectly, thanks!');
+    expect(hits).toEqual([]);
+  });
+
+  it('respects scope: prefix-scoped LFs do not match material past the lead', () => {
+    const softRedirect = CORRECTION_LFS.find((l) => l.name === 'soft-redirect');
+    expect(softRedirect).toBeDefined();
+    // Plant "actually" past the 300-char prefix window — should NOT fire.
+    const longLead = 'x '.repeat(200); // ~400 chars of filler
+    const hits = runLabelingFunction(softRedirect!, `${longLead} actually that's wrong`);
+    expect(hits).toEqual([]);
+    // Same marker in the lead → fires.
+    const inLead = runLabelingFunction(softRedirect!, "actually that's wrong");
+    expect(inLead.length).toBeGreaterThan(0);
+  });
+});
+
+describe('computeLfFiringStats', () => {
+  it('counts each kind once per correction, even if multiple LFs of that kind fire', () => {
+    // "don't change X" should fire BOTH explicit-no.whitelist (no-not
+    // pattern won't, but the broadened verb-anything pattern will) and
+    // potentially imperative-override. We want firingsByKind to count
+    // each Correction once per UNIQUE kind, not per LF.
+    const corrections = detectCorrectionCandidates([
+      turn(0, "don't change the file naming convention"),
+      turn(2, 'use kebab-case instead of camelCase'),
+    ]);
+    const stats = computeLfFiringStats(corrections);
+    // First turn has explicit-no; second has instead-of (+ possibly more).
+    expect(stats.totalCorrections).toBe(corrections.length);
+    expect(stats.firingsByKind.get('explicit-no') ?? 0).toBeGreaterThanOrEqual(1);
+    expect(stats.firingsByKind.get('instead-of') ?? 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it('returns zero counts on an empty corrections array', () => {
+    const stats = computeLfFiringStats([]);
+    expect(stats.totalCorrections).toBe(0);
+    expect(stats.firingsByKind.size).toBe(0);
+    expect(stats.agreement.size).toBe(0);
+  });
+
+  it('records pairwise agreement when two kinds co-fire on the same correction', () => {
+    // "NO, don't add docstrings" should fire BOTH explicit-no AND
+    // frustration (capslocked NO).
+    const corrections = detectCorrectionCandidates([
+      turn(0, "NO, don't add docstrings unless asked"),
+    ]);
+    // Sanity: the input fires both kinds.
+    const kinds = new Set(corrections[0]?.signals.map((s) => s.kind) ?? []);
+    expect(kinds.has('explicit-no')).toBe(true);
+    expect(kinds.has('frustration')).toBe(true);
+
+    const stats = computeLfFiringStats(corrections);
+    // Agreement keys are sorted alphabetically; explicit-no < frustration.
+    expect(stats.agreement.get('explicit-no|frustration')).toBe(1);
   });
 });

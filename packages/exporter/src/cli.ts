@@ -4,6 +4,7 @@ import { runCliSubcommand } from './commands/cli.js';
 import { runCloudSubcommand } from './commands/cloud.js';
 import { runAllSubcommand } from './commands/all.js';
 import { runAnalyzeSubcommand } from './commands/analyze.js';
+import { runEmbedSubcommand } from './commands/embed.js';
 import { logger } from './lib/logger.js';
 
 const USAGE = `\
@@ -18,9 +19,13 @@ Subcommands:
   cloud    Unpack the Settings → Privacy export ZIP and write
            cloud-manifest.json + cloud-conversations/<uuid>.json.
   all      Run cowork + cli + cloud in sequence and merge into manifest.json.
-           Also runs the Phase 6 browser-tier analysis writers.
+           Also runs the Phase 6 browser-tier analysis writers AND the v2
+           embedding pass (fail-soft when Ollama is unreachable).
   analyze  Re-run Phase 6 browser-tier analysis writers against an existing
            manifest.json (does not touch source exporters). Idempotent.
+  embed    Re-run the v2 embedding pass (Ollama + nomic-embed-text) against
+           an existing manifest.json. Writes analysis/embeddings.bin +
+           analysis/embeddings.meta.json. Fail-soft on missing Ollama.
 
 Options:
   -h, --help   Print help for the selected subcommand (or this usage).
@@ -55,6 +60,9 @@ async function main(): Promise<void> {
       break;
     case 'analyze':
       code = await runAnalyzeSubcommand(subArgs);
+      break;
+    case 'embed':
+      code = await runEmbedSubcommand(subArgs);
       break;
     default:
       logger.error(`unknown subcommand "${sub}"`);

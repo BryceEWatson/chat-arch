@@ -377,7 +377,7 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
               <p className="lcars-delete-dropdown__armed" role="status">
                 <strong>Are you sure?</strong>{' '}
                 {allSelected
-                  ? 'This wipes every indexed session, uploaded ZIP, derived analysis, and browser preference. It cannot be undone.'
+                  ? 'This wipes every indexed session, uploaded ZIP, derived analysis, chat history, and browser preference. It cannot be undone.'
                   : `This wipes ${totalSelectedSessions} session${totalSelectedSessions === 1 ? '' : 's'} and regenerates analysis files on the next scan. It cannot be undone.`}
               </p>
             )}

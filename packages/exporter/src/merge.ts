@@ -89,8 +89,16 @@ export function mergeSources(
  * Count of keys on the entry whose value is defined (present) AND not null.
  * Used as the tiebreaker for collisions. Richness metric only — not a deep
  * structural compare; equal counts yield a later-seen preference.
+ *
+ * Exported so semantic-analysis layers can use the same notion of "richer"
+ * when collapsing (source, id) duplicates internally — the merge keeps both
+ * rows in the manifest by `(source, id)` per the schema's primary-key
+ * contract, but per-id semantic analysis (audit verification, embedding
+ * lookups) needs to pick one row to operate on so collisions don't cross
+ * streams. Picking by the same richness metric the merge uses keeps the
+ * two stages aligned.
  */
-function countDefinedFields(entry: UnifiedSessionEntry): number {
+export function countDefinedFields(entry: UnifiedSessionEntry): number {
   let n = 0;
   for (const v of Object.values(entry as unknown as Record<string, unknown>)) {
     if (v === undefined || v === null) continue;

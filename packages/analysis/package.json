@@ -24,7 +24,11 @@
   "dependencies": {
     "@chat-arch/schema": "workspace:*",
     "@noble/hashes": "^1.5.0",
+    "density-clustering": "^1.3.0",
     "ml-kmeans": "7.0.0",
     "umap-js": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/density-clustering": "^1.3.3"
   }
 }

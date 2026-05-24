@@ -14,6 +14,121 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **NDJSON streaming progress widget** on the Today page for rescan /
+  mine-corrections / regen-brief actions — spinner, elapsed ticker,
+  phase labels, scrollback log, `attachIfBusy()` resume-on-load.
+- **DataDirGuard** at `apps/standalone/src/lib/dataDirGuard.ts` — path-
+  traversal containment check wired into mine-corrections (POST + GET),
+  mine-decisions, and generate-exports. Returns 400 on traversal.
+- **`THRESHOLDS.practiceAudit`** group — three PRACTICE-audit knobs
+  (`valueLeakDuplicateMinSize`, `topCostOutliers`, `turnOutlierMin`)
+  moved out of inline constants in the viewer.
+
+### Fixed
+
+- **Security (S1):** dataDir path-traversal across three API endpoints.
+- **Security (S2):** drop verbatim `gh` CLI stderr from
+  `pr-land-cache.json` — `state` enum is sufficient for cache TTL.
+- **Security (S3):** stamp atomic-write `.tmp` filenames with
+  `${pid}-${Date.now()}-${rand6}` so concurrent writers can't race.
+- **Security (S4):** `apply-correction.ts` outer catch now resolves the
+  slot promise with 500 instead of rejecting + rethrowing (was
+  triggering Node 15+ unhandled-rejection process exit).
+- **Security (S5):** drop `cmd.exe /d /s /c` shell-injection path in
+  mine-corrections and mine-decisions — `spawn(bin.file, args, …)` via
+  the central resolveClaudeBin() helper instead.
+- **`resolveClaude.ts`:** add `CLAUDE_CODE_EXECPATH` probe between
+  `CLAUDE_BIN` and the `%APPDATA%\Claude\…` fallback.
+
+## [1.2.0] — 2026-05-23
+
+### Added
+
+- **Outcome-substrate roadmap (Phases 1-4).** Per-session
+  `CompositeOutcome` score with embedded weights + `weightsHash`
+  for refit-aware caching. Eleven new gitignored analysis sidecars:
+  `composite-outcomes.json`, `pr-land-cache.json`,
+  `config-history.json`, `its-analysis.json`, `knowledge-debt.json`
+  (+ `chat-arch-data/exports/knowledge-debt.md`), `reflexive.json`,
+  `decisions.json`, `archetypes.json`, `project-trajectories.json`,
+  `surface-comparison.json`, `skill-curves.json`.
+- **Six new viewer modes**: Effectiveness, Insights, Decisions,
+  Trust, Trends, Export. Each ships a `MethodologyDisclosure`
+  panel + `SourceAttribution` cell-level honesty labels.
+- **Audit-config extensions**: six new claim families
+  (`gh-pr-opened` / `gh-pr-merged` / `gh-pr-closed-unmerged` /
+  `git-revert` / `git-reset-hard` / `git-force-push`) and a
+  positive-polarity `AFFIRMATION_PATTERNS` family.
+- **THRESHOLDS registry** at `packages/analysis/src/thresholds.ts`.
+  Lint script `lint:thresholds-imports` flags bare numeric literals
+  outside that file.
+- **`/api/generate-exports`** endpoint + `packages/exporter/src/
+  export/` submodule for Obsidian-targeted post-mortems and
+  knowledge-debt exports.
+- **Phase 4 thrash detector** PostToolUse hook (under
+  `~/.claude/skills/chat-arch-thrash-detect/`, NOT in-repo) gated
+  on `CHATARCH_THRASH_DETECT=1` for a 4-week calibration window.
+
+## [1.1.0] — 2026-05-18
+
+### Added
+
+- **AppSidebar** — collapsible left-rail primary nav grouped
+  WORKSHOP / TRACK / BROWSE / SYSTEM. Replaces the horizontal
+  TodayNav (which now redirects).
+- **RESULTS surface** at `/results` — cross-corpus claim-pass
+  rate by claim type / project / session + loop-closure rollup.
+- **PLAYBOOK surface** at `/playbook` — recurring user-turn
+  phrasings ranked by occurrence × downstream pass-rate; COPY AS
+  MARKDOWN handoff for blog-post drafting.
+- **`/api/regen-brief`** endpoint behind the Today-page "REGEN
+  BRIEF" action button.
+
+### Fixed
+
+- Pre-existing TrustStrip apostrophe-escape lint errors.
+
+## [1.0.0] — 2026-05-16
+
+### Added
+
+- **chat-arch v2 — instrumented AI collaboration loop.** Single PR
+  delivering the four-layer stack (B/A/F/D) defined in
+  `research/v2-instrumented-loop.md`. Wave 1 (foundation) headlines:
+  - **Embeddings substrate** (§4). Local Ollama with
+    `nomic-embed-text` (768-dim) drives every layer above the
+    foundation. New `analysis/embeddings.bin` (concatenated LE
+    float32) + `analysis/embeddings.meta.json` (sessionId → byte
+    offset). Incremental — sessions whose `sourceMtimeMs` is
+    unchanged reuse their prior vector. Fail-soft when Ollama is
+    unreachable: warn-once + skip, never block the rescan. New
+    `pnpm exporter embed [--only-changed|--no-only-changed]
+    [--model] [--base-url]` sub-command. Auto-runs at the tail of
+    `pnpm exporter all`.
+  - **`UnifiedSessionEntry.discoveryScore?: number`** (0–1) on
+    schemaVersion 4. Computed offline from token intensity, tool
+    diversity, correction-applied-after, and gitBranch → PR overlap.
+    Drives blog-draft candidate selection.
+  - **`schemaVersion` bumped to 4.** v1/v2/v3 manifests still parse
+    (back-compat AC); `analysisSidecars` grows pointer slots for
+    every new v2 sidecar (embeddings, continuum-health, semantic
+    duplicates, audit-claims/results/summary, upgrade-outcomes,
+    blog-candidates, blog-drafts index).
+  - **`analysis/continuum-health.json`** (§5 B.1 / B.2). Per-source
+    capture-rate warnings, `consecutiveSuccesses` streak, and
+    `entriesByStatus` distribution. Surfaced in the viewer footer
+    + the daily brief's "Continuum health" section. Documented
+    nightly-scan routine for the `schedule` skill at
+    `_planning/v2-wave1-schedule.md`.
+
+### Changed
+
+- `EXPORTER_VERSION` bumped from `0.10.0` → `1.0.0`. Trips
+  per-source cache-bust on next rescan (every cached entry is
+  re-emitted under the new schema).
+
 ## [0.10.0] — 2026-05-15
 
 ### Added
