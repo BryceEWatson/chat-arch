@@ -148,13 +148,16 @@ describe('migration v1.1.0 → 1.2.0', () => {
     expect(composite.outcomes.length).toBeGreaterThanOrEqual(1);
     expect(composite.outcomes.some((o) => o.sessionId === 's-1')).toBe(true);
 
-    // ---- (d) meta.json reflects 1.2.0 ----
+    // ---- (d) meta.json reflects the current EXPORTER_VERSION ----
+    // Bumped 1.2.0 → 1.3.0 in Phase Rev3-I I5 for the Rev3
+    // substrate cutover; this test asserts the migration writes
+    // whatever the constant says, not a hardcoded literal.
     const meta = await readJson<{
       exporterVersion: string;
       tiers: { browser: { files: readonly string[] } };
       counts: Record<string, unknown>;
     }>(path.join(tmpDataDir, 'analysis', 'meta.json'));
-    expect(meta.exporterVersion).toBe('1.2.0');
+    expect(meta.exporterVersion).toBe('1.3.0');
 
     // The Wave-5 sidecars must all be registered in the browser tier.
     const expectedNewSidecars = [

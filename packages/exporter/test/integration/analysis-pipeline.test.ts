@@ -130,7 +130,7 @@ describe('Phase 6 analysis pipeline integration', () => {
     // (d) browser.files lists Phase-6 tier-1 files + Phase 2 v2 entity sidecars
     //     + correction-candidates.json (stage-1 heuristic recall)
     //     + playbook-candidates.json (positive-knowledge mining)
-    //     + Phase 1-3 outcome-substrate sidecars (EXPORTER_VERSION 1.2.0).
+    //     + Phase 1-3 outcome-substrate sidecars (introduced in EXPORTER_VERSION 1.2.0).
     expect(meta.tiers.browser.files.sort()).toEqual(
       [
         'duplicates.exact.json',

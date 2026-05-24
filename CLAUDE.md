@@ -184,6 +184,42 @@ at `/chat-arch-data/chat-arch.db` and expose the entire ledger to
 anyone who can reach the dev server. The `*.db / *.db-wal / *.db-shm`
 gitignore patterns (Rev3-A.A2) cover this family.
 
+**Entity tables in the DB carry PII.** As of Phase Rev3-H this
+includes:
+
+- `projects` / `topics` / `sessions` / `session_messages` /
+  `session_revisions` — raw transcript content + project / topic
+  names extracted from user transcripts.
+- `narratives` — schemaVersion 2 (Rev3-B) adds quoted user-text
+  excerpts: `intent` + `observation` + `inference` fields are
+  narrative prose summarizing what the user did + said. Treat the
+  whole narratives table as PII for backup / export decisions.
+- `narrative_evidence` — `turnIndex` + verbatim citation snippets
+  pointing into session_messages.
+- `patterns` — extracted user-facing rules from narratives,
+  including the prose body. `falsifier_status` column (Rev3-E)
+  is non-PII metadata.
+- `findings` — kernel emission payloads (JSON-blob `payload_json`
+  column; the SDK row type exposes this as `payloadJson` in
+  camelCase) that frequently contain narrative IDs + session anchors
+  + summary text.
+- `analyzers` — kernel run metadata (calibration state, last-run
+  timestamps). Non-PII.
+- `narrative_sessions` / `project_sessions` / `project_topics` /
+  `topic_sessions` — junction tables linking the above entities.
+  No prose, but the linkage itself reveals what a narrative is
+  about / what a project covers — PII at the relational level.
+
+The `@chat-arch/mcp-server` package (Rev3-H) exposes a READ-ONLY
+SDK surface over this DB to external claude sessions; that's a
+deliberate widening of who can see the ledger contents, so the
+read-only allowlist + working-dir scoping are load-bearing.
+"Read-only" here means SQL-level: no writes, no `exec_`/`run_`
+verbs in tool names (`@chat-arch/mcp-server/src/readOnly.ts`),
+no `claude -p` exec from the server, no `readFile` outside the
+working-dir (`workingDir.ts`). The transport (when it lands in
+the protocol PR) is localhost-bind only (`localhostBind.ts`).
+
 Wipe coverage: the `/api/clear` POST handler explicitly extends the
 orphan-sweep into the new SQLite substrate (Rev3-A.A9 promise) —
 it calls `closeChatArchDb()` to release the OS file handle, then
@@ -193,7 +229,9 @@ siblings, BEFORE delegating to `clearDataDir.ts`'s `wipeAll` /
 reach the DB (the DB lives under a sibling of `public/`, not under
 it) — the endpoint composes the two paths. Next `getChatArchDb`
 call re-opens, re-runs migrations on the empty DB, and re-folds any
-legacy JSON sidecars if they survived the sweep.
+legacy JSON sidecars (including the legacy `knowledge-debt-state.json`
+ledger renamed to `entity-states.json` in Rev3-C C1+C2, then
+migrated into the SQLite table in C4) if they survived the sweep.
 
 The corrections pipeline writes three files under
 `apps/standalone/public/chat-arch-data/analysis/` (all gitignored):
@@ -208,7 +246,7 @@ The corrections pipeline writes three files under
   skill writes during a mining pass. The viewer polls them while a
   run is in flight; the clear endpoint sweeps them up.
 
-### Outcome-substrate sidecars (Phase 1-4, EXPORTER_VERSION 1.2.0)
+### Outcome-substrate sidecars (Phase 1-4, introduced in EXPORTER_VERSION 1.2.0)
 
 Eleven additional sidecars under `apps/standalone/public/chat-arch-data/
 analysis/` (all gitignored — locally generated, may carry PII):
@@ -241,6 +279,23 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `skill-curves.json` — per-topic weekly ask-count series + Mann-
   Kendall trend test with BH-FDR. PII: topic + time series.
 
+### Rev3-F curator + falsifier output (EXPORTER_VERSION 1.3.0)
+
+Two additional sidecars under `apps/standalone/public/chat-arch-data/
+analysis/` (gitignored — locally generated, carry PII):
+
+- `curator-feed.json` — produced by the `/curate` skill. Ranked
+  top-K narratives + knowledge-debt clusters + applied-pattern
+  watcher items with composite scores + tier-attribution tags +
+  falsifier-status. PII: narrative titles + previews, knowledge-
+  debt question prose. Read by the PRACTICE surface's CuratorFeed
+  component.
+- `falsifier-verdicts.json` — produced by the `/falsify` skill.
+  Per-finding verdicts (verified / unverified / unavailable) +
+  per-turn LLM judgments with citation hygiene checks. PII:
+  finding claim text + cited session turn excerpts. Read by the
+  curator ranker as a tie-breaker / surfacing gate.
+
 The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
 and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
 #12 post-mortems + knowledge-debt) are also gitignored. The wildcard
@@ -253,3 +308,61 @@ explicit entries in `.gitignore` exist as auditable documentation.
 hook), NOT in this repo. The hook is gated on
 `CHATARCH_THRASH_DETECT=1`. The chat-arch corpus only consumes the
 sidecar; producing it is out-of-tree.
+
+### Fresh-contributor hygiene check (Phase Rev3-I I6)
+
+A fresh contributor cloning this repo should be able to answer the
+following from CLAUDE.md alone — if you can't, the section above is
+out of date and needs an update:
+
+1. **What's on disk that I should never commit?**
+   - SQLite DB family: `apps/standalone/chat-arch-data/chat-arch.db`
+     + `.db-wal` + `.db-shm` siblings. Carries the full entity-
+     states ledger including narrative prose, pattern bodies,
+     finding payloads — full PII.
+   - Anything under `apps/standalone/public/chat-arch-data/`
+     EXCEPT the tracked empty baseline `manifest.json`. The
+     subdirectory contents (analysis sidecars, exports, correction
+     status files) are all locally generated; many carry PII.
+   - The pre-commit hook at `.githooks/pre-commit` is the
+     mechanical guard for both. Enable on first clone with
+     `git config core.hooksPath .githooks`.
+2. **What PII categories live in the SQLite tables?**
+   - `narratives` (schemaVersion 2): quoted user-text excerpts in
+     `intent` + `observation` + `inference` columns.
+   - `narrative_evidence`: verbatim turn citations.
+   - `patterns`: prose body extracted from narratives.
+   - `findings`: kernel emission payloads (JSON in `payload_json`
+     column / `payloadJson` SDK field) often contain narrative IDs
+     + session anchors + summary text.
+   - `sessions` + `session_messages` + `session_revisions`: raw
+     transcript content.
+3. **Where can the SQLite ledger be read from?**
+   - Same-process: `@chat-arch/exporter/db` SDK (the standalone
+     Astro app + sub-CLIs).
+   - External claude sessions: `@chat-arch/mcp-server` exposes a
+     READ-ONLY surface via 10 MCP tools (no write verbs, no
+     `claude -p` exec, no `readFile` outside `chat-arch-data/`,
+     localhost-bind only when the transport PR lands).
+4. **What sidecars under `analysis/` carry PII vs aggregate-only?**
+   - PII-bearing (most files): composite-outcomes, knowledge-debt,
+     reflexive, decisions, archetypes, project-trajectories,
+     skill-curves, curator-feed, falsifier-verdicts, correction-
+     candidates, corrections, correction-status-*.
+   - Aggregate-numbers-only (lower-PII): its-analysis, surface-
+     comparison. These are gitignored conservatively anyway.
+5. **What's the difference between hosted (`chat-arch.dev`) and
+   local `pnpm dev`?**
+   - Hosted: static Cloudflare Pages build. Demo data + Privacy-
+     Export ZIP upload only. No filesystem / process / SQLite /
+     MCP. README "Hosted vs local — deliberately scoped divergence"
+     has the capability table.
+   - Local: full pipeline (SCAN LOCAL, /api/* endpoints, SQLite
+     substrate, curator + falsifier skills, MCP server).
+6. **When should I bump `EXPORTER_VERSION`?**
+   - When the on-disk artifact set EXPANDS (new sidecar) or the
+     shape of an existing artifact changes. The version label
+     appears in `analysis/meta.json` so operators can correlate a
+     bundle with the CHANGELOG. Bumped 1.2.0 → 1.3.0 in Phase
+     Rev3-I I5 for the Rev3 substrate cutover; see CHANGELOG.md
+     `[1.3.0]` for the full ledger of what landed.
