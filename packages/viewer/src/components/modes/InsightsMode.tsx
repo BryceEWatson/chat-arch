@@ -196,6 +196,19 @@ export function InsightsMode({
         if (!r.ok) return;
         setClusterStates((prev) => {
           const next = new Map(prev);
+          // Prefer the server-returned canonical row when present (C4
+          // SDK is authoritative). Mirrors the same prefer-server
+          // pattern in ProjectsMode's `onNarrativeStateChange` —
+          // keeping the two surfaces consistent. Falls back to the
+          // payload echo only if the server omits `entry` (older
+          // server, partial deploy).
+          if (r.entry !== undefined) {
+            next.set(clusterId, {
+              state: r.entry.state,
+              sizeAtState: r.entry.sizeAtState,
+            });
+            return next;
+          }
           next.set(clusterId, { state, sizeAtState: currentSize });
           return next;
         });
