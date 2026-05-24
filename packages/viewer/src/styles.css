@@ -4313,6 +4313,140 @@
   background: rgba(204, 153, 204, 0.04);
   border-radius: 0 8px 8px 0;
 }
+
+/* Rev3-F F9 — curator feed top section. Sits above the four
+ * lenses; visually distinct via peach left-border so the user can
+ * tell "model-ranked curation" apart from "deterministic lens
+ * audit." */
+.lcars-curator-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--lcars-peach);
+  background: rgba(255, 153, 102, 0.04);
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 16px;
+}
+.lcars-curator-feed__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-curator-feed__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--lcars-peach);
+  margin: 0;
+}
+.lcars-curator-feed__lead {
+  margin: 0;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+  line-height: 1.45;
+}
+.lcars-curator-feed__falsifier-inline--verified {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--lcars-ice);
+}
+.lcars-curator-feed__drift-banner {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 153, 102, 0.12);
+  color: var(--lcars-peach);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.lcars-curator-feed__loading,
+.lcars-curator-feed__empty {
+  margin: 0;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
+}
+.lcars-curator-feed__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-curator-feed__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12px;
+}
+.lcars-curator-feed__rank {
+  font-family: var(--lcars-font-chrome);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--lcars-peach);
+  font-variant-numeric: tabular-nums;
+}
+.lcars-curator-feed__kind {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+.lcars-curator-feed__kind--narrative {
+  color: var(--lcars-violet);
+}
+.lcars-curator-feed__kind--knowledge-debt {
+  color: var(--lcars-ice);
+}
+.lcars-curator-feed__kind--applied-pattern {
+  color: var(--lcars-peach);
+}
+.lcars-curator-feed__title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.lcars-curator-feed__composite,
+.lcars-curator-feed__tie-break {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--lcars-text) 55%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.lcars-curator-feed__falsifier {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+.lcars-curator-feed__falsifier--verified {
+  color: var(--lcars-ice);
+}
+.lcars-curator-feed__falsifier--skipped-by-user,
+.lcars-curator-feed__falsifier--unavailable {
+  color: var(--lcars-peach);
+}
+.lcars-curator-feed__reasoning {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
+  font-style: italic;
+}
 .lcars-practice__lens-header {
   display: flex;
   flex-direction: column;
