@@ -6,6 +6,7 @@ export type * from './types.js';
 export { NotFoundError, UniqueViolationError, isUniqueViolation } from './errors.js';
 
 export * from './analyzers.js';
+export * from './entityStates.js';
 export * from './projects.js';
 export * from './topics.js';
 export * from './sessions.js';
