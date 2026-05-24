@@ -125,3 +125,99 @@ export function variance(xs: readonly number[]): number {
   }
   return s / (xs.length - 1);
 }
+
+/**
+ * Standard normal CDF Φ(x) = (1 + erf(x/√2)) / 2, using the
+ * Abramowitz & Stegun 7.1.26 approximation of erf. Max erf error
+ * ≈ 1.5e-7 — adequate for everything we use it for (p-values,
+ * z-tests; not for tail-quantile work).
+ *
+ * NOTE: Centralizing here also corrects an existing bug in
+ * `surfaceComparisonBuilder.ts`'s inline `normalCdf`, which returned
+ * `erf(x)` instead of `Φ(x)` — a missing `/√2` argument scaling. That
+ * bug caused `twoProportionPValue` to over-reject (treat z=2.0 as
+ * p≈0.005 when the true two-sided p is ≈0.046). The implementation
+ * in `skillCurve.ts` was already correct; both consumers now import
+ * from this module.
+ */
+export function normalCdf(x: number): number {
+  const z = x / Math.SQRT2;
+  const sign = z < 0 ? -1 : 1;
+  const az = Math.abs(z);
+  const t = 1 / (1 + 0.3275911 * az);
+  const erfAz =
+    1 -
+    (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t +
+      0.254829592) *
+      t) *
+      Math.exp(-az * az);
+  return 0.5 * (1 + sign * erfAz);
+}
+
+/**
+ * Pooled two-proportion z-test. Returns the two-sided p-value of the
+ * null hypothesis p_a = p_b. Pooled estimate is the standard form for
+ * this test under H_0.
+ *
+ * Returns 1 (no evidence) when either side has n <= 0 or the pooled
+ * proportion is 0 or 1 (SE undefined or zero).
+ */
+export function twoProportionPValue(
+  good_a: number,
+  n_a: number,
+  good_b: number,
+  n_b: number,
+): number {
+  if (n_a <= 0 || n_b <= 0) return 1;
+  const pA = good_a / n_a;
+  const pB = good_b / n_b;
+  const pPool = (good_a + good_b) / (n_a + n_b);
+  if (pPool === 0 || pPool === 1) return 1;
+  const se = Math.sqrt(pPool * (1 - pPool) * (1 / n_a + 1 / n_b));
+  if (se === 0) return 1;
+  const z = (pA - pB) / se;
+  return 2 * (1 - normalCdf(Math.abs(z)));
+}
+
+/**
+ * Benjamini-Hochberg false-discovery-rate adjustment. Given m raw
+ * two-sided p-values, returns the m BH-adjusted q-values (same shape,
+ * same order as input).
+ *
+ * Algorithm (step-up form): rank ascending; q_(i) = min over j>=i of
+ * (m/j) * p_(j); clipped to [0, 1]. NaN p-values pass through as NaN
+ * (treated as "missing", excluded from the rank pool). This is the
+ * standard textbook definition; see Benjamini & Hochberg (1995).
+ *
+ * Reject H0_i at FDR α when q_i ≤ α. For multiple-comparison correction
+ * across a family of tests (e.g., ITS comparisons across N config
+ * commits per `itsAnalysis.ts`).
+ */
+export function bhFdrAdjust(ps: readonly number[]): number[] {
+  const m = ps.length;
+  if (m === 0) return [];
+  const out = new Array<number>(m);
+  const indexed: Array<{ p: number; i: number }> = [];
+  for (let i = 0; i < m; i += 1) {
+    const p = ps[i]!;
+    if (Number.isNaN(p)) {
+      out[i] = Number.NaN;
+      continue;
+    }
+    indexed.push({ p, i });
+  }
+  if (indexed.length === 0) return out;
+  indexed.sort((a, b) => a.p - b.p);
+  const k = indexed.length;
+  // Step-up: walk from largest p downward, maintain running min of
+  // (k/(j+1)) * p_(j+1).
+  let running = Number.POSITIVE_INFINITY;
+  const adjSorted = new Array<number>(k);
+  for (let j = k - 1; j >= 0; j -= 1) {
+    const candidate = (k / (j + 1)) * indexed[j]!.p;
+    if (candidate < running) running = candidate;
+    adjSorted[j] = Math.max(0, Math.min(1, running));
+  }
+  for (let j = 0; j < k; j += 1) out[indexed[j]!.i] = adjSorted[j]!;
+  return out;
+}

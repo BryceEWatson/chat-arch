@@ -106,6 +106,39 @@ describe('detectArchetypes', () => {
     expect(a.chosenK).toBe(b.chosenK);
   });
 
+  it('silhouette gate: returns empty centroids + null assignments when best k falls below silhouetteFloor', () => {
+    // Same well-clustered corpus from the "finds three obvious clusters"
+    // test, but with an aggressive 0.99 floor that no realistic
+    // clustering can clear. The silhouette gate should refuse to
+    // emit centroids and null every assignment.
+    const sessions: SessionToolStats[] = [];
+    for (let i = 0; i < 25; i++) {
+      sessions.push(makeSession(`A-${i}`, { readCount: 30 + (i % 3), grepCount: 5 }));
+    }
+    for (let i = 0; i < 25; i++) {
+      sessions.push(makeSession(`B-${i}`, { editCount: 25 + (i % 3), readCount: 5 }));
+    }
+    for (let i = 0; i < 25; i++) {
+      sessions.push(makeSession(`C-${i}`, { bashCount: 28 + (i % 3), webFetchCount: 2 }));
+    }
+    const result = detectArchetypes(sessions, {
+      kCandidates: [3, 4, 5],
+      seed: 42,
+      silhouetteFloor: 0.99, // No 3-cluster solution on this corpus clears 0.99.
+    });
+    expect(result.centroids).toEqual([]);
+    expect(Object.keys(result.assignments).length).toBe(sessions.length);
+    for (const v of Object.values(result.assignments)) {
+      expect(v).toBeNull();
+    }
+    // The observed silhouette + chosen k ARE reported (so a viewer
+    // banner can surface "no signal at silhouette X.XX" rather than
+    // silently disappearing).
+    expect(result.chosenK).toBeGreaterThan(0);
+    expect(Number.isFinite(result.silhouette)).toBe(true);
+    expect(result.silhouette).toBeLessThan(0.99);
+  });
+
   it('drops centroids below archetypeMinSize and reassigns to nearest', () => {
     const sessions: SessionToolStats[] = [];
     // Big cluster: 30 sessions (survives at minSize=20).

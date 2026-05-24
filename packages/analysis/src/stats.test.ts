@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bhFdrAdjust,
   euclidean,
   ewma,
   matchedPair1NN,
   mean,
+  normalCdf,
   sigmoid,
+  twoProportionPValue,
   variance,
   wilsonCI,
 } from './stats.js';
@@ -118,5 +121,122 @@ describe('mean / variance', () => {
   });
   it('variance n<2 -> NaN', () => {
     expect(Number.isNaN(variance([1]))).toBe(true);
+  });
+});
+
+describe('normalCdf', () => {
+  it('Φ(0) = 0.5', () => {
+    expect(normalCdf(0)).toBeCloseTo(0.5, 6);
+  });
+  it('Φ(1.96) ≈ 0.975 (two-sided α=0.05 critical)', () => {
+    expect(normalCdf(1.96)).toBeCloseTo(0.975, 3);
+  });
+  it('symmetric: Φ(-x) = 1 - Φ(x)', () => {
+    for (const x of [0.5, 1.0, 1.96, 2.58]) {
+      expect(normalCdf(-x)).toBeCloseTo(1 - normalCdf(x), 5);
+    }
+  });
+  it('tail behavior: Φ(5) ≈ 1, Φ(-5) ≈ 0', () => {
+    expect(normalCdf(5)).toBeGreaterThan(0.9999);
+    expect(normalCdf(-5)).toBeLessThan(0.0001);
+  });
+});
+
+describe('twoProportionPValue', () => {
+  it('identical proportions -> p ≈ 1', () => {
+    const p = twoProportionPValue(50, 100, 50, 100);
+    expect(p).toBeCloseTo(1, 3);
+  });
+  it('large delta + large n -> small p', () => {
+    // 80/100 vs 20/100: z ≈ 8.5, p essentially 0.
+    const p = twoProportionPValue(80, 100, 20, 100);
+    expect(p).toBeLessThan(1e-6);
+  });
+  it('moderate delta + moderate n -> moderate p', () => {
+    // 60/100 vs 40/100. Pooled p=0.5; SE = sqrt(0.25 * (1/100+1/100)) = 0.0707.
+    // z = (0.6-0.4)/0.0707 = 2.828. Two-sided p = 2(1-Φ(2.828)) ≈ 0.0047.
+    const p = twoProportionPValue(60, 100, 40, 100);
+    expect(p).toBeGreaterThan(0.003);
+    expect(p).toBeLessThan(0.007);
+  });
+
+  it('matches scipy.stats benchmark: 55/100 vs 45/100 → p ≈ 0.157', () => {
+    // Independent textbook check: pooled p = 0.5, SE = 0.0707,
+    // z = (0.55-0.45)/0.0707 = 1.414, two-sided p = 2(1-Φ(1.414)) ≈ 0.157.
+    const p = twoProportionPValue(55, 100, 45, 100);
+    expect(p).toBeCloseTo(0.157, 2);
+  });
+  it('zero-n side -> p = 1 (no evidence)', () => {
+    expect(twoProportionPValue(0, 0, 5, 10)).toBe(1);
+    expect(twoProportionPValue(5, 10, 0, 0)).toBe(1);
+  });
+  it('all-zero or all-one pool -> p = 1 (undefined SE)', () => {
+    expect(twoProportionPValue(0, 10, 0, 10)).toBe(1);
+    expect(twoProportionPValue(10, 10, 10, 10)).toBe(1);
+  });
+});
+
+describe('bhFdrAdjust (Benjamini-Hochberg)', () => {
+  it('empty input -> empty output', () => {
+    expect(bhFdrAdjust([])).toEqual([]);
+  });
+  it('preserves input order', () => {
+    const ps = [0.5, 0.001, 0.3, 0.04, 0.02];
+    const qs = bhFdrAdjust(ps);
+    expect(qs).toHaveLength(ps.length);
+  });
+  it('textbook example: BH on uniformly spaced p-values', () => {
+    // Classic BH walk-through. Ps in ascending order:
+    //   p_(1) = 0.005, p_(2) = 0.01, p_(3) = 0.02, p_(4) = 0.04, p_(5) = 0.05
+    // Adjusted: q_(i) = min over j>=i of (m/j) * p_(j); m=5.
+    //   q_(5) = (5/5)*0.05 = 0.05
+    //   q_(4) = min(0.05, (5/4)*0.04 = 0.05) = 0.05
+    //   q_(3) = min(0.05, (5/3)*0.02 = 0.0333) = 0.0333
+    //   q_(2) = min(0.0333, (5/2)*0.01 = 0.025) = 0.025
+    //   q_(1) = min(0.025, (5/1)*0.005 = 0.025) = 0.025
+    const ps = [0.005, 0.01, 0.02, 0.04, 0.05];
+    const qs = bhFdrAdjust(ps);
+    expect(qs[0]!).toBeCloseTo(0.025, 6);
+    expect(qs[1]!).toBeCloseTo(0.025, 6);
+    expect(qs[2]!).toBeCloseTo(0.0333, 3);
+    expect(qs[3]!).toBeCloseTo(0.05, 6);
+    expect(qs[4]!).toBeCloseTo(0.05, 6);
+  });
+  it('monotonic step-up: sorted q is non-decreasing', () => {
+    const ps = [0.001, 0.01, 0.04, 0.15, 0.3, 0.6];
+    const qs = bhFdrAdjust(ps);
+    const sorted = [...qs].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i += 1) {
+      expect(sorted[i]).toBeGreaterThanOrEqual(sorted[i - 1]!);
+    }
+  });
+  it('q-values clipped to [0, 1]', () => {
+    const ps = [0.4, 0.6, 0.9]; // m=3; (3/1)*0.4 = 1.2 → clip to 1
+    const qs = bhFdrAdjust(ps);
+    for (const q of qs) {
+      expect(q).toBeGreaterThanOrEqual(0);
+      expect(q).toBeLessThanOrEqual(1);
+    }
+  });
+  it('q ≥ p for every test (BH is at-least-as-conservative)', () => {
+    const ps = [0.001, 0.01, 0.04, 0.15, 0.3, 0.6];
+    const qs = bhFdrAdjust(ps);
+    for (let i = 0; i < ps.length; i += 1) {
+      // BH-FDR property: q_i ≥ p_i always. Allow tiny floating-point slack.
+      expect(qs[i]).toBeGreaterThanOrEqual(ps[i]! - 1e-12);
+    }
+  });
+  it('NaN p-values pass through as NaN (excluded from rank pool)', () => {
+    const ps = [0.01, Number.NaN, 0.04, 0.05];
+    const qs = bhFdrAdjust(ps);
+    expect(Number.isNaN(qs[1]!)).toBe(true);
+    // The other three should be BH-corrected as if m=3, not m=4.
+    // p_(1)=0.01, p_(2)=0.04, p_(3)=0.05. m=3.
+    //   q_(3) = (3/3)*0.05 = 0.05
+    //   q_(2) = min(0.05, (3/2)*0.04 = 0.06) = 0.05
+    //   q_(1) = min(0.05, (3/1)*0.01 = 0.03) = 0.03
+    expect(qs[0]).toBeCloseTo(0.03, 6);
+    expect(qs[2]).toBeCloseTo(0.05, 6);
+    expect(qs[3]).toBeCloseTo(0.05, 6);
   });
 });

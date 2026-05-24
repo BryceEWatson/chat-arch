@@ -33,6 +33,7 @@
  * deterministic.
  */
 
+import { bhFdrAdjust, normalCdf } from './stats.js';
 import { THRESHOLDS } from './thresholds.js';
 
 export interface SkillCurvePoint {
@@ -150,7 +151,7 @@ export function analyzeSkillCurves(
   }
 
   // BH-FDR over the family.
-  const adjusted = benjaminiHochberg(familyPs.map((x) => x.p));
+  const adjusted = bhFdrAdjust(familyPs.map((x) => x.p));
   const adjByTopic = new Map<string, number>();
   familyPs.forEach((x, i) => adjByTopic.set(x.topicId, adjusted[i]!));
 
@@ -243,54 +244,7 @@ export function mannKendall(series: readonly number[]): { S: number; z: number; 
   return { S, z, p: Math.max(0, Math.min(1, p)) };
 }
 
-/**
- * Benjamini-Hochberg step-up adjusted p-values. Returns adjusted
- * p-values in the SAME order as the input (not sorted).
- *
- * Algorithm: sort p-values ascending; the BH-adjusted p at rank i is
- * min over j >= i of (p_j * m / j). Monotonicity is enforced from the
- * largest rank backwards.
- */
-export function benjaminiHochberg(pValues: readonly number[]): number[] {
-  const m = pValues.length;
-  if (m === 0) return [];
-  const indexed = pValues.map((p, i) => ({ p, i }));
-  indexed.sort((a, b) => a.p - b.p);
-
-  const adjustedSorted: number[] = new Array(m);
-  // Step-up: walk from largest rank to smallest, carrying the running minimum.
-  let running = 1;
-  for (let rank = m - 1; rank >= 0; rank--) {
-    const p = indexed[rank]!.p;
-    const candidate = (p * m) / (rank + 1);
-    running = Math.min(running, candidate);
-    adjustedSorted[rank] = Math.max(0, Math.min(1, running));
-  }
-
-  const out = new Array<number>(m);
-  for (let r = 0; r < m; r++) out[indexed[r]!.i] = adjustedSorted[r]!;
-  return out;
-}
-
-/**
- * Standard normal CDF via the Abramowitz & Stegun 7.1.26 approximation
- * of erf. Max abs error ~1.5e-7; plenty for a p-value calculation.
- */
-function normalCdf(x: number): number {
-  return 0.5 * (1 + erf(x / Math.SQRT2));
-}
-
-function erf(x: number): number {
-  // Abramowitz & Stegun 7.1.26
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
-  const t = 1 / (1 + p * ax);
-  const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
-  return sign * y;
-}
+// `benjaminiHochberg` + `normalCdf` + `erf` previously inlined here
+// are now centralized in `stats.ts` as `bhFdrAdjust` + `normalCdf`
+// (D2-spirit consolidation in PR #61). External callers that need
+// the BH step-up should import `bhFdrAdjust` from the package index.

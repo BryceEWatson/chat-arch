@@ -93,11 +93,21 @@ export interface ArchetypesResult {
    *
    * Sessions whose home cluster fell below the guard AND no centroid
    * qualified are mapped to `null`.
+   *
+   * Three "empty centroids" cases callers can distinguish via `chosenK`
+   * + `silhouette`:
+   *   - Empty input: `centroids=[]`, `chosenK=0`, `silhouette=NaN`,
+   *     `assignments={}`.
+   *   - No k yielded ≥2 clusters: `centroids=[]`, `chosenK=0`,
+   *     `silhouette=NaN`, `assignments` all-null.
+   *   - Silhouette gate fired (best k below `silhouetteFloor`):
+   *     `centroids=[]`, `chosenK > 0`, `silhouette` finite (the
+   *     observed best), `assignments` all-null.
    */
   readonly assignments: Record<string, string | null>;
   /** Silhouette score at the chosen k. NaN when fewer than 2 clusters survive. */
   readonly silhouette: number;
-  /** Chosen k after the silhouette sweep. */
+  /** Chosen k after the silhouette sweep; 0 when no k was viable. */
   readonly chosenK: number;
   /**
    * 32-bit FNV-1a hash of the (rounded) centroid vectors after sorting,
@@ -121,6 +131,8 @@ export function detectArchetypes(
   const seed = opts.seed ?? 42;
   const archetypeMinSize =
     opts.archetypeMinSize ?? THRESHOLDS.clustering.archetypeMinSize;
+  const silhouetteFloor =
+    opts.silhouetteFloor ?? THRESHOLDS.clustering.silhouetteMin;
 
   if (sessions.length === 0) {
     return {
@@ -206,6 +218,21 @@ export function detectArchetypes(
       assignments: Object.fromEntries(sessions.map((s) => [s.sessionId, null])),
       silhouette: Number.NaN,
       chosenK: 0,
+      archetypeVersion: 0,
+    };
+  }
+
+  // Silhouette gate: if the best k still falls below the floor, the
+  // clustering is "no signal — refusing to label." Surface the observed
+  // silhouette + chosen k so callers / methodology disclosure can show
+  // *why* there are no centroids, but emit no archetype assignments.
+  // This is the T5 fix; the option existed but was previously unwired.
+  if (best.silhouette < silhouetteFloor) {
+    return {
+      centroids: [],
+      assignments: Object.fromEntries(sessions.map((s) => [s.sessionId, null])),
+      silhouette: best.silhouette,
+      chosenK: best.k,
       archetypeVersion: 0,
     };
   }

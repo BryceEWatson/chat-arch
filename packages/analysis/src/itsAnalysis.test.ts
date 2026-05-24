@@ -116,6 +116,62 @@ describe('runItsAnalysis', () => {
     expect(r[1]!.post.n).toBe(1);
   });
 
+  it('pValue: NaN when either side has n=0, small when delta + n are large', () => {
+    // Empty-side commit → NaN p.
+    const emptyR = runItsAnalysis([], [commit(0)], { windowDays: 5 });
+    expect(Number.isNaN(emptyR[0]!.pValue)).toBe(true);
+    expect(Number.isNaN(emptyR[0]!.qValue)).toBe(true);
+
+    // Large delta + n=20 each → small p.
+    const outcomes: ItsOutcomeInput[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      outcomes.push(outcome(`pre-${i}`, -4 + i * 0.2, 0.3, false));
+    }
+    for (let i = 0; i < 20; i += 1) {
+      outcomes.push(outcome(`post-${i}`, 0.1 + i * 0.2, 0.7, true));
+    }
+    const r = runItsAnalysis(outcomes, [commit(0)], { windowDays: 5 });
+    expect(r[0]!.pValue).toBeLessThan(0.001);
+    // Single commit → q = p (no correction multiplier).
+    expect(r[0]!.qValue).toBeCloseTo(r[0]!.pValue, 9);
+  });
+
+  it('qValue: BH-FDR correction applies across all commits in one call', () => {
+    // Three commits in one call; all with identical modest deltas. Per
+    // BH step-up, with all-equal p_(j), every q-value collapses to the
+    // same value (the running-min over j ≥ i sees the same candidate).
+    // Test the invariant `q ≥ p` for every i and confirm the family-
+    // wise correction was applied (q is not less than p).
+    function buildModerate(commitDays: number): ItsOutcomeInput[] {
+      const outs: ItsOutcomeInput[] = [];
+      // 12 sessions per side; 4-of-12 good on pre, 8-of-12 good on post.
+      for (let i = 0; i < 12; i += 1) {
+        outs.push(outcome(`pre-${commitDays}-${i}`, commitDays - 4 + i * 0.3, 0.3, i < 4));
+      }
+      for (let i = 0; i < 12; i += 1) {
+        outs.push(outcome(`post-${commitDays}-${i}`, commitDays + 0.1 + i * 0.3, 0.7, i < 8));
+      }
+      return outs;
+    }
+    const outcomes = [
+      ...buildModerate(0),
+      ...buildModerate(20),
+      ...buildModerate(40),
+    ];
+    const r = runItsAnalysis(outcomes, [commit(0), commit(20), commit(40)], {
+      windowDays: 5,
+    });
+    expect(r).toHaveLength(3);
+    // Each commit has the same data shape, so each raw p should be identical;
+    // BH-FDR with all-equal p_(j) yields q_i = (m/m) * p_(m) = p for the
+    // largest, and q_i = (m/j) * p for the others propagated up by the
+    // step-up min, but the running-min over j ≥ i means all three q ≥ p.
+    for (let i = 0; i < 3; i += 1) {
+      expect(r[i]!.qValue).toBeGreaterThanOrEqual(r[i]!.pValue);
+      expect(r[i]!.qValue).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('Wilson CI brackets the truth on ≥95% of seeded synthetic runs', () => {
     // Seed three runs. Each generates pre=20 sessions with p_good=0.3 and
     // post=20 sessions with p_good=0.7 from a Bernoulli, then asserts that

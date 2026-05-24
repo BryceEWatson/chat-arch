@@ -21,7 +21,7 @@
  */
 
 import type { CompositeOutcome } from '@chat-arch/schema';
-import { mean, wilsonCI } from './stats.js';
+import { bhFdrAdjust, mean, twoProportionPValue, wilsonCI } from './stats.js';
 import { THRESHOLDS } from './thresholds.js';
 
 export interface ItsOutcomeInput {
@@ -70,6 +70,22 @@ export interface ItsResult {
    * deltas where either side's n < `THRESHOLDS.display.minNForRate`.
    */
   deltaCI: { low: number; high: number };
+  /**
+   * Two-sided p-value from a pooled two-proportion z-test of post vs.
+   * pre good shares (`H_0: p_post = p_pre`). NaN when either window
+   * has n=0 (no test is meaningful). The raw p-value before
+   * multiple-comparison correction; gate display on `qValue` instead.
+   */
+  pValue: number;
+  /**
+   * Benjamini-Hochberg q-value (FDR-adjusted p-value) across the family
+   * of all ITS commits in the same `runItsAnalysis` call. NaN passes
+   * through for commits with NaN raw p-values. Reject H_0 at FDR α when
+   * `qValue ≤ α` (typically 0.05). This is the value to gate
+   * "significant change" claims on; the raw `pValue` will over-report
+   * significance when M is large.
+   */
+  qValue: number;
 }
 
 export interface RunItsAnalysisOptions {
@@ -149,7 +165,16 @@ export function runItsAnalysis(
   const windowDays = options.windowDays ?? THRESHOLDS.trajectory.rollingWindow;
   const windowMs = windowDays * MS_PER_DAY;
 
-  const results: ItsResult[] = [];
+  // First pass: compute per-commit pre/post snapshots + raw p-values.
+  interface Stage1 {
+    commit: ItsConfigCommit;
+    pre: ItsSnapshot;
+    post: ItsSnapshot;
+    preGood: number;
+    postGood: number;
+  }
+  const stage1: Stage1[] = [];
+  const rawPs: number[] = [];
   for (const commit of configCommits) {
     const preStart = commit.ts - windowMs;
     const postEnd = commit.ts + windowMs;
@@ -164,6 +189,30 @@ export function runItsAnalysis(
     }
     const pre = snapshot(preOutcomes);
     const post = snapshot(postOutcomes);
+    const preGood = preOutcomes.reduce(
+      (acc, o) => acc + (o.composite.binary === 'good' ? 1 : 0),
+      0,
+    );
+    const postGood = postOutcomes.reduce(
+      (acc, o) => acc + (o.composite.binary === 'good' ? 1 : 0),
+      0,
+    );
+    // NaN when no test is meaningful (either side empty); BH-FDR will
+    // pass NaN through and exclude it from the rank pool.
+    const rawP =
+      pre.n === 0 || post.n === 0
+        ? Number.NaN
+        : twoProportionPValue(postGood, post.n, preGood, pre.n);
+    stage1.push({ commit, pre, post, preGood, postGood });
+    rawPs.push(rawP);
+  }
+
+  // Family-wise BH-FDR correction across all commits in this call.
+  const qValues = bhFdrAdjust(rawPs);
+
+  const results: ItsResult[] = [];
+  for (let i = 0; i < stage1.length; i += 1) {
+    const { commit, pre, post } = stage1[i]!;
     const deltaGoodShare =
       Number.isNaN(post.goodShare) || Number.isNaN(pre.goodShare)
         ? Number.NaN
@@ -179,6 +228,8 @@ export function runItsAnalysis(
       post,
       deltaGoodShare,
       deltaCI,
+      pValue: rawPs[i]!,
+      qValue: qValues[i]!,
     });
   }
   return results;
