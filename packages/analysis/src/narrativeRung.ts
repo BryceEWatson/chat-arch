@@ -261,9 +261,15 @@ export function narrativeSaturation(
 /**
  * D2 family-wise correction. Each user dismissal raises the per-
  * Narrative prior by `THRESHOLDS.narrativeRung.repromotionPenalty`,
- * which makes the next re-test face a stiffer Bayesian threshold (the
- * same hypothesis is being re-evaluated; raising the prior is the
- * Bayesian analog of α adjustment for repeated comparisons).
+ * which makes the next re-test face a stiffer Bayesian threshold.
+ * Re-promotion is a re-test of the same hypothesis; stiffening the
+ * prior is the Bayesian sequential-evidence counterpart to a
+ * frequentist FWER adjustment (Bonferroni / Holm). The two are not
+ * formally equivalent — Bonferroni adjusts a Type-I error rate per
+ * test, the prior bump shifts a posterior threshold — but both
+ * achieve the same intent: a persistently re-emerging narrative
+ * faces a higher bar each time. D5 (methodology disclosure) states
+ * the formal-equivalence caveat verbatim.
  *
  * Composes additively with `effectivePriorForKernel`:
  *
@@ -276,6 +282,11 @@ export function narrativeSaturation(
  * penalty, or a calibration audit that wants the unpenalized prior —
  * can opt out without forking the kernel surface.
  *
+ * Pairs with `narrativeSaturation` (D1, the multiplier-side
+ * escalation). D1 gates growth-side re-emergence; D2 gates
+ * confidence-side ranking — both feed off the same
+ * `entity_states.dismissal_count` counter.
+ *
  * Defensive contract (mirrors `narrativeSaturation`):
  *
  *   - `dismissalCount` non-finite / negative → returns 0 (no penalty).
@@ -287,6 +298,12 @@ export function narrativeSaturation(
  *     defined penalty for the audit table's "if it un-shelved, what
  *     would the prior be?" rendering. Callers that gate on shelving
  *     should consult `narrativeSaturation` first.
+ *   - When the kernel is uncalibrated (`calibrationCompletedAt ==
+ *     null`), `effectivePriorForKernel` already returns
+ *     `uncalibratedPrior` (default 20) which is tier-3-unreachable
+ *     by design. The penalty stacks on top mathematically, but the
+ *     fail-safe dominates — the penalty does no additional work in
+ *     that regime. Visible behavior in calibrated kernels only.
  */
 export function narrativePriorPenalty(dismissalCount: number): number {
   if (!Number.isFinite(dismissalCount) || dismissalCount <= 0) {

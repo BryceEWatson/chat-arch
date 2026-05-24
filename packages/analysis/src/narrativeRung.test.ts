@@ -301,7 +301,10 @@ describe('narrativePriorPenalty (D2 — per-Narrative family-wise correction)', 
 
     // The composed prior stiffens the Bayesian threshold: confidence
     // falls monotonically as dismissals accumulate (same supporting +
-    // contradicting inputs).
+    // contradicting inputs). Skip the strict-inequality assertion if
+    // a future calibration sets `repromotionPenalty=0` — that disables
+    // the family-wise correction by design; the test should not
+    // wrongly flag the disabled-state as broken.
     const supporting = 6;
     const contradicting = 1;
     const baseConfidence = computeConfidence(
@@ -314,7 +317,21 @@ describe('narrativePriorPenalty (D2 — per-Narrative family-wise correction)', 
       contradicting,
       totalPrior,
     );
-    expect(penalizedConfidence).toBeLessThan(baseConfidence);
+    if (penalty > 0) {
+      expect(penalizedConfidence).toBeLessThan(baseConfidence);
+    } else {
+      expect(penalizedConfidence).toBe(baseConfidence);
+    }
+  });
+
+  it('still returns a defined penalty in the shelved regime (>= maxDismissals)', () => {
+    // The JSDoc promises the function remains well-defined past the
+    // saturation cap so the D3 audit table can render "if this
+    // un-shelved, the prior would be X." Verify the contract holds
+    // both at the cap and well above it.
+    const cap = THRESHOLDS.narrativeRung.maxDismissals;
+    expect(narrativePriorPenalty(cap)).toBe(cap * penalty);
+    expect(narrativePriorPenalty(cap + 5)).toBe((cap + 5) * penalty);
   });
 
   it('THRESHOLDS contract — repromotionPenalty is non-negative finite', () => {
