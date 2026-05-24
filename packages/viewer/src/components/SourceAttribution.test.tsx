@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { SourceAttribution } from './SourceAttribution.js';
+import {
+  REV3_ATTRIBUTION_KINDS,
+  SourceAttribution,
+  type AttributionKind,
+} from './SourceAttribution.js';
 
 describe('SourceAttribution', () => {
   it('renders "· exact"', () => {
@@ -47,5 +51,45 @@ describe('SourceAttribution', () => {
   it('respects the ariaLabel override', () => {
     render(<SourceAttribution kind="exact" ariaLabel="duplicate cluster: exact match" />);
     expect(screen.getByLabelText('duplicate cluster: exact match')).toBeDefined();
+  });
+
+  describe('Rev3-G G3 — extended rungs', () => {
+    it('renders each new rung as "· {kind}"', () => {
+      // Iterates the union via REV3_ATTRIBUTION_KINDS so a future
+      // addition to the union must be reflected in the constant.
+      for (const kind of REV3_ATTRIBUTION_KINDS) {
+        const { container, unmount } = render(
+          <SourceAttribution kind={kind} />,
+        );
+        const escaped = kind.replace(/[-+]/g, (m) => `\\${m}`);
+        expect(container.textContent).toMatch(
+          new RegExp(`·\\s*${escaped}`),
+        );
+        expect(container.querySelector('.lcars-attribution')).not.toBeNull();
+        unmount();
+      }
+    });
+
+    it('REV3_ATTRIBUTION_KINDS includes all seven rungs introduced by Rev3-G G3', () => {
+      expect(new Set(REV3_ATTRIBUTION_KINDS)).toEqual(
+        new Set<AttributionKind>([
+          'tier1',
+          'tier2',
+          'tier3',
+          'llm-derived',
+          'falsifier-verified',
+          'deterministic-with-prior',
+          'correlation-significant',
+        ]),
+      );
+    });
+
+    it('aria-label defaults to "source: {kind}" for each new rung', () => {
+      for (const kind of REV3_ATTRIBUTION_KINDS) {
+        const { unmount } = render(<SourceAttribution kind={kind} />);
+        expect(screen.getByLabelText(`source: ${kind}`)).toBeDefined();
+        unmount();
+      }
+    });
   });
 });
