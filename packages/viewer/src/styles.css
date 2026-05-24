@@ -3945,6 +3945,32 @@
   color: var(--lcars-violet);
 }
 
+/* Rev3-D D4 — narratives section header + show-shelved toggle. The
+ * header sits above the narrative list and holds the section title +
+ * an optional shelved-count toggle on the right. Toggle is only
+ * rendered when there's at least one shelved narrative (see
+ * `ProjectsMode.ProjectDetail` for the gating logic). */
+.lcars-project-detail__narratives-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.lcars-project-detail__shelved-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+  cursor: pointer;
+  user-select: none;
+}
+.lcars-project-detail__shelved-toggle input {
+  cursor: pointer;
+}
+
 /* Rev3-D D3 — per-narrative audit affordance. Surfaces the
  * Closure-B dismissal counter, the effective re-promotion bar
  * (computed via narrativeSaturation), the SHELVED sentinel (D1

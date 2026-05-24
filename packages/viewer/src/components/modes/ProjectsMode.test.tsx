@@ -246,6 +246,14 @@ describe('ProjectsMode narrative audit (Rev3-D D3)', () => {
         },
       ],
     });
+    // D4 hides shelved cards by default — flip the toggle to assert
+    // the audit-row contents that show on reveal.
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/show 1 shelved narratives/i),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText(/show 1 shelved narratives/i));
     await waitFor(() => {
       expect(screen.getByText(/SHELVED/)).toBeTruthy();
     });
@@ -395,5 +403,170 @@ describe('ProjectsMode narrative audit (Rev3-D D3)', () => {
         screen.getByText(new RegExp(`2/${cap} dismissals`)),
       ).toBeTruthy();
     });
+  });
+});
+
+describe('ProjectsMode show-shelved toggle (Rev3-D D4)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hides shelved narratives by default and surfaces a toggle showing the count', async () => {
+    const cap = THRESHOLDS.narrativeRung.maxDismissals;
+    renderDetail({
+      narratives: [narrative('n-active', 3), narrative('n-shelved', 3)],
+      entityStates: [
+        {
+          entityKind: 'narrative',
+          entityId: 'n-shelved',
+          state: 'DISMISSED',
+          updatedAt: 1_700_000_000_000,
+          sizeAtState: 3,
+          dismissalCount: cap,
+        },
+      ],
+    });
+    // Active narrative renders; shelved does NOT.
+    await waitFor(() => {
+      expect(screen.getByText(/Title for n-active/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Title for n-shelved/)).toBeNull();
+    // The toggle is present with the shelved count.
+    expect(
+      screen.getByLabelText(/show 1 shelved narratives/i),
+    ).toBeTruthy();
+  });
+
+  it('reveals shelved narratives when the toggle is flipped on', async () => {
+    const cap = THRESHOLDS.narrativeRung.maxDismissals;
+    renderDetail({
+      narratives: [narrative('n-shelved', 3)],
+      entityStates: [
+        {
+          entityKind: 'narrative',
+          entityId: 'n-shelved',
+          state: 'DISMISSED',
+          updatedAt: 1_700_000_000_000,
+          sizeAtState: 3,
+          dismissalCount: cap,
+        },
+      ],
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/show 1 shelved narratives/i),
+      ).toBeTruthy();
+    });
+    // Before flip: empty-state message names the shelved scope.
+    expect(screen.getByText(/All 1 narrative is shelved/i)).toBeTruthy();
+    expect(screen.queryByText(/Title for n-shelved/)).toBeNull();
+    // Flip the toggle.
+    fireEvent.click(screen.getByLabelText(/show 1 shelved narratives/i));
+    await waitFor(() => {
+      expect(screen.getByText(/Title for n-shelved/)).toBeTruthy();
+    });
+    // The toggle's aria-label flips to "hide ..." now that it's checked.
+    expect(screen.getByLabelText(/hide 1 shelved narratives/i)).toBeTruthy();
+  });
+
+  it('omits the toggle entirely when no narratives are shelved', async () => {
+    renderDetail({ narratives: [narrative('n1', 3)] });
+    await waitFor(() => {
+      expect(screen.getByText(/Title for n1/)).toBeTruthy();
+    });
+    expect(screen.queryByLabelText(/shelved narratives/i)).toBeNull();
+  });
+});
+
+describe('ProjectsMode cap-K integration gate (Rev3-D D5)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Phase Rev3-D gate: a previously-dismissed Narrative re-enters the
+   * feed only after evidence growth exceeds the multiplier; capped
+   * re-promotion attempts visible in the audit table. This test
+   * drives the saturation kernel from end-state seeded ledger entries
+   * (mirroring what the user would observe after cap-K dismissals
+   * accumulated) and asserts the integrated viewer behavior:
+   *
+   *   - At dismissalCount=cap−1, the audit row shows the highest
+   *     pre-cap multiplier bar (×2^(cap-1) baseline ≈ ×8 with
+   *     defaults) and the card stays in the active pile.
+   *   - At dismissalCount=cap, the card hides from the active pile,
+   *     the show-shelved toggle reveals the SHELVED sentinel, and the
+   *     DISMISS button is no longer rendered (the cap is enforced).
+   *
+   * This walks the same gate the SDK-layer C5 round-trip test (PR #74)
+   * walks at the data layer — extending it through the entity-states
+   * SDK → endpoint → viewer composition.
+   */
+  it('walks dismissalCount from cap−1 to cap and asserts the shelved transition', async () => {
+    const cap = THRESHOLDS.narrativeRung.maxDismissals;
+    const base = THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier;
+    const decay = THRESHOLDS.narrativeRung.dismissDecay;
+
+    // Phase 1 — cap-1 dismissals: still re-promotable. Audit row
+    // shows the highest pre-cap multiplier bar.
+    cleanup();
+    renderDetail({
+      narratives: [narrative('n-cap-minus-1', 3)],
+      entityStates: [
+        {
+          entityKind: 'narrative',
+          entityId: 'n-cap-minus-1',
+          state: 'DISMISSED',
+          updatedAt: 1_700_000_000_000,
+          sizeAtState: 3,
+          dismissalCount: cap - 1,
+        },
+      ],
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByText(new RegExp(`${cap - 1}/${cap} dismissals`)),
+      ).toBeTruthy();
+    });
+    // sizeAtState=3, multiplier = base × decay^(cap−1).
+    const preCapMultiplier = base * Math.pow(decay, cap - 1);
+    const preCapThreshold = Math.ceil(3 * preCapMultiplier);
+    expect(
+      screen.getByText(new RegExp(`re-emerges at ≥${preCapThreshold} evidence`)),
+    ).toBeTruthy();
+    // SHELVED sentinel must NOT appear.
+    expect(screen.queryByText(/SHELVED/)).toBeNull();
+
+    // Phase 2 — at the cap: shelved + hidden until the toggle reveals it.
+    cleanup();
+    renderDetail({
+      narratives: [narrative('n-at-cap', 3)],
+      entityStates: [
+        {
+          entityKind: 'narrative',
+          entityId: 'n-at-cap',
+          state: 'DISMISSED',
+          updatedAt: 1_700_000_000_000,
+          sizeAtState: 3,
+          dismissalCount: cap,
+        },
+      ],
+    });
+    // Default render: card hidden, toggle visible.
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/show 1 shelved narratives/i),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText(/Title for n-at-cap/)).toBeNull();
+
+    // Flip the toggle — SHELVED visible, DISMISS not rendered (cap enforced).
+    fireEvent.click(screen.getByLabelText(/show 1 shelved narratives/i));
+    await waitFor(() => {
+      expect(screen.getByText(/SHELVED/)).toBeTruthy();
+    });
+    expect(
+      screen.queryByRole('button', { name: /dismiss this narrative/i }),
+    ).toBeNull();
   });
 });

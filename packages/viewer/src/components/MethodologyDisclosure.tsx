@@ -113,6 +113,25 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
       </>
     ),
   },
+  {
+    title: 'Family-wise correction on repeated dismissals',
+    body: (
+      <>
+        When a narrative is dismissed and later re-emerges, the
+        per-narrative prior is stiffened on each repeat (Closure-B
+        saturation). Each dismissal also compounds the growth-multiplier
+        bar evidence must clear before the narrative resurfaces. The
+        rule is the Bayesian sequential-evidence counterpart to a
+        frequentist FWER adjustment (Bonferroni / Holm) — not formally
+        equivalent (the latter adjusts a Type-I error rate; the former
+        shifts a posterior threshold) but motivated by the same intent:
+        a persistently re-emerging narrative should face a higher bar
+        each time. After cap-K dismissals the narrative is shelved
+        permanently and hidden unless the &ldquo;show shelved&rdquo;
+        toggle is on.
+      </>
+    ),
+  },
 ];
 
 export function MethodologyDisclosure() {
