@@ -359,7 +359,6 @@ export {
 
 export {
   analyzeSkillCurves,
-  benjaminiHochberg,
   mannKendall,
   type AnalyzeSkillCurvesOptions,
   type SkillCurveClassification,

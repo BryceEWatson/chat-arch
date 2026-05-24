@@ -137,9 +137,11 @@ describe('runItsAnalysis', () => {
   });
 
   it('qValue: BH-FDR correction applies across all commits in one call', () => {
-    // Three commits in one call; all with the same modest delta. Without
-    // correction, all three would have p≈0.05; BH should leave the
-    // largest q at the same level but push the smaller q up.
+    // Three commits in one call; all with identical modest deltas. Per
+    // BH step-up, with all-equal p_(j), every q-value collapses to the
+    // same value (the running-min over j ≥ i sees the same candidate).
+    // Test the invariant `q ≥ p` for every i and confirm the family-
+    // wise correction was applied (q is not less than p).
     function buildModerate(commitDays: number): ItsOutcomeInput[] {
       const outs: ItsOutcomeInput[] = [];
       // 12 sessions per side; 4-of-12 good on pre, 8-of-12 good on post.

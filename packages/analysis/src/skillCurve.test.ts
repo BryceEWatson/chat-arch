@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   analyzeSkillCurves,
-  benjaminiHochberg,
   mannKendall,
   type SkillCurveSeries,
 } from './skillCurve.js';
+import { bhFdrAdjust } from './stats.js';
 
 describe('mannKendall', () => {
   it('S=6 for [1,2,3,4] (4 points → 6 pairs, all increasing)', () => {
@@ -33,31 +33,15 @@ describe('mannKendall', () => {
   });
 });
 
-describe('benjaminiHochberg', () => {
-  it('returns one adjusted p per input, preserving order', () => {
-    const ps = [0.01, 0.04, 0.03, 0.005];
-    const adj = benjaminiHochberg(ps);
-    expect(adj.length).toBe(4);
-    // All adjusted p's in [0,1].
-    for (const a of adj) {
-      expect(a).toBeGreaterThanOrEqual(0);
-      expect(a).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('inflates p-values relative to raw under multiple comparisons', () => {
-    const ps = [0.01, 0.01, 0.01, 0.01, 0.01];
-    const adj = benjaminiHochberg(ps);
-    // Every adjusted p should be greater than the raw (or equal, never less).
-    for (let i = 0; i < ps.length; i++) {
-      expect(adj[i]).toBeGreaterThanOrEqual(ps[i]!);
-    }
-  });
-
+// bhFdrAdjust now lives in stats.ts; full coverage in stats.test.ts.
+// Keep one canonical textbook-example check here so the skillCurve
+// consumer's expected behavior stays anchored in the file the
+// kernel lives in.
+describe('bhFdrAdjust (via stats.ts; consumed by analyzeSkillCurves)', () => {
   it('matches the textbook example {0.001, 0.01, 0.05} → step-up', () => {
     // Family of m=3 tests, raw p = {0.001, 0.01, 0.05}.
     // BH adjusted = {min(0.001*3/1)=0.003, min(0.01*3/2)=0.015, min(0.05*3/3)=0.05}.
-    const adj = benjaminiHochberg([0.001, 0.01, 0.05]);
+    const adj = bhFdrAdjust([0.001, 0.01, 0.05]);
     expect(adj[0]).toBeCloseTo(0.003, 4);
     expect(adj[1]).toBeCloseTo(0.015, 4);
     expect(adj[2]).toBeCloseTo(0.05, 4);

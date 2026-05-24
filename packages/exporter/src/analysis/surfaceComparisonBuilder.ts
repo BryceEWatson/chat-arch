@@ -141,6 +141,11 @@ async function loadCompositeOutcomes(
  * Holm-Bonferroni step-down. Returns adjusted p-values in input order.
  * Algorithm: sort p ascending; adjusted_i = min(1, max over j<=i of
  * (m - j) * p_{(j)}). Standard step-down form.
+ *
+ * TODO(D2): centralize alongside `bhFdrAdjust` in `packages/analysis/
+ * src/stats.ts` (or a dedicated `inferential.ts`). Left here in this PR
+ * to keep the diff scoped to T1 + T5; the cosineSimilarity D2 sweep
+ * should pick this up too.
  */
 function holmBonferroni(ps: readonly number[]): number[] {
   const m = ps.length;

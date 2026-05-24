@@ -16,6 +16,43 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **BH-FDR correction in ITS analysis (tech-debt T1).** `ItsResult`
+  now carries `pValue` (raw pooled two-proportion z-test of post vs.
+  pre good-share) and `qValue` (Benjamini-Hochberg adjusted across
+  all commits in the same `runItsAnalysis` call). On-disk shape of
+  `analysis/its-analysis.json` gains both fields; consumers should
+  gate "significant change" claims on `qValue ≤ α` rather than the
+  raw `pValue`. NaN passes through for commits where either pre/post
+  window is empty (no test is meaningful).
+- **Silhouette gate in `detectArchetypes` (tech-debt T5).** The
+  `silhouetteFloor` option (existed but was unwired) now actively
+  gates output: when the best k's silhouette score falls below the
+  floor (default `THRESHOLDS.clustering.silhouetteMin = 0.15`), the
+  kernel returns empty centroids + null assignments while still
+  reporting the observed best silhouette + chosen k (so a viewer
+  banner can surface "no signal at silhouette X.XX" rather than
+  silently showing nothing). `ArchetypesResult` doc now enumerates
+  the three "empty centroids" cases callers can distinguish via
+  `chosenK` + `silhouette`.
+- **Centralized statistical helpers in `packages/analysis/src/stats.ts`.**
+  `normalCdf`, `twoProportionPValue`, `bhFdrAdjust` exported from the
+  package index. `surfaceComparisonBuilder.ts` and `skillCurve.ts`
+  both now consume from the centralized module; their inline copies
+  removed. The previously-exported `benjaminiHochberg` from
+  `skillCurve.ts` is replaced by `bhFdrAdjust` (rename + relocate).
+
+### Fixed
+
+- **`normalCdf` bug in `surfaceComparisonBuilder.ts`.** The inline
+  implementation returned `erf(x)` instead of `Φ(x)` — a missing
+  `/√2` argument scaling — causing `twoProportionPValue` to
+  over-reject (treat z=2.0 as p≈0.005 when the true two-sided p
+  is ≈0.046). All cached `analysis/surface-comparison.json` files
+  produced by `EXPORTER_VERSION = 1.2.0` will have inflated
+  significance counts; regenerate via `pnpm exporter run start`
+  to pick up the correct p-values. The `skillCurve.ts` inline copy
+  was already correct; only `surfaceComparisonBuilder` was affected.
+
 - **SQLite substrate foundation (Rev3-A.A4 + A5 + A6).** New module
   at `packages/exporter/src/db/`:
   - `connection.ts` — `openDb(path, { readonly? })` applies the

@@ -133,12 +133,12 @@ export function variance(xs: readonly number[]): number {
  * z-tests; not for tail-quantile work).
  *
  * NOTE: Centralizing here also corrects an existing bug in
- * `surfaceComparisonBuilder.ts`'s inline `normalCdf` (and the comment
- * in `skillCurve.ts` mirroring it), which returned `erf(x)` instead of
- * `Φ(x)` — a missing `/√2` argument scaling. That bug caused
- * `twoProportionPValue` to over-reject (treat z=2.0 as p≈0.005 when
- * the true two-sided p is ≈0.046). surfaceComparisonBuilder is being
- * pointed at this implementation as part of T1 to inherit the fix.
+ * `surfaceComparisonBuilder.ts`'s inline `normalCdf`, which returned
+ * `erf(x)` instead of `Φ(x)` — a missing `/√2` argument scaling. That
+ * bug caused `twoProportionPValue` to over-reject (treat z=2.0 as
+ * p≈0.005 when the true two-sided p is ≈0.046). The implementation
+ * in `skillCurve.ts` was already correct; both consumers now import
+ * from this module.
  */
 export function normalCdf(x: number): number {
   const z = x / Math.SQRT2;
