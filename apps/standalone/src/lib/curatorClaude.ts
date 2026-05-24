@@ -118,6 +118,65 @@ function isThrottled(stderr: string): boolean {
   return s.includes('429') || s.includes('rate limit');
 }
 
+/**
+ * Env vars the Anthropic SDK / claude CLI / Bedrock / Vertex
+ * variants honor for auth. Scrubbing only `ANTHROPIC_API_KEY` was
+ * insufficient — security iter-1 finding on PR #84 noted that
+ * `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BEARER_TOKEN`, `CLAUDE_API_KEY`,
+ * and `ANTHROPIC_API_TOKEN` are all auto-detected by various
+ * configurations. The default-deny gate must remove the full family
+ * to prevent surprise billing.
+ *
+ * Exported so the test suite can pin the canonical list — any addition
+ * here should be paired with a test in `curatorClaude.test.ts`.
+ */
+export const AUTH_ENV_VARS: readonly string[] = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BEARER_TOKEN',
+  'ANTHROPIC_API_TOKEN',
+  'CLAUDE_API_KEY',
+];
+
+/**
+ * Redact obvious secret / sensitive-path fragments from subprocess
+ * stderr before returning it to the caller. Security iter-1 finding
+ * on PR #84: the curator endpoint (F3+F4) will surface `stderr` to
+ * the UI / logs. Without redaction, partial-auth-key fragments
+ * echoed by the CLI on auth failure could leak to the browser when
+ * the F6 opt-in is on.
+ *
+ * Conservative redaction:
+ *   - `sk-ant-…` partial keys → `sk-ant-***REDACTED***`
+ *   - User-home absolute paths → `~`
+ *
+ * Exported so consumers can opt into the same redaction before
+ * logging stderr to disk.
+ */
+export function redactStderr(stderr: string): string {
+  if (stderr.length === 0) return stderr;
+  let out = stderr;
+  // Anthropic key prefix family — `sk-ant-…` followed by any
+  // non-whitespace. Matches both api-key (`sk-ant-api03-…`) and
+  // auth-token (`sk-ant-…`) shapes.
+  out = out.replace(/sk-ant-\S+/g, 'sk-ant-***REDACTED***');
+  // User home in absolute paths — drop the username so e.g.
+  // `C:\Users\Bryce\.config\anthropic\settings.json` becomes
+  // `~\.config\anthropic\settings.json`. Both POSIX and Windows.
+  const home = process.env['HOME'] ?? process.env['USERPROFILE'];
+  if (typeof home === 'string' && home.length > 0) {
+    // Escape regex metachars in the home path before string-replacing.
+    const homeRe = new RegExp(
+      home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      'g',
+    );
+    out = out.replace(homeRe, '~');
+  }
+  return out;
+}
+
+const DEFAULT_SPAWN_TIMEOUT_MS = 60_000;
+
 export interface RunCuratorOptions {
   /** Argv passed to `claude -p` (the `-p` prefix is added by the helper). */
   readonly args: readonly string[];
@@ -136,6 +195,18 @@ export interface RunCuratorOptions {
    * busy plan, short enough that the UI doesn't hang.
    */
   readonly maxElapsedMs?: number;
+  /**
+   * Per-spawn hard timeout. A single `claude -p` call that hangs
+   * (network stall, deadlocked subprocess, hung TTY) will be killed
+   * after this elapses; the outer retry loop then re-evaluates
+   * `maxElapsedMs`. Default 60s. Set lower (e.g. 5_000) in tests
+   * that exercise the timeout path.
+   *
+   * Security iter-1 finding on PR #84: without this, a hung child
+   * would pin an HTTP request indefinitely and exhaust the server's
+   * connection pool.
+   */
+  readonly spawnTimeoutMs?: number;
 }
 
 export type RunCuratorResult =
@@ -194,9 +265,14 @@ export async function runCuratorSubprocess(
   while (Date.now() - startedAt < maxElapsedMs) {
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (options.allowApiKeyFallback !== true) {
-      // F6: scrub the env var so an opt-out user can't accidentally
-      // bill an API call via a CLI that auto-detects ANTHROPIC_API_KEY.
-      delete env['ANTHROPIC_API_KEY'];
+      // F6: scrub the full auth-var family so an opt-out user can't
+      // accidentally bill an API call via a CLI that auto-detects any
+      // of ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / etc. (security
+      // iter-1 finding on PR #84 — scrubbing only the canonical name
+      // was insufficient).
+      for (const name of AUTH_ENV_VARS) {
+        delete env[name];
+      }
     }
 
     const result = await spawnOnce(bin, options, env);
@@ -207,7 +283,7 @@ export async function runCuratorSubprocess(
       return {
         state: 'failure',
         exitCode: result.exitCode,
-        stderr: result.stderr,
+        stderr: redactStderr(result.stderr),
       };
     }
     // throttled
@@ -222,7 +298,7 @@ export async function runCuratorSubprocess(
   return {
     state: 'throttled',
     retriesAttempted,
-    lastStderr,
+    lastStderr: redactStderr(lastStderr),
   };
 }
 
@@ -239,6 +315,7 @@ async function spawnOnce(
   | { kind: 'throttled'; stderr: string }
   | { kind: 'failure'; exitCode: number | null; stderr: string }
 > {
+  const spawnTimeoutMs = options.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
   return new Promise((resolve) => {
     const argv = ['-p', ...options.args];
     const child = spawn(bin.file, argv, {
@@ -248,6 +325,38 @@ async function spawnOnce(
     });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const settleOnce = (
+      v:
+        | { kind: 'success'; stdout: string }
+        | { kind: 'throttled'; stderr: string }
+        | { kind: 'failure'; exitCode: number | null; stderr: string },
+    ): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    // Per-spawn hard timeout — kills a hung child and surfaces it
+    // as a `failure` with a synthetic stderr the retry loop can
+    // distinguish from a normal exit. Without this, a stuck CLI
+    // would pin the HTTP request indefinitely (security iter-1
+    // finding on PR #84).
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // already dead — ignore
+      }
+      settleOnce({
+        kind: 'failure',
+        exitCode: null,
+        stderr:
+          stderr +
+          (stderr.length > 0 ? '\n' : '') +
+          `[curatorClaude] spawn exceeded ${spawnTimeoutMs}ms; killed.`,
+      });
+    }, spawnTimeoutMs);
     child.stdout.on('data', (c: Buffer) => {
       stdout += c.toString('utf8');
     });
@@ -255,18 +364,22 @@ async function spawnOnce(
       stderr += c.toString('utf8');
     });
     child.on('error', () => {
-      resolve({ kind: 'failure', exitCode: null, stderr: stderr || 'spawn error' });
+      settleOnce({
+        kind: 'failure',
+        exitCode: null,
+        stderr: stderr || 'spawn error',
+      });
     });
     child.on('close', (code) => {
       if (code === 0) {
-        resolve({ kind: 'success', stdout });
+        settleOnce({ kind: 'success', stdout });
         return;
       }
       if (isThrottled(stderr)) {
-        resolve({ kind: 'throttled', stderr });
+        settleOnce({ kind: 'throttled', stderr });
         return;
       }
-      resolve({ kind: 'failure', exitCode: code, stderr });
+      settleOnce({ kind: 'failure', exitCode: code, stderr });
     });
     if (options.prompt.length > 0) {
       child.stdin.end(options.prompt);
