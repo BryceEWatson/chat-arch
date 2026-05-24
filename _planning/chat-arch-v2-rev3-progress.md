@@ -81,8 +81,8 @@ Plan anchor: [§Phase Rev3-D](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | # | Sub-task | Status | PR / notes |
 |---|---|---|---|
 | D1 | Saturation rule (×2/×4/×8) implemented in entity-states ledger; cap K=3 (THRESHOLDS-resident) | complete-and-merged | PR #75 (`narrativeSaturation` helper in `packages/analysis/src/narrativeRung.ts`; consumes `THRESHOLDS.narrativeRung.dismissDecay` + `maxDismissals` + `actionBanner.knowledgeDebtRepromotionGrowthMultiplier`) |
-| D2 | Per-Narrative re-promotion-penalty prior += `narrativeRung.repromotionPenalty` on each dismissal | in-review | PR #76 (`narrativePriorPenalty` helper in `packages/analysis/src/narrativeRung.ts` — composes additively with `effectivePriorForKernel`) |
-| D3 | Audit-table view in the viewer surfacing dismissal count per item | pending | |
+| D2 | Per-Narrative re-promotion-penalty prior += `narrativeRung.repromotionPenalty` on each dismissal | complete-and-merged | PR #76 (`narrativePriorPenalty` helper in `packages/analysis/src/narrativeRung.ts` — composes additively with `effectivePriorForKernel`) |
+| D3 | Audit-table view in the viewer surfacing dismissal count per item | in-review | PR #TBD (`NarrativeAudit` row in `packages/viewer/src/components/modes/ProjectsMode.tsx` — surfaces dismissal count + re-promotion threshold; DISMISS button posts to `/api/entity-states`) |
 | D4 | Shelved-permanently affordance + explicit "show shelved" UI toggle | pending | |
 | D5 | Tests: cap-K behavior + family-wise α inflation documented in methodology disclosure | pending | Gate |
 

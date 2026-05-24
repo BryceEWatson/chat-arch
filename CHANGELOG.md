@@ -16,6 +16,34 @@ on-disk shape with this changelog.
 
 ### Added
 
+- **Per-narrative audit affordance (Phase Rev3-D D3).** New
+  `NarrativeAudit` subcomponent in
+  `packages/viewer/src/components/modes/ProjectsMode.tsx` renders an
+  audit row inside every Narrative card showing:
+  - `N / cap` dismissal count from `entity_states.dismissal_count`.
+  - The effective re-promotion threshold ("re-emerges at ≥X
+    evidence (now: Y)") for DISMISSED entries, computed via the
+    D1-era `narrativeSaturation` helper.
+  - A `SHELVED` sentinel for cap-reached entries (D4 will add the
+    "show shelved" toggle to filter the cards from the active list).
+  - A DISMISS button that posts to `/api/entity-states` and bumps
+    the local-state counter optimistically (server-side counter is
+    canonical; the client mirrors per-transition).
+
+  Wired via a new `dataDirBaseUrl` prop on `ProjectsMode` →
+  `ProjectDetail`, defaulting to the standalone data root. The
+  detail surface loads the entity-states ledger once on mount and
+  passes each card its per-narrative audit slice.
+
+  Tests in `packages/viewer/src/components/modes/ProjectsMode.test.tsx`:
+  default counts when no ledger entry exists, DISMISSED rendering
+  with threshold display, SHELVED sentinel for at-cap, plus
+  click-DISMISS-then-assert-fetch + the standard a11y label shape.
+
+  Closure-B saturation is now visible in the UI — the user can see
+  exactly how close a narrative is to permanent shelving and what
+  evidence growth would re-emerge it. D4 + D5 complete the phase.
+
 - **Phase Rev3-C complete (C5 round-trip gate test).** New integration
   test `apps/standalone/test/integration/narrative-entity-state-round-trip.test.ts`
   exercises the full ledger pipeline on a narrative: validate POST body
