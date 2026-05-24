@@ -42,6 +42,7 @@ describe('Rev3-B narrative-provenance migration (002)', () => {
       '001-initial-schema',
       '002-narrative-provenance',
       '003-entity-states',
+      '004-pattern-falsifier-status',
     ]);
   });
 

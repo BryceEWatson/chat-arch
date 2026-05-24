@@ -96,8 +96,8 @@ Plan anchor: [§Phase Rev3-E](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 
 | # | Sub-task | Status | PR / notes |
 |---|---|---|---|
-| E1 | Pattern entity schema gains `falsifierStatus: 'verified' \| 'skipped-by-user' \| 'unavailable'` | pending | |
-| E2 | DB migration adding `falsifier_status` column to `patterns` table | pending | |
+| E1 | Pattern entity schema gains `falsifierStatus: 'verified' \| 'skipped-by-user' \| 'unavailable'` | in-review | PR #TBD (`Pattern.falsifierStatus` + `PatternFalsifierStatus` union + `PATTERN_FALSIFIER_STATUS_VALUES` exports in `packages/schema/src/pattern.ts`; optional for back-compat with pre-Rev3-E patterns) |
+| E2 | DB migration adding `falsifier_status` column to `patterns` table | in-review | PR #TBD (migration 004 — `falsifier_status TEXT` with CHECK constraint over the three terminal states; NULL allowed for back-compat) |
 | E3 | Encode-as-pattern flow defaults to falsifier-gating; explicit override checkbox writes `skipped-by-user` | pending | |
 | E4 | Next-sessions watcher: triggers `RECURRING_AFTER_APPLIED` or `WATCH_INCONCLUSIVE` on N=5 / 60d / project-inactivity 30d | pending | |
 | E5 | Wall-clock timeout emits low-priority `WATCH_INCONCLUSIVE` Narrative (not silence) | pending | |

@@ -27,7 +27,7 @@ describe('Rev3-C entity_states migration (003)', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('all three migrations register in apply order', () => {
+  it('all registered migrations apply in declared order (003 + later)', () => {
     const applied = db
       .prepare<unknown[], { id: string }>(
         'SELECT id FROM schema_migrations ORDER BY id',
@@ -38,6 +38,7 @@ describe('Rev3-C entity_states migration (003)', () => {
       '001-initial-schema',
       '002-narrative-provenance',
       '003-entity-states',
+      '004-pattern-falsifier-status',
     ]);
   });
 
