@@ -14,6 +14,16 @@
  *   COST · exact           (manifest.totalCostUsd when present)
  *   COST · diagnosed       (Phase 7 cost-diagnoses.json)
  *
+ * Rev3 narrative-derived chips get rung labels (Phase Rev3-G G3):
+ *
+ *   NARRATIVE · tier1                    (candidate; supports ≥ 1)
+ *   NARRATIVE · tier2                    (established; eligible for curator feed)
+ *   NARRATIVE · tier3                    (promotable; eligible for encode-as-pattern)
+ *   FINDING   · llm-derived              (Rev3-F curator output, generator only)
+ *   FINDING   · falsifier-verified       (Rev3-F survived /falsify pass)
+ *   NARRATIVE · deterministic-with-prior (Rev3-B Bayesian smoothing kicked in)
+ *   ANY       · correlation-significant  (Rev3-G G2 gate passed)
+ *
  * Palette: dim (`--lcars-dim`, opacity 0.7 per `[R-D18]`) so the label
  * reads as metadata, not chrome. Full-opacity on the parent chip handles
  * the primary signal; this label is the footnote.
@@ -25,7 +35,30 @@ export type AttributionKind =
   | 'estimate'
   | 'exact+semantic'
   | 'semantic'
-  | 'diagnosed';
+  | 'diagnosed'
+  | 'tier1'
+  | 'tier2'
+  | 'tier3'
+  | 'llm-derived'
+  | 'falsifier-verified'
+  | 'deterministic-with-prior'
+  | 'correlation-significant';
+
+/**
+ * Subset of `AttributionKind` introduced by Phase Rev3-G G3. Exported
+ * so consumers can constrain themselves to the new rungs without
+ * coupling to the broader union (e.g. a curator-feed renderer only
+ * ever emits these seven values).
+ */
+export const REV3_ATTRIBUTION_KINDS: readonly AttributionKind[] = [
+  'tier1',
+  'tier2',
+  'tier3',
+  'llm-derived',
+  'falsifier-verified',
+  'deterministic-with-prior',
+  'correlation-significant',
+];
 
 export interface SourceAttributionProps {
   /** The label suffix. Rendered with a leading middle-dot separator. */
