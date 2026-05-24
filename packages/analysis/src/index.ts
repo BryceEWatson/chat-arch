@@ -296,6 +296,8 @@ export {
   bhFdrAdjust,
   euclidean,
   ewma,
+  expectedCellCounts2x2,
+  fisherExactPValue2x2,
   matchedPair1NN,
   mcnemarPValue,
   mean,

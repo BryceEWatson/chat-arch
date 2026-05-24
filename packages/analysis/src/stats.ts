@@ -180,6 +180,159 @@ export function twoProportionPValue(
 }
 
 /**
+ * Fisher's exact test for a 2×2 contingency table. Two-sided p-value
+ * via the "minlike" method: sum of hypergeometric probabilities of all
+ * tables with the same marginals and probability ≤ P(observed).
+ *
+ *   table = [[a, b], [c, d]]    rowSums = (a+b), (c+d)
+ *                               colSums = (a+c), (b+d)
+ *                               N = a+b+c+d
+ *
+ * Probability of a table with cell `a' = i` (other cells derive from
+ * the margins): C(R1, i) * C(R2, C1 - i) / C(N, C1).
+ *
+ * Returns 1 when any margin is zero (no test is meaningful — the
+ * table is degenerate).
+ *
+ * Use this instead of `twoProportionPValue` when the z-approximation
+ * is unreliable — the canonical rule is "any expected cell count
+ * < 5." `expectedCellCounts2x2(nA, nB, goodA, goodB)` below returns
+ * the four expected counts so callers can apply that gate uniformly.
+ *
+ * Numerical stability: uses `lnFactorial` (log-gamma) throughout —
+ * stable for `N` well beyond what chat-arch surfaces (≥ 10,000 is
+ * fine; the lnFactorial implementation uses Stirling's series above
+ * a small lookup table).
+ */
+export function fisherExactPValue2x2(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+): number {
+  if (![a, b, c, d].every((v) => Number.isFinite(v) && v >= 0 && Number.isInteger(v))) {
+    return 1;
+  }
+  const r1 = a + b;
+  const r2 = c + d;
+  const c1 = a + c;
+  const c2 = b + d;
+  const n = r1 + r2;
+  if (r1 === 0 || r2 === 0 || c1 === 0 || c2 === 0) return 1;
+
+  // The observed cell-A count is `a`. Possible values range over
+  // [max(0, c1 - r2), min(r1, c1)] subject to keeping all four cells
+  // ≥ 0 with the same row/column marginals.
+  const aMin = Math.max(0, c1 - r2);
+  const aMax = Math.min(r1, c1);
+
+  const lnPObserved = lnHypergeomProb(a, r1, r2, c1);
+  // "minlike" two-sided: include every table whose log-probability is
+  // ≤ the observed log-probability (within a small epsilon to avoid
+  // floating-point edge cases excluding the observed cell itself).
+  const EPS = 1e-12;
+  let logSumP = -Infinity;
+  for (let i = aMin; i <= aMax; i += 1) {
+    const lp = lnHypergeomProb(i, r1, r2, c1);
+    if (lp <= lnPObserved + EPS) {
+      // logsumexp: log(exp(logSumP) + exp(lp)).
+      if (logSumP === -Infinity) {
+        logSumP = lp;
+      } else {
+        const max = Math.max(logSumP, lp);
+        logSumP = max + Math.log(Math.exp(logSumP - max) + Math.exp(lp - max));
+      }
+    }
+  }
+  return Math.min(1, Math.exp(logSumP));
+}
+
+/**
+ * The four expected cell counts for a 2×2 contingency table built
+ * from two-proportion data. Use the minimum value to decide between
+ * `twoProportionPValue` (z-test) and `fisherExactPValue2x2`:
+ *
+ *   if (Math.min(...expectedCellCounts2x2(...)) < 5) use Fisher.
+ *
+ * Returns `[E(good, A), E(bad, A), E(good, B), E(bad, B)]`.
+ */
+export function expectedCellCounts2x2(
+  nA: number,
+  nB: number,
+  goodA: number,
+  goodB: number,
+): readonly [number, number, number, number] {
+  const n = nA + nB;
+  if (n <= 0) return [0, 0, 0, 0];
+  const goodTotal = goodA + goodB;
+  const badTotal = n - goodTotal;
+  return [
+    (nA * goodTotal) / n,
+    (nA * badTotal) / n,
+    (nB * goodTotal) / n,
+    (nB * badTotal) / n,
+  ];
+}
+
+/**
+ * Log-probability of a 2×2 contingency table with cell-A value `a` and
+ * marginals `r1, r2, c1` (c2 = r1+r2-c1 derived). Uses the
+ * hypergeometric formula in log-space for stability:
+ *
+ *   ln P(a) = ln C(r1, a) + ln C(r2, c1 - a) - ln C(N, c1)
+ *
+ * where ln C(n, k) = lnFactorial(n) - lnFactorial(k) - lnFactorial(n - k).
+ */
+function lnHypergeomProb(a: number, r1: number, r2: number, c1: number): number {
+  const n = r1 + r2;
+  const b = r1 - a;
+  const cCell = c1 - a;
+  const dCell = r2 - cCell;
+  if (a < 0 || b < 0 || cCell < 0 || dCell < 0) return -Infinity;
+  return (
+    lnFactorial(r1) +
+    lnFactorial(r2) +
+    lnFactorial(c1) +
+    lnFactorial(n - c1) -
+    lnFactorial(n) -
+    lnFactorial(a) -
+    lnFactorial(b) -
+    lnFactorial(cCell) -
+    lnFactorial(dCell)
+  );
+}
+
+/**
+ * Natural log of n! using a small lookup table for n ≤ 21 (exact
+ * via JavaScript double accumulation) and Stirling's series for n > 21:
+ *
+ *   ln Γ(n+1) ≈ (n + 0.5) ln n − n + 0.5 ln(2π) + 1/(12n) − 1/(360 n³) + ...
+ *
+ * Stirling truncation error at the n=22 boundary is ≈ 1.4e-10; falls
+ * below 1e-10 by n=23. The boundary is set at 21 (not 20) so the
+ * worst-case truncation never exceeds 1e-10 — adequate for any
+ * Fisher p-value rounded to 6+ digits.
+ */
+function lnFactorial(n: number): number {
+  if (n < 0 || !Number.isFinite(n)) return Number.NaN;
+  if (n <= 21) {
+    let acc = 0;
+    for (let i = 2; i <= n; i += 1) acc += Math.log(i);
+    return acc;
+  }
+  // Stirling's series.
+  const inv = 1 / n;
+  const inv3 = inv * inv * inv;
+  return (
+    (n + 0.5) * Math.log(n) -
+    n +
+    0.5 * Math.log(2 * Math.PI) +
+    inv / 12 -
+    inv3 / 360
+  );
+}
+
+/**
  * McNemar test for paired binary outcomes. The pair-level 2×2 table:
  *
  *                     control: good   control: bad

@@ -76,6 +76,15 @@ export interface SurfacePairwiseTest {
   pValue: number;
   pValueAdjusted: number;
   significant: boolean;
+  /**
+   * Which test produced `pValue` — `'z-test'` (pooled two-proportion z,
+   * large-sample) or `'fisher-exact'` (two-sided Fisher's exact,
+   * small-sample where any expected cell count < 5). The viewer's
+   * methodology disclosure can surface which rule fired per pair so
+   * users see why a small-cell pair's p-value differs from the naive
+   * z-test they might have computed.
+   */
+  testMethod: 'z-test' | 'fisher-exact';
 }
 
 export interface SurfaceComparisonFile {
