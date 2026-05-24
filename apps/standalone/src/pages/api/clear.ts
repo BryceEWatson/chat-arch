@@ -8,6 +8,10 @@ import {
   wipeAll,
   wipeSources,
 } from '../../lib/clearDataDir.js';
+import {
+  closeChatArchDb,
+  wipeSqliteDbFiles,
+} from '../../lib/chatArchDb.js';
 
 /**
  * Selective-delete endpoint — the UI dropdown posts one or more source
@@ -128,19 +132,47 @@ export const POST: APIRoute = async ({ request }) => {
     // call below. Extracting the boolean loses that narrowing and the
     // follow-up `wipeSources(dir, selected)` then fails with
     // "Set<…> | null not assignable to Set<…>".
+    // Rev3-C C4 iter-2: the SQLite DB lives at a SIBLING of
+    // `public/chat-arch-data/` (security fix — Astro serves
+    // `public/` verbatim). Both wipe modes need to extend the
+    // orphan-sweep (Rev3-A.A9) to the new substrate: close the
+    // cached handle first so the OS releases the file, then unlink
+    // the `.db` + `.db-wal` + `.db-shm` siblings. Doing this BEFORE
+    // the JSON-sidecar wipe keeps the failure mode "DB partially
+    // wiped, sidecars intact" rather than "sidecars gone, ledger
+    // still references deleted entities."
+    closeChatArchDb();
+    const dbSweep = await wipeSqliteDbFiles();
+
     if (selected === null || selected.size === 0 || selected.size === ALL_SOURCES.length) {
       const { removed } = await wipeAll(dir);
-      return new Response(JSON.stringify({ ok: true, mode: 'all', removed, bySources: null }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          mode: 'all',
+          removed: removed + dbSweep.removed,
+          bySources: null,
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
     }
 
     const { removed, bySources } = await wipeSources(dir, selected);
-    return new Response(JSON.stringify({ ok: true, mode: 'partial', removed, bySources }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        mode: 'partial',
+        removed: removed + dbSweep.removed,
+        bySources,
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return new Response(JSON.stringify({ ok: false, error: msg }), {

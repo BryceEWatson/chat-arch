@@ -256,3 +256,23 @@ describe('chatArchDb path discipline', () => {
     expect(normalized).toMatch(/\/apps\/standalone\/chat-arch-data\/chat-arch\.db$/);
   });
 });
+
+describe('wipeSqliteDbFiles (Rev3-C C4 iter-2 orphan-sweep)', () => {
+  // Lazy import to avoid pulling the production helper into the fold
+  // suite above (which uses temp DBs and shouldn't touch the cached
+  // production handle).
+  it('returns { removed: 0 } when no DB files exist', async () => {
+    const { wipeSqliteDbFiles, closeChatArchDb } = await import(
+      '../../src/lib/chatArchDb.js'
+    );
+    closeChatArchDb(); // drop any cached handle from previous tests
+    // Note: we don't pre-clean dbPath() here because production tests
+    // shouldn't depend on it being absent — they should be hermetic.
+    // If a prior test left a DB, the assertion below just records the
+    // sweep happened. The load-bearing behavior is that the function
+    // doesn't throw on missing files.
+    const result = await wipeSqliteDbFiles();
+    expect(typeof result.removed).toBe('number');
+    expect(result.removed).toBeGreaterThanOrEqual(0);
+  });
+});

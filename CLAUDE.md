@@ -164,10 +164,16 @@ at `/chat-arch-data/chat-arch.db` and expose the entire ledger to
 anyone who can reach the dev server. The `*.db / *.db-wal / *.db-shm`
 gitignore patterns (Rev3-A.A2) cover this family.
 
-`clearDataDir.ts`'s kitchen-sink `wipeAll` filter already removes
-the SQLite file via the `name !== '.gitkeep'` rule when it sweeps
-the data dir; the helper opens a fresh handle on next
-`getChatArchDb` call and re-runs migrations on the empty DB.
+Wipe coverage: the `/api/clear` POST handler explicitly extends the
+orphan-sweep into the new SQLite substrate (Rev3-A.A9 promise) —
+it calls `closeChatArchDb()` to release the OS file handle, then
+`wipeSqliteDbFiles()` to unlink the `.db` + `.db-wal` + `.db-shm`
+siblings, BEFORE delegating to `clearDataDir.ts`'s `wipeAll` /
+`wipeSources` for the JSON-sidecar tree. `wipeAll` itself does NOT
+reach the DB (the DB lives under a sibling of `public/`, not under
+it) — the endpoint composes the two paths. Next `getChatArchDb`
+call re-opens, re-runs migrations on the empty DB, and re-folds any
+legacy JSON sidecars if they survived the sweep.
 
 The corrections pipeline writes three files under
 `apps/standalone/public/chat-arch-data/analysis/` (all gitignored):

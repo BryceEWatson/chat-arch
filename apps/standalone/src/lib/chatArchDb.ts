@@ -329,11 +329,16 @@ export async function getChatArchDb(): Promise<Database> {
 }
 
 /**
- * Test hook — close + drop the cached handle. The next `getChatArchDb`
- * call will re-open and re-run migrations. Production callers don't
- * need this; process-exit cleans up.
+ * Close + drop the cached handle. The next `getChatArchDb` call will
+ * re-open and re-run migrations. Used by:
+ *   - Test code (formerly named `_resetChatArchDbForTests`; aliased
+ *     below for back-compat with existing tests).
+ *   - The `/api/clear` POST handler, which calls this before
+ *     `wipeSqliteDbFiles` so a stale handle doesn't hold the DB file
+ *     open while we delete it (matters on Windows where open files
+ *     can't be unlinked).
  */
-export function _resetChatArchDbForTests(): void {
+export function closeChatArchDb(): void {
   if (cachedDb !== null) {
     try {
       cachedDb.close();
@@ -343,4 +348,35 @@ export function _resetChatArchDbForTests(): void {
     cachedDb = null;
   }
   initInFlight = null;
+}
+
+/** @deprecated Use `closeChatArchDb`. Retained for test back-compat. */
+export const _resetChatArchDbForTests = closeChatArchDb;
+
+/**
+ * Remove the SQLite DB file + its `-wal` / `-shm` siblings from disk.
+ * No-op if the file doesn't exist. Caller is responsible for calling
+ * `closeChatArchDb()` first so the OS releases the file handles
+ * (especially important on Windows).
+ *
+ * Used by `/api/clear` POST handler to extend the orphan-sweep
+ * (Rev3-A.A9) into the new SQLite substrate now that the DB lives
+ * outside `apps/standalone/public/chat-arch-data/` (Rev3-C C4
+ * iter-1 security fix).
+ */
+export async function wipeSqliteDbFiles(): Promise<{ removed: number }> {
+  const base = dbPath();
+  let removed = 0;
+  for (const suffix of ['', '-wal', '-shm']) {
+    const path = base + suffix;
+    if (!existsSync(path)) continue;
+    try {
+      await unlink(path);
+      removed += 1;
+    } catch {
+      // Best-effort — a leftover file doesn't break correctness
+      // (next `getChatArchDb` reopens, migrations are idempotent).
+    }
+  }
+  return { removed };
 }
