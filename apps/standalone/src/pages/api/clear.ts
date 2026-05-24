@@ -1,7 +1,13 @@
 import type { APIRoute } from 'astro';
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve } from 'node:path';
+
+import {
+  ALL_SOURCES,
+  type SourceName,
+  wipeAll,
+  wipeSources,
+} from '../../lib/clearDataDir.js';
 
 /**
  * Selective-delete endpoint — the UI dropdown posts one or more source
@@ -38,8 +44,6 @@ export const prerender = false;
 
 const REQUIRED_HEADER = 'chat-arch-clear';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
-const ALL_SOURCES = ['cli-direct', 'cli-desktop', 'cowork', 'cloud'] as const;
-type SourceName = (typeof ALL_SOURCES)[number];
 
 function isLocalOrigin(origin: string | null): boolean {
   if (!origin) return false;
@@ -63,136 +67,6 @@ function csrfReject(reason: string): Response {
 function dataDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, '..', '..', '..', 'public', 'chat-arch-data');
-}
-
-interface ManifestSession {
-  id: string;
-  source: string;
-  transcriptPath?: string;
-  [k: string]: unknown;
-}
-interface Manifest {
-  schemaVersion: number;
-  generatedAt: number;
-  counts: Record<string, number>;
-  sessions: ManifestSession[];
-}
-
-async function readManifest(dir: string): Promise<Manifest | null> {
-  try {
-    const raw = await readFile(join(dir, 'manifest.json'), 'utf8');
-    const m = JSON.parse(raw) as Manifest;
-    if (!m || !Array.isArray(m.sessions)) return null;
-    return m;
-  } catch {
-    return null;
-  }
-}
-
-/** Wipe the entire data dir except `.gitkeep` — kitchen-sink mode. */
-async function wipeAll(dir: string): Promise<{ removed: number }> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  let removed = 0;
-  await Promise.all(
-    entries.map(async (e) => {
-      if (e.name === '.gitkeep') return;
-      await rm(join(dir, e.name), { recursive: true, force: true });
-      removed += 1;
-    }),
-  );
-  return { removed };
-}
-
-/**
- * Delete the sessions belonging to `selected` sources, rewrite the
- * manifest without them, and drop derived state (analysis files,
- * demo sentinel if cloud is touched). Returns per-source tallies so
- * the UI can render "X sessions removed from cli-direct".
- */
-async function wipeSources(
-  dir: string,
-  selected: Set<SourceName>,
-): Promise<{ removed: number; bySources: Record<string, number> }> {
-  const manifest = await readManifest(dir);
-  const bySources: Record<string, number> = {};
-  let fileRemovals = 0;
-
-  if (manifest) {
-    const kept: ManifestSession[] = [];
-    const toDelete: ManifestSession[] = [];
-    for (const s of manifest.sessions) {
-      if (selected.has(s.source as SourceName)) {
-        toDelete.push(s);
-        bySources[s.source] = (bySources[s.source] ?? 0) + 1;
-      } else {
-        kept.push(s);
-      }
-    }
-
-    // Unlink the transcript files belonging to removed sessions.
-    await Promise.all(
-      toDelete.map(async (s) => {
-        if (!s.transcriptPath) return;
-        // Guard: resolve against `dir` and reject any path that
-        // escapes. Mirrors the path-traversal check in the exporter.
-        const resolved = resolve(dir, s.transcriptPath);
-        if (!resolved.startsWith(resolve(dir))) return;
-        try {
-          await rm(resolved, { force: true });
-          fileRemovals += 1;
-        } catch {
-          /* best-effort — manifest rewrite is the source of truth */
-        }
-      }),
-    );
-
-    // Rewrite the manifest with the filtered session list and
-    // recomputed counts. Touch `generatedAt` so cache-busts land.
-    const counts: Record<string, number> = {
-      cloud: 0,
-      cowork: 0,
-      'cli-direct': 0,
-      'cli-desktop': 0,
-    };
-    for (const s of kept) counts[s.source] = (counts[s.source] ?? 0) + 1;
-    const next: Manifest = {
-      ...manifest,
-      generatedAt: Date.now(),
-      counts,
-      sessions: kept,
-    };
-    await writeFile(join(dir, 'manifest.json'), JSON.stringify(next, null, 2) + '\n');
-  }
-
-  // Cloud conversations live under a top-level folder — wipe the
-  // whole folder when cloud is selected (in case the manifest
-  // missed some orphaned JSONs).
-  if (selected.has('cloud')) {
-    try {
-      await rm(join(dir, 'cloud-conversations'), { recursive: true, force: true });
-    } catch {
-      /* ignore */
-    }
-    // Demo-data sentinel is paired with a demo-seeded manifest;
-    // if cloud is being pruned, the sentinel no longer reflects
-    // reality and should drop.
-    try {
-      await rm(join(dir, '.demo'), { force: true });
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // Always wipe derived analysis files — they are a function of the
-  // manifest, and any source change invalidates them.
-  try {
-    await rm(join(dir, 'analysis'), { recursive: true, force: true });
-  } catch {
-    /* ignore */
-  }
-
-  const removed = fileRemovals + Object.values(bySources).reduce((a, b) => a + b, 0);
-  return { removed, bySources };
 }
 
 export const POST: APIRoute = async ({ request }) => {

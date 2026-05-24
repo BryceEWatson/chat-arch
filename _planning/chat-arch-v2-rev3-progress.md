@@ -25,10 +25,10 @@ Plan anchor: [§Phase Rev3-A](chat-arch-v2-rev3-plan.md#phased-delivery-post-§0
 | A1 | Amend `chat-arch-v2-spec.md` §13 (SQLite substrate) and §16 (curator/falsifier/MCP in scope) | complete-and-merged | PR #54 (+ PR #56 extended §5 to 7-surface IA per Rev3 D1) |
 | A2 | Add `*.db / *.db-wal / *.db-shm` to `.gitignore` | complete-and-merged | PR #55 |
 | A3 | Add `better-sqlite3` + `sqlite-vec` deps; CI spike confirming prebuilt binaries on Ubuntu runner | complete-and-merged | PR #55 |
-| A4 | Create `packages/exporter/src/db/migrations/` with migration framework (`schema_migrations` table, idempotent migration runner) — moved from `packages/schema/` since `better-sqlite3` is a Node native module and `packages/schema/` must stay browser-safe | in-review | PR #57 |
-| A5 | Initial migration: tables for `projects`, `topics`, `sessions`, `session_messages`, `session_revisions`, `narratives`, `narrative_evidence`, `narrative_sessions`, `patterns`, `project_sessions`, `project_topics`, `topic_sessions`, `findings`, `analyzers` (13 entity + 1 generic findings) | in-review | PR #57 |
-| A6 | Enable WAL mode + `synchronous=NORMAL` + `foreign_keys=ON`; document `BEGIN IMMEDIATE` single-writer contract with 50ms→1s exponential backoff retry | in-review | PR #57 |
-| A7 | THRESHOLDS additions in `packages/analysis/src/thresholds.ts`: `narrativeRung.*`, `curator.*`, `closureC.*` | pending | All values centralized |
+| A4 | Create `packages/exporter/src/db/migrations/` with migration framework (`schema_migrations` table, idempotent migration runner) — moved from `packages/schema/` since `better-sqlite3` is a Node native module and `packages/schema/` must stay browser-safe | complete-and-merged | PR #57 |
+| A5 | Initial migration: tables for `projects`, `topics`, `sessions`, `session_messages`, `session_revisions`, `narratives`, `narrative_evidence`, `narrative_sessions`, `patterns`, `project_sessions`, `project_topics`, `topic_sessions`, `findings`, `analyzers` (13 entity + 1 generic findings) | complete-and-merged | PR #57 |
+| A6 | Enable WAL mode + `synchronous=NORMAL` + `foreign_keys=ON`; document `BEGIN IMMEDIATE` single-writer contract with 50ms→1s exponential backoff retry | complete-and-merged | PR #57 |
+| A7 | THRESHOLDS additions in `packages/analysis/src/thresholds.ts`: `narrativeRung.*`, `curator.*`, `appliedRuleWatcher.*` | in-review | PR #58 |
 | A8 | SDK skeleton in `packages/exporter/src/db/` exposing typed query/write methods over the new tables | pending | |
 | A9 | Extend `NuclearReset` to sweep orphan JSON files under `chat-arch-data/analysis/` | complete-and-merged | PR #53 (outcome-substrate roadmap shipped the NuclearReset extension as Phase 4 work) |
 | A10 | "NO DATA YET" landing screen renders correctly against empty DB | pending | Existing screen — verify |
