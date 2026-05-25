@@ -20,3 +20,4 @@ export * from './composite-outcome.js';
 export * from './upgrade-outcome.js';
 export * from './duplicates-semantic.js';
 export * from './blog.js';
+export * from './personas.js';

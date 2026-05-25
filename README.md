@@ -56,6 +56,7 @@ network access lands only on the local `pnpm dev` checkout.
 | **Mine decisions** + outcome-substrate sidecars | ❌ | ✅ |
 | **SQLite substrate** (`chat-arch.db` entity-states ledger, Rev3-A onward) | ❌ no Node runtime | ✅ |
 | **/curate** + **/falsify** skills (Rev3-F) | ❌ | ✅ |
+| **/mine-persona** (per-project data-grounded personas, V1.6.0) | ❌ | ✅ |
 | **MCP server scaffold** (`@chat-arch/mcp-server`, Rev3-H read-only SDK + working-dir scoping + localhost-bind policy primitives) | ❌ | ⚠️ SDK + policy primitives in tree; stdio / `@modelcontextprotocol/sdk` transport wiring deferred to a follow-on PR (localhost-bind enforced when the transport lands) |
 
 The hosted viewer stays JSON-sidecar-only on purpose — keeps the
@@ -127,6 +128,7 @@ score and slices the corpus six ways:
 | ---- | ------------- |
 | **Results** (`/results`) | Cross-corpus claim-pass rate by claim type / project / session + loop-closure rollup (shipped 1.1.0) |
 | **Playbook** (`/playbook`) | Recurring user-turn phrasings ranked by occurrence × downstream pass-rate; COPY AS MARKDOWN handoff (shipped 1.1.0) |
+| **Personas** (`/personas`) | Per-project data-grounded personas auto-generated on every SCAN. Each renders 6-10 numbered pattern sections with verbatim user-prompt evidence (`[SID:...]` citations clickable into the session). Hand-authored `research/persona-evals/bryce.md` stays canonical for the chat-arch project itself; auto-generated output lives separately under `analysis/personas/`. (shipped 1.6.0) |
 | **Effectiveness** | Per-session composite score (test/build/PR/affirmation signals) + time-series |
 | **Insights** | Interrupted-time-series contrasts of composite score around `.claude/` config changes |
 | **Decisions** | Extracted decisions joined to downstream composite outcome |

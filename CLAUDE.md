@@ -146,6 +146,13 @@ scripts/             One-off audits (audit-correction-recall.mjs) +
   chat-answer/       Drives /api/chat-answer endpoint (the chat
                      page's agent specialization for Q&A against
                      the corpus)
+  mine-persona/      Per-project persona auto-generation V1.
+                     Stage 2 of the persona pipeline: reads
+                     analysis/persona-candidates.json (Stage 1
+                     written by the exporter), dispatches 4 time-
+                     bucketed sub-agents per project, synthesizes
+                     into analysis/personas/<project-id>.md +
+                     updates analysis/personas.json index.
   chat-arch-thrash-detect/  NOT in this repo — lives under
                             ~/.claude/skills/ as a global hook
                             (writes thrash-fires.json into the
@@ -358,6 +365,50 @@ under the same wildcard — locally generated, PII-bearing):
   shape as `surprises.json` itself (summary text + evidence session
   IDs).
 
+### Persona-mining V1 sidecar family (EXPORTER_VERSION 1.6.0)
+
+Three additional artifacts under `apps/standalone/public/chat-arch-data/
+analysis/` (all gitignored — locally generated, PII-bearing):
+
+- `persona-candidates.json` — Stage-1 deterministic heuristic
+  extractor output. Per-project user-prompt excerpts bucketed into
+  6 categories (`role-expertise` / `preferences` / `project-specific` /
+  `working-rhythm` / `frictions` / `voice`). Written by
+  `packages/exporter/src/analysis/personaCandidates.ts` as part of
+  `runAnalysis`. PII: verbatim user-prompt excerpts cited with
+  `sessionId` + `userTurnIndex`. Read by the `/mine-persona` skill.
+- `personas.json` — Stage-2 index. One record per project in the
+  corpus: `{ projectId, projectName, sessionsAnalyzed, sessionsTotal,
+  personaPath, generatedAt, status, reason? }`. `status` is
+  `generated` / `insufficient-corpus` / `budget-exceeded` / `error`.
+  Written by `/mine-persona`. Read by the `/personas` page.
+- `personas/<project-id>.md` — per-project markdown persona,
+  mirroring `research/persona-evals/bryce.md` structure. Header /
+  6-10 numbered pattern sections with **Pattern.** / **Evidence.**
+  (≥2 `[SID:...]` citations per section) / **What this implies.** /
+  coverage notes. PII: high — every Evidence row is a verbatim
+  user-prompt excerpt. Written by `/mine-persona`, rendered by the
+  `/personas` page with clickable SID anchors.
+
+**Hand-authored vs auto-generated personas.** The hand-authored
+`research/persona-evals/bryce.md` stays canonical for the chat-arch
+project specifically (it's the originating prototype). Auto-generated
+output lives separately at `analysis/personas/chat-arch.md` — never
+overwritten by the skill. The four secondary onramp-eval personas
+(`maya.md` / `david.md` / `priya.md` / `sam.md`) are hypothetical
+first-touch walkthroughs for the hosted demo, not user-modeling docs,
+and are unrelated to the auto-generation pipeline.
+
+**Status files.** `persona-status-${requestId}.json` — per-run
+progress file the skill writes during a mining pass. Wiped by
+`/api/clear-personas` alongside the personas/ family.
+
+**Wipe coverage.** `/api/clear-personas` (selective) wipes
+`personas.json` + status files + `personas/*.md`. `/api/clear`
+(kitchen-sink) wipes everything under `chat-arch-data/` via the
+existing `wipeAll` path — no new code needed because the personas
+family lives under the same root.
+
 The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
 and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
 #12 post-mortems + knowledge-debt) are also gitignored. The wildcard
@@ -411,7 +462,8 @@ out of date and needs an update:
      reflexive, decisions, archetypes, project-trajectories,
      skill-curves, surprises, archive/surprises-YYYY-MM-DD,
      curator-feed, falsifier-verdicts, correction-candidates,
-     corrections, correction-status-*.
+     corrections, correction-status-*, persona-candidates, personas,
+     personas/<project-id>.md, persona-status-*.
    - Aggregate-numbers-only (lower-PII): its-analysis, surface-
      comparison. These are gitignored conservatively anyway.
 5. **What's the difference between hosted (`chat-arch.dev`) and
@@ -435,4 +487,6 @@ out of date and needs an update:
      `buildDailyBrief` gained shipped-this-week / surprises /
      trajectories / applied-pattern-closures sections (no new on-
      disk sidecar; brief markdown shape grew); see CHANGELOG.md
-     `[1.4.1]`.
+     `[1.4.1]`. Bumped 1.5.0 → 1.6.0 in the persona-mining V1 land
+     (`persona-candidates.json` + `personas.json` +
+     `personas/<project-id>.md` family); see CHANGELOG.md `[1.6.0]`.

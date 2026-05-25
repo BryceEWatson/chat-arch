@@ -64,6 +64,7 @@ import { buildProjectTrajectoriesFile } from './projectTrajectoryBuilder.js';
 import { buildSurfaceComparisonFile } from './surfaceComparisonBuilder.js';
 import { buildSkillCurvesFile } from './skillCurvesBuilder.js';
 import { buildSurprisesFile } from './surprisesBuilder.js';
+import { buildPersonaCandidatesFile } from './personaCandidates.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -106,6 +107,7 @@ export interface RunAnalysisResult {
     surfaceComparison: string;
     skillCurves: string;
     surprises: string;
+    personaCandidates: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -130,6 +132,8 @@ export interface RunAnalysisResult {
     surfaceCells: number;
     skillCurves: number;
     surprises: number;
+    personaCandidatesTotal: number;
+    personaCandidatesProjects: number;
   };
 }
 
@@ -173,6 +177,17 @@ export interface RunAnalysisResult {
  * endpoint's output markdown — but the patch bump labels the bundle so
  * operators can correlate.
  *
+ * Bumped 1.5.1 → 1.6.0 in the persona-mining V1 land:
+ * `analysis/persona-candidates.json` lands as a new sidecar (per-project
+ * heuristic buckets of user-prompt excerpts that drive the Stage-2 LLM
+ * synthesis in `/mine-persona`), and `analysis/personas.json` +
+ * `analysis/personas/<project-id>.md` files land as the Stage-2 output
+ * (written by the skill, not by `runAnalysis` directly). Pre-existing
+ * sidecars are unchanged. New THRESHOLDS family
+ * `THRESHOLDS.persona.{minSessionsForGeneration, maxSessionsForCorpus,
+ * maxLlmUsdPerProject, candidateBudgetProxy, maxCandidatesPerBucket}`
+ * gates emission.
+ *
  * Bumped 1.4.1 → 1.5.0 in feed-redesign Wave 2 #1 (delta surprises):
  * a new `analysis/archive/` sidecar family lands —
  * `surprises-YYYY-MM-DD.json` daily snapshots that the
@@ -184,7 +199,7 @@ export interface RunAnalysisResult {
  * threshold `THRESHOLDS.surprises.archiveRetentionDays = 30` gates the
  * filename-based prune.
  */
-export const EXPORTER_VERSION = '1.5.1';
+export const EXPORTER_VERSION = '1.6.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -572,6 +587,40 @@ export async function runAnalysis(
   }
   const surprisesPath = path.join(analysisDir, 'surprises.json');
 
+  // ---- Persona candidates (V1 — feature: persona-mining) ----
+  //
+  // Stage-1 deterministic extractor. Per-project user-prompt excerpts
+  // bucketed by 6 heuristic categories (role/expertise, preferences,
+  // project-specific, working rhythm, frictions, voice). Input to the
+  // Stage-2 LLM skill `/mine-persona`, which is the SCAN chain's 5th
+  // step and writes `analysis/personas.json` + per-project markdown to
+  // `analysis/personas/<project-id>.md`.
+  //
+  // Reuses the discoverProjects result above for the project → sessions
+  // edges. No SQLite read — the manifest + transcript files are
+  // sufficient (mirrors corrections.ts / playbook builders).
+  let personaCandidatesTotal = 0;
+  let personaCandidatesProjects = 0;
+  try {
+    const r = await buildPersonaCandidatesFile(manifest, {
+      outDir: options.outDir,
+      now,
+      projects: enrichedProjects,
+    });
+    personaCandidatesTotal = r.candidatesTotal;
+    personaCandidatesProjects = r.projectsAnalyzed;
+    await writeFile(
+      path.join(analysisDir, 'persona-candidates.json'),
+      JSON.stringify(r.file, null, 2) + '\n',
+      'utf8',
+    );
+  } catch (err) {
+    logger.warn(
+      `analysis: persona-candidates soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const personaCandidatesPath = path.join(analysisDir, 'persona-candidates.json');
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -605,6 +654,13 @@ export async function runAnalysis(
           'surface-comparison.json',
           'skill-curves.json',
           'surprises.json',
+          // V1 persona-mining Stage-1 sidecar (Stage-2 outputs
+          // `personas.json` + `personas/<id>.md` are written by the
+          // `/mine-persona` skill, NOT by runAnalysis — they live
+          // under the same analysis/ tree but aren't in this list
+          // for the same reason `corrections.json` isn't:
+          // runAnalysis only registers what it actually emits.).
+          'persona-candidates.json',
         ],
       },
     },
@@ -632,6 +688,10 @@ export async function runAnalysis(
       surfaceCells: surfaceCellsCount,
       skillCurves: skillCurvesCount,
       surprises: surprisesCount,
+      personaCandidates: {
+        total: personaCandidatesTotal,
+        projects: personaCandidatesProjects,
+      },
     },
   };
   const metaPath = path.join(analysisDir, 'meta.json');
@@ -677,6 +737,7 @@ export async function runAnalysis(
       surfaceComparison: surfaceComparisonPath,
       skillCurves: skillCurvesPath,
       surprises: surprisesPath,
+      personaCandidates: personaCandidatesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -699,6 +760,8 @@ export async function runAnalysis(
       surfaceCells: surfaceCellsCount,
       skillCurves: skillCurvesCount,
       surprises: surprisesCount,
+      personaCandidatesTotal,
+      personaCandidatesProjects,
     },
   };
 }

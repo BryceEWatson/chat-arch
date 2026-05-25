@@ -65,16 +65,23 @@ describe('AppSidebar — render contract', () => {
     expect(c).toBeGreaterThan(b);
   });
 
-  it('renders WORKSHOP items in order: PLAYBOOK, CORRECTIONS, PRACTICE', () => {
+  it('renders WORKSHOP items in order: PLAYBOOK, CORRECTIONS, PRACTICE, PERSONAS', () => {
     const ws = html.indexOf('>WORKSHOP<');
     const sy = html.indexOf('>SYSTEM<');
     const slice = html.slice(ws, sy);
     const ixPlb = slice.indexOf('PLAYBOOK');
     const ixCor = slice.indexOf('CORRECTIONS');
     const ixPrc = slice.indexOf('PRACTICE');
+    const ixPer = slice.indexOf('PERSONAS');
     expect(ixPlb).toBeGreaterThan(-1);
     expect(ixCor).toBeGreaterThan(ixPlb);
     expect(ixPrc).toBeGreaterThan(ixCor);
+    expect(ixPer).toBeGreaterThan(ixPrc);
+  });
+
+  it('PERSONAS links to /personas with the 3-letter "PER" short code', () => {
+    expect(html).toMatch(/href="\/personas"/);
+    expect(html).toMatch(/>PER</);
   });
 
   it('renders SYSTEM items in order: HEALTH, CALIBRATE, ALL VIEWS, DESIGN SYSTEM, DATA', () => {

@@ -72,6 +72,11 @@ out/
 !.claude/skills/curate/SKILL.md
 !.claude/skills/falsify/
 !.claude/skills/falsify/SKILL.md
+# Persona-mining V1 skill (drives /api/mine-persona — the SCAN
+# chain's 5th step). Ships with the repo because the endpoint +
+# UI affordance depend on the contract this SKILL.md pins.
+!.claude/skills/mine-persona/
+!.claude/skills/mine-persona/SKILL.md
 # …except (1) test fixtures, which legitimately contain a `.claude/`
 # subtree that mimics what a real Cowork session directory looks
 # like on disk. These are synthetic (redacted), vital for the
@@ -123,6 +128,14 @@ apps/standalone/public/chat-arch-data/analysis/knowledge-debt-states.json
 # above; listed for the same auditability reason as the others.
 apps/standalone/public/chat-arch-data/analysis/curator-feed.json
 apps/standalone/public/chat-arch-data/analysis/falsifier-verdicts.json
+# Per-project persona-mining V1 output. PII: verbatim user-prompt
+# excerpts cited as [SID:...] inside each per-project markdown file.
+# Stage-1 candidates + Stage-2 index + per-project markdown all covered
+# by the wildcard above; listed explicitly for the same auditability
+# reason as the others.
+apps/standalone/public/chat-arch-data/analysis/persona-candidates.json
+apps/standalone/public/chat-arch-data/analysis/personas.json
+apps/standalone/public/chat-arch-data/analysis/personas/
 apps/standalone/public/chat-arch-data/exports/
 .claude/review-loop.disabled
 .claude/review-loop.disabled-roles

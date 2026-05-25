@@ -159,7 +159,7 @@ describe('migration v1.1.0 → 1.2.0', () => {
       tiers: { browser: { files: readonly string[] } };
       counts: Record<string, unknown>;
     }>(path.join(tmpDataDir, 'analysis', 'meta.json'));
-    expect(meta.exporterVersion).toBe('1.5.1');
+    expect(meta.exporterVersion).toBe('1.6.0');
 
     // The Wave-5 sidecars (+ feed-redesign Phase A surprises.json)
     // must all be registered in the browser tier.
