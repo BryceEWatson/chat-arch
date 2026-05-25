@@ -38,13 +38,15 @@ describe('BaseLayout — app-wide sidebar host', () => {
   });
 
   it('passes the `current` prop through to AppSidebar for active-pill marking', async () => {
-    const html = await render({ title: 'Audit', current: 'AUDIT' });
+    const html = await render({ title: 'Sessions', current: 'SESSIONS' });
     // The AppSidebar tests assert the aria-current mark; here we just
     // confirm BaseLayout did not lose the prop on its way down. The
-    // AUDIT pill anchor carries aria-current=page only when current
+    // SESSIONS pill anchor carries aria-current=page only when current
     // matches.
-    const auditAnchor = html.match(/<a[^>]*href="\/audit"[^>]*>[\s\S]*?AUDIT[\s\S]*?<\/a>/);
-    expect(auditAnchor).not.toBeNull();
-    expect(auditAnchor?.[0] ?? '').toMatch(/aria-current="page"/);
+    const sessionsAnchor = html.match(
+      /<a[^>]*href="\/sessions"[^>]*>[\s\S]*?SESSIONS[\s\S]*?<\/a>/,
+    );
+    expect(sessionsAnchor).not.toBeNull();
+    expect(sessionsAnchor?.[0] ?? '').toMatch(/aria-current="page"/);
   });
 });

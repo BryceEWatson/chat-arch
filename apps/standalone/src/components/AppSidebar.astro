@@ -1,11 +1,14 @@
 ---
 // App-wide vertical LEFT sidebar. Replaces the horizontal TodayNav
 // strip. TODAY sits in its own distinguished top section above the
-// four LCARS-style groups (WORKSHOP / TRACK / BROWSE / SYSTEM); the
-// DATA item is a panel trigger that links into the viewer's hash
-// router (#data → DataPanel modal in ChatArchViewer.tsx). CHAT and
-// CORRECTIONS share the same hash-routing pattern (/sessions#chat,
-// /sessions#corrections).
+// three LCARS-style groups (ARCHIVE / WORKSHOP / SYSTEM); the DATA
+// item is a panel trigger that links into the viewer's hash router
+// (#data → DataPanel modal in ChatArchViewer.tsx). CORRECTIONS shares
+// the same hash-routing pattern (/sessions#corrections). Surfaces
+// that previously had their own sidebar entries (CHAT, RESULTS,
+// AUDIT, DRAFTS) now live in the FEED's BROKEN / STORIES sections;
+// the full catalogue of kernel detail surfaces is reachable from
+// SYSTEM → ALL VIEWS (/views).
 //
 // Collapse: expanded by default desktop, auto-collapsed below 900px,
 // user-toggleable, persisted in localStorage. The pure state logic
@@ -34,37 +37,7 @@ const TODAY: NavItem = { href: '/', short: 'TDY', label: 'TODAY' };
 const DATA: NavItem = { href: '/sessions#data', short: 'DAT', label: 'DATA' };
 const groups: readonly NavGroup[] = [
   {
-    label: 'WORKSHOP',
-    items: [
-      { href: '/sessions#chat', short: 'CHT', label: 'CHAT' },
-      { href: '/sessions#corrections', short: 'COR', label: 'CORRECTIONS' },
-      // PLAYBOOK — positive counterpart to CORRECTIONS. Mines recurring
-      // user-turn phrasings ("first principles", "adversarial review")
-      // that precede F-layer pass-verdict claims. Sits next to
-      // CORRECTIONS in WORKSHOP because the two are paired surfaces:
-      // CORRECTIONS = pushback that produced a fix; PLAYBOOK = verbs
-      // that produced verified work.
-      { href: '/playbook', short: 'PLB', label: 'PLAYBOOK' },
-      { href: '/practice', short: 'PRC', label: 'PRACTICE' },
-      // RESULTS — cross-corpus outcomes view: claim-pass rate by
-      // project / claim type / session, plus loop-closure rollup.
-      // Lives in WORKSHOP (not TRACK) because it's a workshop verb —
-      // observe what's working across all your chats so you can act on
-      // it — rather than a passive monitoring surface.
-      { href: '/results', short: 'RES', label: 'RESULTS' },
-    ],
-  },
-  {
-    label: 'TRACK',
-    items: [
-      // TODAY lives ABOVE the groups now — removed from TRACK.
-      { href: '/audit', short: 'AUD', label: 'AUDIT' },
-      { href: '/health', short: 'HLT', label: 'HEALTH' },
-      { href: '/blog-drafts', short: 'DFT', label: 'DRAFTS' },
-    ],
-  },
-  {
-    label: 'BROWSE',
+    label: 'ARCHIVE',
     items: [
       { href: '/sessions', short: 'SES', label: 'SESSIONS' },
       { href: '/projects', short: 'PRJ', label: 'PROJECTS' },
@@ -72,8 +45,25 @@ const groups: readonly NavGroup[] = [
     ],
   },
   {
+    label: 'WORKSHOP',
+    items: [
+      // PLAYBOOK — positive counterpart to CORRECTIONS. Mines recurring
+      // user-turn phrasings ("first principles", "adversarial review")
+      // that precede F-layer pass-verdict claims.
+      { href: '/playbook', short: 'PLB', label: 'PLAYBOOK' },
+      { href: '/sessions#corrections', short: 'COR', label: 'CORRECTIONS' },
+      { href: '/practice', short: 'PRC', label: 'PRACTICE' },
+    ],
+  },
+  {
     label: 'SYSTEM',
     items: [
+      { href: '/health', short: 'HLT', label: 'HEALTH' },
+      { href: '/calibrate', short: 'CAL', label: 'CALIBRATE' },
+      // ALL VIEWS — flat catalogue of every kernel detail surface
+      // that still exists but isn't promoted in the FEED / TODAY.
+      // The escape hatch for "I know there's a surface for X."
+      { href: '/views', short: 'VWS', label: 'ALL VIEWS' },
       { href: '/design-system', short: 'DSY', label: 'DESIGN SYSTEM' },
       // DATA pushed in here so the SYSTEM group renders its own DATA
       // anchor with the panel-trigger styling — never active.

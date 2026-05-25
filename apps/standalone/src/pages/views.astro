@@ -1,0 +1,278 @@
+---
+// ALL VIEWS — flat catalogue of every kernel detail surface in
+// chat-arch. The escape hatch from the FEED redesign: when the
+// curated TODAY / FEED doesn't promote what the user is looking
+// for, this page lists every surface that still exists with a
+// one-line description and a direct link.
+//
+// Intentionally flat — the user is here BECAUSE the curated surfaces
+// didn't help. Don't make them navigate twice. Each row is a single
+// clickable card.
+//
+// Sectioning mirrors the substrate's own taxonomy:
+//   SESSION-GRADED — per-session outcome surfaces.
+//   CROSS-CUTTING — corpus-wide kernels.
+//   OPERATIONAL — audit, results, drafts, bench.
+//   DETAIL — per-entity detail routes (parameterised; the catalogue
+//     surfaces the index/template, not a concrete instance).
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+interface ViewEntry {
+  label: string;
+  href: string;
+  description: string;
+}
+interface ViewSection {
+  label: string;
+  entries: readonly ViewEntry[];
+}
+
+const sections: readonly ViewSection[] = [
+  {
+    label: 'SESSION-GRADED',
+    entries: [
+      {
+        label: 'EFFECTIVENESS',
+        href: '/sessions#effectiveness',
+        description: 'Composite-outcome dashboard.',
+      },
+      {
+        label: 'DECISIONS',
+        href: '/sessions#decisions',
+        description: 'Extracted decisions joined to outcomes.',
+      },
+    ],
+  },
+  {
+    label: 'CROSS-CUTTING',
+    entries: [
+      {
+        label: 'INSIGHTS',
+        href: '/sessions#insights',
+        description: 'Config-impact ITS + knowledge-debt + reflexive.',
+      },
+      {
+        label: 'TRENDS',
+        href: '/sessions#trends',
+        description: 'Project trajectories + archetypes + skill curves.',
+      },
+      {
+        label: 'TRUST',
+        href: '/sessions#trust',
+        description: 'Pairwise comparison (Holm-Bonferroni).',
+      },
+      {
+        label: 'EXPORT',
+        href: '/sessions#export',
+        description: 'Obsidian-targeted export checklist.',
+      },
+      {
+        label: 'CORRECTIONS',
+        href: '/sessions#corrections',
+        description: 'Mined correction patterns (workshop loop).',
+      },
+      {
+        label: 'CHAT',
+        href: '/sessions#chat',
+        description: 'Chat-answer skill against the corpus.',
+      },
+    ],
+  },
+  {
+    label: 'OPERATIONAL',
+    entries: [
+      {
+        label: 'AUDIT',
+        href: '/audit',
+        description: 'F-layer claim verifier results.',
+      },
+      {
+        label: 'RESULTS',
+        href: '/results',
+        description: 'Cross-corpus outcomes view.',
+      },
+      {
+        label: 'DRAFTS',
+        href: '/blog-drafts',
+        description: 'Blog draft candidates.',
+      },
+      {
+        label: 'BENCH',
+        href: '/bench',
+        description: 'Embedding benchmark (dev-only).',
+      },
+    ],
+  },
+  {
+    label: 'DETAIL',
+    entries: [
+      {
+        label: 'PROJECT DETAIL',
+        href: '/projects',
+        description: 'Per-project narratives + audit affordance (pick a project).',
+      },
+      {
+        label: 'TOPIC DETAIL',
+        href: '/topics',
+        description: 'Per-topic detail (pick a topic).',
+      },
+      {
+        label: 'DRAFT DETAIL',
+        href: '/blog-drafts',
+        description: 'Per-draft chat-answer prompt (pick a draft).',
+      },
+    ],
+  },
+];
+---
+<BaseLayout title="Chat Archaeologist — All Views" current="ALL VIEWS">
+  <main class="views">
+    <header class="views__header">
+      <h1>ALL VIEWS</h1>
+      <p class="views__lede">
+        Flat catalogue of every kernel detail surface that exists in
+        chat-arch. The FEED + TODAY pages promote a curated handful;
+        this is the escape hatch for everything else. Click a row to
+        jump straight to the surface — no second hop.
+      </p>
+    </header>
+
+    {sections.map((section) => (
+      <section class="views__section" aria-labelledby={`views-section-${section.label}`}>
+        <div class="views__bar" aria-hidden="true"></div>
+        <h2 class="views__section-label" id={`views-section-${section.label}`}>
+          {section.label}
+        </h2>
+        <ul class="views__list">
+          {section.entries.map((entry) => (
+            <li class="views__item">
+              <a class="views__card" href={entry.href}>
+                <span class="views__card-label">{entry.label}</span>
+                <code class="views__card-href">{entry.href}</code>
+                <span class="views__card-desc">{entry.description}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
+  </main>
+</BaseLayout>
+
+<style>
+  main.views {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+    color: #FFCC99;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .views__header h1 {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 32px;
+    margin: 0 0 8px;
+  }
+  .views__lede {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #FFCC99cc;
+    margin: 0 0 32px;
+    max-width: 720px;
+  }
+
+  .views__section {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    column-gap: 14px;
+    margin-bottom: 32px;
+    align-items: start;
+  }
+  .views__bar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 12px;
+    align-self: stretch;
+    background: #DD9944;
+    border-radius: 0 6px 6px 0;
+    min-height: 100%;
+  }
+  .views__section-label {
+    grid-column: 2;
+    font-family: 'Antonio', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.18em;
+    color: #DD9944;
+    text-transform: uppercase;
+    margin: 0 0 12px;
+    padding: 4px 0 6px;
+    border-bottom: 1px solid #FFCC9933;
+  }
+
+  .views__list {
+    grid-column: 2;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+  }
+  .views__item {
+    display: block;
+  }
+  .views__card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 12px 14px;
+    background: #0a0a0a;
+    border: 1px solid #FFCC9944;
+    border-left: 3px solid #FFCC9966;
+    border-radius: 0 6px 6px 0;
+    text-decoration: none;
+    color: #FFCC99;
+    transition: background 80ms linear, border-color 80ms linear;
+  }
+  .views__card:hover,
+  .views__card:focus-visible {
+    background: #FFCC9911;
+    border-color: #FFCC99;
+    border-left-color: #FF9933;
+    outline: none;
+  }
+  .views__card-label {
+    grid-column: 1;
+    grid-row: 1;
+    font-family: 'Antonio', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    color: #FFCC99;
+    line-height: 1.1;
+  }
+  .views__card-href {
+    grid-column: 2;
+    grid-row: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: #FFCC9999;
+    background: #FFCC9911;
+    padding: 2px 6px;
+    border-radius: 2px;
+    align-self: center;
+    white-space: nowrap;
+  }
+  .views__card-desc {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #FFCC99cc;
+  }
+</style>

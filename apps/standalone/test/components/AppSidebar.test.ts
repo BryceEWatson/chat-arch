@@ -7,7 +7,7 @@ import { experimental_AstroContainer as AstroContainer } from 'astro/container';
 // test env at `environment: 'node'` (no JSDOM).
 
 let html: string;
-let htmlOnAudit: string;
+let htmlOnSessions: string;
 
 beforeAll(async () => {
   const container = await AstroContainer.create();
@@ -15,7 +15,7 @@ beforeAll(async () => {
   // of an opaque component, fine at runtime.
   const AppSidebar = (await import('../../src/components/AppSidebar.astro')).default;
   html = await container.renderToString(AppSidebar, { props: { current: 'TODAY' } });
-  htmlOnAudit = await container.renderToString(AppSidebar, { props: { current: 'AUDIT' } });
+  htmlOnSessions = await container.renderToString(AppSidebar, { props: { current: 'SESSIONS' } });
 });
 
 describe('AppSidebar — render contract', () => {
@@ -44,44 +44,19 @@ describe('AppSidebar — render contract', () => {
     expect(firstGroupIx).toBeGreaterThan(dividerIx);
   });
 
-  it('renders the four group labels in order: WORKSHOP, TRACK, BROWSE, SYSTEM', () => {
+  it('renders the three group labels in order: ARCHIVE, WORKSHOP, SYSTEM', () => {
     const labels = [...html.matchAll(/app-sidebar__group-label[^>]*>([^<]+)</g)].map((m) =>
       m[1].trim(),
     );
-    expect(labels).toEqual(['WORKSHOP', 'TRACK', 'BROWSE', 'SYSTEM']);
+    expect(labels).toEqual(['ARCHIVE', 'WORKSHOP', 'SYSTEM']);
   });
 
-  it('does not include TODAY inside the TRACK group', () => {
-    // TODAY lives ABOVE the groups, not inside TRACK. Extract the TRACK
-    // group slice and assert TODAY is not in it.
-    const trackIx = html.indexOf('>TRACK<');
-    expect(trackIx).toBeGreaterThan(-1);
-    // Slice from TRACK label to the next group label (BROWSE).
-    const browseIx = html.indexOf('>BROWSE<', trackIx);
-    expect(browseIx).toBeGreaterThan(trackIx);
-    const trackSlice = html.slice(trackIx, browseIx);
-    expect(trackSlice).not.toContain('TODAY');
-    expect(trackSlice).toContain('AUDIT');
-    expect(trackSlice).toContain('HEALTH');
-    expect(trackSlice).toContain('DRAFTS');
-  });
-
-  it('renders WORKSHOP items in order: CHAT, CORRECTIONS, PRACTICE', () => {
+  it('renders ARCHIVE items in order: SESSIONS, PROJECTS, TOPICS', () => {
+    const ar = html.indexOf('>ARCHIVE<');
     const ws = html.indexOf('>WORKSHOP<');
-    const tr = html.indexOf('>TRACK<');
-    const slice = html.slice(ws, tr);
-    const ixChat = slice.indexOf('CHAT');
-    const ixCor = slice.indexOf('CORRECTIONS');
-    const ixPrc = slice.indexOf('PRACTICE');
-    expect(ixChat).toBeGreaterThan(-1);
-    expect(ixCor).toBeGreaterThan(ixChat);
-    expect(ixPrc).toBeGreaterThan(ixCor);
-  });
-
-  it('renders BROWSE items in order: SESSIONS, PROJECTS, TOPICS', () => {
-    const br = html.indexOf('>BROWSE<');
-    const sy = html.indexOf('>SYSTEM<');
-    const slice = html.slice(br, sy);
+    expect(ar).toBeGreaterThan(-1);
+    expect(ws).toBeGreaterThan(ar);
+    const slice = html.slice(ar, ws);
     const a = slice.indexOf('SESSIONS');
     const b = slice.indexOf('PROJECTS');
     const c = slice.indexOf('TOPICS');
@@ -90,18 +65,53 @@ describe('AppSidebar — render contract', () => {
     expect(c).toBeGreaterThan(b);
   });
 
-  it('renders SYSTEM items: DESIGN SYSTEM then DATA', () => {
+  it('renders WORKSHOP items in order: PLAYBOOK, CORRECTIONS, PRACTICE', () => {
+    const ws = html.indexOf('>WORKSHOP<');
     const sy = html.indexOf('>SYSTEM<');
-    const slice = html.slice(sy);
-    const a = slice.indexOf('DESIGN SYSTEM');
-    const b = slice.indexOf('DATA');
-    expect(a).toBeGreaterThan(-1);
-    expect(b).toBeGreaterThan(a);
+    const slice = html.slice(ws, sy);
+    const ixPlb = slice.indexOf('PLAYBOOK');
+    const ixCor = slice.indexOf('CORRECTIONS');
+    const ixPrc = slice.indexOf('PRACTICE');
+    expect(ixPlb).toBeGreaterThan(-1);
+    expect(ixCor).toBeGreaterThan(ixPlb);
+    expect(ixPrc).toBeGreaterThan(ixCor);
   });
 
-  it('CHAT and CORRECTIONS link into the viewer via /sessions hash routes', () => {
-    expect(html).toMatch(/href="\/sessions#chat"/);
+  it('renders SYSTEM items in order: HEALTH, CALIBRATE, ALL VIEWS, DESIGN SYSTEM, DATA', () => {
+    const sy = html.indexOf('>SYSTEM<');
+    const slice = html.slice(sy);
+    const ixHlt = slice.indexOf('HEALTH');
+    const ixCal = slice.indexOf('CALIBRATE');
+    const ixVws = slice.indexOf('ALL VIEWS');
+    const ixDsy = slice.indexOf('DESIGN SYSTEM');
+    const ixDat = slice.indexOf('>DATA<');
+    expect(ixHlt).toBeGreaterThan(-1);
+    expect(ixCal).toBeGreaterThan(ixHlt);
+    expect(ixVws).toBeGreaterThan(ixCal);
+    expect(ixDsy).toBeGreaterThan(ixVws);
+    expect(ixDat).toBeGreaterThan(ixDsy);
+  });
+
+  it('drops the CHAT, AUDIT, DRAFTS, RESULTS sidebar entries (folded into FEED)', () => {
+    // The labels live on the cards themselves now, not in the sidebar.
+    // Use anchored matches against the sidebar __item-label span to
+    // avoid false hits on substring overlaps (e.g. CORRECTIONS would
+    // match a naive /CHAT/ probe).
+    const sidebarLabels = [...html.matchAll(
+      /app-sidebar__item-label[^>]*>([^<]+)</g,
+    )].map((m) => m[1].trim());
+    expect(sidebarLabels).not.toContain('CHAT');
+    expect(sidebarLabels).not.toContain('AUDIT');
+    expect(sidebarLabels).not.toContain('DRAFTS');
+    expect(sidebarLabels).not.toContain('RESULTS');
+  });
+
+  it('CORRECTIONS still links into the viewer via /sessions hash route', () => {
     expect(html).toMatch(/href="\/sessions#corrections"/);
+  });
+
+  it('ALL VIEWS pill links to the /views escape-hatch catalogue', () => {
+    expect(html).toMatch(/href="\/views"/);
   });
 
   it('DATA pill links to /sessions#data and is never aria-current=page', () => {
@@ -120,11 +130,15 @@ describe('AppSidebar — render contract', () => {
     expect(todayAnchorMatch?.[0] ?? '').toMatch(/aria-current="page"/);
   });
 
-  it('marks current=AUDIT with aria-current=page on the AUDIT pill, not TODAY', () => {
-    const auditAnchor = htmlOnAudit.match(/<a[^>]*href="\/audit"[^>]*>[\s\S]*?AUDIT[\s\S]*?<\/a>/);
-    expect(auditAnchor).not.toBeNull();
-    expect(auditAnchor?.[0] ?? '').toMatch(/aria-current="page"/);
-    const todayAnchor = htmlOnAudit.match(/<a[^>]*href="\/"[^>]*>[\s\S]*?TODAY[\s\S]*?<\/a>/);
+  it('marks current=SESSIONS with aria-current=page on the SESSIONS pill, not TODAY', () => {
+    const sessionsAnchor = htmlOnSessions.match(
+      /<a[^>]*href="\/sessions"[^>]*>[\s\S]*?SESSIONS[\s\S]*?<\/a>/,
+    );
+    expect(sessionsAnchor).not.toBeNull();
+    expect(sessionsAnchor?.[0] ?? '').toMatch(/aria-current="page"/);
+    const todayAnchor = htmlOnSessions.match(
+      /<a[^>]*href="\/"[^>]*>[\s\S]*?TODAY[\s\S]*?<\/a>/,
+    );
     expect(todayAnchor?.[0] ?? '').not.toMatch(/aria-current="page"/);
   });
 
