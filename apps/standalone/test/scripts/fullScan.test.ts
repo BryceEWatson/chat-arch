@@ -11,6 +11,7 @@ import { REQUIRED_HEADER as RESCAN_HEADER } from '../../src/pages/api/rescan.ts'
 import { REQUIRED_HEADER as MINE_HEADER } from '../../src/pages/api/mine-corrections.ts';
 import { REQUIRED_HEADER as CURATE_HEADER } from '../../src/pages/api/curate.ts';
 import { REQUIRED_HEADER as FALSIFY_HEADER } from '../../src/pages/api/falsify.ts';
+import { REQUIRED_HEADER as PERSONA_HEADER } from '../../src/pages/api/mine-persona.ts';
 
 // Phase β review-loop iter-1 fix: fullScan.ts docstring (line 42)
 // promises "the test alongside this file pins both sides" of the
@@ -51,12 +52,17 @@ describe('FULL_SCAN_STEPS header pinning (vs. endpoint REQUIRED_HEADER)', () => 
     expect(byId.get('falsify')?.header).toBe(FALSIFY_HEADER);
   });
 
-  it('exposes exactly 4 steps in the canonical order', () => {
+  it('persona step matches /api/mine-persona REQUIRED_HEADER', () => {
+    expect(byId.get('persona')?.header).toBe(PERSONA_HEADER);
+  });
+
+  it('exposes exactly 5 steps in the canonical order', () => {
     expect(FULL_SCAN_STEPS.map((s) => s.id)).toEqual([
       'rescan',
       'mine',
       'curate',
       'falsify',
+      'persona',
     ]);
   });
 
@@ -146,7 +152,7 @@ afterEach(() => {
 });
 
 describe('runFullScan chain semantics', () => {
-  it('all 4 steps succeed → onChainDone(true, null) and 4 step labels start', async () => {
+  it('all 5 steps succeed → onChainDone(true, null) and 5 step labels start', async () => {
     // Each step returns a stream that ends with done.ok=true.
     fetchSpy.mockImplementation(() =>
       Promise.resolve(ndjsonResponse(['{"type":"done","ok":true}'])),
@@ -161,13 +167,14 @@ describe('runFullScan chain semantics', () => {
       'mine',
       'curate',
       'falsify',
+      'persona',
     ]);
-    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true]);
+    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true, true]);
     expect(cap.chainDones).toEqual([{ success: true, lastError: null }]);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
   });
 
-  it('step 2 returns HTTP 409 → chain halts, steps 3+4 never started', async () => {
+  it('step 2 returns HTTP 409 → chain halts, steps 3+4+5 never started', async () => {
     let call = 0;
     fetchSpy.mockImplementation(() => {
       call += 1;

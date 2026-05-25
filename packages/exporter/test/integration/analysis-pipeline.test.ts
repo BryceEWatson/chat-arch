@@ -152,6 +152,10 @@ describe('Phase 6 analysis pipeline integration', () => {
         'surface-comparison.json',
         'skill-curves.json',
         'surprises.json',
+        // V1 persona-mining (Stage 1 produced by exporter; Stage 2
+        // markdown + index produced by /mine-persona skill).
+        'persona-candidates.json',
+        'personas.json',
       ].sort(),
     );
     // Phase 6 does not populate the `local` tier.

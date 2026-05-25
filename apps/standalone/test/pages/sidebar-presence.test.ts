@@ -36,6 +36,7 @@ const PAGES: PageCase[] = [
   { file: 'projects.astro', current: 'PROJECTS' },
   { file: 'topics.astro', current: 'TOPICS' },
   { file: 'practice.astro', current: 'PRACTICE' },
+  { file: 'personas.astro', current: 'PERSONAS' },
 ];
 
 function read(rel: string): string {

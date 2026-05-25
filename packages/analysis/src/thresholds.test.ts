@@ -113,6 +113,21 @@ describe('THRESHOLDS.curator (Rev3 curator / falsifier metrics)', () => {
   });
 });
 
+describe('THRESHOLDS.persona (per-project persona generation V1)', () => {
+  it('minSessionsForGeneration ≥ 1 (no thin personas)', () => {
+    expect(THRESHOLDS.persona.minSessionsForGeneration).toBeGreaterThanOrEqual(1);
+  });
+
+  it('maxSessionsForCorpus ≥ minSessionsForGeneration (cap must accommodate the floor)', () => {
+    const { minSessionsForGeneration, maxSessionsForCorpus } = THRESHOLDS.persona;
+    expect(maxSessionsForCorpus).toBeGreaterThanOrEqual(minSessionsForGeneration);
+  });
+
+  it('maxLlmUsdPerProject > 0 (a $0 cap would skip every project)', () => {
+    expect(THRESHOLDS.persona.maxLlmUsdPerProject).toBeGreaterThan(0);
+  });
+});
+
 describe('THRESHOLDS.appliedRuleWatcher (Rev3 applied-rule outcome watcher — Closure C)', () => {
   it('watcher caps are positive: N sessions, wall-clock days, stale-project days', () => {
     const { watcherSessionsN, watcherWallClockDays, staleProjectDays } =

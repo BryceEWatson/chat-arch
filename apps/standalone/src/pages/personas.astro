@@ -1,0 +1,573 @@
+---
+// PERSONAS — per-project data-grounded personas, generated as SCAN
+// chain step 5 by the /mine-persona skill. Each persona mirrors the
+// `research/persona-evals/bryce.md` structure: header / 6-10 numbered
+// pattern sections with **Pattern.** / **Evidence.** / **What this
+// implies.** / coverage notes.
+//
+// V1 surface — render-only with a per-project REGEN button. Polish
+// items deferred to V2: cross-project compare, persona-drift diff,
+// inline session-detail drawer on SID click (today's behavior is a
+// hash-route navigation to /sessions#session/<full-sid>).
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { PersonasIndex, SessionManifest } from '@chat-arch/schema';
+
+function dataDir(): string {
+  return path.join(process.cwd(), 'public', 'chat-arch-data');
+}
+
+async function readJson<T>(absPath: string): Promise<T | null> {
+  try {
+    const raw = await readFile(absPath, 'utf8');
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function readPersonaMarkdown(personaPath: string): Promise<string | null> {
+  // personaPath is relative to chat-arch-data (e.g. analysis/personas/foo.md).
+  // Resolve under the data dir's parent (the project-relative
+  // chat-arch-data/) NOT under process.cwd() — process.cwd() is
+  // apps/standalone at runtime.
+  const abs = path.join(dataDir(), personaPath);
+  try {
+    return await readFile(abs, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+const url = new URL(Astro.request.url);
+const selectedProjectId = url.searchParams.get('project');
+
+const personas = await readJson<PersonasIndex>(
+  path.join(dataDir(), 'analysis', 'personas.json'),
+);
+const manifest = await readJson<SessionManifest>(
+  path.join(dataDir(), 'manifest.json'),
+);
+
+// Build a map of 8-char session-id prefix → full session id so
+// `[SID:c9a0169b]` in the markdown can resolve to the full id for the
+// `/sessions#session/<full-id>` hash route.
+const prefixToFullSid = new Map<string, string>();
+for (const s of manifest?.sessions ?? []) {
+  if (typeof s.id === 'string' && s.id.length >= 8) {
+    prefixToFullSid.set(s.id.slice(0, 8), s.id);
+  }
+}
+
+// Split generated vs skipped for the sidebar.
+const generated = (personas?.personas ?? [])
+  .filter((p) => p.status === 'generated')
+  .slice()
+  .sort((a, b) => b.sessionsAnalyzed - a.sessionsAnalyzed);
+const skipped = (personas?.personas ?? []).filter(
+  (p) => p.status !== 'generated',
+);
+
+// Pick the active project: explicit ?project= wins; else first generated.
+const activeRecord =
+  generated.find((p) => p.projectId === selectedProjectId) ??
+  (selectedProjectId === null && generated.length > 0 ? generated[0] : null);
+
+const activeMarkdown =
+  activeRecord !== null && activeRecord.personaPath !== null
+    ? await readPersonaMarkdown(activeRecord.personaPath)
+    : null;
+
+// HTML-escape for safe rendering. We render the persona body via
+// set:html so the [SID:...] anchors become real <a> tags; everything
+// else must be escaped first or a stray "<" in user-text would close
+// our wrapping <pre>.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Transform `[SID:<8 chars>]` into clickable anchors. Anchor target
+// uses the full session id when we can resolve it; otherwise leaves
+// the markdown as plain text (no broken link).
+function renderPersonaBody(md: string): string {
+  // Match [SID:<8 chars from {hex/alnum-dash}>] tolerantly. Persona
+  // markdown emits the 8-char prefix; manifest ids are uuids so
+  // alnum + dashes are enough.
+  return md.replace(
+    /\[SID:([A-Za-z0-9-]{4,32})\]/g,
+    (whole, captured) => {
+      const safePrefix = escapeHtml(captured as string);
+      const full = prefixToFullSid.get(captured as string);
+      if (full === undefined) {
+        return `[SID:${safePrefix}]`;
+      }
+      return `<a class="persona__sid" href="/sessions#session/${encodeURIComponent(full)}">[SID:${safePrefix}]</a>`;
+    },
+  );
+}
+
+// Compose the renderable HTML for the persona body: escape first,
+// then substitute SID anchors (the substitution writes UNESCAPED
+// anchor markup, so we run it AFTER escaping the body text).
+const renderedBody =
+  activeMarkdown !== null
+    ? renderPersonaBody(escapeHtml(activeMarkdown))
+    : null;
+
+function fmtDate(ms: number | null): string {
+  if (ms === null) return '—';
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function skipReasonLabel(p: { status: string; reason?: string }): string {
+  switch (p.status) {
+    case 'insufficient-corpus':
+      return 'fewer sessions than the generation threshold';
+    case 'budget-exceeded':
+      return 'projected LLM cost above the per-project cap';
+    case 'error':
+      return p.reason ?? 'unknown error during generation';
+    default:
+      return p.reason ?? p.status;
+  }
+}
+---
+<BaseLayout title="Chat Archaeologist — Personas" current="PERSONAS">
+  <main class="personas">
+    <header class="personas__header">
+      <h1>PERSONAS</h1>
+      <p class="personas__lede">
+        Per-project data-grounded personas. Each is synthesized from
+        the project's session evidence on every SCAN — verbatim
+        user-prompt excerpts cited inline as
+        <code>[SID:&lt;prefix&gt;]</code> (click any to jump to the
+        session). Hand-authored personas under{' '}
+        <code>research/persona-evals/</code> stay canonical for the
+        projects they cover and supersede the auto-generated output
+        for those specific projects.
+      </p>
+    </header>
+
+    {personas === null ? (
+      <section class="personas__empty">
+        <h2>Sidecar not yet written</h2>
+        <p>
+          <code>analysis/personas.json</code> isn't on disk (or failed
+          to parse). Click <strong>SCAN LOCAL</strong> from the DATA
+          panel, or run <code>pnpm exporter run start</code> followed
+          by <code>/mine-persona</code> — the SCAN chain wires both
+          steps together.
+        </p>
+      </section>
+    ) : personas.personas.length === 0 ? (
+      <section class="personas__empty">
+        <h2>No projects in the corpus yet</h2>
+        <p>
+          The exporter found no projects to extract personas for.
+          Inspect <code>analysis/persona-candidates.json</code> to
+          verify the Stage-1 output.
+        </p>
+      </section>
+    ) : (
+      <div class="personas__layout">
+        <nav class="personas__nav" aria-label="Projects with personas">
+          <div class="personas__nav-group">
+            <h2 class="personas__nav-label">Generated</h2>
+            {generated.length === 0 ? (
+              <p class="personas__nav-empty">No personas generated yet.</p>
+            ) : (
+              <ul class="personas__nav-list">
+                {generated.map((p) => {
+                  const active = activeRecord !== null && p.projectId === activeRecord.projectId;
+                  return (
+                    <li>
+                      <a
+                        class={`personas__nav-item${active ? ' personas__nav-item--active' : ''}`}
+                        href={`/personas?project=${encodeURIComponent(p.projectId)}`}
+                        aria-current={active ? 'page' : undefined}
+                      >
+                        <span class="personas__nav-name">{p.projectName}</span>
+                        <span class="personas__nav-meta">
+                          {p.sessionsAnalyzed} / {p.sessionsTotal} sessions
+                        </span>
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          {skipped.length > 0 ? (
+            <details class="personas__nav-group personas__nav-skipped">
+              <summary class="personas__nav-label">
+                Not yet generated ({skipped.length})
+              </summary>
+              <ul class="personas__nav-list">
+                {skipped.map((p) => (
+                  <li>
+                    <div class="personas__nav-item personas__nav-item--skipped">
+                      <span class="personas__nav-name">{p.projectName}</span>
+                      <span class="personas__nav-meta">
+                        {skipReasonLabel(p)} ({p.sessionsTotal} sessions)
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </nav>
+
+        <article class="personas__body">
+          {activeRecord === null ? (
+            <section class="personas__empty">
+              <h2>Select a project</h2>
+              <p>Pick a generated persona from the list on the left.</p>
+            </section>
+          ) : renderedBody === null ? (
+            <section class="personas__empty">
+              <h2>Persona markdown missing on disk</h2>
+              <p>
+                The index says this persona was generated, but
+                <code>{activeRecord.personaPath}</code> couldn't be
+                read. Re-run <strong>REGEN PERSONA</strong> to
+                regenerate.
+              </p>
+            </section>
+          ) : (
+            <>
+              <div class="personas__meta">
+                <span class="personas__meta-label">project</span>
+                <span class="personas__meta-value">{activeRecord.projectName}</span>
+                <span class="personas__meta-sep">·</span>
+                <span class="personas__meta-label">sessions analyzed</span>
+                <span class="personas__meta-value">{activeRecord.sessionsAnalyzed}</span>
+                <span class="personas__meta-sep">·</span>
+                <span class="personas__meta-label">generated</span>
+                <span class="personas__meta-value">{fmtDate(activeRecord.generatedAt)}</span>
+              </div>
+              <div class="personas__actions">
+                <button
+                  id="personas-regen"
+                  type="button"
+                  class="personas__regen-btn"
+                  data-project-id={activeRecord.projectId}
+                >
+                  REGEN PERSONA →
+                </button>
+                <span
+                  id="personas-regen-feedback"
+                  class="personas__regen-feedback"
+                  aria-live="polite"
+                ></span>
+              </div>
+              {/*
+                Render the persona markdown via set:html so the
+                `[SID:<prefix>]` substrings become real anchors that
+                navigate to /sessions#session/<full-id>. Body text is
+                pre-escaped to prevent any user-corpus excerpt from
+                injecting markup. <pre> + CSS pre-wrap preserves the
+                markdown layout without pulling in a real markdown
+                renderer (matches the brief's V1 render path on TODAY).
+              */}
+              <pre class="personas__md" set:html={renderedBody}></pre>
+            </>
+          )}
+        </article>
+      </div>
+    )}
+  </main>
+
+  <script is:inline>
+    (function () {
+      const btn = document.getElementById('personas-regen');
+      const feedback = document.getElementById('personas-regen-feedback');
+      if (!btn || !feedback) return;
+      btn.addEventListener('click', function () {
+        const pid = btn.getAttribute('data-project-id');
+        if (!pid) return;
+        btn.setAttribute('disabled', 'true');
+        feedback.textContent = 'starting…';
+        fetch('/api/mine-persona', {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'chat-arch-mine-persona',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ projectId: pid }),
+        })
+          .then(async function (res) {
+            if (!res.ok) {
+              const body = await res.text();
+              feedback.textContent =
+                'failed: HTTP ' + res.status + (body ? ' — ' + body.slice(0, 120) : '');
+              btn.removeAttribute('disabled');
+              return;
+            }
+            // Stream NDJSON; on terminal done, reload the page to
+            // show the freshly-written markdown.
+            const reader = res.body && res.body.getReader();
+            if (!reader) {
+              feedback.textContent = 'no stream — reloading…';
+              window.location.reload();
+              return;
+            }
+            const decoder = new TextDecoder();
+            let buf = '';
+            let done = false;
+            let ok = false;
+            while (!done) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              buf += decoder.decode(chunk.value, { stream: true });
+              const parts = buf.split('\n');
+              buf = parts.pop() || '';
+              for (const raw of parts) {
+                const line = raw.trim();
+                if (!line) continue;
+                try {
+                  const evt = JSON.parse(line);
+                  if (evt.type === 'phase' && typeof evt.phase === 'string') {
+                    feedback.textContent = evt.phase;
+                  } else if (evt.type === 'done') {
+                    done = true;
+                    ok = evt.ok === true;
+                  }
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+            feedback.textContent = ok ? 'reloading…' : 'failed';
+            btn.removeAttribute('disabled');
+            if (ok) {
+              setTimeout(function () {
+                window.location.reload();
+              }, 500);
+            }
+          })
+          .catch(function (err) {
+            feedback.textContent = 'failed: ' + (err && err.message ? err.message : String(err));
+            btn.removeAttribute('disabled');
+          });
+      });
+    })();
+  </script>
+
+  <style>
+    .personas {
+      padding: 24px clamp(16px, 4vw, 48px);
+      max-width: 1400px;
+      margin: 0 auto;
+      color: #ffcc99;
+    }
+    .personas__header h1 {
+      font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+      letter-spacing: 0.18em;
+      font-size: 28px;
+      margin: 0 0 12px;
+    }
+    .personas__lede {
+      max-width: 72ch;
+      line-height: 1.5;
+      color: #d9ad82;
+      margin: 0 0 20px;
+    }
+    .personas__lede code {
+      background: rgba(255, 204, 153, 0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .personas__empty {
+      border: 1px dashed #dd9944;
+      padding: 24px;
+      border-radius: 12px;
+      max-width: 60ch;
+    }
+    .personas__empty h2 {
+      margin: 0 0 8px;
+      font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+      font-size: 18px;
+      letter-spacing: 0.12em;
+      color: #ffcc99;
+    }
+    .personas__empty code {
+      background: rgba(255, 204, 153, 0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .personas__layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 800px) {
+      .personas__layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .personas__nav {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid rgba(221, 153, 68, 0.4);
+      padding-right: 16px;
+    }
+    .personas__nav-label {
+      font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+      letter-spacing: 0.14em;
+      font-size: 11px;
+      color: #dd9944;
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .personas__nav-empty {
+      font-size: 12px;
+      color: #d9ad82;
+    }
+    .personas__nav-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .personas__nav-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      text-decoration: none;
+      color: #ffcc99;
+      background: rgba(255, 204, 153, 0.05);
+      border: 1px solid transparent;
+    }
+    .personas__nav-item:hover {
+      background: rgba(255, 204, 153, 0.1);
+      border-color: rgba(221, 153, 68, 0.4);
+    }
+    .personas__nav-item--active {
+      background: rgba(255, 153, 51, 0.15);
+      border-color: #ff9933;
+    }
+    .personas__nav-item--skipped {
+      cursor: default;
+      opacity: 0.6;
+    }
+    .personas__nav-item--skipped:hover {
+      background: rgba(255, 204, 153, 0.05);
+      border-color: transparent;
+    }
+    .personas__nav-name {
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+    }
+    .personas__nav-meta {
+      font-size: 11px;
+      color: #d9ad82;
+    }
+    .personas__nav-skipped[open] .personas__nav-label {
+      color: #ffcc99;
+    }
+
+    .personas__body {
+      min-width: 0;
+    }
+    .personas__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      align-items: baseline;
+      font-size: 12px;
+      color: #d9ad82;
+      margin-bottom: 16px;
+    }
+    .personas__meta-label {
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-size: 10px;
+      color: #dd9944;
+    }
+    .personas__meta-value {
+      color: #ffcc99;
+      font-weight: 600;
+    }
+    .personas__meta-sep {
+      opacity: 0.4;
+    }
+
+    .personas__actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .personas__regen-btn {
+      background: transparent;
+      color: #ff9933;
+      border: 1px solid #ff9933;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      font-size: 11px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+    .personas__regen-btn:hover:not([disabled]) {
+      background: #ff9933;
+      color: #000;
+    }
+    .personas__regen-btn[disabled] {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .personas__regen-feedback {
+      font-size: 12px;
+      color: #d9ad82;
+      font-style: italic;
+    }
+
+    .personas__md {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(221, 153, 68, 0.3);
+      border-radius: 8px;
+      padding: 18px 22px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #f4e1cc;
+      max-height: 80vh;
+      overflow-y: auto;
+      margin: 0;
+    }
+    .personas__sid {
+      color: #99ccff;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+    }
+    .personas__sid:hover {
+      color: #ffcc99;
+      background: rgba(153, 204, 255, 0.1);
+    }
+  </style>
+</BaseLayout>

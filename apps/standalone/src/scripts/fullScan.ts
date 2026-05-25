@@ -1,16 +1,17 @@
 /**
  * FULL SCAN orchestrator — Phase β.
  *
- * Sequentially fires the four NDJSON producers behind the TODAY page's
+ * Sequentially fires the five NDJSON producers behind the TODAY page's
  * single "FULL SCAN" button:
  *
  *   1. /api/rescan           (exporter — writes every analysis sidecar)
  *   2. /api/mine-corrections (corrections skill — classifies candidates)
  *   3. /api/curate           (curator skill — ranks the feed)
  *   4. /api/falsify          (falsifier skill — verifies cited evidence)
+ *   5. /api/mine-persona     (persona skill — per-project personas)
  *
  * Each call is awaited to completion (NDJSON stream end OR HTTP error)
- * before the next starts. The page reloads exactly once after step 4
+ * before the next starts. The page reloads exactly once after step 5
  * succeeds — earlier reloads would interrupt later steps.
  *
  * Pure helpers (no DOM, no `window`) live above the orchestrator so
@@ -35,7 +36,7 @@ export interface FullScanStep {
 }
 
 /**
- * The canonical 4-step sequence. Header values mirror each endpoint's
+ * The canonical 5-step sequence. Header values mirror each endpoint's
  * `REQUIRED_HEADER` constant verbatim — re-export divergence here is a
  * silent 403, so the test alongside this file pins both sides.
  */
@@ -63,6 +64,12 @@ export const FULL_SCAN_STEPS: readonly FullScanStep[] = [
     label: 'falsify findings',
     url: '/api/falsify',
     header: 'chat-arch-falsify',
+  },
+  {
+    id: 'persona',
+    label: 'mine personas',
+    url: '/api/mine-persona',
+    header: 'chat-arch-mine-persona',
   },
 ];
 
@@ -221,8 +228,8 @@ export async function runOneStep(
 }
 
 /**
- * Drive the full chain (5 steps as of #102 — rescan / mine / curate
- * / falsify / persona). Returns true iff every step succeeded.
+ * Drive the full 5-step chain (rescan / mine / curate / falsify /
+ * persona). Returns true iff every step succeeded.
  * On any failure, returns false and stops the chain — the UI port's
  * `onChainDone(false, ...)` is called with the offending step's error.
  *

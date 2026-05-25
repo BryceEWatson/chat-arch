@@ -450,6 +450,30 @@ export const THRESHOLDS = {
    * `narrativeRung.dismissDecay` + `maxDismissals` +
    * `repromotionPenalty`.)
    */
+  /**
+   * Per-project persona generation (feature: persona-mining V1).
+   *
+   * Driven by the `mine-persona` skill / `/api/mine-persona` endpoint
+   * as SCAN chain step 5. Projects below `minSessionsForGeneration`
+   * get a skip-row in `personas.json` with reason `insufficient-corpus`
+   * — no thin personas emitted. Projects whose synthesis would exceed
+   * `maxLlmUsdPerProject` get a `budget-exceeded` skip-row.
+   *
+   * Pre-launch placeholders. `minSessionsForGeneration: 30` reflects
+   * the spec's "below 30 sessions, patterns aren't durable enough to
+   * be useful" judgment — calibrate after the first batch of personas
+   * lands. `maxSessionsForCorpus: 200` caps the Stage-2 LLM input;
+   * the bryce.md prototype was authored from 160 sessions which is
+   * the empirical existence proof.
+   */
+  persona: {
+    /** Minimum project session count to emit a persona at all. */
+    minSessionsForGeneration: 30,
+    /** Cap on how many sessions Stage 2 (LLM) sees, sampled by recency. */
+    maxSessionsForCorpus: 200,
+    /** Hard budget cap per project for the synthesis stage; skip above. */
+    maxLlmUsdPerProject: 0.5,
+  },
   appliedRuleWatcher: {
     /** Number of post-application sessions observed before closing. */
     watcherSessionsN: 5,

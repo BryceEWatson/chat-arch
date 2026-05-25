@@ -14,6 +14,81 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-25
+
+Persona-mining V1 — per-project data-grounded personas, automatically
+generated on every SCAN as the 5th chain step. Models the
+hand-authored `research/persona-evals/bryce.md` workflow as a general
+feature: any project with ≥ `THRESHOLDS.persona.minSessionsForGeneration`
+sessions gets its own persona under
+`analysis/personas/<project-id>.md`, citing verbatim user-prompt
+excerpts with `[SID:...]` anchors. Hand-authored personas under
+`research/persona-evals/` stay canonical for the projects they cover.
+
+### Added
+
+- **`analysis/persona-candidates.json`** — Stage-1 deterministic
+  heuristic extractor (new builder at
+  `packages/exporter/src/analysis/personaCandidates.ts`). Per-project
+  user-prompt excerpts bucketed into 6 heuristic categories:
+  `role-expertise` / `preferences` / `project-specific` /
+  `working-rhythm` / `frictions` / `voice`. Sampled by recency up to
+  `THRESHOLDS.persona.maxSessionsForCorpus` (default 200), with a
+  per-bucket cap of 40 candidates to bound the Stage-2 LLM input.
+  PII-bearing — gitignored under the
+  `apps/standalone/public/chat-arch-data/*` wildcard.
+- **`analysis/personas.json`** — Stage-2 index. One record per
+  project: `{ projectId, projectName, sessionsAnalyzed, sessionsTotal,
+  personaPath, generatedAt, status, reason? }`. `status` is
+  `generated` / `insufficient-corpus` / `budget-exceeded` / `error`.
+  Written by the `/mine-persona` skill; preserved on per-project
+  REGEN runs (merged in place, not overwritten wholesale).
+- **`analysis/personas/<project-id>.md`** — per-project markdown
+  persona, mirroring the structure of
+  `research/persona-evals/bryce.md`: header / 6-10 numbered pattern
+  sections with **Pattern.** / **Evidence.** (≥2 `[SID:...]`
+  citations) / **What this implies.** / coverage notes. PII-bearing.
+- **`/api/mine-persona`** — NDJSON-streaming endpoint (CSRF gate +
+  inFlight serializer + spawn `claude -p` invoking the
+  `mine-persona` skill). Mirror of `/api/mine-corrections`. Accepts
+  `{ projectId? }` for per-project REGEN runs.
+- **`/api/clear-personas`** — selective wipe for
+  `analysis/personas.json` + `analysis/persona-status-*.json` +
+  `analysis/personas/*.md`. Mirror of `/api/clear-corrections`.
+- **`.claude/skills/mine-persona/SKILL.md`** — the Stage-2 LLM
+  skill. Dispatches 4 sub-agents per project (one per time-bucket:
+  founding / mid-early / mid-late / recent), then one synthesis
+  sub-agent that writes the final markdown.
+- **PERSONAS sidebar entry** under WORKSHOP (short label `PER`).
+- **`/personas` page** — sidebar list of generated + skipped
+  projects, body renders the active project's markdown with
+  clickable `[SID:...]` anchors that navigate to
+  `/sessions#session/<full-sid>`. Per-project REGEN button.
+- **`THRESHOLDS.persona`** family:
+  - `minSessionsForGeneration: 30` — below this, projects skip with
+    `insufficient-corpus`.
+  - `maxSessionsForCorpus: 200` — cap on what Stage 2 sees.
+  - `maxLlmUsdPerProject: 0.5` — pre-flight budget guard
+    (placeholder — V1 uses a candidate-count proxy; refine in V2).
+- **5th SCAN chain step.** `FULL_SCAN_STEPS` extends to
+  `[ rescan, mine, curate, falsify, persona ]`. Failure semantics
+  unchanged.
+- **`EXPORTER_VERSION` bumped 1.5.0 → 1.6.0**, recorded in
+  `analysis/meta.json`.
+
+### Out of scope (V1 — explicitly deferred)
+
+- Cross-project composite persona.
+- Persona-drift detection (diffing successive scans).
+- Curator weighting by persona-derived preference vector.
+- Persona-aware skill argument substitution.
+- Falsifier extension to verify persona evidence citations
+  (Stage-3 follow-up).
+- Hand-authored `research/persona-evals/bryce.md` is NOT replaced —
+  it stays canonical for the chat-arch project specifically; auto-
+  generated output lives separately at
+  `analysis/personas/chat-arch.md`.
+
 ## [1.5.1] — 2026-05-25
 
 Auto-brief + SCAN-chain bug fixes.
