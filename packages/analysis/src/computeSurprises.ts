@@ -745,6 +745,36 @@ function computeDebtSpinning(
 
 // ─── helpers ───────────────────────────────────────────────────────
 
+/**
+ * UI confidence tier — coarsens a raw [0,1] surprise score into one of
+ * three buckets the FEED renders as a labeled ribbon next to the kind
+ * badge. The mapping is intentionally independent of the per-kind
+ * statistical gates in THRESHOLDS.surprises (those are kernel-emission
+ * floors; this is a downstream presentation layer that ranks the
+ * surfaces that DID emit). The boundaries are pre-launch placeholders
+ * — once we have engagement data we can calibrate WEAK against
+ * "ignored" rate and STRONG against "clicked through" rate.
+ *
+ *   - `STRONG`   — score ≥ 0.75. Highly surface-worthy; load-bearing.
+ *   - `MODERATE` — score ≥ 0.5.  Worth a look; mid-band.
+ *   - `WEAK`     — score <  0.5.  Speculative; surface-but-discount.
+ *
+ * Memory: feedback_confidence_per_step — when the UI ladders rows by
+ * score, the score band must be labeled, not just numerically encoded;
+ * otherwise later rungs inherit the certainty of earlier ones.
+ */
+export type SurpriseConfidenceTier = 'STRONG' | 'MODERATE' | 'WEAK';
+
+export const SURPRISE_TIER_STRONG_MIN = 0.75;
+export const SURPRISE_TIER_MODERATE_MIN = 0.5;
+
+export function surpriseConfidenceTier(score: number): SurpriseConfidenceTier {
+  if (!Number.isFinite(score)) return 'WEAK';
+  if (score >= SURPRISE_TIER_STRONG_MIN) return 'STRONG';
+  if (score >= SURPRISE_TIER_MODERATE_MIN) return 'MODERATE';
+  return 'WEAK';
+}
+
 function pushAll<T>(target: T[], items: readonly T[]): void {
   for (const item of items) target.push(item);
 }
