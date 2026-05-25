@@ -269,11 +269,11 @@ function fmtSid(sid: string): string {
 
               <details class="playbook__excerpts">
                 <summary>
-                  show {Math.min(p.hits.length, 3)} of {p.hits.length}{' '}
+                  show all {p.hits.length}{' '}
                   example{p.hits.length === 1 ? '' : 's'}
                 </summary>
                 <ul>
-                  {p.hits.slice(0, 3).map((h) => (
+                  {p.hits.map((h) => (
                     <li class="playbook__excerpt">
                       <code class="playbook__sid">
                         [SID:{fmtSid(h.sessionId)}…]
