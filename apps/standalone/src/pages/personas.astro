@@ -14,29 +14,20 @@ export const prerender = false;
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { PersonasIndex, SessionManifest } from '@chat-arch/schema';
+import type { SessionManifest } from '@chat-arch/schema';
+import {
+  readPersonaMarkdown,
+  readPersonasIndex,
+} from '../lib/readSidecars.ts';
 
 function dataDir(): string {
   return path.join(process.cwd(), 'public', 'chat-arch-data');
 }
 
-async function readJson<T>(absPath: string): Promise<T | null> {
+async function readManifest(): Promise<SessionManifest | null> {
   try {
-    const raw = await readFile(absPath, 'utf8');
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function readPersonaMarkdown(personaPath: string): Promise<string | null> {
-  // personaPath is relative to chat-arch-data (e.g. analysis/personas/foo.md).
-  // Resolve under the data dir's parent (the project-relative
-  // chat-arch-data/) NOT under process.cwd() — process.cwd() is
-  // apps/standalone at runtime.
-  const abs = path.join(dataDir(), personaPath);
-  try {
-    return await readFile(abs, 'utf8');
+    const raw = await readFile(path.join(dataDir(), 'manifest.json'), 'utf8');
+    return JSON.parse(raw) as SessionManifest;
   } catch {
     return null;
   }
@@ -45,12 +36,8 @@ async function readPersonaMarkdown(personaPath: string): Promise<string | null> 
 const url = new URL(Astro.request.url);
 const selectedProjectId = url.searchParams.get('project');
 
-const personas = await readJson<PersonasIndex>(
-  path.join(dataDir(), 'analysis', 'personas.json'),
-);
-const manifest = await readJson<SessionManifest>(
-  path.join(dataDir(), 'manifest.json'),
-);
+const personas = await readPersonasIndex();
+const manifest = await readManifest();
 
 // Build a map of 8-char session-id prefix → full session id so
 // `[SID:c9a0169b]` in the markdown can resolve to the full id for the

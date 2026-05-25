@@ -606,7 +606,6 @@ export async function runAnalysis(
       outDir: options.outDir,
       now,
       projects: enrichedProjects,
-      sessionToProject: projectsResult.sessionToProject,
     });
     personaCandidatesTotal = r.candidatesTotal;
     personaCandidatesProjects = r.projectsAnalyzed;
@@ -655,11 +654,13 @@ export async function runAnalysis(
           'surface-comparison.json',
           'skill-curves.json',
           'surprises.json',
-          // V1 persona-mining sidecars (Stage 1 produced here;
-          // Stage-2 outputs `personas.json` + `personas/<id>.md`
-          // written by the `/mine-persona` skill).
+          // V1 persona-mining Stage-1 sidecar (Stage-2 outputs
+          // `personas.json` + `personas/<id>.md` are written by the
+          // `/mine-persona` skill, NOT by runAnalysis — they live
+          // under the same analysis/ tree but aren't in this list
+          // for the same reason `corrections.json` isn't:
+          // runAnalysis only registers what it actually emits.).
           'persona-candidates.json',
-          'personas.json',
         ],
       },
     },

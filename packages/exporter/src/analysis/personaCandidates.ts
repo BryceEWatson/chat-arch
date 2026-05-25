@@ -33,6 +33,8 @@ import type {
 import { THRESHOLDS } from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
 
+const NUM_QUARTILES = 4;
+
 /**
  * Bump when a heuristic-bucket regex family changes. Drives no cache
  * (Stage 1 always re-runs as part of `runAnalysis`), but it labels the
@@ -46,8 +48,6 @@ export interface BuildPersonaCandidatesOptions {
   now: number;
   /** From `discoverProjects(...)`. Drives bucketing by projectId. */
   projects: readonly Project[];
-  /** Map: sessionId → projectId (includes UNASSIGNED). */
-  sessionToProject: Map<string, string>;
   /** Parallelism for transcript reads. Same default as corrections.ts. */
   ioConcurrency?: number;
 }
@@ -61,9 +61,6 @@ export interface BuildPersonaCandidatesResult {
 const DEFAULT_IO_CONCURRENCY = 8;
 const MAX_EXCERPT_CHARS = 500;
 const MAX_USER_PROMPT_CHARS = 4000;
-/** Per-bucket cap on candidates per project so the LLM stage's input
- *  stays bounded even for a corpus with 600+ sessions per project. */
-const MAX_CANDIDATES_PER_BUCKET = 40;
 
 /**
  * Wrapper prefixes for harness-injected user-role lines (same list as
@@ -479,11 +476,27 @@ function projectNameTokens(displayName: string): readonly string[] {
 }
 
 /**
- * Sample the most recent `maxN` sessions for one project. Stable: sort
- * by updatedAt desc, take prefix. When the project has fewer sessions
- * than the cap, returns everything.
+ * Stratified-by-recency sample: split the project's session list into
+ * `NUM_QUARTILES` recency buckets (founding → recent), then draw
+ * `maxN / NUM_QUARTILES` sessions from each bucket. Mirrors the
+ * 4-bucket-by-recency methodology used to author
+ * `research/persona-evals/bryce.md` — the auto-gen pipeline's empirical
+ * ground truth.
+ *
+ * Why not recency-only top-N: for a project with 600+ sessions and a
+ * 200-session cap, recency-only would discard ALL founding-era signal,
+ * and Stage 2's "founding" sub-agent would see only the oldest 50 of
+ * those 200 — never the actual founding era of the project. The
+ * stratified sample guarantees each Stage-2 time-bucket has a
+ * representative draw.
+ *
+ * Within each bucket we order newest-first (the Stage-2 sub-agents
+ * expect "this bucket's most recent first" framing). When a bucket has
+ * fewer sessions than maxN/4, we take everything. When the total
+ * project session count ≤ maxN, returns all sessions (every bucket
+ * fits in its share).
  */
-function sampleRecentSessions(
+function sampleSessionsStratifiedByRecency(
   sessionIds: readonly string[],
   sessionById: Map<string, UnifiedSessionEntry>,
   maxN: number,
@@ -493,18 +506,40 @@ function sampleRecentSessions(
     const e = sessionById.get(sid);
     if (e !== undefined) entries.push(e);
   }
+  if (entries.length === 0) return entries;
+
+  // Ascending sort so quartiles run founding → recent.
   entries.sort((a, b) => {
     const av = typeof a.updatedAt === 'number' ? a.updatedAt : 0;
     const bv = typeof b.updatedAt === 'number' ? b.updatedAt : 0;
-    return bv - av;
+    return av - bv;
   });
-  return entries.slice(0, maxN);
+
+  if (entries.length <= maxN) return entries;
+
+  const perBucket = Math.floor(maxN / NUM_QUARTILES);
+  const sampled: UnifiedSessionEntry[] = [];
+  for (let q = 0; q < NUM_QUARTILES; q += 1) {
+    const start = Math.floor((q * entries.length) / NUM_QUARTILES);
+    const end = Math.floor(((q + 1) * entries.length) / NUM_QUARTILES);
+    const bucket = entries.slice(start, end);
+    // Within each bucket, prefer the bucket's most-recent entries —
+    // Stage-2 framing is "newest in this bucket carries more signal".
+    bucket.sort((a, b) => {
+      const av = typeof a.updatedAt === 'number' ? a.updatedAt : 0;
+      const bv = typeof b.updatedAt === 'number' ? b.updatedAt : 0;
+      return bv - av;
+    });
+    sampled.push(...bucket.slice(0, perBucket));
+  }
+  return sampled;
 }
 
 /**
- * Cap each bucket to `MAX_CANDIDATES_PER_BUCKET`. Keeps high-recency
- * candidates first so the LLM stage sees the most representative recent
- * signal. Returns the bucketed map for one project.
+ * Cap each bucket to `THRESHOLDS.persona.maxCandidatesPerBucket`. Keeps
+ * high-recency candidates first so the LLM stage sees the most
+ * representative recent signal. Returns the bucketed map for one
+ * project.
  */
 function capCandidatesByBucket(
   raw: readonly PersonaCandidate[],
@@ -519,13 +554,14 @@ function capCandidatesByBucket(
     voice: [],
   };
   for (const c of raw) buckets[c.bucket].push(c);
+  const cap = THRESHOLDS.persona.maxCandidatesPerBucket;
   for (const k of Object.keys(buckets) as PersonaBucket[]) {
     buckets[k].sort((a, b) => {
       const av = sessionUpdatedAt.get(a.sessionId) ?? 0;
       const bv = sessionUpdatedAt.get(b.sessionId) ?? 0;
       return bv - av;
     });
-    buckets[k] = buckets[k].slice(0, MAX_CANDIDATES_PER_BUCKET);
+    buckets[k] = buckets[k].slice(0, cap);
   }
   return buckets;
 }
@@ -552,7 +588,7 @@ export async function buildPersonaCandidatesFile(
   let totalCandidates = 0;
 
   for (const project of options.projects) {
-    const sampled = sampleRecentSessions(
+    const sampled = sampleSessionsStratifiedByRecency(
       project.sessionIds,
       sessionById,
       maxSessions,
@@ -635,6 +671,8 @@ export async function buildPersonaCandidatesFile(
     thresholds: {
       minSessionsForGeneration: THRESHOLDS.persona.minSessionsForGeneration,
       maxSessionsForCorpus: THRESHOLDS.persona.maxSessionsForCorpus,
+      candidateBudgetProxy: THRESHOLDS.persona.candidateBudgetProxy,
+      maxCandidatesPerBucket: THRESHOLDS.persona.maxCandidatesPerBucket,
     },
     projects: perProject,
   };

@@ -469,10 +469,42 @@ export const THRESHOLDS = {
   persona: {
     /** Minimum project session count to emit a persona at all. */
     minSessionsForGeneration: 30,
-    /** Cap on how many sessions Stage 2 (LLM) sees, sampled by recency. */
+    /**
+     * Cap on how many sessions Stage 2 (LLM) sees. Stage 1 stratifies
+     * the project's full session list into 4 quartiles by recency and
+     * draws this many sessions split evenly across them — so a project
+     * with > maxSessionsForCorpus sessions still surfaces founding-era
+     * signal, not just recent prompts. The 4-bucket-by-recency strategy
+     * matches the methodology used to author `research/persona-evals/
+     * bryce.md` (Stage 2 also re-buckets by recency for its
+     * time-bucketed sub-agents; the two stages share the same scheme).
+     */
     maxSessionsForCorpus: 200,
     /** Hard budget cap per project for the synthesis stage; skip above. */
     maxLlmUsdPerProject: 0.5,
+    /**
+     * Stage-2 LLM budget proxy. The skill skips a project with
+     * `status: budget-exceeded` when its Stage-1 candidate count
+     * exceeds this value. The 1500 figure ≈ a 200-session corpus
+     * with average per-bucket density and is the candidate-count
+     * proxy for `maxLlmUsdPerProject` until the V2 token-counting
+     * harness lands.
+     *
+     * **Calibration plan**: log actual Stage-2 USD per project after
+     * the first ~10 personas land; recalibrate so the 95th-percentile
+     * USD-per-candidate ratio puts the gate at maxLlmUsdPerProject.
+     * Tracked in CHANGELOG calibration notes when the calibration
+     * pass runs.
+     */
+    candidateBudgetProxy: 1500,
+    /**
+     * Per-bucket cap on candidates per project. Stage 1 selects up
+     * to this many candidates for each of the 6 heuristic buckets
+     * (`role-expertise` / `preferences` / etc.). Bounds Stage 2 LLM
+     * input size: 6 × maxCandidatesPerBucket ≈ candidateBudgetProxy
+     * when buckets are roughly balanced.
+     */
+    maxCandidatesPerBucket: 40,
   },
   appliedRuleWatcher: {
     /** Number of post-application sessions observed before closing. */

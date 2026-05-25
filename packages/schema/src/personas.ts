@@ -70,6 +70,12 @@ export interface PersonaCandidatesFile {
   thresholds: {
     minSessionsForGeneration: number;
     maxSessionsForCorpus: number;
+    /** Stage-2 budget proxy. The mine-persona skill skips projects
+     *  whose Stage-1 candidate count exceeds this value (V1 stand-in
+     *  for the USD-cap until token-counting harness lands in V2). */
+    candidateBudgetProxy: number;
+    /** Per-bucket cap on candidates per project at Stage 1. */
+    maxCandidatesPerBucket: number;
   };
   projects: readonly PersonaCandidateProject[];
 }
@@ -93,15 +99,6 @@ export interface PersonaRecord {
   status: 'generated' | 'insufficient-corpus' | 'budget-exceeded' | 'error';
   /** Free-form reason when status !== 'generated'. */
   reason?: string;
-}
-
-/** Per-project metadata embedded in the markdown's frontmatter for the viewer. */
-export interface PersonaMetadata {
-  projectId: string;
-  projectName: string;
-  sessionsAnalyzed: number;
-  generatedAt: number;
-  exporterVersion: string;
 }
 
 /** `analysis/personas.json` shape (the index over per-project records). */

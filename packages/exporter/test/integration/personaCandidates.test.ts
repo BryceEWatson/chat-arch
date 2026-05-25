@@ -8,6 +8,7 @@ import type {
   SessionManifest,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
+import { THRESHOLDS } from '@chat-arch/analysis';
 import {
   buildPersonaCandidatesFile,
   PERSONA_HEURISTIC_VERSION,
@@ -146,13 +147,10 @@ describe('persona-candidates heuristic extractor', () => {
       generatedAt: 0,
     } as unknown as SessionManifest;
     const project = mkProject('demo-project', 'demo-project', ['s1']);
-    const sessionToProject = new Map<string, string>([['s1', 'demo-project']]);
-
     const r = await buildPersonaCandidatesFile(manifest, {
       outDir,
       now: 1_700_000_000_000,
       projects: [project],
-      sessionToProject,
     });
 
     expect(r.file.version).toBe(1);
@@ -205,7 +203,6 @@ describe('persona-candidates heuristic extractor', () => {
       outDir,
       now: 1_700_000_000_000,
       projects: [proj],
-      sessionToProject: new Map([['s1', 'quiet']]),
     });
 
     const p = r.file.projects[0]!;
@@ -231,7 +228,6 @@ describe('persona-candidates heuristic extractor', () => {
       outDir,
       now: 1_700_000_000_000,
       projects: [proj],
-      sessionToProject: new Map(),
     });
 
     expect(r.file.projects).toHaveLength(1);
@@ -265,10 +261,145 @@ describe('persona-candidates heuristic extractor', () => {
       outDir,
       now: 1_700_000_000_000,
       projects: [proj],
-      sessionToProject: new Map([['s1', 'dense']]),
     });
 
     const p = r.file.projects[0]!;
-    expect(p.candidatesByBucket.preferences.length).toBeLessThanOrEqual(40);
+    expect(p.candidatesByBucket.preferences.length).toBeLessThanOrEqual(
+      THRESHOLDS.persona.maxCandidatesPerBucket,
+    );
+  });
+});
+
+describe('persona-candidates stratified sampling', () => {
+  it('with > maxSessionsForCorpus sessions, the sampled set spans the full updatedAt range (not just the recent prefix)', async () => {
+    // Plant 240 sessions for one project, updatedAt strictly increasing.
+    // maxSessionsForCorpus is 200; recency-only sampling would lose the
+    // earliest 40. The stratified sampler should still surface
+    // founding-era sessions.
+    const sessions: UnifiedSessionEntry[] = [];
+    const sessionIds: string[] = [];
+    for (let i = 0; i < 240; i += 1) {
+      const id = `s${i.toString().padStart(4, '0')}`;
+      const transcriptPath = await writeTranscript(
+        `cli-direct/strat/${id}.jsonl`,
+        ['placeholder prompt that produces no buckets'],
+      );
+      sessions.push(
+        mkSession(id, transcriptPath, { updatedAt: 1_700_000_000_000 + i * 1000 }),
+      );
+      sessionIds.push(id);
+    }
+    const manifest: SessionManifest = {
+      schemaVersion: 2,
+      sessions,
+      counts: { total: sessions.length, bySource: {} },
+      generatedAt: 0,
+    } as unknown as SessionManifest;
+    const proj = mkProject('strat', 'strat', sessionIds);
+
+    const r = await buildPersonaCandidatesFile(manifest, {
+      outDir,
+      now: 1_700_000_000_000 + 240 * 1000,
+      projects: [proj],
+    });
+
+    const p = r.file.projects[0]!;
+    expect(p.sessionsSampled).toBe(THRESHOLDS.persona.maxSessionsForCorpus);
+    // The earliest sampled session should sit in the project's first
+    // quartile (sessions 0-59 of the 240). Without stratification, the
+    // earliest sampled would be at index 40, which would put earliestSampledAt
+    // > 1_700_000_000_000 + 40 * 1000. Stratified, the founding bucket
+    // (indices 0-59) must contribute, so earliestSampledAt should be
+    // strictly less than that boundary.
+    expect(p.earliestSampledAt).not.toBeNull();
+    expect(p.earliestSampledAt!).toBeLessThan(1_700_000_000_000 + 40 * 1000);
+  });
+});
+
+describe('persona-candidates failure paths', () => {
+  it('session with missing transcript file produces no candidates, no throw', async () => {
+    // Session points at a transcriptPath that doesn't exist on disk.
+    const session = mkSession('ghost', 'cli-direct/ghost/never-written.jsonl');
+    const manifest: SessionManifest = {
+      schemaVersion: 2,
+      sessions: [session],
+      counts: { total: 1, bySource: {} },
+      generatedAt: 0,
+    } as unknown as SessionManifest;
+    const proj = mkProject('ghost', 'ghost', ['ghost']);
+
+    const r = await buildPersonaCandidatesFile(manifest, {
+      outDir,
+      now: 1_700_000_000_000,
+      projects: [proj],
+    });
+
+    const p = r.file.projects[0]!;
+    // No candidates fired in any bucket (the transcript was missing,
+    // so no user turns were extracted).
+    for (const bucket of Object.values(p.candidatesByBucket)) {
+      expect(bucket).toHaveLength(0);
+    }
+  });
+
+  it('malformed JSONL line in the middle is skipped; remaining lines parse', async () => {
+    const abs = path.resolve(outDir, 'cli-direct/mal/s1.jsonl');
+    await mkdir(path.dirname(abs), { recursive: true });
+    // Mix valid lines with garbage; the parser must skip the garbage.
+    const goodTurn = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'I prefer terse responses' }] },
+    });
+    await writeFile(
+      abs,
+      [goodTurn, '{ not valid json', goodTurn, ''].join('\n'),
+      'utf8',
+    );
+    const session = mkSession('s1', 'cli-direct/mal/s1.jsonl');
+    const manifest: SessionManifest = {
+      schemaVersion: 2,
+      sessions: [session],
+      counts: { total: 1, bySource: {} },
+      generatedAt: 0,
+    } as unknown as SessionManifest;
+    const proj = mkProject('mal', 'mal', ['s1']);
+
+    const r = await buildPersonaCandidatesFile(manifest, {
+      outDir,
+      now: 1_700_000_000_000,
+      projects: [proj],
+    });
+
+    const p = r.file.projects[0]!;
+    // Both valid user-turn lines matched the `I prefer` pattern.
+    // (Dedup may collapse same-excerpt rows; the load-bearing assertion
+    // is "neither valid line was lost to a parse error AND we didn't
+    // throw on the malformed middle line".)
+    expect(p.candidatesByBucket.preferences.length).toBeGreaterThan(0);
+  });
+
+  it('cloud-source session without transcriptPath yields a clean zero', async () => {
+    // Cloud sessions can come without a transcriptPath (manifest stub
+    // entries). The extractor must handle that without throwing.
+    const session = mkSession('cloud1', 'cloud/missing.json', {
+      source: 'cloud',
+      transcriptPath: undefined,
+    });
+    const manifest: SessionManifest = {
+      schemaVersion: 2,
+      sessions: [session],
+      counts: { total: 1, bySource: {} },
+      generatedAt: 0,
+    } as unknown as SessionManifest;
+    const proj = mkProject('cloud', 'cloud', ['cloud1']);
+
+    const r = await buildPersonaCandidatesFile(manifest, {
+      outDir,
+      now: 1_700_000_000_000,
+      projects: [proj],
+    });
+
+    const p = r.file.projects[0]!;
+    expect(p.sessionsWithCandidates).toBe(0);
   });
 });

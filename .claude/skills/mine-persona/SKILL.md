@@ -20,7 +20,7 @@ Parse from the user's message. Defaults in brackets.
 - `--request-id <uuid>` [omitted] — present when invoked from the viewer; correlates status/output with the UI.
 - `--project-id <id>` [omitted] — when present, mine ONLY this project. Everything else stays as-is in `personas.json` (the index is updated in place for that project's row). Used by the PERSONAS surface's REGEN button.
 - `--max-projects <N>` [10] — abort if the work plan would process more than N projects in a single run. Same risk shape as `mine-corrections`'s `--max-sub-agents`: each project is ~4 sub-agents (one per time bucket), so 10 projects = up to 40 sub-agent dispatches. Override only when you know the run is bounded (e.g. small corpus).
-- `--max-llm-usd-per-project <USD>` [0.5] — pre-flight budget guard. Skip a project (status: `budget-exceeded`) when its predicted Stage-2 cost would exceed this cap. **V1 calibration:** the cost model is approximate. The hard guard fires when a project's candidate count exceeds 1500 (≈ a 200-session corpus with average bucket density); refine in V2.
+- `--max-llm-usd-per-project <USD>` [0.5] — pre-flight budget guard. Skip a project (status: `budget-exceeded`) when its predicted Stage-2 cost would exceed this cap. **V1 calibration:** the cost model is a candidate-count proxy enforced via `THRESHOLDS.persona.candidateBudgetProxy` (default 1500 ≈ a 200-session corpus with average bucket density). The actual USD threshold is `THRESHOLDS.persona.maxLlmUsdPerProject` (default $0.50); the proxy is the V1 stand-in until per-Stage-2-run USD measurement lands in V2. Both values live in `packages/analysis/src/thresholds.ts` under the `persona` block.
 
 ## Pipeline
 
@@ -38,7 +38,7 @@ You orchestrate four stages. Update the status file at every transition.
    - Else: list = every project in `persona-candidates.json`.
 7. Per project: gate on session count.
    - `sessionsTotal < 30` (or whatever `THRESHOLDS.persona.minSessionsForGeneration` is — read from the `thresholds` field of `persona-candidates.json` rather than re-deriving): emit `status: insufficient-corpus` and skip Stages 1-3 for that project.
-   - `cappedCandidatesTotal > 1500`: emit `status: budget-exceeded` with the predicted cost note and skip.
+   - `cappedCandidatesTotal > THRESHOLDS.persona.candidateBudgetProxy` (default 1500): emit `status: budget-exceeded` with the predicted cost note and skip. Read the value from `persona-candidates.json`'s `thresholds` block (Stage 1 stamps it there so the skill doesn't need to import the analysis package). Until the V1 calibration pass logs actual USD-per-candidate, this proxy is the gate; re-derive the proxy from observed data in V2.
 8. If the eligible project count exceeds `--max-projects`:
    - **When `--request-id` is set** (viewer-confirmed run): proceed regardless — the user pressed SCAN knowing it would run. Log a warning to status.
    - **Else**: ask before proceeding.

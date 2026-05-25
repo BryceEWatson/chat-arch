@@ -21,6 +21,7 @@ import type {
   CorrectionPattern,
   CorrectionsFile,
   Narrative,
+  PersonasIndex,
   PlaybookCandidatesFile,
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
@@ -122,6 +123,31 @@ export async function readAppliedImprovements(): Promise<AppliedImprovementsFile
   return readJson<AppliedImprovementsFile>(
     path.join(analysisDir(), 'applied-improvements.json'),
   );
+}
+
+export async function readPersonasIndex(): Promise<PersonasIndex | null> {
+  return readJson<PersonasIndex>(path.join(analysisDir(), 'personas.json'));
+}
+
+/**
+ * Read a per-project persona markdown by relative `personaPath` (from
+ * `analysis/personas.json`). The file lives under the `analysis/personas/`
+ * subtree; anything resolving outside `chat-arch-data/analysis/personas/`
+ * returns null and never reads from disk — same posture as the dataDirGuard
+ * pattern. The Stage-2 skill writes `personaPath` into `personas.json`,
+ * but treating the index as semi-trusted keeps a buggy or
+ * malformed-skill emission from triggering arbitrary file reads
+ * (mirrors the `isPersonaMarkdown` allow-list in `/api/clear-personas`).
+ */
+export async function readPersonaMarkdown(personaPath: string): Promise<string | null> {
+  const safeRoot = path.resolve(dataDir(), 'analysis', 'personas');
+  const abs = path.resolve(dataDir(), personaPath);
+  if (abs !== safeRoot && !abs.startsWith(safeRoot + path.sep)) return null;
+  try {
+    return await readFile(abs, 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 /**

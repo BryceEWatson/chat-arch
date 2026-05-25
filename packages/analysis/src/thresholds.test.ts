@@ -114,6 +114,12 @@ describe('THRESHOLDS.curator (Rev3 curator / falsifier metrics)', () => {
 });
 
 describe('THRESHOLDS.persona (per-project persona generation V1)', () => {
+  // Smoke checks — these catch typos so egregious they'd break every
+  // consumer immediately. The real V1→V2 calibration harness lives
+  // separately (cite-overlap-on-shared-patterns between bryce.md and
+  // the auto-gen output once mine-persona runs against the same
+  // corpus).
+
   it('minSessionsForGeneration ≥ 1 (no thin personas)', () => {
     expect(THRESHOLDS.persona.minSessionsForGeneration).toBeGreaterThanOrEqual(1);
   });
@@ -125,6 +131,26 @@ describe('THRESHOLDS.persona (per-project persona generation V1)', () => {
 
   it('maxLlmUsdPerProject > 0 (a $0 cap would skip every project)', () => {
     expect(THRESHOLDS.persona.maxLlmUsdPerProject).toBeGreaterThan(0);
+  });
+
+  it('maxSessionsForCorpus divisible by 4 (4-quartile stratified sample takes maxN/4 from each bucket)', () => {
+    // The Stage-1 stratified sampler splits the project's session list
+    // into 4 recency quartiles and draws maxSessionsForCorpus/4 from
+    // each. A cap not divisible by 4 means one bucket carries an
+    // off-by-one — survivable, but worth catching when someone tunes
+    // the cap.
+    expect(THRESHOLDS.persona.maxSessionsForCorpus % 4).toBe(0);
+  });
+
+  it('candidateBudgetProxy ≈ 6 buckets × maxCandidatesPerBucket (budget arithmetic balanced)', () => {
+    // Stage-2 sees at most 6 buckets × maxCandidatesPerBucket
+    // candidates per project. The budget proxy gates skip-on-overflow
+    // and should track that ceiling so the documented relationship is
+    // self-consistent.
+    const { candidateBudgetProxy, maxCandidatesPerBucket } = THRESHOLDS.persona;
+    const ceiling = 6 * maxCandidatesPerBucket;
+    expect(candidateBudgetProxy).toBeGreaterThanOrEqual(ceiling * 0.5);
+    expect(candidateBudgetProxy).toBeLessThanOrEqual(ceiling * 10);
   });
 });
 
