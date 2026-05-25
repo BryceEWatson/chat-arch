@@ -267,7 +267,7 @@ describe('runFullScan chain semantics', () => {
     const ok = await runFullScan(ui);
 
     expect(ok).toBe(true);
-    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true]);
+    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true, true]);
     expect(cap.chainDones).toEqual([{ success: true, lastError: null }]);
   });
 
