@@ -63,6 +63,10 @@ function csrfReject(reason: string): Response {
  */
 let inFlight: Promise<void> | null = null;
 let inFlightRequestId: string | null = null;
+// Iter-2 security finding: empty cancel() left an orphan child holding
+// the inFlight slot for up to 10 min (until the kill-timer fired). We
+// track the active child so cancel() can SIGTERM it promptly.
+let inFlightChildKill: (() => void) | null = null;
 
 const MAX_LINE_CHARS = 2_000;
 const MAX_TAIL_BYTES = 8 * 1024;
@@ -208,6 +212,15 @@ function runClaudeOnce(
       shell: bin.useShell,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // Register the kill hook so the outer ReadableStream.cancel() can
+    // SIGTERM this child if the client disconnects. Cleared in settleOnce.
+    inFlightChildKill = () => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // already dead — ignore
+      }
+    };
 
     let stdoutBuf = '';
     let stderrBuf = '';
@@ -233,6 +246,7 @@ function runClaudeOnce(
       if (settled) return;
       settled = true;
       clearTimers();
+      inFlightChildKill = null;
       resolvePromise(outcome);
     };
 
@@ -498,7 +512,11 @@ export const POST: APIRoute = async ({ request }) => {
       }
     },
     cancel() {
-      // client disconnected; CLI keeps running and writes to disk
+      // Iter-2 security fix: client disconnect now SIGTERMs the child
+      // so the inFlight slot releases promptly. The skill's stage-end
+      // checkpoints mean partial work isn't lost; a full re-run from
+      // the user re-spawns cleanly.
+      inFlightChildKill?.();
     },
   });
 

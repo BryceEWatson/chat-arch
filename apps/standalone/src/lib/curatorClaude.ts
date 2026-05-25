@@ -124,8 +124,12 @@ function isThrottled(stderr: string): boolean {
  * insufficient — security iter-1 finding on PR #84 noted that
  * `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BEARER_TOKEN`, `CLAUDE_API_KEY`,
  * and `ANTHROPIC_API_TOKEN` are all auto-detected by various
- * configurations. The default-deny gate must remove the full family
- * to prevent surprise billing.
+ * configurations. Security iter-2 finding on PR #97 extended the
+ * list to cover the Bedrock + Vertex billing routes: a user with
+ * `CLAUDE_CODE_USE_BEDROCK=1` + AWS creds in their shell would
+ * silently bill Bedrock from the curate/falsify subprocess despite
+ * the default-deny, so the route-flip flags + AWS/GCP credential
+ * vars also scrub.
  *
  * Exported so the test suite can pin the canonical list — any addition
  * here should be paired with a test in `curatorClaude.test.ts`.
@@ -136,6 +140,17 @@ export const AUTH_ENV_VARS: readonly string[] = [
   'ANTHROPIC_BEARER_TOKEN',
   'ANTHROPIC_API_TOKEN',
   'CLAUDE_API_KEY',
+  // Route-flip flags — set by users routing claude through Bedrock or
+  // Vertex AI instead of the Anthropic API. Scrubbing the flag itself
+  // is sufficient: with the flag absent, the CLI falls back to the
+  // (also-scrubbed) Anthropic env vars.
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  // Cloud-provider credential envs — if the route flag somehow
+  // survives (env-file injection, shell function, etc.), scrubbing
+  // these closes the billing path defense-in-depth.
+  'AWS_BEARER_TOKEN_BEDROCK',
+  'GOOGLE_APPLICATION_CREDENTIALS',
 ];
 
 /**
