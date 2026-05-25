@@ -190,6 +190,10 @@ export const POST: APIRoute = async ({ request }) => {
   // no SDK accessor for it ships under `@chat-arch/exporter/db/sdk`
   // yet. We pass `null` so the kernel skips the section instead of
   // pretending zero-is-known; wiring lands when the SDK accessor does.
+  // TODO(applyWatcher-sdk): once `listWatcherVerdicts(db)` (or similar)
+  // exists in @chat-arch/exporter/db/sdk, change this to
+  // `listWatcherVerdicts(db).filter(v => v.verdict === 'no-recurrence').length`.
+  // Companion TODO at packages/analysis/src/dailyBrief.ts line ~360.
   const appliedPatternClosures: number | null = null;
   // Blog-drafts index isn't currently written as a single file — we
   // pass [] for now. The Today page reads blog drafts separately.
