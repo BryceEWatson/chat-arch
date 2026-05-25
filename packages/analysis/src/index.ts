@@ -284,8 +284,10 @@ export {
 export {
   buildDailyBrief,
   type BriefThresholds,
+  type BriefTrajectoryRow,
   type DailyBriefInputs,
   type DailyBriefResult,
+  type ShippedThisWeekInput,
 } from './dailyBrief.js';
 
 export {

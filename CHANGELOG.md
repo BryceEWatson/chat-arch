@@ -14,6 +14,49 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-05-24
+
+Feed-redesign Phase γ polish — enriches the daily brief now that
+Phase β promoted it to the top of the TODAY page. Patch bump (no new
+on-disk artifact); the change is internal to the
+`buildDailyBrief` kernel output + the `regen-brief` API endpoint.
+
+### Changed
+
+- `dailyBrief.ts` grows four new sections rendered between the
+  existing "audit concerns" and "continuum health" blocks:
+  - **Shipped this week** — commit count + top 5 subject lines from
+    `git log --since="7 days ago" main`, computed by the
+    `regen-brief.ts` shell and passed in as a precomputed input.
+  - **Surprises today** — per-tone counts (positive / concerning)
+    from `analysis/surprises.json` plus the top 3 positive summaries
+    by score.
+  - **Project trajectories** — per-classification counts from
+    `analysis/project-trajectories.json` plus the top 3 most-active
+    projects by `totalSessions`.
+  - **Applied-pattern closures** — count of patterns currently held
+    in the watcher's `holding` state. SDK accessor not yet wired;
+    section skips cleanly (input is `null` in V1).
+- Each section is independently skippable — empty inputs render
+  nothing, matching the pre-existing convention.
+- `DailyBriefResult.counts` gains seven fields covering the new
+  sections (`shippedCommits`, `surprisesPositive`,
+  `surprisesConcerning`, `trajectoriesAccelerating`,
+  `trajectoriesFlat`, `trajectoriesStalling`,
+  `appliedPatternClosures`). Existing fields unchanged.
+
+### Notes
+
+- The brief stays markdown + deterministic + LLM-free. The kernel
+  remains a pure function; all I/O (sidecar reads + `git log`) lives
+  in the `regen-brief.ts` API endpoint.
+- `CLAUDE.md` "Outcome-substrate sidecars" section gains an
+  **Intermediate sidecars** note documenting which artifacts are
+  consumed internally by kernels / other sidecars rather than read
+  by a UI surface (audit-claims.json, discovery-scores.json,
+  duplicates.semantic.json, pr-land-cache.json). Pre-empts the
+  "why doesn't X have a surface?" question for future contributors.
+
 ## [1.4.0] — 2026-05-24
 
 Feed-redesign Phase A plumbing — adds a new `analysis/surprises.json`
