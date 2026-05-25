@@ -24,7 +24,13 @@ import type {
   CorrectionPatternScope,
   ProposedUpgrade,
 } from '@chat-arch/schema';
-import type { TopAuditConcern, WorkshopStatus } from './readSidecars.ts';
+import type { SurprisesOutput } from '@chat-arch/analysis';
+import type {
+  CuratorFeedFileSsr,
+  RecentNarrative,
+  TopAuditConcern,
+  WorkshopStatus,
+} from './readSidecars.ts';
 
 /**
  * Sentinel prefix for all demo session IDs. Keeps demo SIDs visually
@@ -177,6 +183,249 @@ export function makeDemoBlogDraftSlugs(): readonly {
     {
       slug: 'when-the-pitch-doesnt-land-2026-05-08',
       isPrompt: true,
+    },
+  ];
+}
+
+/**
+ * Stable timestamp for the Phase β surprise / curator / narrative
+ * demos. Pinned so snapshot tests stay deterministic across runs.
+ */
+const DEMO_GENERATED_AT_MS = 1779665200000;
+
+/**
+ * Demo daily brief — drives the BRIEF section's empty state. The body
+ * mirrors the layout `regen-brief` produces (TODAY header bar, four
+ * bullet sections, attribution footer) so empty-state readers see the
+ * SHAPE they'll get once the brief skill runs. All session IDs use
+ * DEMO_SID_PREFIX (rendered as `[SID:demo01]` after slicing).
+ */
+export function makeDemoLatestBrief(): { date: string; markdown: string } {
+  const date = '2026-05-17';
+  const body =
+    `TODAY · ${date}\n` +
+    '━━━━━━━━━━━━━━━━━━\n' +
+    '► 3 audit concern(s)\n' +
+    `  • Session [SID:${demoSid('1').slice(0, 8)}] claimed "fixed the timeout" with no Edit/Write\n` +
+    `  • Session [SID:${demoSid('2').slice(0, 8)}] claimed "tests pass" with no command invocation\n` +
+    '► Shipped this week: 12 commit(s) to main\n' +
+    '  • feat(demo): example commit landing the loop\n' +
+    '  • fix(demo): repair an empty-state regression\n' +
+    '► Surprises today: 4 positive, 1 concerning\n' +
+    '  • [streak] 7 sessions in a row with all-green outcomes\n' +
+    '  • [decision-paid-off] adopting ripgrep dropped re-prompt rate\n' +
+    '► Continuum health: ok · 5 consecutive successful scans\n' +
+    '\n' +
+    '_chat-arch demo · auto-generated brief_\n';
+  return { date, markdown: body };
+}
+
+/**
+ * Demo surprises — drives the NEW + BROKEN section card grids. Mixes 3
+ * positive kinds (streak / trajectory-accelerating / decision-paid-off)
+ * + 2 concerning kinds (trajectory-stalled / debt-spinning) so both
+ * sections see populated cards. Every summary is ≤120 chars (matches
+ * the Surprise contract); evidence references DEMO_SID_PREFIX SIDs and
+ * `demo-project-N` ids so the show-don't-describe contract holds
+ * end-to-end (the SID-leak guard in empty-state-contracts.test.ts
+ * rejects any 8-hex SID not starting with `demo`).
+ *
+ * `generatedAt` is fixed to DEMO_GENERATED_AT_MS so snapshot tests
+ * stay deterministic — the kernel's defaults snapshot is structural
+ * only; the values here mirror THRESHOLDS.surprises defaults at the
+ * time of writing (kernel-derived; not load-bearing for the demo).
+ */
+export function makeDemoSurprises(): SurprisesOutput {
+  return {
+    version: 1,
+    generatedAt: DEMO_GENERATED_AT_MS,
+    surprises: [
+      {
+        id: 'sur_demo_streak_1',
+        kind: 'streak',
+        tone: 'positive',
+        summary: '7 sessions in a row with all-green outcomes — longest run this month.',
+        evidence: {
+          sessionIds: [demoSid('s1'), demoSid('s2'), demoSid('s3'), demoSid('s4')],
+        },
+        score: 0.92,
+        generatedAt: DEMO_GENERATED_AT_MS,
+      },
+      {
+        id: 'sur_demo_trajectory_acc_1',
+        kind: 'trajectory-accelerating',
+        tone: 'positive',
+        summary: 'demo-project-A composite score climbed +18% over the last 2 weeks.',
+        evidence: {
+          projectId: 'demo-project-A',
+          sessionIds: [demoSid('a1'), demoSid('a2')],
+        },
+        score: 0.78,
+        generatedAt: DEMO_GENERATED_AT_MS,
+      },
+      {
+        id: 'sur_demo_decision_paid_1',
+        kind: 'decision-paid-off',
+        tone: 'positive',
+        summary: 'Adopting ripgrep dropped average re-prompt rate by 23% on demo-project-B.',
+        evidence: {
+          decisionId: 'dec_demo_ripgrep',
+          projectId: 'demo-project-B',
+          sessionIds: [demoSid('d1')],
+        },
+        score: 0.71,
+        generatedAt: DEMO_GENERATED_AT_MS,
+      },
+      {
+        id: 'sur_demo_trajectory_stall_1',
+        kind: 'trajectory-stalled',
+        tone: 'concerning',
+        summary: 'demo-project-C composite score flat for 3 weeks despite 14 sessions invested.',
+        evidence: {
+          projectId: 'demo-project-C',
+          sessionIds: [demoSid('c1'), demoSid('c2')],
+        },
+        score: 0.66,
+        generatedAt: DEMO_GENERATED_AT_MS,
+      },
+      {
+        id: 'sur_demo_debt_spin_1',
+        kind: 'debt-spinning',
+        tone: 'concerning',
+        summary: '"how do I bind a port in Astro?" asked 9 times this month across 4 projects.',
+        evidence: {
+          sessionIds: [demoSid('k1'), demoSid('k2'), demoSid('k3')],
+        },
+        score: 0.58,
+        generatedAt: DEMO_GENERATED_AT_MS,
+      },
+    ],
+    thresholds: {
+      streakMin: 5,
+      itsQValueMax: 0.1,
+      itsDeltaMin: 0.15,
+      reflexiveDeltaMin: 0.1,
+      reflexiveEValueMin: 1.5,
+      decisionGoodFollowupsMin: 3,
+      debtSpinningTopK: 5,
+      debtSpinningMinClusterSize: 4,
+    },
+  };
+}
+
+/**
+ * Demo curator feed — drives the ACT section's CURATED FEED list when
+ * the /curate skill hasn't run yet. 5 items mix the three known kinds
+ * (`narrative` / `knowledge-debt` / `applied-pattern`) so the kind-
+ * coloured badges all render at least once. Verified status sprinkled
+ * so the green "verified" pill shows. Stable shape matches
+ * `CuratorFeedFileSsr` in readSidecars.ts.
+ */
+export function makeDemoCuratorFeed(): CuratorFeedFileSsr {
+  return {
+    schemaVersion: 1,
+    generatedAt: DEMO_GENERATED_AT_MS,
+    ranAt: '2026-05-17T10:00:00.000Z',
+    items: [
+      {
+        kind: 'narrative',
+        entityId: 'nar_demo_first_principles',
+        title: 'First-principles framing precedes pass-verdict outcomes',
+        rank: 1,
+        compositeScore: 0.89,
+        falsifierStatus: 'verified',
+        reasoning: 'tier-3 narrative with 4 supporting evidence rows.',
+      },
+      {
+        kind: 'knowledge-debt',
+        entityId: 'kd_demo_port_binding',
+        title: '"how do I bind a port in Astro?" — asked 9× across 4 projects',
+        rank: 2,
+        compositeScore: 0.81,
+        falsifierStatus: 'unavailable',
+        reasoning: 'cluster size 9 exceeds debtSpinningMinClusterSize floor.',
+      },
+      {
+        kind: 'applied-pattern',
+        entityId: 'pat_demo_ripgrep',
+        title: 'prefer ripgrep over grep for codebase search',
+        rank: 3,
+        compositeScore: 0.74,
+        tieBrokenByCorrelation: true,
+        falsifierStatus: 'verified',
+        reasoning: 'pattern is holding 11 weeks post-apply.',
+      },
+      {
+        kind: 'narrative',
+        entityId: 'nar_demo_adversarial_review',
+        title: 'Adversarial review precedes ship-readiness verdicts',
+        rank: 4,
+        compositeScore: 0.69,
+        falsifierStatus: 'unavailable',
+        reasoning: 'tier-2 narrative; awaiting verifier pass.',
+      },
+      {
+        kind: 'knowledge-debt',
+        entityId: 'kd_demo_cors_setup',
+        title: '"CORS preflight failing on /api/*" — asked 5× this month',
+        rank: 5,
+        compositeScore: 0.61,
+        falsifierStatus: 'skipped-by-user',
+        reasoning: 'cluster size below tie-breaker but recent surge.',
+      },
+    ],
+  };
+}
+
+/**
+ * Demo recent narratives — drives the STORIES section's narrative list
+ * when narratives.json is missing. 5 items across all three sentiment
+ * buckets (positive / negative / neutral) and three demo project ids
+ * so the sentiment-coloured pills + project links all render at least
+ * once. Generated-at strings use ISO format so the page's `.slice(0,10)`
+ * date crop produces a stable YYYY-MM-DD.
+ */
+export function makeDemoRecentNarratives(): RecentNarrative[] {
+  return [
+    {
+      id: 'nar_demo_first_principles',
+      title: 'First-principles framing precedes pass-verdict outcomes',
+      sentiment: 'positive',
+      projectId: 'demo-project-A',
+      sessionIds: [demoSid('n1'), demoSid('n2')],
+      generatedAt: '2026-05-15T14:30:00.000Z',
+    },
+    {
+      id: 'nar_demo_test_skip_drift',
+      title: 'Skipped tests accumulate then surface as silent regressions',
+      sentiment: 'negative',
+      projectId: 'demo-project-B',
+      sessionIds: [demoSid('n3')],
+      generatedAt: '2026-05-14T09:15:00.000Z',
+    },
+    {
+      id: 'nar_demo_adversarial_review',
+      title: 'Adversarial review precedes ship-readiness verdicts',
+      sentiment: 'positive',
+      projectId: 'demo-project-A',
+      sessionIds: [demoSid('n4'), demoSid('n5'), demoSid('n6')],
+      generatedAt: '2026-05-12T18:42:00.000Z',
+    },
+    {
+      id: 'nar_demo_session_handoff',
+      title: 'Session handoffs lose context about prior tool-call rationale',
+      sentiment: 'neutral',
+      projectId: 'demo-project-C',
+      sessionIds: [demoSid('n7')],
+      generatedAt: '2026-05-11T11:00:00.000Z',
+    },
+    {
+      id: 'nar_demo_loop_closure',
+      title: 'Applied patterns close the loop within 2 weeks 80% of the time',
+      sentiment: 'positive',
+      projectId: 'demo-project-B',
+      sessionIds: [demoSid('n8'), demoSid('n9')],
+      generatedAt: '2026-05-09T16:20:00.000Z',
     },
   ];
 }

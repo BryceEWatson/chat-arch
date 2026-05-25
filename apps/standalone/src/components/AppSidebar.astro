@@ -10,6 +10,21 @@
 // the full catalogue of kernel detail surfaces is reachable from
 // SYSTEM → ALL VIEWS (/views).
 //
+// CHAT and RESULTS are INTENTIONALLY NOT in this sidebar — they are
+// discoverable via FEED-card secondary links:
+//   - STORIES section footer → "ask the corpus a question (CHAT)"
+//     (/sessions#chat)
+//   - BROKEN section footer  → "cross-corpus results" (/results)
+// Plus /views catalogue (SYSTEM → ALL VIEWS) for the comprehensive
+// list. Re-adding either to the sidebar would re-bloat the nav and
+// duplicate the FEED entry points — the Phase β review-loop iter-1
+// "nothing important lost" constraint is satisfied by the secondary
+// links, not by sidebar re-entry. Bryce's positioning principle
+// (feedback_positioning_by_features) backs the show-it-in-the-feed
+// choice: the link's CONTEXT (next to the section that motivates it)
+// communicates what CHAT / RESULTS are for, where a bare sidebar
+// label cannot.
+//
 // Collapse: expanded by default desktop, auto-collapsed below 900px,
 // user-toggleable, persisted in localStorage. The pure state logic
 // lives in ../scripts/appSidebarCollapse.ts so it can be unit-tested

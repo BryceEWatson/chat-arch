@@ -31,6 +31,10 @@ import {
 } from '../lib/readSidecars.ts';
 import {
   makeDemoBlogDraftSlugs,
+  makeDemoCuratorFeed,
+  makeDemoLatestBrief,
+  makeDemoRecentNarratives,
+  makeDemoSurprises,
   makeDemoTopAuditConcerns,
   makeDemoWorkshopStatus,
 } from '../lib/demoFixtures.ts';
@@ -81,6 +85,27 @@ const brokenEmpty =
   concerns.length === 0 &&
   (health === null || health.warnings.length === 0);
 const storiesEmpty = recentNarratives.length === 0 && drafts.length === 0;
+const narrativesEmpty = recentNarratives.length === 0;
+
+// Phase β review-loop iter-1 fix: the four new FEED sections (BRIEF /
+// NEW / curated ACT / STORIES narratives) had no demo fixtures on the
+// hosted build. Without them, chat-arch.dev rendered four empty-state
+// copy blocks across the redesigned page — exactly the prose-fallback
+// the positioning principle (memory: feedback_positioning_by_features)
+// is meant to prevent. Each `…View` below swaps in a deterministic
+// fixture when the real sidecar is empty.
+const briefView = briefEmpty ? makeDemoLatestBrief() : brief;
+const demoSurprisesFile = newEmpty || brokenEmpty ? makeDemoSurprises() : null;
+const surprisesNewView = newEmpty
+  ? pickSurprises(demoSurprisesFile, 'positive', 5)
+  : surprisesNew;
+const surprisesBrokenView = brokenEmpty
+  ? pickSurprises(demoSurprisesFile, 'concerning', 5)
+  : surprisesBroken;
+const curatorView = curatorEmpty ? makeDemoCuratorFeed() : curatorFeed!;
+const narrativesView = narrativesEmpty
+  ? makeDemoRecentNarratives()
+  : recentNarratives;
 
 // SectionBar label rendering helper — keeps every section's heading
 // consistent without hand-rolling the same markup five times.
@@ -163,18 +188,22 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         ) : null}
       </div>
       {briefEmpty ? (
-        <div class="today__empty-block">
-          <p class="today__empty">
-            No daily brief on disk. The brief synthesizes recent scan
-            output — workshop status, audit deltas, surprises — into a
-            short morning-coffee summary.
-          </p>
-          <p>
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real BRIEF populates after REGEN BRIEF runs"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <p class="today__act-lede">
+            <span class="demo-badge">DEMO</span>
+            preview of the daily brief shape ·{' '}
             <button id="action-brief-cta" type="button" class="today__cta-btn">
               REGEN BRIEF →
             </button>
           </p>
-        </div>
+          <article class="today__brief-body">
+            <pre class="today__brief-md">{briefView!.markdown}</pre>
+          </article>
+        </section>
       ) : (
         <article class="today__brief-body">
           {/* V1 markdown rendering: render the raw markdown inside a
@@ -183,7 +212,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
               markdown-it / remark) and the user permitted this
               fallback. Brief content is short (≤ a few KB) so this
               reads cleanly. */}
-          <pre class="today__brief-md">{brief.markdown}</pre>
+          <pre class="today__brief-md">{briefView!.markdown}</pre>
         </article>
       )}
     </section>
@@ -195,13 +224,59 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         <span class="today__bar-sub">{SECTIONS[1].sub}</span>
       </div>
       {newEmpty ? (
-        <p class="today__empty">
-          No surprises detected. Surprises arrive after a scan finds
-          positive thresholds-crossings.
-        </p>
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real NEW surprises populate after FULL SCAN runs"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <p class="today__act-lede">
+            <span class="demo-badge">DEMO</span>
+            preview of positive surprises this kernel surfaces.
+          </p>
+          <ul class="today__cards">
+            {surprisesNewView.map((s) => (
+              <li class={`today__card today__card--${s.kind}`}>
+                <div class="today__card-head">
+                  <span class={`today__kind today__kind--${s.tone}`}>
+                    {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                  </span>
+                  <span class="today__card-score">
+                    score {(s.score * 100).toFixed(0)}
+                  </span>
+                </div>
+                <p class="today__card-summary">{s.summary}</p>
+                {s.evidence.sessionIds && s.evidence.sessionIds.length > 0 ? (
+                  <p class="today__card-evidence">
+                    <span class="today__card-evlabel">sessions:</span>
+                    {s.evidence.sessionIds.slice(0, 4).map((sid, ix) => (
+                      <>
+                        {ix > 0 ? ' · ' : ' '}
+                        <a href={`/sessions/${sid}`}>{sid.slice(0, 8)}</a>
+                      </>
+                    ))}
+                  </p>
+                ) : null}
+                {s.evidence.projectId ? (
+                  <p class="today__card-evidence">
+                    <span class="today__card-evlabel">project:</span>{' '}
+                    <a href={`/projects/${s.evidence.projectId}`}>
+                      {s.evidence.projectId}
+                    </a>
+                  </p>
+                ) : null}
+                {s.evidence.decisionId ? (
+                  <p class="today__card-evidence">
+                    <span class="today__card-evlabel">decision:</span>{' '}
+                    <code>{s.evidence.decisionId}</code>
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : (
         <ul class="today__cards">
-          {surprisesNew.map((s) => (
+          {surprisesNewView.map((s) => (
             <li class={`today__card today__card--${s.kind}`}>
               <div class="today__card-head">
                 <span class={`today__kind today__kind--${s.tone}`}>
@@ -322,23 +397,41 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
       )}
 
       {/* Curator feed — top-K ranked items the /curate skill emitted. */}
-      <h3 class="today__act-subhead">CURATED FEED · top {curatorFeed?.items.length ?? 0}</h3>
+      <h3 class="today__act-subhead">CURATED FEED · top {curatorView.items.length}</h3>
       {curatorEmpty ? (
-        <div class="today__empty-block">
-          <p class="today__empty">
-            No curated items. Run <strong>CURATE</strong> after a scan
-            to rank narratives and knowledge-debt clusters worth
-            looking at now.
-          </p>
-          <p>
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real CURATED FEED populates after CURATE runs"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <p class="today__act-lede">
+            <span class="demo-badge">DEMO</span>
+            preview of the ranked feed shape ·{' '}
             <button id="action-curate-cta" type="button" class="today__cta-btn">
               CURATE →
             </button>
           </p>
-        </div>
+          <ul class="today__curator-list">
+            {curatorView.items.slice(0, 10).map((item) => (
+              <li>
+                <span class="today__curator-rank">#{item.rank}</span>
+                <span class={`today__curator-kind today__curator-kind--${item.kind}`}>
+                  {item.kind}
+                </span>
+                <span class="today__curator-title">{item.title}</span>
+                <span class="today__curator-score">
+                  {(item.compositeScore * 100).toFixed(0)}
+                </span>
+                {item.falsifierStatus === 'verified' ? (
+                  <span class="today__curator-verified">verified</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : (
         <ul class="today__curator-list">
-          {curatorFeed!.items.slice(0, 10).map((item) => (
+          {curatorView.items.slice(0, 10).map((item) => (
             <li>
               <span class="today__curator-rank">#{item.rank}</span>
               <span class={`today__curator-kind today__curator-kind--${item.kind}`}>
@@ -364,13 +457,25 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         <span class="today__bar-sub">{SECTIONS[3].sub}</span>
       </div>
 
-      {brokenEmpty && concernsEmpty ? (
-        <p class="today__empty">Nothing broken right now.</p>
-      ) : (
-        <>
-          {surprisesBroken.length > 0 ? (
+      {/* Surprise cards — show a real grid OR a demo grid (Phase β
+          review-loop iter-1 fix: surprisesBrokenView swaps in a demo
+          fixture when no concerning surprises are on disk so the card
+          shape stays visible on chat-arch.dev / clean clones). The
+          wrapper picks aria-label + demo-badge when the surprises are
+          synthetic so SR users + scrapers can distinguish. */}
+      {surprisesBrokenView.length > 0 ? (
+        brokenEmpty ? (
+          <section
+            class="today__row-demo"
+            aria-label="Example data — your real BROKEN surprises populate after FULL SCAN runs"
+          >
+            <span class="sr-only">Example data, not your data:</span>
+            <p class="today__act-lede">
+              <span class="demo-badge">DEMO</span>
+              preview of concerning-surprise cards this kernel surfaces.
+            </p>
             <ul class="today__cards">
-              {surprisesBroken.map((s) => (
+              {surprisesBrokenView.map((s) => (
                 <li class={`today__card today__card--alert today__card--${s.kind}`}>
                   <div class="today__card-head">
                     <span class={`today__kind today__kind--${s.tone}`}>
@@ -389,69 +494,101 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                       </a>
                     </p>
                   ) : null}
-                  {s.evidence.narrativeId ? (
-                    <p class="today__card-evidence">
-                      <span class="today__card-evlabel">narrative:</span>{' '}
-                      <code>{s.evidence.narrativeId}</code>
-                    </p>
-                  ) : null}
                 </li>
               ))}
             </ul>
-          ) : null}
+          </section>
+        ) : (
+          <ul class="today__cards">
+            {surprisesBrokenView.map((s) => (
+              <li class={`today__card today__card--alert today__card--${s.kind}`}>
+                <div class="today__card-head">
+                  <span class={`today__kind today__kind--${s.tone}`}>
+                    {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                  </span>
+                  <span class="today__card-score">
+                    score {(s.score * 100).toFixed(0)}
+                  </span>
+                </div>
+                <p class="today__card-summary">{s.summary}</p>
+                {s.evidence.projectId ? (
+                  <p class="today__card-evidence">
+                    <span class="today__card-evlabel">project:</span>{' '}
+                    <a href={`/projects/${s.evidence.projectId}`}>
+                      {s.evidence.projectId}
+                    </a>
+                  </p>
+                ) : null}
+                {s.evidence.narrativeId ? (
+                  <p class="today__card-evidence">
+                    <span class="today__card-evlabel">narrative:</span>{' '}
+                    <code>{s.evidence.narrativeId}</code>
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
 
-          {/* AUDIT CONCERNS — preserved from prior page, demoted from a
-              standalone row into the BROKEN section. */}
-          <h3 class="today__broken-subhead">AUDIT CONCERNS · top {concernsView.length}</h3>
-          {concernsEmpty ? (
-            <section
-              class="today__row-demo"
-              aria-label="Example data — your real AUDIT CONCERNS populate after the F-layer verifier runs"
-            >
-              <span class="sr-only">Example data, not your data:</span>
-              <span class="demo-badge">DEMO</span>
-              <ul class="today__concerns">
-                {concernsView.map((c) => (
-                  <li>
-                    <code class="today__concern-type">{c.claimType}</code>
-                    <span class="today__concern-span">claimed "{c.span}"</span>
-                    <span class="today__concern-reason">— {c.reason}</span>
-                    <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : (
-            <ul class="today__concerns">
-              {concernsView.map((c) => (
-                <li>
-                  <code class="today__concern-type">{c.claimType}</code>
-                  <span class="today__concern-span">claimed "{c.span}"</span>
-                  <span class="today__concern-reason">— {c.reason}</span>
-                  <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p class="today__row-summary">
-            <a href="/audit">full audit table →</a>
-          </p>
-
-          {/* CONTINUUM HEALTH warnings — show only when they exist. */}
-          {health !== null && health.warnings.length > 0 ? (
-            <div class="today__broken-health">
-              <h3 class="today__broken-subhead">CONTINUUM WARNINGS</h3>
-              <ul class="today__concerns">
-                {health.warnings.map((w) => (
-                  <li>
-                    <span class="today__warn">{String(w)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </>
+      {/* AUDIT CONCERNS — preserved from prior page, demoted from a
+          standalone row into the BROKEN section. */}
+      <h3 class="today__broken-subhead">AUDIT CONCERNS · top {concernsView.length}</h3>
+      {concernsEmpty ? (
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real AUDIT CONCERNS populate after the F-layer verifier runs"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <span class="demo-badge">DEMO</span>
+          <ul class="today__concerns">
+            {concernsView.map((c) => (
+              <li>
+                <code class="today__concern-type">{c.claimType}</code>
+                <span class="today__concern-span">claimed "{c.span}"</span>
+                <span class="today__concern-reason">— {c.reason}</span>
+                <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <ul class="today__concerns">
+          {concernsView.map((c) => (
+            <li>
+              <code class="today__concern-type">{c.claimType}</code>
+              <span class="today__concern-span">claimed "{c.span}"</span>
+              <span class="today__concern-reason">— {c.reason}</span>
+              <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+            </li>
+          ))}
+        </ul>
       )}
+      <p class="today__row-summary">
+        <a href="/audit">full audit table →</a>
+      </p>
+
+      {/* CONTINUUM HEALTH warnings — show only when they exist. */}
+      {health !== null && health.warnings.length > 0 ? (
+        <div class="today__broken-health">
+          <h3 class="today__broken-subhead">CONTINUUM WARNINGS</h3>
+          <ul class="today__concerns">
+            {health.warnings.map((w) => (
+              <li>
+                <span class="today__warn">{String(w)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* Cross-corpus RESULTS escape hatch — Phase β review-loop iter-1
+          discoverability fix. The sidebar no longer carries a RESULTS
+          entry (it lives in /views catalogue + here); BROKEN's footer
+          is the natural "see also" hook. */}
+      <p class="today__row-summary today__row-secondary">
+        → <a href="/results">cross-corpus results</a>
+      </p>
     </section>
 
     {/* ─────────────────────── 5. STORIES ─────────────────────── */}
@@ -461,16 +598,23 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         <span class="today__bar-sub">{SECTIONS[4].sub}</span>
       </div>
 
-      {storiesEmpty ? (
-        <p class="today__empty">
-          No stories yet. Stories arrive when a scan finds project-level
-          narrative arcs.
-        </p>
-      ) : (
-        <>
-          {recentNarratives.length > 0 ? (
+      {/* Recent narratives — narrativesView falls back to a demo set
+          (Phase β review-loop iter-1 fix) when narratives.json is
+          missing. The wrapper picks aria-label + demo-badge when the
+          list is synthetic so SR users + scrapers can distinguish. */}
+      {narrativesView.length > 0 ? (
+        narrativesEmpty ? (
+          <section
+            class="today__row-demo"
+            aria-label="Example data — your real STORIES populate after a scan emits narrative arcs"
+          >
+            <span class="sr-only">Example data, not your data:</span>
+            <p class="today__act-lede">
+              <span class="demo-badge">DEMO</span>
+              preview of project-narrative arcs this kernel surfaces.
+            </p>
             <ul class="today__story-list">
-              {recentNarratives.map((n) => (
+              {narrativesView.map((n) => (
                 <li>
                   <span class={`today__story-sentiment today__story-sentiment--${n.sentiment}`}>
                     {n.sentiment}
@@ -485,30 +629,55 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                 </li>
               ))}
             </ul>
-          ) : null}
-
-          <h3 class="today__stories-subhead">BLOG DRAFTS</h3>
-          {draftsEmpty ? (
-            <section
-              class="today__row-demo"
-              aria-label="Example data — your real BLOG DRAFTS populate after the candidate selector emits any"
-            >
-              <span class="sr-only">Example data, not your data:</span>
-              <p class="today__row-summary">
-                <span class="demo-badge">DEMO</span>
-                <a href="/blog-drafts">
-                  {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+          </section>
+        ) : (
+          <ul class="today__story-list">
+            {narrativesView.map((n) => (
+              <li>
+                <span class={`today__story-sentiment today__story-sentiment--${n.sentiment}`}>
+                  {n.sentiment}
+                </span>
+                <span class="today__story-title">{n.title}</span>
+                <a class="today__story-project" href={`/projects/${n.projectId}`}>
+                  {n.projectId}
                 </a>
-              </p>
-            </section>
-          ) : (
-            <p class="today__row-summary">
-              <a href="/blog-drafts">
-                {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
-              </a>
-            </p>
-          )}
-        </>
+                <span class="today__story-date">
+                  {n.generatedAt.slice(0, 10)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+
+      {/* CHAT escape hatch — Phase β review-loop iter-1 discoverability
+          fix. The sidebar no longer carries a CHAT entry; STORIES is
+          where readers go to read about the corpus, so the "ask the
+          corpus a question" hook is a natural secondary link here. */}
+      <p class="today__row-summary today__row-secondary">
+        → <a href="/sessions#chat">ask the corpus a question (CHAT)</a>
+      </p>
+
+      <h3 class="today__stories-subhead">BLOG DRAFTS</h3>
+      {draftsEmpty ? (
+        <section
+          class="today__row-demo"
+          aria-label="Example data — your real BLOG DRAFTS populate after the candidate selector emits any"
+        >
+          <span class="sr-only">Example data, not your data:</span>
+          <p class="today__row-summary">
+            <span class="demo-badge">DEMO</span>
+            <a href="/blog-drafts">
+              {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+            </a>
+          </p>
+        </section>
+      ) : (
+        <p class="today__row-summary">
+          <a href="/blog-drafts">
+            {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+          </a>
+        </p>
       )}
     </section>
 
@@ -1366,4 +1535,13 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
   .today__row code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FFCC99; }
   .today__row-summary { font-size: 13px; }
   .today__row-summary a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
+  /* Secondary "see also" links — Phase β discoverability escape hatches
+     to /results (BROKEN footer) and /sessions#chat (STORIES footer).
+     Muted color + smaller size so they read as exits, not CTAs. */
+  .today__row-secondary {
+    font-size: 12px;
+    color: #FFCC9988;
+    margin-top: 4px;
+  }
+  .today__row-secondary a { color: #FFCC99aa; }
 </style>
