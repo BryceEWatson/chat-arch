@@ -17,6 +17,7 @@
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { surpriseConfidenceTier } from '@chat-arch/analysis';
 import {
   listBlogDraftSlugs,
   pickSurprises,
@@ -40,20 +41,38 @@ import {
 } from '../lib/demoFixtures.ts';
 
 const NOW = Date.now();
-const workshop = await readWorkshopStatus(NOW);
-const concerns = await readTopAuditConcerns(5);
-const drafts = await listBlogDraftSlugs();
-const brief = await readLatestBrief();
-const health = await readContinuumHealth();
-const candidatesSummary = await readCorrectionCandidatesSummary();
+// Wave 1 Fix D: the 9 outer-frontmatter sidecar reads were sequential
+// awaits (~10 disk hits, dominated first-paint cost on this
+// `prerender = false` page). They're independent of each other, so
+// batch them in a single Promise.all. Anything with internal nesting
+// (readWorkshopStatus does 3 chained reads internally) stays chained
+// inside its wrapper; only the OUTER fan-out changes. candidatesSummary
+// is destructured into candidateCount post-await as before.
+const [
+  workshop,
+  concerns,
+  drafts,
+  brief,
+  health,
+  candidatesSummary,
+  surprisesFile,
+  curatorFeed,
+  recentNarratives,
+] = await Promise.all([
+  readWorkshopStatus(NOW),
+  readTopAuditConcerns(5),
+  listBlogDraftSlugs(),
+  readLatestBrief(),
+  readContinuumHealth(),
+  readCorrectionCandidatesSummary(),
+  readSurprises(),
+  readCuratorFeed(),
+  readRecentNarratives(5),
+]);
 const candidateCount = candidatesSummary?.candidateCount ?? 0;
 
-const surprisesFile = await readSurprises();
 const surprisesNew = pickSurprises(surprisesFile, 'positive', 5);
 const surprisesBroken = pickSurprises(surprisesFile, 'concerning', 5);
-
-const curatorFeed = await readCuratorFeed();
-const recentNarratives = await readRecentNarratives(5);
 
 // Workshop sub-detection (preserved from prior page — drives the ACT
 // section's "corrections to APPLY" line + the "mine next" CTA wiring).
@@ -80,10 +99,16 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
 const briefEmpty = brief === null;
 const newEmpty = surprisesNew.length === 0;
 const curatorEmpty = curatorFeed === null || curatorFeed.items.length === 0;
-const brokenEmpty =
-  surprisesBroken.length === 0 &&
-  concerns.length === 0 &&
-  (health === null || health.warnings.length === 0);
+// brokenEmpty gates whether the page falls back to demo concerning cards
+// or renders real BROKEN data. Wave-1 review iter-1 fix: previously this
+// required ALL three (surprises-concerning + audit concerns + health
+// warnings) to be empty, which meant the demo MODERATE/STRONG concerning
+// cards never rendered on any populated install — the demo tier-2/3
+// pedagogy was hidden behind a never-true gate. Now only the surprises-
+// concerning slot drives the swap; audit concerns + health warnings
+// render alongside the demo cards when present, which is the actual
+// "is this BROKEN section empty?" question the user is asking.
+const brokenEmpty = surprisesBroken.length === 0;
 const narrativesEmpty = recentNarratives.length === 0;
 
 // Phase β review-loop iter-1 fix: the four new FEED sections (BRIEF /
@@ -144,6 +169,38 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
   'trajectory-stalled': 'stalled',
   'pattern-recurring': 'pattern recurring',
   'debt-spinning': 'debt spinning',
+  // Wave 2 #1 — delta kinds.
+  'streak-extended': 'streak extended',
+  'streak-broken': 'streak broken',
+  'trajectory-flip-up': 'flipped up',
+  'trajectory-flip-down': 'flipped down',
+  'pattern-recurrence-resumed': 'recurrence resumed',
+};
+
+// Wave 1 Fix B: per-kind drill-in target for the "→ in context" link
+// at the bottom of each surprise card. Each kind routes to the parent
+// kernel-detail surface so the user can see the surprise IN CONTEXT
+// (effectiveness ledger, trends table, decisions table, etc.) without
+// hunting through the left-nav. Missing kinds fall back to the
+// catalogue page.
+const SURPRISE_DRILL_IN: Record<string, string> = {
+  streak: '/sessions#effectiveness',
+  'trajectory-accelerating': '/sessions#trends',
+  'trajectory-stalled': '/sessions#trends',
+  'config-helped': '/sessions#insights',
+  'reflexive-positive': '/sessions#insights',
+  'decision-paid-off': '/sessions#decisions',
+  'pattern-closed': '/sessions#corrections',
+  'pattern-recurring': '/sessions#corrections',
+  'debt-spinning': '/sessions#insights',
+  // Wave 2 #1 — delta kinds reuse the same parent surfaces as their
+  // snapshot siblings (effectiveness for streaks, trends for
+  // trajectories, corrections for the pattern-recurrence resumption).
+  'streak-extended': '/sessions#effectiveness',
+  'streak-broken': '/sessions#effectiveness',
+  'trajectory-flip-up': '/sessions#trends',
+  'trajectory-flip-down': '/sessions#trends',
+  'pattern-recurrence-resumed': '/sessions#corrections',
 };
 ---
 <BaseLayout title="Chat Archaeologist — Today" current="TODAY">
@@ -159,6 +216,12 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
           SCAN
         </button>
         <button id="action-brief" type="button">REGEN BRIEF</button>
+        {/* Wave 1 Fix C: combined wipe + scan. Secondary visual weight
+            (destructive — intentional click required). Confirmation
+            handled in the click handler via window.confirm. */}
+        <button id="action-wipe-scan" type="button" class="today__btn-secondary">
+          WIPE + SCAN
+        </button>
         <span id="action-status" class="today__action-status"></span>
       </div>
 
@@ -231,12 +294,82 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
             preview of positive surprises this kernel surfaces.
           </p>
           <ul class="today__cards">
-            {surprisesNewView.map((s) => (
+            {surprisesNewView.map((s) => {
+              const tier = surpriseConfidenceTier(s.score);
+              const drillIn = SURPRISE_DRILL_IN[s.kind];
+              return (
+                <li class={`today__card today__card--${s.kind}`}>
+                  <div class="today__card-head">
+                    <div class="today__card-head-left">
+                      <span class={`today__kind today__kind--${s.tone}`}>
+                        {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                      </span>
+                      <span
+                        class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                        title={`raw score ${s.score.toFixed(3)}`}
+                      >
+                        {tier}
+                      </span>
+                    </div>
+                    <span class="today__card-score">
+                      score {(s.score * 100).toFixed(0)}
+                    </span>
+                  </div>
+                  <p class="today__card-summary">{s.summary}</p>
+                  {s.evidence.sessionIds && s.evidence.sessionIds.length > 0 ? (
+                    <p class="today__card-evidence">
+                      <span class="today__card-evlabel">sessions:</span>
+                      {s.evidence.sessionIds.slice(0, 4).map((sid, ix) => (
+                        <>
+                          {ix > 0 ? ' · ' : ' '}
+                          <a href={`/sessions#session/${sid}`}>{sid.slice(0, 8)}</a>
+                        </>
+                      ))}
+                    </p>
+                  ) : null}
+                  {s.evidence.projectId ? (
+                    <p class="today__card-evidence">
+                      <span class="today__card-evlabel">project:</span>{' '}
+                      <a href={`/projects/${s.evidence.projectId}`}>
+                        {s.evidence.projectId}
+                      </a>
+                    </p>
+                  ) : null}
+                  {s.evidence.decisionId ? (
+                    <p class="today__card-evidence">
+                      <span class="today__card-evlabel">decision:</span>{' '}
+                      <code>{s.evidence.decisionId}</code>
+                    </p>
+                  ) : null}
+                  {drillIn ? (
+                    <p class="today__card-drill today__row-secondary">
+                      → <a href={drillIn}>in context</a>
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : (
+        <ul class="today__cards">
+          {surprisesNewView.map((s) => {
+            const tier = surpriseConfidenceTier(s.score);
+            const drillIn = SURPRISE_DRILL_IN[s.kind];
+            return (
               <li class={`today__card today__card--${s.kind}`}>
                 <div class="today__card-head">
-                  <span class={`today__kind today__kind--${s.tone}`}>
-                    {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                  </span>
+                  <div class="today__card-head-left">
+                    <span class={`today__kind today__kind--${s.tone}`}>
+                      {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                    </span>
+                    <span
+                      class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                      title={`raw score ${s.score.toFixed(3)}`}
+                    >
+                      {tier}
+                    </span>
+                  </div>
                   <span class="today__card-score">
                     score {(s.score * 100).toFixed(0)}
                   </span>
@@ -251,6 +384,9 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                         <a href={`/sessions#session/${sid}`}>{sid.slice(0, 8)}</a>
                       </>
                     ))}
+                    {s.evidence.sessionIds.length > 4 ? (
+                      <span> · +{s.evidence.sessionIds.length - 4} more</span>
+                    ) : null}
                   </p>
                 ) : null}
                 {s.evidence.projectId ? (
@@ -261,65 +397,26 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                     </a>
                   </p>
                 ) : null}
+                {s.evidence.configSha ? (
+                  <p class="today__card-evidence">
+                    <span class="today__card-evlabel">config:</span>{' '}
+                    <code>{s.evidence.configSha.slice(0, 7)}</code>
+                  </p>
+                ) : null}
                 {s.evidence.decisionId ? (
                   <p class="today__card-evidence">
                     <span class="today__card-evlabel">decision:</span>{' '}
                     <code>{s.evidence.decisionId}</code>
                   </p>
                 ) : null}
+                {drillIn ? (
+                  <p class="today__card-drill today__row-secondary">
+                    → <a href={drillIn}>in context</a>
+                  </p>
+                ) : null}
               </li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <ul class="today__cards">
-          {surprisesNewView.map((s) => (
-            <li class={`today__card today__card--${s.kind}`}>
-              <div class="today__card-head">
-                <span class={`today__kind today__kind--${s.tone}`}>
-                  {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                </span>
-                <span class="today__card-score">
-                  score {(s.score * 100).toFixed(0)}
-                </span>
-              </div>
-              <p class="today__card-summary">{s.summary}</p>
-              {s.evidence.sessionIds && s.evidence.sessionIds.length > 0 ? (
-                <p class="today__card-evidence">
-                  <span class="today__card-evlabel">sessions:</span>
-                  {s.evidence.sessionIds.slice(0, 4).map((sid, ix) => (
-                    <>
-                      {ix > 0 ? ' · ' : ' '}
-                      <a href={`/sessions#session/${sid}`}>{sid.slice(0, 8)}</a>
-                    </>
-                  ))}
-                  {s.evidence.sessionIds.length > 4 ? (
-                    <span> · +{s.evidence.sessionIds.length - 4} more</span>
-                  ) : null}
-                </p>
-              ) : null}
-              {s.evidence.projectId ? (
-                <p class="today__card-evidence">
-                  <span class="today__card-evlabel">project:</span>{' '}
-                  <a href={`/projects/${s.evidence.projectId}`}>
-                    {s.evidence.projectId}
-                  </a>
-                </p>
-              ) : null}
-              {s.evidence.configSha ? (
-                <p class="today__card-evidence">
-                  <span class="today__card-evlabel">config:</span>{' '}
-                  <code>{s.evidence.configSha.slice(0, 7)}</code>
-                </p>
-              ) : null}
-              {s.evidence.decisionId ? (
-                <p class="today__card-evidence">
-                  <span class="today__card-evlabel">decision:</span>{' '}
-                  <code>{s.evidence.decisionId}</code>
-                </p>
-              ) : null}
-            </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>
@@ -472,12 +569,65 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
               preview of concerning-surprise cards this kernel surfaces.
             </p>
             <ul class="today__cards">
-              {surprisesBrokenView.map((s) => (
+              {surprisesBrokenView.map((s) => {
+                const tier = surpriseConfidenceTier(s.score);
+                const drillIn = SURPRISE_DRILL_IN[s.kind];
+                return (
+                  <li class={`today__card today__card--alert today__card--${s.kind}`}>
+                    <div class="today__card-head">
+                      <div class="today__card-head-left">
+                        <span class={`today__kind today__kind--${s.tone}`}>
+                          {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                        </span>
+                        <span
+                          class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                          title={`raw score ${s.score.toFixed(3)}`}
+                        >
+                          {tier}
+                        </span>
+                      </div>
+                      <span class="today__card-score">
+                        score {(s.score * 100).toFixed(0)}
+                      </span>
+                    </div>
+                    <p class="today__card-summary">{s.summary}</p>
+                    {s.evidence.projectId ? (
+                      <p class="today__card-evidence">
+                        <span class="today__card-evlabel">project:</span>{' '}
+                        <a href={`/projects/${s.evidence.projectId}`}>
+                          {s.evidence.projectId}
+                        </a>
+                      </p>
+                    ) : null}
+                    {drillIn ? (
+                      <p class="today__card-drill today__row-secondary">
+                        → <a href={drillIn}>in context</a>
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : (
+          <ul class="today__cards">
+            {surprisesBrokenView.map((s) => {
+              const tier = surpriseConfidenceTier(s.score);
+              const drillIn = SURPRISE_DRILL_IN[s.kind];
+              return (
                 <li class={`today__card today__card--alert today__card--${s.kind}`}>
                   <div class="today__card-head">
-                    <span class={`today__kind today__kind--${s.tone}`}>
-                      {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                    </span>
+                    <div class="today__card-head-left">
+                      <span class={`today__kind today__kind--${s.tone}`}>
+                        {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                      </span>
+                      <span
+                        class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                        title={`raw score ${s.score.toFixed(3)}`}
+                      >
+                        {tier}
+                      </span>
+                    </div>
                     <span class="today__card-score">
                       score {(s.score * 100).toFixed(0)}
                     </span>
@@ -491,39 +641,20 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                       </a>
                     </p>
                   ) : null}
+                  {s.evidence.narrativeId ? (
+                    <p class="today__card-evidence">
+                      <span class="today__card-evlabel">narrative:</span>{' '}
+                      <code>{s.evidence.narrativeId}</code>
+                    </p>
+                  ) : null}
+                  {drillIn ? (
+                    <p class="today__card-drill today__row-secondary">
+                      → <a href={drillIn}>in context</a>
+                    </p>
+                  ) : null}
                 </li>
-              ))}
-            </ul>
-          </section>
-        ) : (
-          <ul class="today__cards">
-            {surprisesBrokenView.map((s) => (
-              <li class={`today__card today__card--alert today__card--${s.kind}`}>
-                <div class="today__card-head">
-                  <span class={`today__kind today__kind--${s.tone}`}>
-                    {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                  </span>
-                  <span class="today__card-score">
-                    score {(s.score * 100).toFixed(0)}
-                  </span>
-                </div>
-                <p class="today__card-summary">{s.summary}</p>
-                {s.evidence.projectId ? (
-                  <p class="today__card-evidence">
-                    <span class="today__card-evlabel">project:</span>{' '}
-                    <a href={`/projects/${s.evidence.projectId}`}>
-                      {s.evidence.projectId}
-                    </a>
-                  </p>
-                ) : null}
-                {s.evidence.narrativeId ? (
-                  <p class="today__card-evidence">
-                    <span class="today__card-evlabel">narrative:</span>{' '}
-                    <code>{s.evidence.narrativeId}</code>
-                  </p>
-                ) : null}
-              </li>
-            ))}
+              );
+            })}
           </ul>
         )
       ) : null}
@@ -726,6 +857,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
       document.getElementById('action-brief-cta'),
       document.getElementById('action-mine-cta'),
       document.getElementById('action-curate-cta'),
+      document.getElementById('action-wipe-scan'),
     ].filter((b): b is HTMLButtonElement => b !== null);
 
     const STAGE_LABELS: Record<string, string> = {
@@ -1067,6 +1199,67 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
       await runFullScan(ui);
     }
 
+    // Wave 1 Fix C: WIPE + SCAN — destructive flow that POSTs kitchen-
+    // sink wipe to /api/clear (empty body == wipe everything per the
+    // handler's "kitchen-sink mode"), then chains into runFullScanFlow.
+    // window.confirm is the intentionality guard (no separate modal —
+    // the action is rare enough that the browser native is fine and
+    // the prompt copy enumerates exactly what dies). NuclearReset's
+    // selective-wipe surface in DATA panel is preserved for the "clear
+    // without rescan" path.
+    async function runWipeAndScan(): Promise<void> {
+      // Wave-1 review iter-1 fix: confirm copy tightened to actual scope.
+      // /api/clear only wipes the server-side data dir + SQLite ledger;
+      // it does NOT touch the three IndexedDB databases (uploaded ZIP
+      // bytes, semantic-label cache, bench results) — that's
+      // NuclearReset's job in the DATA panel. Saying "all local data"
+      // here implied IndexedDB ZIPs would also go, which is false.
+      const proceed = window.confirm(
+        'Wipe local chat-arch-data/ (SQLite ledger + analysis sidecars + manifest + cloud-conversations + exports + cached PR data) and rescan?\n\n' +
+        'Uploaded ZIP bytes in browser storage are NOT affected — use DATA panel for that.',
+      );
+      if (!proceed) return;
+      showProgress('wipe local data');
+      setButtonsDisabled(true);
+      const startedAt = Date.now();
+      startElapsedTicker(startedAt);
+      setPhase('writing');
+      try {
+        const res = await fetch('/api/clear', {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'chat-arch-clear',
+            'content-type': 'application/json',
+          },
+          // Empty body == kitchen-sink wipe (see clear.ts handler).
+          body: '{}',
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          hideProgress();
+          setButtonsDisabled(false);
+          setStatus(`wipe failed: ${res.status} ${body.slice(0, 160)}`, true);
+          return;
+        }
+      } catch (err) {
+        hideProgress();
+        setButtonsDisabled(false);
+        setStatus(`wipe failed: ${(err as Error).message ?? String(err)}`, true);
+        return;
+      }
+      // Wave-1 review iter-1 fix: previously called setButtonsDisabled(false)
+      // here before handing off to runFullScanFlow, opening a microtask
+      // window where WIPE+SCAN could double-fire and race a second
+      // /api/clear against the in-flight exporter step (worst case:
+      // unlinking the .db file while the exporter has it open). Now keep
+      // buttons disabled across the handoff — runFullScanFlow's own
+      // setButtonsDisabled(true) on entry is idempotent, and the final
+      // success-path reload + the failure-path setButtonsDisabled(false)
+      // inside runFullScanFlow handle reset.
+      hideProgress();
+      await runFullScanFlow();
+    }
+
     // SCAN button runs the full chain (exporter → mine-corrections → curate
     // → falsify). The user's mental model is "scan = everything refreshed";
     // having a separate FULL SCAN button next to RESCAN was redundant chrome.
@@ -1075,6 +1268,9 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
     // whole chain.
     document.getElementById('action-rescan')?.addEventListener('click', () => {
       void runFullScanFlow();
+    });
+    document.getElementById('action-wipe-scan')?.addEventListener('click', () => {
+      void runWipeAndScan();
     });
     document.getElementById('action-mine-cta')?.addEventListener('click', () => { void runMine(); });
     document.getElementById('action-curate-cta')?.addEventListener('click', () => { void runCurate(); });
@@ -1182,6 +1378,23 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
     font-weight: 700;
   }
   .today__btn-primary:hover { background: #ffdb5c !important; }
+  /* Wave-1 review iter-1 fix: secondary visual weight wasn't enough —
+     the button read as "another way to scan" rather than "destructive."
+     Switched the border + label to the same peach tone the page already
+     uses for alert cards + concerning-kind badges, so it reads as
+     in-system "warn" affordance at a glance even before the confirm
+     dialog fires. Filled outline only on hover to keep the destructive
+     framing without promoting it to a CTA. */
+  .today__btn-secondary {
+    background: transparent !important;
+    color: #ff9933 !important;
+    border: 1px solid #ff993366 !important;
+    padding: 7px 14px !important;
+  }
+  .today__btn-secondary:hover {
+    background: #ff993315 !important;
+    border-color: #ff9933 !important;
+  }
   .today__actions button:hover { background: #ffd680; }
   .today__actions button:disabled {
     opacity: 0.5;
@@ -1332,9 +1545,18 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
   .today__card--alert {
     border-left-color: #ff9933;
   }
+  /* Wave-1 review iter-1 fix: was 3 children in flex space-between, so
+     the tier badge floated awkwardly at the visual midpoint. Now [kind +
+     tier] cluster on the left (both label-the-card things) and score
+     stays on the right (the metric). flex-wrap so narrow cards stack
+     gracefully instead of crushing. */
   .today__card-head {
     display: flex; align-items: baseline; justify-content: space-between;
-    gap: 8px; margin-bottom: 6px;
+    gap: 8px; margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .today__card-head-left {
+    display: flex; align-items: baseline; gap: 6px;
+    flex: 1 1 auto; min-width: 0;
   }
   .today__kind {
     display: inline-block;
@@ -1354,6 +1576,65 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     color: #FFCC9999;
+  }
+  /* Wave 1 Fix A: confidence tier ribbon. Sits inline between the
+     kind badge (left) and the numeric score (right). Same Antonio
+     small-caps treatment as other LCARS pills; color encodes tier
+     (sunflower-gold STRONG / butterscotch MODERATE / muted WEAK)
+     so the user reads load-bearing vs speculative at a glance even
+     when scores are close. Tooltip surfaces the raw 3-decimal score
+     on hover for the pedant. */
+  /* Wave-1 review iter-1 fix: bump font-size + reduce tracking so the
+     text label (the load-bearing distinguisher under colorblindness)
+     is actually legible — STRONG vs MODERATE are both amber-family at
+     high luminance and color alone collapses under protanopia. */
+  .today__card-tier {
+    display: inline-block;
+    font-family: 'Antonio', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-weight: 700;
+  }
+  /* STRONG: filled gold. MODERATE: filled cream with outline. WEAK:
+     outline only with solid text — gives a shape-channel (filled vs
+     outlined vs outline-only) that's orthogonal to hue, so the three
+     tiers stay distinguishable even when color drops out. */
+  .today__card-tier--strong {
+    background: #FFCC33;
+    color: #0a0a0a;
+  }
+  .today__card-tier--moderate {
+    background: #FFCC99;
+    color: #0a0a0a;
+    box-shadow: inset 0 0 0 1px #DD9944;
+  }
+  /* WEAK was alpha-on-alpha (#FFCC9999 over #FFCC9933 over #0a0a0a)
+     which computed to 4.20:1 — under WCAG AA 4.5:1 for small text.
+     Outline pattern with solid text fixes contrast (FFCC99cc on
+     #0a0a0a ≈ 8.5:1) and adds the shape-distinguisher. */
+  .today__card-tier--weak {
+    background: transparent;
+    color: #FFCC99cc;
+    box-shadow: inset 0 0 0 1px #FFCC9966;
+  }
+  /* Wave 1 Fix B: per-card "→ in context" drill-in link. Smaller +
+     muted vs the evidence rows so it reads as an exit, not a CTA;
+     mirrors the page-level today__row-secondary treatment. */
+  /* Wave-1 review iter-1 fix: was too subtle to find — color #FFCC9988
+     with dashed underline at alpha 44 read as a comment, not a link.
+     Bumped to solid color + alpha-66 underline so it reads as clickable
+     while still subordinate to the primary evidence-row links above. */
+  .today__card-drill {
+    margin: 8px 0 0;
+    font-size: 11px;
+    color: #FFCC99aa;
+  }
+  .today__card-drill a {
+    color: #FFCC99cc;
+    text-decoration: none;
+    border-bottom: 1px dashed #FFCC9966;
   }
   .today__card-summary {
     margin: 4px 0 8px;

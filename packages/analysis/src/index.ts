@@ -398,10 +398,14 @@ export {
 
 export {
   computeSurprises,
+  surpriseConfidenceTier,
+  SURPRISE_TIER_MODERATE_MIN,
+  SURPRISE_TIER_STRONG_MIN,
   type ComputeSurprisesInput,
   type ComputeSurprisesOptions,
   type Surprise,
   type SurpriseCompositeRow,
+  type SurpriseConfidenceTier,
   type SurpriseDecisionRow,
   type SurpriseEvidence,
   type SurpriseKind,

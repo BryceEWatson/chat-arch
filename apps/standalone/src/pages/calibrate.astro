@@ -104,46 +104,202 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 </BaseLayout>
 
 <style>
-  .calibrate { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
-  .calibrate__head h1 { margin-top: 0; }
-  .calibrate__sub { color: var(--lcars-dim, #888); font-size: 0.9rem; }
+  /* LCARS-chrome page styles — token literals match the convention used
+     by health.astro / playbook.astro / audit.astro / views.astro /
+     index.astro. Earlier revisions of this file reached for
+     `var(--lcars-dim, #888)` / `var(--lcars-accent, #f80)` etc., but
+     those CSS variables are only declared inside `.lcars-root` (the
+     React viewer's scope) and this Astro page never enters that
+     scope, so every reference fell back to the gray/white/orange
+     literals — visually a different app from the rest of the
+     LCARS chrome (Wave 3 cohesion audit). Sunflower #FFCC99 is the
+     primary text token; #FFCC9999 / cc / 44 / 33 / 22 / 11 are the
+     muted ramps. A/B accents reach for the viewer's ice (#99CCFF)
+     and violet (#CC99CC) so the LCARS palette is preserved end-to-
+     end. */
+  main.calibrate {
+    padding: 32px 24px 64px;
+    max-width: 1100px;
+    margin: 0 auto;
+    color: #FFCC99;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .calibrate__head h1 {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 28px;
+    margin: 0 0 16px;
+  }
+  .calibrate__head code,
+  .calibrate__sweep code {
+    background: #FFCC9911;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 12px;
+  }
+  .calibrate__sub { color: #FFCC9999; font-size: 13px; line-height: 1.6; }
   .calibrate__state { padding: 2rem 0; }
-  .calibrate__error { color: #d44; font-weight: bold; }
-  .calibrate__error-detail { background: rgba(255,80,80,0.1); padding: 0.5rem; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: pre-wrap; }
+  .calibrate__error { color: #f08080; font-weight: 700; font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; }
+  .calibrate__error-detail {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9933;
+    border-left: 3px solid #f08080;
+    padding: 12px 14px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 12px;
+    color: #FFCC99cc;
+    white-space: pre-wrap;
+  }
 
   .calibrate__progress { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; }
-  .calibrate__progress-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
-  .calibrate__progress-fill { height: 100%; background: var(--lcars-accent, #f80); transition: width 0.2s ease; width: 0%; }
+  .calibrate__progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #FFCC9922;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .calibrate__progress-fill {
+    height: 100%;
+    background: #FFCC99;
+    transition: width 0.2s ease;
+    width: 0%;
+  }
 
-  .calibrate__cos { font-family: ui-monospace, monospace; font-size: 0.95rem; color: var(--lcars-dim, #888); margin-bottom: 1rem; }
-  .calibrate__cos span { color: var(--lcars-fg, #fff); font-weight: bold; }
+  .calibrate__cos {
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 13px;
+    color: #FFCC9999;
+    margin-bottom: 1rem;
+  }
+  .calibrate__cos span { color: #FFCC99; font-weight: 700; }
 
   .calibrate__sessions { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
-  .calibrate__session { background: rgba(255,255,255,0.04); padding: 1rem; border-radius: 6px; border-left: 3px solid; min-height: 8rem; }
-  .calibrate__session--a { border-left-color: #6cc; }
-  .calibrate__session--b { border-left-color: #c6c; }
-  .calibrate__session h2 { font-size: 1rem; margin: 0 0 0.5rem; }
-  .calibrate__preview { margin: 0; font-size: 0.9rem; line-height: 1.45; color: var(--lcars-dim-fg, #ccc); }
+  .calibrate__session {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9933;
+    padding: 14px 16px;
+    border-radius: 3px;
+    border-left: 3px solid;
+    min-height: 8rem;
+  }
+  /* A/B distinction — borrows the viewer's `--lcars-ice` (#99CCFF)
+     and `--lcars-violet` (#CC99CC) tokens so the accent fits the LCARS
+     palette instead of arbitrary cyan/magenta. */
+  .calibrate__session--a { border-left-color: #99CCFF; }
+  .calibrate__session--b { border-left-color: #CC99CC; }
+  .calibrate__session h2 {
+    font-family: 'Antonio', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    color: #FFCC99;
+    margin: 0 0 8px;
+  }
+  .calibrate__preview { margin: 0; font-size: 13px; line-height: 1.5; color: #FFCC99cc; }
 
   .calibrate__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-  .calibrate__btn { padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid var(--lcars-dim, #555); background: rgba(255,255,255,0.03); color: var(--lcars-fg, #fff); cursor: pointer; font-size: 0.95rem; transition: background 0.15s ease, transform 0.05s ease; }
-  .calibrate__btn:hover { background: rgba(255,255,255,0.08); }
+  .calibrate__btn {
+    padding: 8px 16px;
+    border-radius: 2px;
+    border: 1px solid #FFCC9955;
+    background: transparent;
+    color: #FFCC99;
+    cursor: pointer;
+    font-family: 'Antonio', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    transition: background 80ms linear, border-color 80ms linear, transform 0.05s ease;
+  }
+  .calibrate__btn:hover { background: #FFCC9911; border-color: #FFCC9988; }
   .calibrate__btn:active { transform: translateY(1px); }
-  .calibrate__btn--y { border-color: #4a4; }
-  .calibrate__btn--n { border-color: #a44; }
-  .calibrate__btn kbd { display: inline-block; padding: 0 0.4em; margin-right: 0.4em; background: rgba(255,255,255,0.1); border-radius: 3px; font-family: ui-monospace, monospace; font-size: 0.85em; }
+  /* Y/N semantic accents — match audit.astro's pass/fail tones
+     (#88e088 / #f08080). Peach (#FF9933) reserved for destructive
+     elsewhere; here Y is pass, N is reject. */
+  .calibrate__btn--y { border-color: #88e088; color: #88e088; }
+  .calibrate__btn--y:hover { background: rgba(136, 224, 136, 0.1); border-color: #88e088; }
+  .calibrate__btn--n { border-color: #f08080; color: #f08080; }
+  .calibrate__btn--n:hover { background: rgba(240, 128, 128, 0.1); border-color: #f08080; }
+  .calibrate__btn kbd {
+    display: inline-block;
+    padding: 0 0.4em;
+    margin-right: 0.4em;
+    background: #FFCC9922;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 0.85em;
+  }
 
-  .calibrate__hint { font-size: 0.85rem; color: var(--lcars-dim, #888); margin-top: 0.5rem; }
+  .calibrate__hint { font-size: 12px; color: #FFCC9999; margin-top: 0.5rem; line-height: 1.5; }
   .calibrate__dim { opacity: 0.6; }
 
-  .calibrate__buckets { list-style: none; padding: 0; margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--lcars-dim, #888); }
-  .calibrate__buckets li { padding: 0.2rem 0.5rem; background: rgba(255,255,255,0.04); border-radius: 3px; }
-  .calibrate__buckets li.deficit { color: #d8a; }
+  .calibrate__buckets {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 11px;
+    color: #FFCC9999;
+  }
+  .calibrate__buckets li {
+    padding: 4px 8px;
+    background: #0a0a0a;
+    border: 1px solid #FFCC9922;
+    border-radius: 2px;
+  }
+  .calibrate__buckets li.deficit { color: #FF9933; border-color: #FF993355; }
 
-  .calibrate__sweep-table { border-collapse: collapse; margin-top: 1rem; }
-  .calibrate__sweep-table th, .calibrate__sweep-table td { padding: 0.4rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; font-family: ui-monospace, monospace; font-size: 0.9rem; }
-  .calibrate__sweep-table th { color: var(--lcars-dim, #888); font-weight: normal; }
-  .calibrate__sweep-row--target { background: rgba(76, 175, 80, 0.12); font-weight: bold; }
+  .calibrate__sweep h2 {
+    font-family: 'Antonio', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    color: #FFCC99;
+    margin: 20px 0 8px;
+  }
+  .calibrate__sweep-table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
+  .calibrate__sweep-table th,
+  .calibrate__sweep-table td {
+    padding: 6px 14px;
+    border-bottom: 1px solid #FFCC9922;
+    text-align: left;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 12px;
+  }
+  .calibrate__sweep-table th {
+    color: #FFCC9999;
+    font-weight: 600;
+    font-family: 'Antonio', sans-serif;
+    letter-spacing: 0.08em;
+  }
+  .calibrate__sweep-row--target {
+    background: rgba(136, 224, 136, 0.12);
+    color: #FFCC99;
+    font-weight: 700;
+  }
+
+  /* `#show-sweep` button on the empty state — matches the secondary
+     ghost-button pattern playbook.astro uses for its copy button. */
+  #show-sweep {
+    background: transparent;
+    color: #FFCC99;
+    border: 1px solid #FFCC9955;
+    padding: 8px 14px;
+    border-radius: 2px;
+    font-family: 'Antonio', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: background 80ms linear, border-color 80ms linear;
+  }
+  #show-sweep:hover {
+    background: #FFCC9911;
+    border-color: #FFCC9988;
+  }
 </style>
 
 <script>

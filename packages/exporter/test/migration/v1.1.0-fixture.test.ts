@@ -150,14 +150,16 @@ describe('migration v1.1.0 → 1.2.0', () => {
 
     // ---- (d) meta.json reflects the current EXPORTER_VERSION ----
     // Bumped 1.2.0 → 1.3.0 in Phase Rev3-I I5 for the Rev3
-    // substrate cutover; this test asserts the migration writes
-    // whatever the constant says, not a hardcoded literal.
+    // substrate cutover; 1.4.0 / 1.4.1 in feed-redesign Phase A / γ;
+    // 1.4.1 → 1.5.0 in Wave 2 #1 for the delta-surprises archive
+    // sidecar family. The migration writes whatever the constant
+    // says, not a hardcoded literal.
     const meta = await readJson<{
       exporterVersion: string;
       tiers: { browser: { files: readonly string[] } };
       counts: Record<string, unknown>;
     }>(path.join(tmpDataDir, 'analysis', 'meta.json'));
-    expect(meta.exporterVersion).toBe('1.4.1');
+    expect(meta.exporterVersion).toBe('1.5.0');
 
     // The Wave-5 sidecars (+ feed-redesign Phase A surprises.json)
     // must all be registered in the browser tier.

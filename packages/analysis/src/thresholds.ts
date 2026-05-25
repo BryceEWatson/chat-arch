@@ -421,6 +421,19 @@ export const THRESHOLDS = {
     debtSpinningTopK: 3,
     /** Minimum cluster size for `debt-spinning`. */
     debtSpinningMinClusterSize: 3,
+    /**
+     * Wave 2 #1 — delta surprises. The builder archives each rescan's
+     * `surprises.json` to `analysis/archive/surprises-YYYY-MM-DD.json`,
+     * then prunes files older than this many days. The next scan reads
+     * the most recent archive (NOT today's) as `priorSurprises` so the
+     * kernel can emit DELTA observations (`streak-extended`,
+     * `streak-broken`, `trajectory-flip-up`, `trajectory-flip-down`,
+     * `pattern-recurrence-resumed`) on top of the snapshot kinds. When
+     * no prior archive exists the delta kinds skip cleanly (fail-soft).
+     * 30 days ≈ one rescan-per-day month of history; raise if calibrated
+     * cadence is lower.
+     */
+    archiveRetentionDays: 30,
   },
   /**
    * Rev3 applied-rule outcome watcher (plan §"Three closures" —

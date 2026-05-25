@@ -267,13 +267,20 @@ export function makeDemoSurprises(): SurprisesOutput {
         id: 'sur_demo_decision_paid_1',
         kind: 'decision-paid-off',
         tone: 'positive',
-        summary: 'Adopting ripgrep dropped average re-prompt rate by 23% on demo-project-B.',
+        // Score parked in the WEAK band so the FEED's three-tier
+        // confidence ribbon (STRONG / MODERATE / WEAK) renders every
+        // tier at least once across the 5 demo surprises. Copy hedged
+        // (single-session, weak evidence) so the WEAK tier label and
+        // the summary's claim-strength agree — earlier copy asserted
+        // a confident measured outcome that visually contradicted the
+        // WEAK badge.
+        summary: 'Single-session signal: ripgrep adoption coincided with -23% re-prompts on demo-project-B (n=1, weak evidence).',
         evidence: {
           decisionId: 'dec_demo_ripgrep',
           projectId: 'demo-project-B',
           sessionIds: [demoSid('d1')],
         },
-        score: 0.71,
+        score: 0.42,
         generatedAt: DEMO_GENERATED_AT_MS,
       },
       {
@@ -285,6 +292,7 @@ export function makeDemoSurprises(): SurprisesOutput {
           projectId: 'demo-project-C',
           sessionIds: [demoSid('c1'), demoSid('c2')],
         },
+        // MODERATE-band concerning surprise.
         score: 0.66,
         generatedAt: DEMO_GENERATED_AT_MS,
       },
@@ -292,11 +300,13 @@ export function makeDemoSurprises(): SurprisesOutput {
         id: 'sur_demo_debt_spin_1',
         kind: 'debt-spinning',
         tone: 'concerning',
+        // STRONG-band concerning surprise — boosted above 0.75 so the
+        // BROKEN grid also exercises the STRONG ribbon (Wave 1 Fix A).
         summary: '"how do I bind a port in Astro?" asked 9 times this month across 4 projects.',
         evidence: {
           sessionIds: [demoSid('k1'), demoSid('k2'), demoSid('k3')],
         },
-        score: 0.58,
+        score: 0.83,
         generatedAt: DEMO_GENERATED_AT_MS,
       },
     ],

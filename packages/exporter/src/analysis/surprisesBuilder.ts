@@ -13,6 +13,9 @@
  *
  * Writes:
  *   - `analysis/surprises.json`
+ *   - `analysis/archive/surprises-YYYY-MM-DD.json` (Wave 2 #1 — daily
+ *     snapshot copy for the next scan's delta read; pruned by filename
+ *     to `THRESHOLDS.surprises.archiveRetentionDays`).
  *
  * Watcher entries are intentionally NOT read from disk in V1 — the
  * applied-pattern watcher loop ledger lives in the SQLite substrate,
@@ -26,7 +29,7 @@
  * presence after a scan.
  */
 
-import { readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   CompositeOutcomesFile,
@@ -36,6 +39,7 @@ import type {
 } from '@chat-arch/schema';
 import {
   computeSurprises,
+  THRESHOLDS,
   type ComputeSurprisesInput,
   type SurpriseCompositeRow,
   type SurpriseDecisionRow,
@@ -74,6 +78,127 @@ async function readJsonOrNull<T>(p: string): Promise<T | null> {
     return JSON.parse(raw) as T;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Wave 2 #1 — delta surprises. Archive filename convention:
+ * `surprises-YYYY-MM-DD.json` in `<analysisDir>/archive/`. ASCII
+ * date stamps sort lexicographically the same as chronologically, so
+ * filename-based recency is deterministic and OS-agnostic (no reliance
+ * on mtime, which moves under `git checkout`).
+ */
+const ARCHIVE_DIR_NAME = 'archive';
+const ARCHIVE_FILE_RE = /^surprises-(\d{4}-\d{2}-\d{2})\.json$/;
+
+function archiveDirOf(analysisDir: string): string {
+  return path.join(analysisDir, ARCHIVE_DIR_NAME);
+}
+
+/** YYYY-MM-DD in UTC — matches the archive filename convention. */
+function dateStampUtc(unixMs: number): string {
+  return new Date(unixMs).toISOString().slice(0, 10);
+}
+
+/**
+ * Read the most recent dated archive (NOT today's, the one before).
+ * Returns null when:
+ *   - the archive directory does not exist,
+ *   - the archive directory contains no `surprises-YYYY-MM-DD.json` files,
+ *   - the most recent file is today's (i.e. the kernel already ran today
+ *     and we don't want it to compare against itself),
+ *   - the most recent file cannot be parsed (malformed JSON / wrong shape).
+ *
+ * Determinism: filenames are sorted descending lexicographically, which
+ * matches chronological order under the ISO-8601 date stamp.
+ *
+ * Race note: this is read-only; concurrent writers to the archive
+ * (e.g. a second `pnpm exporter run start` racing the first) would
+ * land via the atomicWriteJsonSync rename primitive. We tolerate a
+ * mid-flight rename by treating a partial read as "no prior" — the
+ * delta kinds skip cleanly and we degrade to V1 snapshot behavior.
+ */
+export async function loadMostRecentArchive(
+  analysisDir: string,
+  options: { todayStamp?: string } = {},
+): Promise<SurprisesOutput | null> {
+  const dir = archiveDirOf(analysisDir);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return null;
+  }
+  const dated = entries
+    .map((name) => {
+      const m = ARCHIVE_FILE_RE.exec(name);
+      return m === null ? null : { name, stamp: m[1] as string };
+    })
+    .filter((e): e is { name: string; stamp: string } => e !== null);
+  if (dated.length === 0) return null;
+
+  // Exclude today's stamp so a same-day re-scan doesn't read what we
+  // just wrote (the file would be byte-identical to the current run).
+  const today = options.todayStamp;
+  const candidates =
+    today !== undefined ? dated.filter((e) => e.stamp !== today) : dated;
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.stamp.localeCompare(a.stamp));
+  const mostRecent = candidates[0] as { name: string; stamp: string };
+  try {
+    const raw = await readFile(path.join(dir, mostRecent.name), 'utf8');
+    return JSON.parse(raw) as SurprisesOutput;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Archive today's surprises file and prune anything older than
+ * `retentionDays`. Pruning is filename-based (NOT mtime) so a `git
+ * checkout` that resets timestamps doesn't accidentally evict the
+ * archive. The today copy uses `atomicWriteJsonSync` for the same
+ * rename-over-target durability as the primary surprises.json write.
+ *
+ * Concurrency: archive + prune are separate filesystem ops, so a
+ * racing prune could delete a sibling that another concurrent
+ * archive operation just wrote. We accept the race — the loss is at
+ * most one day of archive history, never the freshly-written file
+ * (today's stamp is always retained because it's within the
+ * retention window by definition).
+ */
+export async function archiveAndPrune(
+  analysisDir: string,
+  file: SurprisesOutput,
+  options: { now: number; retentionDays: number },
+): Promise<void> {
+  const dir = archiveDirOf(analysisDir);
+  await mkdir(dir, { recursive: true });
+  const stamp = dateStampUtc(options.now);
+  const target = path.join(dir, `surprises-${stamp}.json`);
+  atomicWriteJsonSync(target, file);
+
+  // Prune by filename: any dated entry older than today minus retention.
+  const cutoffMs = options.now - options.retentionDays * 24 * 60 * 60 * 1000;
+  const cutoffStamp = dateStampUtc(cutoffMs);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const m = ARCHIVE_FILE_RE.exec(name);
+    if (m === null) continue;
+    const entryStamp = m[1] as string;
+    if (entryStamp.localeCompare(cutoffStamp) < 0) {
+      try {
+        await unlink(path.join(dir, name));
+      } catch {
+        // Best-effort prune; a stale lock or concurrent delete is fine.
+      }
+    }
   }
 }
 
@@ -233,6 +358,14 @@ export async function buildSurprisesFile(
   // `[1.4.0]` accordingly.
   const patternWatchers: readonly SurpriseWatcherEntry[] = [];
 
+  // Wave 2 #1 — load the most recent prior archive (excluding today's
+  // stamp) so the kernel can emit delta kinds. Fail-soft: null means
+  // delta kinds skip cleanly and the kernel behaves identically to V1.
+  const todayStamp = new Date(options.now).toISOString().slice(0, 10);
+  const priorSurprises = await loadMostRecentArchive(analysisDir, {
+    todayStamp,
+  });
+
   const kernelInput: ComputeSurprisesInput = {
     generatedAt: options.now,
     composites,
@@ -242,17 +375,36 @@ export async function buildSurprisesFile(
     reflexive,
     decisions,
     knowledgeDebt,
+    priorSurprises,
   };
   const file = computeSurprises(kernelInput);
 
   const outPath = path.join(analysisDir, 'surprises.json');
   atomicWriteJsonSync(outPath, file);
 
+  // Wave 2 #1 — archive today's snapshot for tomorrow's delta read,
+  // then prune anything older than the retention window. Errors here
+  // log + continue: a failed archive write should not break the
+  // surprises sidecar (which already landed via the atomic write
+  // above).
+  try {
+    await archiveAndPrune(analysisDir, file, {
+      now: options.now,
+      retentionDays: THRESHOLDS.surprises.archiveRetentionDays,
+    });
+  } catch (err) {
+    logger.warn(
+      `analysis: surprises archive soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   logger.info(
     `analysis: surprises.json — ${file.surprises.length} surprises ` +
       `(composites=${composites.length}, trajectories=${trajectories.length}, ` +
       `its=${itsResults.length}, decisions=${decisions.length}, ` +
-      `knowledgeDebt=${knowledgeDebt.length}), ${Date.now() - t0}ms`,
+      `knowledgeDebt=${knowledgeDebt.length}, ` +
+      `priorArchive=${priorSurprises === null ? 'none' : 'loaded'}), ` +
+      `${Date.now() - t0}ms`,
   );
 
   return {

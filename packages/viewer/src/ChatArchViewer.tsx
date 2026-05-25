@@ -137,6 +137,12 @@ const HASH_CHAT = '#chat';
 const HASH_CORRECTIONS = '#corrections';
 const HASH_EFFECTIVENESS = '#effectiveness';
 const HASH_INSIGHTS = '#insights';
+// Wave-1 visual-review iter-1 finding: FEED card drill-ins to #trends
+// and #decisions fell through to the default landing mode because no
+// hash readers existed. /views catalogue had the same dead links.
+// Added here so both surfaces light up.
+const HASH_TRENDS = '#trends';
+const HASH_DECISIONS = '#decisions';
 // Action hash — opens the DataPanel modal and strips itself so a
 // back-nav / reload doesn't re-fire the open. Mirrors the standalone
 // app's `/sessions#data` deep-link from the AppSidebar SYSTEM > DATA
@@ -252,6 +258,18 @@ function readEffectivenessHash(): boolean {
 function readInsightsHash(): boolean {
   if (typeof window === 'undefined') return false;
   return window.location.hash === HASH_INSIGHTS;
+}
+
+/** Outcome-substrate trends/trajectory surface — no detail dimension. */
+function readTrendsHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_TRENDS;
+}
+
+/** Outcome-substrate decisions surface — no detail dimension. */
+function readDecisionsHash(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash === HASH_DECISIONS;
 }
 
 /** Action hash — open the DataPanel modal. Stripped after firing. */
@@ -377,6 +395,8 @@ export function ChatArchViewer({
     if (readPracticeHash()) return 'practice';
     if (readEffectivenessHash()) return 'effectiveness';
     if (readInsightsHash()) return 'insights';
+    if (readTrendsHash()) return 'trends';
+    if (readDecisionsHash()) return 'decisions';
     // #data is an action hash, not a surface mode — it opens the
     // DataPanel via the sync useEffect and strips itself. Mode falls
     // through to defaultLandingMode so the underlying page is sane.
@@ -737,6 +757,8 @@ export function ChatArchViewer({
       const onCorrections = readCorrectionsHash();
       const onEffectiveness = readEffectivenessHash();
       const onInsights = readInsightsHash();
+      const onTrends = readTrendsHash();
+      const onDecisions = readDecisionsHash();
       // #data is an action, not a surface — open the panel and strip
       // the hash so a back-nav / reload doesn't re-fire the open. Done
       // BEFORE the unrecognized-hash branch below so the strip doesn't
@@ -766,6 +788,10 @@ export function ChatArchViewer({
         setMode('effectiveness');
       } else if (onInsights) {
         setMode('insights');
+      } else if (onTrends) {
+        setMode('trends');
+      } else if (onDecisions) {
+        setMode('decisions');
       } else {
         // Phase 3 cut COST and CONSTELLATION; a stale `#cost` /
         // `#constellation` bookmark would otherwise sit in the URL

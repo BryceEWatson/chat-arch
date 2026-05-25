@@ -22,6 +22,7 @@ import {
   type SurpriseKnowledgeDebtRow,
   type SurpriseTrajectoryRow,
   type SurpriseWatcherEntry,
+  type SurprisesOutput,
 } from './computeSurprises.js';
 import type { ItsResult } from './itsAnalysis.js';
 import type { ReflexiveResult } from './computeReflexive.js';
@@ -791,5 +792,394 @@ describe('cross-cutting properties', () => {
       if (s.kind === 'trajectory-accelerating') expect(s.tone).toBe('positive');
       if (s.kind === 'trajectory-stalled') expect(s.tone).toBe('concerning');
     }
+  });
+});
+
+// ─── Wave 2 #1 — delta kinds ───────────────────────────────────────
+
+/**
+ * priorWith — build a SurprisesOutput fixture suitable for the
+ * `priorSurprises` slot. Optional thresholds override lets tests pin
+ * the prior's gates to match the current opts (Wave-2 review iter-1
+ * fix B3 rejects deltas when streakMin drifts between scans, so tests
+ * that pass non-default opts must build a prior with the same gate).
+ */
+function priorWith(
+  surprises: readonly Surprise[],
+  thresholdOverrides: Partial<SurprisesOutput['thresholds']> = {},
+): SurprisesOutput {
+  const baseThresholds = {
+    streakMin: 5,
+    itsQValueMax: 0.1,
+    itsDeltaMin: 0.15,
+    reflexiveDeltaMin: 0.1,
+    reflexiveEValueMin: 1.5,
+    decisionGoodFollowupsMin: 5,
+    debtSpinningTopK: 3,
+    debtSpinningMinClusterSize: 3,
+    archiveRetentionDays: 30,
+  };
+  return {
+    version: 1,
+    generatedAt: GENERATED_AT - 86_400_000,
+    surprises,
+    thresholds: { ...baseThresholds, ...thresholdOverrides },
+  };
+}
+
+function streakSurprise(ids: readonly string[]): Surprise {
+  return {
+    id: `streak:${ids[ids.length - 1] as string}`,
+    kind: 'streak',
+    tone: 'positive',
+    summary: `${ids.length} sessions in a row landed as composite-good.`,
+    evidence: { sessionIds: ids },
+    score: 0.5,
+    generatedAt: GENERATED_AT - 86_400_000,
+  };
+}
+
+function trajectorySurprise(
+  projectId: string,
+  kind: 'trajectory-accelerating' | 'trajectory-stalled',
+): Surprise {
+  return {
+    id: `${kind}:${projectId}`,
+    kind,
+    tone: kind === 'trajectory-accelerating' ? 'positive' : 'concerning',
+    summary: `${projectId} surprise.`,
+    evidence: { projectId },
+    score: 0.5,
+    generatedAt: GENERATED_AT - 86_400_000,
+  };
+}
+
+function patternClosedSurprise(patternId: string): Surprise {
+  return {
+    id: `pattern-closed:${patternId}`,
+    kind: 'pattern-closed',
+    tone: 'positive',
+    summary: `Pattern ${patternId} held.`,
+    evidence: { projectId: 'p1', narrativeId: patternId },
+    score: 0.5,
+    generatedAt: GENERATED_AT - 86_400_000,
+  };
+}
+
+describe('streak-extended (delta)', () => {
+  it('emits when prior + current share lastSessionId and current is longer', () => {
+    // Construct a corpus whose trailing-good-run ends on the same id
+    // as the prior snapshot's. Easiest: composites end on s5 in both.
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'good'),
+      compositeRow('s3', 3, 'good'),
+      compositeRow('s4', 4, 'good'),
+      compositeRow('s5', 5, 'good'),
+    ];
+    const prior = priorWith([streakSurprise(['s3', 's4', 's5'])], { streakMin: 3 });
+    const out = computeSurprises(
+      { ...emptyInput({ composites }), priorSurprises: prior },
+      { streakMin: 3 },
+    );
+    const ext = out.surprises.find((s) => s.kind === 'streak-extended');
+    expect(ext).toBeDefined();
+    expect(ext?.tone).toBe('positive');
+    // Prior was 3, current is 5 — diff = 2 → score 0.4.
+    expect(ext?.score).toBeCloseTo(0.4, 5);
+  });
+
+  it('does NOT emit when lastSessionId differs (fresh streak, not extension)', () => {
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'good'),
+      compositeRow('s3', 3, 'good'),
+    ];
+    const prior = priorWith([streakSurprise(['x1', 'x2', 'x3'])], { streakMin: 3 });
+    const out = computeSurprises(
+      { ...emptyInput({ composites }), priorSurprises: prior },
+      { streakMin: 3 },
+    );
+    expect(kindsOf(out.surprises)).not.toContain('streak-extended');
+  });
+
+  it('does NOT emit when prior is null', () => {
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'good'),
+      compositeRow('s3', 3, 'good'),
+    ];
+    const out = computeSurprises(
+      { ...emptyInput({ composites }), priorSurprises: null },
+      { streakMin: 3 },
+    );
+    expect(kindsOf(out.surprises)).not.toContain('streak-extended');
+  });
+
+  it('does NOT emit when current streak is same length or shorter than prior', () => {
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'good'),
+      compositeRow('s3', 3, 'good'),
+    ];
+    const prior = priorWith([streakSurprise(['s1', 's2', 's3'])], { streakMin: 3 });
+    const out = computeSurprises(
+      { ...emptyInput({ composites }), priorSurprises: prior },
+      { streakMin: 3 },
+    );
+    expect(kindsOf(out.surprises)).not.toContain('streak-extended');
+  });
+});
+
+describe('streak-broken (delta)', () => {
+  it('emits when prior had a streak and current does NOT', () => {
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'bad'),
+    ];
+    const prior = priorWith([streakSurprise(['p1', 'p2', 'p3', 'p4', 'p5'])]);
+    const out = computeSurprises(
+      { ...emptyInput({ composites }), priorSurprises: prior },
+      { streakMin: 5 },
+    );
+    const broken = out.surprises.find((s) => s.kind === 'streak-broken');
+    expect(broken).toBeDefined();
+    expect(broken?.tone).toBe('concerning');
+    expect(broken?.score).toBeCloseTo(0.5, 5); // 5/10
+    expect(broken?.evidence.sessionIds).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
+  });
+
+  it('does NOT emit when current ALSO has a streak (continued, not broken)', () => {
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'good'),
+      compositeRow('s3', 3, 'good'),
+    ];
+    const prior = priorWith([streakSurprise(['p1', 'p2', 'p3'])], { streakMin: 3 });
+    const out = computeSurprises(
+      { ...emptyInput({ composites }), priorSurprises: prior },
+      { streakMin: 3 },
+    );
+    expect(kindsOf(out.surprises)).not.toContain('streak-broken');
+  });
+
+  it('does NOT emit when prior is null', () => {
+    const out = computeSurprises({ ...emptyInput(), priorSurprises: null });
+    expect(kindsOf(out.surprises)).not.toContain('streak-broken');
+  });
+
+  it('does NOT emit when prior had no streak row', () => {
+    const prior = priorWith([]); // prior was empty
+    const out = computeSurprises({ ...emptyInput(), priorSurprises: prior });
+    expect(kindsOf(out.surprises)).not.toContain('streak-broken');
+  });
+});
+
+describe('trajectory-flip-up (delta)', () => {
+  it('emits when a stalled project flips to accelerating', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'accelerating', 0.08, { low: 0.01, high: 0.15 }),
+    ];
+    const prior = priorWith([trajectorySurprise('p1', 'trajectory-stalled')]);
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: prior,
+    });
+    const flip = out.surprises.find((s) => s.kind === 'trajectory-flip-up');
+    expect(flip).toBeDefined();
+    expect(flip?.tone).toBe('positive');
+    expect(flip?.evidence.projectId).toBe('p1');
+    expect(flip?.score).toBeCloseTo(0.8, 5); // 0.08 * 10
+  });
+
+  // Wave-2 review iter-1 fix B1: the kernel previously emitted flip-up
+  // for absent-in-prior projects, but absence has two meanings (genuinely
+  // new vs prior-flat-so-no-surprise). The narrower rule (only fire when
+  // prior had explicit `trajectory-stalled`) is safer. This test was
+  // inverted from `toContain` → `not.toContain` to match the new contract.
+  it('does NOT emit when project was ABSENT in prior (could be new OR flat)', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p-new', 'accelerating', 0.05, { low: 0.01, high: 0.1 }),
+    ];
+    const prior = priorWith([]); // p-new was not in prior at all
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: prior,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('trajectory-flip-up');
+  });
+
+  it('does NOT emit when prior was already accelerating', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'accelerating', 0.05, { low: 0.01, high: 0.1 }),
+    ];
+    const prior = priorWith([trajectorySurprise('p1', 'trajectory-accelerating')]);
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: prior,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('trajectory-flip-up');
+  });
+
+  it('does NOT emit when prior is null', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'accelerating', 0.05, { low: 0.01, high: 0.1 }),
+    ];
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: null,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('trajectory-flip-up');
+  });
+});
+
+describe('trajectory-flip-down (delta)', () => {
+  it('emits when an accelerating project flips to stalling', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'stalling', -0.06, { low: -0.1, high: -0.02 }),
+    ];
+    const prior = priorWith([
+      trajectorySurprise('p1', 'trajectory-accelerating'),
+    ]);
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: prior,
+    });
+    const flip = out.surprises.find((s) => s.kind === 'trajectory-flip-down');
+    expect(flip).toBeDefined();
+    expect(flip?.tone).toBe('concerning');
+    expect(flip?.evidence.projectId).toBe('p1');
+    expect(flip?.score).toBeCloseTo(0.6, 5); // |-0.06| * 10
+  });
+
+  it('emits for stalled-finished too', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'stalled-finished', -0.04, {
+        low: -0.08,
+        high: -0.01,
+      }),
+    ];
+    const prior = priorWith([
+      trajectorySurprise('p1', 'trajectory-accelerating'),
+    ]);
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: prior,
+    });
+    expect(kindsOf(out.surprises)).toContain('trajectory-flip-down');
+  });
+
+  it('does NOT emit when prior was already stalled', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'stalling', -0.05, { low: -0.1, high: -0.01 }),
+    ];
+    const prior = priorWith([trajectorySurprise('p1', 'trajectory-stalled')]);
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: prior,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('trajectory-flip-down');
+  });
+
+  it('does NOT emit when prior is null', () => {
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'stalling', -0.05, { low: -0.1, high: -0.01 }),
+    ];
+    const out = computeSurprises({
+      ...emptyInput({ trajectories }),
+      priorSurprises: null,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('trajectory-flip-down');
+  });
+});
+
+describe('pattern-recurrence-resumed (delta)', () => {
+  it('emits when pattern-closed in prior is now pattern-recurring in current', () => {
+    const patternWatchers: SurpriseWatcherEntry[] = [
+      watcherRecurring('pat-x', 'narr-1'),
+    ];
+    const prior = priorWith([patternClosedSurprise('pat-x')]);
+    const out = computeSurprises({
+      ...emptyInput({ patternWatchers }),
+      priorSurprises: prior,
+    });
+    const resumed = out.surprises.find(
+      (s) => s.kind === 'pattern-recurrence-resumed',
+    );
+    expect(resumed).toBeDefined();
+    expect(resumed?.tone).toBe('concerning');
+    // Wave-2 review iter-1 fix B2: score now derives from the prior
+    // pattern-closed score (clamped to [0.5, 0.95]) instead of fixed
+    // 0.85, so weak prior holds don't all surface as STRONG-tier
+    // recurrences. Fixture's prior pattern-closed score is 0.5
+    // (MODERATE-ish hold), so the recurrence floors at 0.5.
+    expect(resumed?.score).toBeCloseTo(0.5, 5);
+    expect(resumed?.evidence.narrativeId).toBe('narr-1');
+  });
+
+  it('does NOT emit when pattern is recurring but was not previously closed', () => {
+    const patternWatchers: SurpriseWatcherEntry[] = [
+      watcherRecurring('pat-y', 'narr-2'),
+    ];
+    const prior = priorWith([patternClosedSurprise('pat-x')]); // different id
+    const out = computeSurprises({
+      ...emptyInput({ patternWatchers }),
+      priorSurprises: prior,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('pattern-recurrence-resumed');
+  });
+
+  it('does NOT emit when prior is null', () => {
+    const patternWatchers: SurpriseWatcherEntry[] = [
+      watcherRecurring('pat-x', 'narr-1'),
+    ];
+    const out = computeSurprises({
+      ...emptyInput({ patternWatchers }),
+      priorSurprises: null,
+    });
+    expect(kindsOf(out.surprises)).not.toContain('pattern-recurrence-resumed');
+  });
+});
+
+describe('delta kinds — V1 backward compatibility', () => {
+  it('null priorSurprises produces identical output to omitting the field (V1)', () => {
+    const input = emptyInput({
+      composites: [
+        compositeRow('s1', 1, 'good'),
+        compositeRow('s2', 2, 'good'),
+        compositeRow('s3', 3, 'good'),
+        compositeRow('s4', 4, 'good'),
+        compositeRow('s5', 5, 'good'),
+      ],
+      trajectories: [
+        trajectoryRow('p1', 'accelerating', 0.05, { low: 0.01, high: 0.1 }),
+      ],
+      patternWatchers: [watcherRecurring('pat-x', 'narr-1')],
+    });
+    const v1 = computeSurprises(input);
+    const v1ExplicitNull = computeSurprises({ ...input, priorSurprises: null });
+    expect(JSON.stringify(v1ExplicitNull)).toBe(JSON.stringify(v1));
+  });
+
+  it('determinism: identical prior+current inputs produce identical output ordering', () => {
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s1', 1, 'good'),
+      compositeRow('s2', 2, 'good'),
+      compositeRow('s3', 3, 'good'),
+    ];
+    const trajectories: SurpriseTrajectoryRow[] = [
+      trajectoryRow('p1', 'accelerating', 0.05, { low: 0.01, high: 0.1 }),
+    ];
+    const prior = priorWith([
+      streakSurprise(['s1', 's2']),
+      trajectorySurprise('p1', 'trajectory-stalled'),
+    ]);
+    const input: ComputeSurprisesInput = {
+      ...emptyInput({ composites, trajectories }),
+      priorSurprises: prior,
+    };
+    const a = computeSurprises(input, { streakMin: 2 });
+    const b = computeSurprises(input, { streakMin: 2 });
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });

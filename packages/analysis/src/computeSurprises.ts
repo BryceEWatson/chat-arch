@@ -31,15 +31,28 @@
  *                               (V1: highest count flagged; week-over-
  *                                week growth is a follow-on)
  *
- * **V1 emission scope**: 7 of 9 kinds emit from the builder pipeline.
- * `pattern-closed` and `pattern-recurring` accept watcher input in
- * the kernel API (the test suite exercises them) but the
+ * **V1 emission scope**: 7 of 9 snapshot kinds emit from the builder
+ * pipeline. `pattern-closed` and `pattern-recurring` accept watcher
+ * input in the kernel API (the test suite exercises them) but the
  * `surprisesBuilder` Node shell passes an empty `patternWatchers`
  * array — the applied-pattern watcher ledger lives in the SQLite
  * substrate and no SDK accessor for it exists yet. The two pattern-*
  * branches stay dormant until that accessor lands; see the
  * `TODO(applyWatcher-sdk):` marker in
  * `packages/exporter/src/analysis/surprisesBuilder.ts`.
+ *
+ * **Wave 2 #1 — delta kinds.** Five additional kinds compare the
+ * current snapshot against a prior `SurprisesOutput` (loaded from
+ * `analysis/archive/surprises-YYYY-MM-DD.json` by the builder):
+ *   - `streak-extended` (positive) — same continuation, longer run
+ *   - `streak-broken`   (concerning) — prior had a streak, current doesn't
+ *   - `trajectory-flip-up`   (positive)   — stalled / absent → accelerating
+ *   - `trajectory-flip-down` (concerning) — accelerating / absent → stalled
+ *   - `pattern-recurrence-resumed` (concerning) — pattern-closed → -recurring
+ *
+ * Delta kinds are fail-soft: when `priorSurprises === null` (no
+ * archive exists, e.g. first-ever scan) all five skip cleanly and the
+ * kernel behaves identically to V1.
  *
  * Pure. Browser-safe (no `node:*` imports). Deterministic — the
  * caller passes `generatedAt` (the kernel does NOT call `Date.now()`),
@@ -145,7 +158,14 @@ export type SurpriseKind =
   | 'decision-paid-off'
   | 'trajectory-stalled'
   | 'pattern-recurring'
-  | 'debt-spinning';
+  | 'debt-spinning'
+  // Wave 2 #1 — delta kinds (require a `priorSurprises` input). When
+  // the prior snapshot is null the kernel skips all five cleanly.
+  | 'streak-extended'
+  | 'streak-broken'
+  | 'trajectory-flip-up'
+  | 'trajectory-flip-down'
+  | 'pattern-recurrence-resumed';
 
 export type SurpriseTone = 'positive' | 'concerning';
 
@@ -213,6 +233,15 @@ export interface ComputeSurprisesInput {
   readonly decisions: readonly SurpriseDecisionRow[];
   /** Knowledge-debt clusters. */
   readonly knowledgeDebt: readonly SurpriseKnowledgeDebtRow[];
+  /**
+   * Wave 2 #1 — most recent prior `SurprisesOutput` (typically loaded
+   * from `analysis/archive/surprises-YYYY-MM-DD.json` by the builder).
+   * When `null`, the delta kinds (`streak-extended` / `streak-broken` /
+   * `trajectory-flip-up` / `trajectory-flip-down` /
+   * `pattern-recurrence-resumed`) skip cleanly and the kernel behaves
+   * identically to the V1 snapshot-only pipeline.
+   */
+  readonly priorSurprises?: SurprisesOutput | null;
 }
 
 export interface ComputeSurprisesOptions {
@@ -293,7 +322,9 @@ export function computeSurprises(
 
   const surprises: Surprise[] = [];
 
-  pushAll(surprises, computeStreak(input, opts));
+  // Snapshot kinds (V1) — emit regardless of `priorSurprises`.
+  const streakRows = computeStreak(input, opts);
+  pushAll(surprises, streakRows);
   pushAll(surprises, computeTrajectoryAccelerating(input));
   pushAll(surprises, computeConfigHelped(input, opts));
   pushAll(surprises, computePatternClosed(input));
@@ -302,6 +333,34 @@ export function computeSurprises(
   pushAll(surprises, computeTrajectoryStalled(input));
   pushAll(surprises, computePatternRecurring(input));
   pushAll(surprises, computeDebtSpinning(input, opts));
+
+  // Wave 2 #1 — delta kinds. Each helper guards on `priorSurprises ===
+  // null` and returns [] cleanly, so passing the current streak rows
+  // (which the streak-extended kernel needs) is safe even on a
+  // first-ever scan.
+  //
+  // Wave-2 review iter-1 fix (B3): defend against threshold drift
+  // between scans. If the operator bumped THRESHOLDS.surprises.streakMin
+  // (e.g. 3 → 5) between this scan and the archived prior, the prior
+  // file's `streak` rows were emitted under a looser gate — comparing
+  // them against the current run's tighter gate produces spurious
+  // streak-broken / streak-extended emissions because the corpus is
+  // unchanged but the threshold isn't. The schema exposes prior.thresholds
+  // so we can detect drift and fail soft: skip the affected delta kind
+  // entirely (degrade to V1-snapshot behavior for that kind) when the
+  // gate doesn't match. The streak delta family is the only one with
+  // a single-threshold dependency today; trajectory + pattern deltas
+  // don't yet expose a threshold-snapshot to compare against.
+  const prior = input.priorSurprises ?? null;
+  const streakGateMatches =
+    prior === null || prior.thresholds.streakMin === opts.streakMin;
+  if (streakGateMatches) {
+    pushAll(surprises, computeStreakExtended(prior, streakRows));
+    pushAll(surprises, computeStreakBroken(prior, streakRows));
+  }
+  pushAll(surprises, computeTrajectoryFlipUp(input, prior));
+  pushAll(surprises, computeTrajectoryFlipDown(input, prior));
+  pushAll(surprises, computePatternRecurrenceResumed(input, prior));
 
   // Stamp generatedAt on every row + stable-sort. Tie-break on id so
   // equal-score rows still come out in a deterministic order.
@@ -743,7 +802,290 @@ function computeDebtSpinning(
   });
 }
 
+// ─── Delta-kind compute helpers (Wave 2 #1) ────────────────────────
+//
+// Each helper takes the prior `SurprisesOutput` (loaded by the builder
+// from the most recent archive) plus whatever current-scan inputs it
+// needs. All five return [] cleanly when `prior === null` — the kernel
+// stays identical to V1 on a first-ever scan.
+
+/**
+ * `streak-extended` (positive) — the current streak shares its
+ * terminal `lastSessionId` with the prior streak's terminal session AND
+ * has grown in length. Same `lastSessionId` is the continuation
+ * predicate: a new "currently on a streak" with a different terminal
+ * session is a fresh streak, not an extension.
+ *
+ * Score: `clamp(diff / 5, 0, 1)` — a +5-session jump caps at 1.
+ */
+function computeStreakExtended(
+  prior: SurprisesOutput | null,
+  currentStreakRows: readonly Surprise[],
+): Surprise[] {
+  if (prior === null) return [];
+  const priorStreak = prior.surprises.find((s) => s.kind === 'streak');
+  if (priorStreak === undefined) return [];
+  const currentStreak = currentStreakRows.find((s) => s.kind === 'streak');
+  if (currentStreak === undefined) return [];
+
+  const priorIds = priorStreak.evidence.sessionIds ?? [];
+  const currentIds = currentStreak.evidence.sessionIds ?? [];
+  if (priorIds.length === 0 || currentIds.length === 0) return [];
+
+  const priorLast = priorIds[priorIds.length - 1] as string;
+  const currentLast = currentIds[currentIds.length - 1] as string;
+  if (priorLast !== currentLast) return [];
+
+  const diff = currentIds.length - priorIds.length;
+  if (diff <= 0) return [];
+
+  const score = Math.max(0, Math.min(1, diff / 5));
+  return [
+    {
+      id: `streak-extended:${currentLast}`,
+      kind: 'streak-extended',
+      tone: 'positive',
+      summary: clip(
+        `Streak grew by ${diff} session${diff === 1 ? '' : 's'} since last scan (now ${currentIds.length}).`,
+      ),
+      evidence: { sessionIds: currentIds },
+      score,
+      generatedAt: 0,
+    },
+  ];
+}
+
+/**
+ * `streak-broken` (concerning) — the prior snapshot had a `streak` row
+ * and the current snapshot does NOT. The score scales with the size of
+ * the lost streak.
+ *
+ * Score: `clamp(priorStreakCount / 10, 0, 1)`.
+ */
+function computeStreakBroken(
+  prior: SurprisesOutput | null,
+  currentStreakRows: readonly Surprise[],
+): Surprise[] {
+  if (prior === null) return [];
+  const priorStreak = prior.surprises.find((s) => s.kind === 'streak');
+  if (priorStreak === undefined) return [];
+  const currentStreak = currentStreakRows.find((s) => s.kind === 'streak');
+  if (currentStreak !== undefined) return [];
+
+  const priorIds = priorStreak.evidence.sessionIds ?? [];
+  if (priorIds.length === 0) return [];
+
+  const priorLast = priorIds[priorIds.length - 1] as string;
+  const score = Math.max(0, Math.min(1, priorIds.length / 10));
+  return [
+    {
+      id: `streak-broken:${priorLast}`,
+      kind: 'streak-broken',
+      tone: 'concerning',
+      summary: clip(
+        `Streak ended — prior run of ${priorIds.length} good sessions did not continue.`,
+      ),
+      evidence: { sessionIds: priorIds },
+      score,
+      generatedAt: 0,
+    },
+  ];
+}
+
+/**
+ * `trajectory-flip-up` (positive) — a project that was `trajectory-
+ * stalled` (or absent from prior) in the prior snapshot is now
+ * `trajectory-accelerating`. Score scales with the current slope.
+ *
+ * Score: `clamp(currentSlope * 10, 0, 1)`.
+ */
+function computeTrajectoryFlipUp(
+  input: ComputeSurprisesInput,
+  prior: SurprisesOutput | null,
+): Surprise[] {
+  if (prior === null) return [];
+
+  const priorByProject = new Map<string, SurpriseKind>();
+  for (const s of prior.surprises) {
+    if (s.kind !== 'trajectory-accelerating' && s.kind !== 'trajectory-stalled') {
+      continue;
+    }
+    const pid = s.evidence.projectId;
+    if (pid === undefined) continue;
+    priorByProject.set(pid, s.kind);
+  }
+
+  const out: Surprise[] = [];
+  for (const t of input.trajectories) {
+    if (t.classification !== 'accelerating') continue;
+    const priorKind = priorByProject.get(t.projectId);
+    // Wave-2 review iter-1 fix (B1): tightened from "stalled OR absent
+    // qualifies" to "ONLY stalled qualifies." Reason: a project absent
+    // from prior could be (a) genuinely new, or (b) classified `flat` /
+    // `series-too-short` in prior so the trajectory kernel emitted
+    // nothing. Case (b) is NOT a directional change — the slope just
+    // tightened — so claiming a flip is a false positive. The narrower
+    // gate loses the freshly-discovered-accelerating-project case (V1
+    // tradeoff: better to silently miss than to noisily lie).
+    if (priorKind !== 'trajectory-stalled') continue;
+    const slope = t.slope ?? 0;
+    const score = Math.max(0, Math.min(1, slope * 10));
+    out.push({
+      id: `trajectory-flip-up:${t.projectId}`,
+      kind: 'trajectory-flip-up',
+      tone: 'positive',
+      summary: clip(
+        `${t.projectName} flipped to accelerating (slope ${slope.toFixed(2)}/session) since last scan.`,
+      ),
+      evidence: { projectId: t.projectId },
+      score,
+      generatedAt: 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * `trajectory-flip-down` (concerning) — mirror of flip-up: a project
+ * that was `trajectory-accelerating` (or absent) is now stalled.
+ *
+ * Score: `clamp(|currentSlope| * 10, 0, 1)`.
+ */
+function computeTrajectoryFlipDown(
+  input: ComputeSurprisesInput,
+  prior: SurprisesOutput | null,
+): Surprise[] {
+  if (prior === null) return [];
+
+  const priorByProject = new Map<string, SurpriseKind>();
+  for (const s of prior.surprises) {
+    if (s.kind !== 'trajectory-accelerating' && s.kind !== 'trajectory-stalled') {
+      continue;
+    }
+    const pid = s.evidence.projectId;
+    if (pid === undefined) continue;
+    priorByProject.set(pid, s.kind);
+  }
+
+  const out: Surprise[] = [];
+  for (const t of input.trajectories) {
+    if (t.classification !== 'stalling' && t.classification !== 'stalled-finished') {
+      continue;
+    }
+    const priorKind = priorByProject.get(t.projectId);
+    // Wave-2 review iter-1 fix (B1): tightened — only emit when prior
+    // explicitly had `trajectory-accelerating`. Absent-in-prior may be
+    // a project that was `flat` (not a downward direction). See flip-up
+    // for the symmetric rationale.
+    if (priorKind !== 'trajectory-accelerating') continue;
+    const slope = t.slope ?? 0;
+    const score = Math.max(0, Math.min(1, Math.abs(slope) * 10));
+    out.push({
+      id: `trajectory-flip-down:${t.projectId}`,
+      kind: 'trajectory-flip-down',
+      tone: 'concerning',
+      summary: clip(
+        `${t.projectName} flipped to ${t.classification} (slope ${slope.toFixed(2)}/session) since last scan.`,
+      ),
+      evidence: { projectId: t.projectId },
+      score,
+      generatedAt: 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * `pattern-recurrence-resumed` (concerning) — a pattern that was
+ * `pattern-closed` in the prior snapshot is now `pattern-recurring` in
+ * the current one (same patternId). High-attention signal: the user
+ * encoded a rule, it held, and now it's failing again.
+ *
+ * Score: fixed at 0.85.
+ */
+function computePatternRecurrenceResumed(
+  input: ComputeSurprisesInput,
+  prior: SurprisesOutput | null,
+): Surprise[] {
+  if (prior === null) return [];
+
+  // Wave-2 review iter-1 fix (B2): track prior pattern-closed SCORE per
+  // patternId (not just ID presence). The closed-score directly encodes
+  // hold strength via `1 - failureRateUpperBound95` — a 5-session hold
+  // that recurs is materially weaker evidence than a 50-session hold
+  // that recurs. Previously fixed score 0.85 forced every recurrence
+  // into the STRONG tier (>= 0.75) regardless of underlying strength,
+  // undermining the confidence ladder feedback_confidence_per_step asks
+  // for. Now we propagate the prior score (floor 0.5 so a closed-then-
+  // recurred surprise stays at least MODERATE — it's still a real
+  // signal even if the prior hold was weak).
+  const priorClosedScoreByPattern = new Map<string, number>();
+  for (const s of prior.surprises) {
+    if (s.kind !== 'pattern-closed') continue;
+    const nid = s.evidence.narrativeId;
+    if (typeof nid === 'string' && nid.length > 0) {
+      priorClosedScoreByPattern.set(nid, s.score);
+    }
+  }
+  if (priorClosedScoreByPattern.size === 0) return [];
+
+  const out: Surprise[] = [];
+  for (const w of input.patternWatchers) {
+    if (w.verdict.kind !== 'recurring') continue;
+    const priorScore = priorClosedScoreByPattern.get(w.patternId);
+    if (priorScore === undefined) continue;
+    out.push({
+      id: `pattern-recurrence-resumed:${w.patternId}`,
+      kind: 'pattern-recurrence-resumed',
+      tone: 'concerning',
+      summary: clip(
+        `Pattern ${w.patternId} re-fired after previously holding — narrative ${w.verdict.recurrenceNarrativeId}.`,
+      ),
+      evidence: {
+        projectId: w.projectId,
+        narrativeId: w.verdict.recurrenceNarrativeId,
+      },
+      // Floor at 0.5 so a recurrence is at least MODERATE; ceiling at
+      // 0.95 so an unusually strong prior hold doesn't pin every
+      // recurrence at perfect-1.0 (rooms for genuine 1.0 elsewhere).
+      score: Math.max(0.5, Math.min(0.95, priorScore)),
+      generatedAt: 0,
+    });
+  }
+  return out;
+}
+
 // ─── helpers ───────────────────────────────────────────────────────
+
+/**
+ * UI confidence tier — coarsens a raw [0,1] surprise score into one of
+ * three buckets the FEED renders as a labeled ribbon next to the kind
+ * badge. The mapping is intentionally independent of the per-kind
+ * statistical gates in THRESHOLDS.surprises (those are kernel-emission
+ * floors; this is a downstream presentation layer that ranks the
+ * surfaces that DID emit). The boundaries are pre-launch placeholders
+ * — once we have engagement data we can calibrate WEAK against
+ * "ignored" rate and STRONG against "clicked through" rate.
+ *
+ *   - `STRONG`   — score ≥ 0.75. Highly surface-worthy; load-bearing.
+ *   - `MODERATE` — score ≥ 0.5.  Worth a look; mid-band.
+ *   - `WEAK`     — score <  0.5.  Speculative; surface-but-discount.
+ *
+ * Memory: feedback_confidence_per_step — when the UI ladders rows by
+ * score, the score band must be labeled, not just numerically encoded;
+ * otherwise later rungs inherit the certainty of earlier ones.
+ */
+export type SurpriseConfidenceTier = 'STRONG' | 'MODERATE' | 'WEAK';
+
+export const SURPRISE_TIER_STRONG_MIN = 0.75;
+export const SURPRISE_TIER_MODERATE_MIN = 0.5;
+
+export function surpriseConfidenceTier(score: number): SurpriseConfidenceTier {
+  if (!Number.isFinite(score)) return 'WEAK';
+  if (score >= SURPRISE_TIER_STRONG_MIN) return 'STRONG';
+  if (score >= SURPRISE_TIER_MODERATE_MIN) return 'MODERATE';
+  return 'WEAK';
+}
 
 function pushAll<T>(target: T[], items: readonly T[]): void {
   for (const item of items) target.push(item);
