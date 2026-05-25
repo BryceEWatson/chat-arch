@@ -361,6 +361,68 @@ export const THRESHOLDS = {
     falsifierMinSupportRatio: 0.6,
   },
   /**
+   * Feed-redesign Phase α — `computeSurprises` kernel knobs.
+   *
+   * Pre-launch placeholders, ALL of them — the surprises surface is
+   * brand-new (V1 = first land) and we have zero engagement data yet.
+   * Calibrate on the same 4-week empirical rolling window as
+   * `CHATARCH_THRASH_DETECT`: pull surprise emission rate per kind +
+   * user-side "useful / not useful" feedback once the FEED Phase β
+   * surface starts collecting it, then re-derive each value from the
+   * observed distribution. Bumping a threshold here should be paired
+   * with a fixture update + an entry under THRESHOLDS.surprises in the
+   * `CHANGELOG.md` calibration log.
+   *
+   * Knobs are mirrored as `SurpriseThresholdsSnapshot` on the
+   * `surprises.json` sidecar so the viewer can disclaim the values it
+   * was emitted under.
+   */
+  surprises: {
+    /** Minimum trailing-run length to emit a `streak` surprise. */
+    streakMin: 5,
+    /**
+     * ITS BH-FDR qValue ceiling — a contrast counts as
+     * `config-helped` when `qValue ≤ itsQValueMax` AND
+     * `deltaGoodShare ≥ itsDeltaMin`.
+     */
+    itsQValueMax: 0.1,
+    itsDeltaMin: 0.15,
+    /**
+     * Reflexive minimum mean-delta (good-share delta). Also requires
+     * the CI to be strictly positive AND the E-value CI bound to
+     * clear `reflexiveEValueMin` — descriptively significant +
+     * statistically significant + sensitivity-robust, three gates.
+     */
+    reflexiveDeltaMin: 0.1,
+    /**
+     * Reflexive E-value CI-bound floor. VanderWeele & Ding (2017)
+     * E-value on the Wilson CI bound nearest the null: how strong a
+     * confounder (RR scale, both arms) would have to be to drag the
+     * observed association to RR=1. 1.5 ≈ "a confounder twice the
+     * strength of any pre-treatment covariate already adjusted for
+     * would explain it away" — strong enough to surface, weak enough
+     * to be one of the looser gates. Pre-launch placeholder; raise to
+     * 2.0 after the first ~20 reflexive contrasts land if false-
+     * positive rate looks high.
+     */
+    reflexiveEValueMin: 1.5,
+    /**
+     * `decision-paid-off`: minimum number of additional good
+     * composite outcomes IN THE SAME PROJECT that must follow the
+     * decision's session. Raised from 2 → 5 after iter-1 adversarial:
+     * 2/2 followups gives Wilson lower bound ≈ 0.16 (Beta(1,1) prior),
+     * which is below any plausible base rate. 5 followups + Wilson-
+     * over-base-rate gate gives meaningful evidence the decision
+     * actually moved the curve rather than coinciding with a good
+     * week.
+     */
+    decisionGoodFollowupsMin: 5,
+    /** Top-K knowledge-debt clusters surfaced as `debt-spinning`. */
+    debtSpinningTopK: 3,
+    /** Minimum cluster size for `debt-spinning`. */
+    debtSpinningMinClusterSize: 3,
+  },
+  /**
    * Rev3 applied-rule outcome watcher (plan §"Three closures" —
    * Closure C). After a Pattern is `encode-as-pattern`'d and
    * (optionally) appended to CLAUDE.md, the next-sessions watcher

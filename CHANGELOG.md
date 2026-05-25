@@ -14,6 +14,62 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-24
+
+Feed-redesign Phase A plumbing — adds a new `analysis/surprises.json`
+sidecar produced by the pure `computeSurprises` kernel in
+`@chat-arch/analysis`. Snapshot-based: reads the existing Phase 1-3
+sidecars (composite-outcomes, project-trajectories, its-analysis,
+reflexive, decisions, knowledge-debt) and emits a ranked list of
+positive observations (`tone: 'positive'`) + concerns
+(`tone: 'concerning'`) the user might not have noticed about their
+recent work. No new kernel dependencies; no UI yet (Phase B lands the
+"happy surprises and stories" surface that consumes this sidecar).
+
+### Added
+
+- **`analysis/surprises.json` sidecar.** Nine surprise kinds defined
+  in the kernel API; **7 emit from the V1 builder pipeline**:
+  `streak` / `trajectory-accelerating` / `config-helped` /
+  `reflexive-positive` / `decision-paid-off` (positive) and
+  `trajectory-stalled` / `debt-spinning` (concerns). The remaining
+  two — `pattern-closed` and `pattern-recurring` — are defined and
+  unit-tested but **dormant in V1**: the applied-pattern watcher
+  ledger lives in the SQLite substrate and no
+  `@chat-arch/exporter/db` SDK accessor exposes the verdicts to a
+  Node consumer yet (see `TODO(applyWatcher-sdk):` marker in
+  `packages/exporter/src/analysis/surprisesBuilder.ts`). When the
+  accessor lands the builder swaps the empty list for the SDK call;
+  no kernel change is required.
+- Each row carries `{ id, kind, tone, summary (≤120 chars), evidence,
+  score (0-1), generatedAt }`. File also exposes the threshold
+  snapshot it used so the UI can disclaim.
+- `computeSurprises` kernel (pure, browser-safe, deterministic given
+  identical inputs) + `surprisesBuilder` Node shell that wires the
+  sidecar reads + writes. Fail-soft: any missing input sidecar
+  degrades the corresponding kinds to zero rows rather than aborting
+  the build.
+- All numeric knobs moved into `THRESHOLDS.surprises` (no inlined
+  defaults). New thresholds: `reflexiveEValueMin` (1.5) gates
+  `reflexive-positive` on E-value sensitivity in addition to CI
+  positivity; `decisionGoodFollowupsMin` raised 2 → 5 in concert with
+  a new Wilson-low > base-rate gate on `decision-paid-off`.
+- `EXPORTER_VERSION` bumped 1.3.0 → 1.4.0 to mark the new artifact.
+
+### Notes
+
+- `reflexive-positive` summary copy is **associational, not causal**
+  ("touching X is associated with +Npp" — not "lifted by Npp") to
+  match the matched-pair primitive's actual inferential strength.
+  The E-value floor + Wilson CI + practical-significance triple gate
+  is the new minimum bar for emission.
+- `decision-paid-off` is **same-project scoped**: followups outside
+  the decision-session's project no longer count toward the K-followups
+  floor or the Wilson lift gate. Decisions whose session has no
+  discovered `projectId` are silently skipped by this branch (the
+  decision still appears in `decisions.json`, just not as a paid-off
+  surprise).
+
 ## [1.3.0] — 2026-05-24
 
 Bumped from 1.2.0 to mark the Rev3 substrate landing. The on-disk

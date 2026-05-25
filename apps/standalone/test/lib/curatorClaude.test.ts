@@ -72,12 +72,17 @@ describe('probeClaudeAvailable — bogus-binary smoke test', () => {
   });
 });
 
-describe('AUTH_ENV_VARS (iter-1 security finding — full scrub family)', () => {
+describe('AUTH_ENV_VARS (iter-1 + iter-2 security findings — full scrub family)', () => {
   it('includes every variable the Anthropic SDK / claude CLI / Bedrock / Vertex auto-detect', () => {
     // Security iter-1 finding: scrubbing only ANTHROPIC_API_KEY was
     // insufficient — the CLI also honors AUTH_TOKEN / BEARER_TOKEN /
-    // CLAUDE_API_KEY / API_TOKEN. Pin the canonical list here so a
-    // future scrub-list change must update this test.
+    // CLAUDE_API_KEY / API_TOKEN.
+    // Security iter-2 finding: the Bedrock + Vertex route flags
+    // (CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX) and the
+    // cloud-provider credential vars (AWS_BEARER_TOKEN_BEDROCK /
+    // GOOGLE_APPLICATION_CREDENTIALS) also need scrubbing.
+    // Pin the canonical list here so a future scrub-list change must
+    // update this test.
     expect(AUTH_ENV_VARS).toEqual(
       expect.arrayContaining([
         'ANTHROPIC_API_KEY',
@@ -85,10 +90,14 @@ describe('AUTH_ENV_VARS (iter-1 security finding — full scrub family)', () => 
         'ANTHROPIC_BEARER_TOKEN',
         'ANTHROPIC_API_TOKEN',
         'CLAUDE_API_KEY',
+        'CLAUDE_CODE_USE_BEDROCK',
+        'CLAUDE_CODE_USE_VERTEX',
+        'AWS_BEARER_TOKEN_BEDROCK',
+        'GOOGLE_APPLICATION_CREDENTIALS',
       ]),
     );
     // No accidental extras (catches typos like `ANTHRPIC_API_KEY`).
-    expect(AUTH_ENV_VARS.length).toBe(5);
+    expect(AUTH_ENV_VARS.length).toBe(9);
   });
 
   it('never contains a name with whitespace or wrong-case (process.env keys are case-sensitive)', () => {

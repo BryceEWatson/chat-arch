@@ -157,9 +157,10 @@ describe('migration v1.1.0 → 1.2.0', () => {
       tiers: { browser: { files: readonly string[] } };
       counts: Record<string, unknown>;
     }>(path.join(tmpDataDir, 'analysis', 'meta.json'));
-    expect(meta.exporterVersion).toBe('1.3.0');
+    expect(meta.exporterVersion).toBe('1.4.0');
 
-    // The Wave-5 sidecars must all be registered in the browser tier.
+    // The Wave-5 sidecars (+ feed-redesign Phase A surprises.json)
+    // must all be registered in the browser tier.
     const expectedNewSidecars = [
       'composite-outcomes.json',
       'config-history.json',
@@ -171,6 +172,7 @@ describe('migration v1.1.0 → 1.2.0', () => {
       'project-trajectories.json',
       'surface-comparison.json',
       'skill-curves.json',
+      'surprises.json',
     ];
     for (const f of expectedNewSidecars) {
       expect(
