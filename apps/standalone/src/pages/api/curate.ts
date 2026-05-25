@@ -22,7 +22,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
-import { probeClaudeAvailable } from '../../lib/curatorClaude.js';
+import {
+  AUTH_ENV_VARS,
+  computeAllowApiKeyFallback,
+  probeClaudeAvailable,
+} from '../../lib/curatorClaude.js';
 import {
   assertDataDirContained,
   handleDataDirGuardError,
@@ -65,6 +69,19 @@ const MAX_TAIL_BYTES = 8 * 1024;
 const DEFAULT_DATA_DIR = 'apps/standalone/public/chat-arch-data';
 const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 50;
+/**
+ * Outer kill-timeout for the spawned `claude -p` child. Curator runs
+ * are 1-3 min on a healthy plan; 10 min is a generous ceiling that
+ * still releases `inFlight` if the subprocess hangs (network stall,
+ * deadlocked tool call, hung TTY).
+ *
+ * iter-1 finding: without this, a hung child would pin `inFlight`
+ * forever and the endpoint would permanently 409 until the dev
+ * server was restarted. SIGTERM-then-grace-then-SIGKILL is the
+ * standard escalation pattern.
+ */
+const SPAWN_KILL_TIMEOUT_MS = 10 * 60 * 1000;
+const SPAWN_KILL_GRACE_MS = 5_000;
 
 function tailBytes(text: string, max = MAX_TAIL_BYTES): string {
   if (text.length <= max) return text;
@@ -104,7 +121,22 @@ interface CurateParams {
   dataDir: string;
   topK: number;
   noFalsifier: boolean;
+  /**
+   * Viewer-side opt-in flag (the raw value off the request body).
+   * Forwarded to the skill as a CLI flag so the skill's own pipeline
+   * knows whether the user opted in. The kernel-level decision about
+   * whether to scrub auth env vars BEFORE the spawn is the
+   * `allowApiKeyFallback` field below, which is the two-rail AND of
+   * viewer + server flags via `computeAllowApiKeyFallback`.
+   */
   apiKeyFallback: boolean;
+  /**
+   * Two-rail-resolved decision: viewer opt-in AND server env opt-in.
+   * Default-deny — when this is false we scrub the AUTH_ENV_VARS
+   * family from the spawn env so a server-side `ANTHROPIC_API_KEY`
+   * (or sibling auth var) cannot silently bill a claude -p call.
+   */
+  allowApiKeyFallback: boolean;
 }
 
 interface SpawnOutcome {
@@ -116,14 +148,33 @@ interface SpawnOutcome {
 
 /**
  * Spawn `claude -p /curate ...` and stream stdio over the NDJSON
- * response. Same machinery as mine-decisions; the skill is a scaffold
- * today (Rev3-F F1) so no fallback prompt — the F3+F4 PRs will exercise
- * the real pipeline against this endpoint.
+ * response. The streaming requirement (long-lived 1-3 min runs, UI
+ * needs per-line progress) prevents us from delegating to
+ * `runCuratorSubprocess` directly — that helper is fire-and-forget
+ * with a tagged-union result. We re-use its supporting machinery
+ * (`AUTH_ENV_VARS` scrub when the two-rail fallback is OFF, kill-
+ * timeout escalation) inline here instead.
+ *
+ * Security iter-1 findings addressed:
+ *
+ *   1. **API-key leak via inherited env.** Prior version passed
+ *      `env: process.env` verbatim — a server-side `ANTHROPIC_API_KEY`
+ *      (or any AUTH_ENV_VARS sibling) would silently bill the
+ *      subprocess. Now we scrub the full family when
+ *      `allowApiKeyFallback === false` (the default-deny two-rail
+ *      result from `computeAllowApiKeyFallback`).
+ *   2. **Unbounded hang pins `inFlight`.** No outer kill-timeout
+ *      meant a stuck child would permanently 409 the endpoint until
+ *      dev server restart. Now SIGTERM after
+ *      `SPAWN_KILL_TIMEOUT_MS`, SIGKILL after a `SPAWN_KILL_GRACE_MS`
+ *      grace window; the SpawnOutcome's `spawnError` is set so the
+ *      `finally` clears `inFlight`.
  */
 function runClaudeOnce(
   prompt: string,
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
+  allowApiKeyFallback: boolean,
 ): Promise<SpawnOutcome> {
   const send = (obj: unknown) => {
     try {
@@ -141,9 +192,19 @@ function runClaudeOnce(
     const allowedTools = 'Read Write Edit Bash Task Glob Grep';
     const bin = resolveClaudeBin();
     const args = ['--allowedTools', allowedTools, '-p', prompt];
+    // Default-deny env scrub. When the two-rail fallback resolves
+    // false, drop every AUTH_ENV_VARS entry so the subprocess can't
+    // inherit a surprise auth credential. Mirrors the scrub in
+    // `runCuratorSubprocess`.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (!allowApiKeyFallback) {
+      for (const name of AUTH_ENV_VARS) {
+        delete env[name];
+      }
+    }
     const child = spawn(bin.file, args, {
       cwd: repoRoot(),
-      env: process.env,
+      env,
       shell: bin.useShell,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -153,6 +214,59 @@ function runClaudeOnce(
     const stdoutFull = { v: '' };
     const stderrFull = { v: '' };
     let spawnError: Error | null = null;
+    let settled = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let graceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimers = (): void => {
+      if (killTimer !== null) {
+        clearTimeout(killTimer);
+        killTimer = null;
+      }
+      if (graceTimer !== null) {
+        clearTimeout(graceTimer);
+        graceTimer = null;
+      }
+    };
+
+    const settleOnce = (outcome: SpawnOutcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      resolvePromise(outcome);
+    };
+
+    // Outer kill-timeout — SIGTERM first, SIGKILL after a grace
+    // window if the child doesn't exit promptly. The `close` handler
+    // below races with this; whichever fires first settles.
+    killTimer = setTimeout(() => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // already dead — ignore
+      }
+      graceTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // already dead
+        }
+        // Synthesize a spawnError so the caller's `finally` clears
+        // inFlight; exitCode null signals "killed by us, not the
+        // child's own exit path".
+        settleOnce({
+          exitCode: null,
+          stdout: stdoutFull.v,
+          stderr:
+            stderrFull.v +
+            (stderrFull.v.length > 0 ? '\n' : '') +
+            `[curate] spawn exceeded ${SPAWN_KILL_TIMEOUT_MS}ms; SIGKILL'd.`,
+          spawnError: new Error(
+            `claude -p subprocess exceeded ${SPAWN_KILL_TIMEOUT_MS}ms kill-timeout`,
+          ),
+        });
+      }, SPAWN_KILL_GRACE_MS);
+    }, SPAWN_KILL_TIMEOUT_MS);
 
     const drain = (
       buf: string,
@@ -202,7 +316,7 @@ function runClaudeOnce(
         send({ type: 'stderr', line: clampLine(stderrBuf.trim()) });
         stderrFull.v += stderrBuf;
       }
-      resolvePromise({
+      settleOnce({
         exitCode: code,
         stdout: stdoutFull.v,
         stderr: stderrFull.v,
@@ -218,14 +332,25 @@ async function streamCurate(
   encoder: TextEncoder,
 ): Promise<void> {
   const started = Date.now();
-  const { requestId, dataDir, topK, noFalsifier, apiKeyFallback } = params;
+  const {
+    requestId,
+    dataDir,
+    topK,
+    noFalsifier,
+    apiKeyFallback,
+    allowApiKeyFallback,
+  } = params;
   const flags: string[] = [
     `--request-id=${requestId}`,
     `--data-dir=${dataDir}`,
     `--top-k=${topK}`,
   ];
   if (noFalsifier) flags.push('--no-falsifier');
-  if (apiKeyFallback) flags.push('--api-key-fallback');
+  // Surface the effective two-rail decision to the skill — the
+  // viewer-side opt-in alone is not enough to flip the flag. When
+  // either rail is OFF we don't pass `--api-key-fallback`; the env
+  // scrub in `runClaudeOnce` is the load-bearing enforcement.
+  if (allowApiKeyFallback) flags.push('--api-key-fallback');
   const prompt = `/curate ${flags.join(' ')}`;
 
   const send = (obj: unknown) => {
@@ -243,9 +368,16 @@ async function streamCurate(
     startedAt: started,
     topK,
     noFalsifier,
+    apiKeyFallback,
+    allowApiKeyFallback,
   });
 
-  const outcome = await runClaudeOnce(prompt, controller, encoder);
+  const outcome = await runClaudeOnce(
+    prompt,
+    controller,
+    encoder,
+    allowApiKeyFallback,
+  );
   const extraStderr = outcome.spawnError
     ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
     : '';
@@ -333,6 +465,10 @@ export const POST: APIRoute = async ({ request }) => {
   }
   const noFalsifier = body.noFalsifier === true;
   const apiKeyFallback = body.apiKeyFallback === true;
+  // Two-rail composition: viewer opt-in AND server env opt-in. This
+  // helper is the SINGLE source of truth for the decision — re-
+  // deriving the AND elsewhere is a defect (security iter-1).
+  const allowApiKeyFallback = computeAllowApiKeyFallback(body.apiKeyFallback);
 
   const params: CurateParams = {
     requestId: randomUUID(),
@@ -340,6 +476,7 @@ export const POST: APIRoute = async ({ request }) => {
     topK,
     noFalsifier,
     apiKeyFallback,
+    allowApiKeyFallback,
   };
 
   const encoder = new TextEncoder();

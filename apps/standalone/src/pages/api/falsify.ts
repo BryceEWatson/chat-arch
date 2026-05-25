@@ -23,7 +23,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
-import { probeClaudeAvailable } from '../../lib/curatorClaude.js';
+import {
+  AUTH_ENV_VARS,
+  computeAllowApiKeyFallback,
+  probeClaudeAvailable,
+} from '../../lib/curatorClaude.js';
 import {
   assertDataDirContained,
   handleDataDirGuardError,
@@ -60,6 +64,21 @@ const MAX_TAIL_BYTES = 8 * 1024;
 const DEFAULT_DATA_DIR = 'apps/standalone/public/chat-arch-data';
 /** Loose ceiling on finding-id length — UUIDs / kernel-prefixed ids are well under this. */
 const MAX_FINDING_ID_CHARS = 256;
+/**
+ * Allowed charset for `findingId` — alphanumerics + `_`, `.`, `:`, `-`.
+ * Covers UUIDs, kernel-prefixed ids (`kernel:uuid`), short hash slugs,
+ * and dotted-namespace ids. Excludes whitespace, shell metacharacters
+ * (`$`, `` ` ``, `;`, `|`, `&`, `<`, `>`, `(`, `)`, `\`), quotes, and
+ * Unicode that could compose ambiguous flag tokens.
+ *
+ * Defense in depth: combined with the Windows `useShell: true`
+ * fallback in `resolveClaude`, an unvalidated findingId becomes a
+ * shell-injection sink. Iter-1 finding closes that gap.
+ */
+const FINDING_ID_CHARSET_RE = /^[A-Za-z0-9_.:-]{1,256}$/;
+/** See `curate.ts` — same kill-timeout / grace contract. */
+const SPAWN_KILL_TIMEOUT_MS = 10 * 60 * 1000;
+const SPAWN_KILL_GRACE_MS = 5_000;
 
 function tailBytes(text: string, max = MAX_TAIL_BYTES): string {
   if (text.length <= max) return text;
@@ -94,7 +113,13 @@ interface FalsifyParams {
   findingId: string | null;
   inputPath: string | null;
   outputPath: string | null;
+  /** Viewer-side opt-in flag (raw body value). Surfaced to the skill. */
   apiKeyFallback: boolean;
+  /**
+   * Two-rail-resolved decision: viewer opt-in AND server env opt-in.
+   * Default-deny — drives the AUTH_ENV_VARS scrub in `runClaudeOnce`.
+   */
+  allowApiKeyFallback: boolean;
 }
 
 interface SpawnOutcome {
@@ -104,10 +129,17 @@ interface SpawnOutcome {
   spawnError: Error | null;
 }
 
+/**
+ * Spawn `claude -p /falsify ...` and stream stdio over NDJSON.
+ * Sibling to `curate.ts`'s `runClaudeOnce` — same security iter-1
+ * fixes apply (AUTH_ENV_VARS scrub when fallback is OFF, kill-timeout
+ * escalation so a hung child doesn't permanently 409 the endpoint).
+ */
 function runClaudeOnce(
   prompt: string,
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
+  allowApiKeyFallback: boolean,
 ): Promise<SpawnOutcome> {
   const send = (obj: unknown) => {
     try {
@@ -123,9 +155,16 @@ function runClaudeOnce(
     const allowedTools = 'Read Write Edit Bash Task Glob Grep';
     const bin = resolveClaudeBin();
     const args = ['--allowedTools', allowedTools, '-p', prompt];
+    // Default-deny env scrub — see curate.ts for the rationale.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (!allowApiKeyFallback) {
+      for (const name of AUTH_ENV_VARS) {
+        delete env[name];
+      }
+    }
     const child = spawn(bin.file, args, {
       cwd: repoRoot(),
-      env: process.env,
+      env,
       shell: bin.useShell,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -135,6 +174,53 @@ function runClaudeOnce(
     const stdoutFull = { v: '' };
     const stderrFull = { v: '' };
     let spawnError: Error | null = null;
+    let settled = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let graceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimers = (): void => {
+      if (killTimer !== null) {
+        clearTimeout(killTimer);
+        killTimer = null;
+      }
+      if (graceTimer !== null) {
+        clearTimeout(graceTimer);
+        graceTimer = null;
+      }
+    };
+
+    const settleOnce = (outcome: SpawnOutcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      resolvePromise(outcome);
+    };
+
+    killTimer = setTimeout(() => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // already dead
+      }
+      graceTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // already dead
+        }
+        settleOnce({
+          exitCode: null,
+          stdout: stdoutFull.v,
+          stderr:
+            stderrFull.v +
+            (stderrFull.v.length > 0 ? '\n' : '') +
+            `[falsify] spawn exceeded ${SPAWN_KILL_TIMEOUT_MS}ms; SIGKILL'd.`,
+          spawnError: new Error(
+            `claude -p subprocess exceeded ${SPAWN_KILL_TIMEOUT_MS}ms kill-timeout`,
+          ),
+        });
+      }, SPAWN_KILL_GRACE_MS);
+    }, SPAWN_KILL_TIMEOUT_MS);
 
     const drain = (
       buf: string,
@@ -181,7 +267,7 @@ function runClaudeOnce(
         send({ type: 'stderr', line: clampLine(stderrBuf.trim()) });
         stderrFull.v += stderrBuf;
       }
-      resolvePromise({
+      settleOnce({
         exitCode: code,
         stdout: stdoutFull.v,
         stderr: stderrFull.v,
@@ -197,7 +283,15 @@ async function streamFalsify(
   encoder: TextEncoder,
 ): Promise<void> {
   const started = Date.now();
-  const { requestId, dataDir, findingId, inputPath, outputPath, apiKeyFallback } = params;
+  const {
+    requestId,
+    dataDir,
+    findingId,
+    inputPath,
+    outputPath,
+    apiKeyFallback,
+    allowApiKeyFallback,
+  } = params;
   const flags: string[] = [
     `--request-id=${requestId}`,
     `--data-dir=${dataDir}`,
@@ -205,7 +299,10 @@ async function streamFalsify(
   if (findingId !== null) flags.push(`--finding-id=${findingId}`);
   if (inputPath !== null) flags.push(`--input=${inputPath}`);
   if (outputPath !== null) flags.push(`--output=${outputPath}`);
-  if (apiKeyFallback) flags.push('--api-key-fallback');
+  // Only forward the two-rail-resolved decision; viewer opt-in alone
+  // is not enough. The env-scrub in runClaudeOnce is the load-bearing
+  // enforcement.
+  if (allowApiKeyFallback) flags.push('--api-key-fallback');
   const prompt = `/falsify ${flags.join(' ')}`;
 
   const send = (obj: unknown) => {
@@ -223,9 +320,16 @@ async function streamFalsify(
     startedAt: started,
     findingId,
     inputPath,
+    apiKeyFallback,
+    allowApiKeyFallback,
   });
 
-  const outcome = await runClaudeOnce(prompt, controller, encoder);
+  const outcome = await runClaudeOnce(
+    prompt,
+    controller,
+    encoder,
+    allowApiKeyFallback,
+  );
   const extraStderr = outcome.spawnError
     ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
     : '';
@@ -318,6 +422,17 @@ export const POST: APIRoute = async ({ request }) => {
         { status: 400, headers: { 'content-type': 'application/json' } },
       );
     }
+    // Charset validation — defense-in-depth against shell-injection
+    // via the Windows `useShell: true` fallback. Whitelist is
+    // alphanumerics + `_`, `.`, `:`, `-` (covers all kernel-emitted
+    // finding-id shapes — UUIDs, prefixed slugs, dotted namespaces);
+    // rejects whitespace + shell metacharacters + quotes + Unicode.
+    if (!FINDING_ID_CHARSET_RE.test(v)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Invalid findingId format' }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    }
     findingId = v;
   }
 
@@ -357,6 +472,10 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const apiKeyFallback = body.apiKeyFallback === true;
+  // Two-rail composition — see curate.ts. The viewer flag alone
+  // never enables the fallback; the server-side env opt-in must
+  // also be set. Default-deny.
+  const allowApiKeyFallback = computeAllowApiKeyFallback(body.apiKeyFallback);
 
   const params: FalsifyParams = {
     requestId: randomUUID(),
@@ -365,6 +484,7 @@ export const POST: APIRoute = async ({ request }) => {
     inputPath,
     outputPath,
     apiKeyFallback,
+    allowApiKeyFallback,
   };
 
   const encoder = new TextEncoder();

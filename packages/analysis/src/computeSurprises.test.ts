@@ -54,8 +54,14 @@ function compositeRow(
   sessionId: string,
   updatedAt: number,
   binary: 'good' | 'bad' | 'unknown' = 'good',
+  projectId?: string,
 ): SurpriseCompositeRow {
-  return { sessionId, updatedAt, composite: comp(sessionId, binary) };
+  return {
+    sessionId,
+    updatedAt,
+    composite: comp(sessionId, binary),
+    ...(projectId !== undefined ? { projectId } : {}),
+  };
 }
 
 function trajectoryRow(
@@ -182,6 +188,7 @@ function decision(
   sessionId: string,
   binaryClass: 'good' | 'bad' | 'neutral',
   compositeScore = binaryClass === 'good' ? 0.8 : 0.3,
+  projectId?: string,
 ): SurpriseDecisionRow {
   return {
     decisionId,
@@ -189,6 +196,7 @@ function decision(
     compositeScore,
     binaryClass,
     label: `decision-${decisionId}`,
+    ...(projectId !== undefined ? { projectId } : {}),
   };
 }
 
@@ -223,6 +231,11 @@ describe('computeSurprises — empty input', () => {
   it('always exposes the thresholds it used', () => {
     const out = computeSurprises(emptyInput(), { streakMin: 7 });
     expect(out.thresholds.streakMin).toBe(7);
+  });
+
+  it('snapshot includes reflexiveEValueMin (post-iter-1 sensitivity gate)', () => {
+    const out = computeSurprises(emptyInput(), { reflexiveEValueMin: 2.0 });
+    expect(out.thresholds.reflexiveEValueMin).toBe(2.0);
   });
 });
 
@@ -430,56 +443,186 @@ describe('reflexive-positive', () => {
     );
     expect(kindsOf(out.surprises)).toContain('reflexive-positive');
   });
+
+  it('does NOT emit when eValueStatus is not "computed" (CI straddles null)', () => {
+    // Even with strong meanDelta + positive CI, an inability to
+    // compute the E-value kills emission.
+    const r = reflexive(0.2, 0.05, 0.35);
+    const out = computeSurprises(
+      emptyInput({
+        reflexive: { ...r, eValueStatus: 'ci-straddles-null', eValueCIBound: null },
+      }),
+    );
+    expect(kindsOf(out.surprises)).not.toContain('reflexive-positive');
+  });
+
+  it('does NOT emit when eValueCIBound is below the reflexiveEValueMin floor', () => {
+    const r = reflexive(0.2, 0.05, 0.35);
+    const out = computeSurprises(
+      emptyInput({
+        reflexive: { ...r, eValueStatus: 'computed', eValueCIBound: 1.49 },
+      }),
+      { reflexiveEValueMin: 1.5 },
+    );
+    expect(kindsOf(out.surprises)).not.toContain('reflexive-positive');
+  });
+
+  it('summary uses associational language ("is associated with"), not causal ("lifted")', () => {
+    const out = computeSurprises(
+      emptyInput({ reflexive: reflexive(0.2, 0.05, 0.35) }),
+    );
+    const reflexivePos = out.surprises.find((s) => s.kind === 'reflexive-positive');
+    expect(reflexivePos).toBeDefined();
+    expect(reflexivePos?.summary).toMatch(/associated with/);
+    expect(reflexivePos?.summary).not.toMatch(/lifted/);
+    // E-value surfaces in the summary so the user sees the sensitivity bound.
+    expect(reflexivePos?.summary).toMatch(/E-value/);
+  });
 });
 
 // ─── decision-paid-off ─────────────────────────────────────────────
 
 describe('decision-paid-off', () => {
-  it('emits when a good-binary decision is followed by ≥ K good sessions', () => {
+  // Helper: build a "noisy corpus" of mostly-bad in OTHER projects so
+  // the base good-share stays well below the followup rate.
+  //
+  // The Wilson-low > base-rate gate is tight: 5/5 same-project good
+  // followups gives Wilson low ≈ 0.566 (α=0.05). The corpus base rate
+  // must clear ≤ ≈ 0.5 for the gate to pass at this followup count.
+  // 2 good + 10 bad in 'noise' → 12 noise sessions, base rate including
+  // the 1 decision-good + 5 followup-good = 8/18 ≈ 0.444.
+  function noiseCorpus(): SurpriseCompositeRow[] {
+    const out: SurpriseCompositeRow[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      out.push(compositeRow(`n-good-${i}`, 100 + i, 'good', 'noise'));
+    }
+    for (let i = 0; i < 10; i += 1) {
+      out.push(compositeRow(`n-bad-${i}`, 120 + i, 'bad', 'noise'));
+    }
+    return out;
+  }
+
+  it('emits when a good-binary decision is followed by ≥ K same-project good sessions', () => {
     const composites: SurpriseCompositeRow[] = [
-      compositeRow('s-dec', 10, 'good'),
-      compositeRow('s-after1', 11, 'good'),
-      compositeRow('s-after2', 12, 'good'),
-      compositeRow('s-after3', 13, 'good'),
+      ...noiseCorpus(),
+      compositeRow('s-dec', 10, 'good', 'p1'),
+      compositeRow('s-a1', 11, 'good', 'p1'),
+      compositeRow('s-a2', 12, 'good', 'p1'),
+      compositeRow('s-a3', 13, 'good', 'p1'),
+      compositeRow('s-a4', 14, 'good', 'p1'),
+      compositeRow('s-a5', 15, 'good', 'p1'),
     ];
-    const decisions: SurpriseDecisionRow[] = [decision('d1', 's-dec', 'good')];
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'good', 0.8, 'p1'),
+    ];
     const out = computeSurprises(emptyInput({ composites, decisions }));
     const paidOff = out.surprises.find((s) => s.kind === 'decision-paid-off');
     expect(paidOff).toBeDefined();
     expect(paidOff?.evidence.decisionId).toBe('d1');
+    // Summary surfaces the lift metrics (K/N + Wilson-low + base-rate).
+    expect(paidOff?.summary).toMatch(/same-project followups: 5\/5 good/);
+    expect(paidOff?.summary).toMatch(/Wilson low/);
+    expect(paidOff?.summary).toMatch(/base rate/);
   });
 
   it('does NOT emit when binaryClass is not "good"', () => {
     const composites: SurpriseCompositeRow[] = [
-      compositeRow('s-dec', 10, 'bad'),
-      compositeRow('s-after1', 11, 'good'),
-      compositeRow('s-after2', 12, 'good'),
+      compositeRow('s-dec', 10, 'bad', 'p1'),
+      compositeRow('s-a1', 11, 'good', 'p1'),
+      compositeRow('s-a2', 12, 'good', 'p1'),
     ];
-    const decisions: SurpriseDecisionRow[] = [decision('d1', 's-dec', 'bad')];
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'bad', 0.3, 'p1'),
+    ];
     const out = computeSurprises(emptyInput({ composites, decisions }));
     expect(kindsOf(out.surprises)).not.toContain('decision-paid-off');
   });
 
-  it('does NOT emit when followups < threshold', () => {
+  it('does NOT emit when same-project followups < threshold', () => {
     const composites: SurpriseCompositeRow[] = [
-      compositeRow('s-dec', 10, 'good'),
-      compositeRow('s-after1', 11, 'good'),
-      // only 1 followup; default threshold is 2
+      ...noiseCorpus(),
+      compositeRow('s-dec', 10, 'good', 'p1'),
+      compositeRow('s-a1', 11, 'good', 'p1'),
+      // only 1 same-project followup; threshold is 5
     ];
-    const decisions: SurpriseDecisionRow[] = [decision('d1', 's-dec', 'good')];
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'good', 0.8, 'p1'),
+    ];
     const out = computeSurprises(emptyInput({ composites, decisions }));
     expect(kindsOf(out.surprises)).not.toContain('decision-paid-off');
   });
 
-  it('boundary: exactly threshold followups emits', () => {
+  it('boundary: exactly threshold followups in-project emits', () => {
     const composites: SurpriseCompositeRow[] = [
-      compositeRow('s-dec', 10, 'good'),
-      compositeRow('s-after1', 11, 'good'),
-      compositeRow('s-after2', 12, 'good'),
+      ...noiseCorpus(),
+      compositeRow('s-dec', 10, 'good', 'p1'),
+      compositeRow('s-a1', 11, 'good', 'p1'),
+      compositeRow('s-a2', 12, 'good', 'p1'),
+      compositeRow('s-a3', 13, 'good', 'p1'),
+      compositeRow('s-a4', 14, 'good', 'p1'),
+      compositeRow('s-a5', 15, 'good', 'p1'),
     ];
-    const decisions: SurpriseDecisionRow[] = [decision('d1', 's-dec', 'good')];
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'good', 0.8, 'p1'),
+    ];
     const out = computeSurprises(emptyInput({ composites, decisions }));
     expect(kindsOf(out.surprises)).toContain('decision-paid-off');
+  });
+
+  it('does NOT count cross-project followups toward the threshold', () => {
+    // 5 good sessions follow the decision-session but in a DIFFERENT
+    // project — the prior cross-corpus version would have emitted.
+    const composites: SurpriseCompositeRow[] = [
+      ...noiseCorpus(),
+      compositeRow('s-dec', 10, 'good', 'p1'),
+      compositeRow('s-x1', 11, 'good', 'p-other'),
+      compositeRow('s-x2', 12, 'good', 'p-other'),
+      compositeRow('s-x3', 13, 'good', 'p-other'),
+      compositeRow('s-x4', 14, 'good', 'p-other'),
+      compositeRow('s-x5', 15, 'good', 'p-other'),
+    ];
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'good', 0.8, 'p1'),
+    ];
+    const out = computeSurprises(emptyInput({ composites, decisions }));
+    expect(kindsOf(out.surprises)).not.toContain('decision-paid-off');
+  });
+
+  it('does NOT emit when decision has no projectId (cannot scope followups)', () => {
+    const composites: SurpriseCompositeRow[] = [
+      ...noiseCorpus(),
+      compositeRow('s-dec', 10, 'good', 'p1'),
+      compositeRow('s-a1', 11, 'good', 'p1'),
+      compositeRow('s-a2', 12, 'good', 'p1'),
+      compositeRow('s-a3', 13, 'good', 'p1'),
+      compositeRow('s-a4', 14, 'good', 'p1'),
+      compositeRow('s-a5', 15, 'good', 'p1'),
+    ];
+    // Decision row deliberately missing projectId.
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'good', 0.8 /* no projectId */),
+    ];
+    const out = computeSurprises(emptyInput({ composites, decisions }));
+    expect(kindsOf(out.surprises)).not.toContain('decision-paid-off');
+  });
+
+  it('does NOT emit when Wilson low does not exceed base good-share', () => {
+    // Corpus is all-good (base rate 1.0). 5/5 good followups → Wilson
+    // low ≈ 0.566 — below 1.0. The lift gate kills the surprise even
+    // though the count floor is met.
+    const composites: SurpriseCompositeRow[] = [
+      compositeRow('s-dec', 10, 'good', 'p1'),
+      compositeRow('s-a1', 11, 'good', 'p1'),
+      compositeRow('s-a2', 12, 'good', 'p1'),
+      compositeRow('s-a3', 13, 'good', 'p1'),
+      compositeRow('s-a4', 14, 'good', 'p1'),
+      compositeRow('s-a5', 15, 'good', 'p1'),
+    ];
+    const decisions: SurpriseDecisionRow[] = [
+      decision('d1', 's-dec', 'good', 0.8, 'p1'),
+    ];
+    const out = computeSurprises(emptyInput({ composites, decisions }));
+    expect(kindsOf(out.surprises)).not.toContain('decision-paid-off');
   });
 });
 

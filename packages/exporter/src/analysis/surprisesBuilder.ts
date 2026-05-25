@@ -84,12 +84,18 @@ export async function buildSurprisesFile(
   const t0 = Date.now();
   const analysisDir = path.join(options.outDir, 'analysis');
 
-  // Map sessionId → updatedAt from the manifest. Composite rows on
-  // disk don't carry the terminal timestamp; we re-join here.
+  // Map sessionId → { updatedAt, projectId } from the manifest.
+  // Composite rows on disk don't carry the terminal timestamp or the
+  // discovered projectId; we re-join here so the kernel can apply the
+  // same-project gates (notably `decision-paid-off`).
   const updatedAtBySession = new Map<string, number>();
+  const projectIdBySession = new Map<string, string>();
   for (const entry of manifest.sessions) {
     if (typeof entry.updatedAt === 'number') {
       updatedAtBySession.set(entry.id, entry.updatedAt);
+    }
+    if (typeof entry.projectId === 'string' && entry.projectId.length > 0) {
+      projectIdBySession.set(entry.id, entry.projectId);
     }
   }
 
@@ -101,7 +107,13 @@ export async function buildSurprisesFile(
   if (compositeFile !== null) {
     for (const o of compositeFile.outcomes ?? []) {
       const updatedAt = updatedAtBySession.get(o.sessionId) ?? 0;
-      composites.push({ sessionId: o.sessionId, updatedAt, composite: o });
+      const projectId = projectIdBySession.get(o.sessionId);
+      composites.push({
+        sessionId: o.sessionId,
+        updatedAt,
+        composite: o,
+        ...(projectId !== undefined ? { projectId } : {}),
+      });
     }
   }
 
@@ -161,6 +173,12 @@ export async function buildSurprisesFile(
       const decision = d as Decision;
       const ref = decision.outcomeRef;
       if (ref === null || ref === undefined) continue;
+      // Same-project scoping for `decision-paid-off`: pull the
+      // decision-session's projectId from the manifest join above.
+      // Decisions whose session has no discovered projectId are still
+      // emitted to the kernel but won't qualify for the paid-off
+      // surprise (kernel-side gate).
+      const projectId = projectIdBySession.get(ref.sessionId);
       decisions.push({
         decisionId: decision.candidate.id,
         sessionId: ref.sessionId,
@@ -169,6 +187,7 @@ export async function buildSurprisesFile(
         ...(decision.classification?.distilledDecision !== undefined
           ? { label: decision.classification.distilledDecision }
           : {}),
+        ...(projectId !== undefined ? { projectId } : {}),
       });
     }
   }
@@ -193,9 +212,25 @@ export async function buildSurprisesFile(
       confidence: c.confidence,
     })) ?? [];
 
-  // Pattern-watcher ledger lives in SQLite; wiring the SDK query is a
-  // follow-on. V1 passes an empty list so the kernel skips the two
-  // pattern-* kinds rather than synthesizing fake verdicts.
+  // TODO(applyWatcher-sdk): wire the pattern-watcher ledger from the
+  // SQLite substrate once the read-side SDK accessor lands.
+  //
+  // The applied-pattern watcher loop (`evaluateAppliedPatternWatcher`
+  // in @chat-arch/analysis) emits per-(pattern, project) verdicts
+  // {kind: 'holding' | 'recurring' | 'open' | 'inconclusive'} that
+  // the kernel consumes for `pattern-closed` / `pattern-recurring`
+  // surprises. The verdicts persist in the SQLite substrate (Rev3-E
+  // pattern + applyWatcher tables) but no `@chat-arch/exporter/db`
+  // SDK accessor exposes them to a Node consumer yet.
+  //
+  // Until that accessor lands, this builder passes an empty list so
+  // the kernel skips both pattern-* kinds rather than synthesizing
+  // fake verdicts. V1 emission scope is therefore 7 of 9 kinds.
+  //
+  // When wiring lands, replace this assignment with the SDK call
+  // (likely `listWatcherVerdicts({ closedOnly: false })` returning a
+  // shape assignable to `SurpriseWatcherEntry[]`) and update CHANGELOG
+  // `[1.4.0]` accordingly.
   const patternWatchers: readonly SurpriseWatcherEntry[] = [];
 
   const kernelInput: ComputeSurprisesInput = {

@@ -14,9 +14,13 @@
  *   - pattern-closed          — applied-pattern watcher `holding`
  *                               (cooldown cleared with no recurrence)
  *   - reflexive-positive      — reflexive meanDelta > threshold AND
- *                               CI strictly positive
+ *                               CI strictly positive AND E-value CI
+ *                               bound ≥ `reflexiveEValueMin` (associational,
+ *                               not causal — sensitivity-gated)
  *   - decision-paid-off       — decision joined to a good outcome AND
  *                               followed by ≥ K additional good outcomes
+ *                               IN THE SAME PROJECT AND Wilson-low good
+ *                               rate exceeds the corpus base rate
  *
  * Concerns (`tone: 'concerning'`):
  *   - trajectory-stalled      — project slope CI strictly negative
@@ -26,6 +30,16 @@
  *   - debt-spinning           — top knowledge-debt clusters by size
  *                               (V1: highest count flagged; week-over-
  *                                week growth is a follow-on)
+ *
+ * **V1 emission scope**: 7 of 9 kinds emit from the builder pipeline.
+ * `pattern-closed` and `pattern-recurring` accept watcher input in
+ * the kernel API (the test suite exercises them) but the
+ * `surprisesBuilder` Node shell passes an empty `patternWatchers`
+ * array — the applied-pattern watcher ledger lives in the SQLite
+ * substrate and no SDK accessor for it exists yet. The two pattern-*
+ * branches stay dormant until that accessor lands; see the
+ * `TODO(applyWatcher-sdk):` marker in
+ * `packages/exporter/src/analysis/surprisesBuilder.ts`.
  *
  * Pure. Browser-safe (no `node:*` imports). Deterministic — the
  * caller passes `generatedAt` (the kernel does NOT call `Date.now()`),
@@ -43,6 +57,7 @@ import { THRESHOLDS } from './thresholds.js';
 import type { ItsResult } from './itsAnalysis.js';
 import type { ReflexiveResult } from './computeReflexive.js';
 import type { WatcherVerdict } from './applyWatcher.js';
+import { wilsonCI } from './stats.js';
 
 // ─── Input row shapes ──────────────────────────────────────────────
 //
@@ -58,6 +73,13 @@ export interface SurpriseCompositeRow {
   /** Unix ms — session terminal timestamp (manifest.updatedAt). */
   readonly updatedAt: number;
   readonly composite: CompositeOutcome;
+  /**
+   * Project the session belongs to (manifest `projectId`). Optional —
+   * sessions without a discovered project are still scored and counted
+   * for streaks / base-rate computation, but they're skipped by the
+   * same-project gates (e.g. `decision-paid-off`).
+   */
+  readonly projectId?: string;
 }
 
 /** Project-trajectory row — mirrors the on-disk sidecar entry. */
@@ -102,6 +124,14 @@ export interface SurpriseDecisionRow {
   readonly binaryClass: 'good' | 'bad' | 'neutral';
   /** Short label rendered into the summary; falls back to "a decision". */
   readonly label?: string;
+  /**
+   * Project the decision-session belongs to. Required for the
+   * `decision-paid-off` same-project followup gate; rows without a
+   * projectId are skipped entirely by that branch (the decision can
+   * still appear as `unscoped` evidence but we won't claim it "paid
+   * off" without scoping).
+   */
+  readonly projectId?: string;
 }
 
 // ─── Output schema ─────────────────────────────────────────────────
@@ -148,6 +178,7 @@ export interface SurpriseThresholdsSnapshot {
   readonly itsQValueMax: number;
   readonly itsDeltaMin: number;
   readonly reflexiveDeltaMin: number;
+  readonly reflexiveEValueMin: number;
   readonly decisionGoodFollowupsMin: number;
   readonly debtSpinningTopK: number;
   readonly debtSpinningMinClusterSize: number;
@@ -185,43 +216,56 @@ export interface ComputeSurprisesInput {
 }
 
 export interface ComputeSurprisesOptions {
-  /** Override the minimum streak length. Default 5. */
+  /**
+   * Override the minimum streak length. Defaults to
+   * `THRESHOLDS.surprises.streakMin`. Tests use this to drive boundary
+   * cases without forking the threshold table.
+   */
   readonly streakMin?: number;
   /**
    * ITS BH-FDR qValue ceiling — a contrast counts as "config-helped"
    * when `qValue ≤ itsQValueMax` AND `deltaGoodShare ≥ itsDeltaMin`.
-   * Pre-launch placeholder; calibrate after first ~50 contrasts.
+   * Defaults to `THRESHOLDS.surprises.itsQValueMax` /
+   * `.itsDeltaMin`.
    */
   readonly itsQValueMax?: number;
   readonly itsDeltaMin?: number;
   /**
    * Reflexive minimum mean-delta (good-share delta) to surface. Also
-   * requires the CI to be strictly positive (low > 0). Pre-launch
-   * placeholder.
+   * requires the CI to be strictly positive (low > 0) AND
+   * `eValueCIBound ≥ reflexiveEValueMin`. Defaults to
+   * `THRESHOLDS.surprises.reflexiveDeltaMin` /
+   * `.reflexiveEValueMin`.
    */
   readonly reflexiveDeltaMin?: number;
   /**
+   * Reflexive E-value CI-bound floor. Defaults to
+   * `THRESHOLDS.surprises.reflexiveEValueMin`. Smaller values make
+   * the gate looser; the surprise is associational, not causal, so
+   * the E-value floor protects against surfacing a contrast a single
+   * weak unobserved confounder could explain away.
+   */
+  readonly reflexiveEValueMin?: number;
+  /**
    * `decision-paid-off`: minimum number of additional good composite
-   * outcomes that must follow the decision's session (same project
-   * preferred but not required in V1; the kernel scopes by
-   * compositeRow.updatedAt > decision-session.updatedAt). Default 2.
+   * outcomes IN THE SAME PROJECT that must follow the decision's
+   * session. Defaults to `THRESHOLDS.surprises.decisionGoodFollowupsMin`.
+   * The kernel also requires the followup good-rate's Wilson lower
+   * bound (α=0.05) to exceed the corpus base good-share — see
+   * `computeDecisionPaidOff` for the math.
    */
   readonly decisionGoodFollowupsMin?: number;
-  /** Top-K knowledge-debt clusters surfaced as `debt-spinning`. Default 3. */
+  /**
+   * Top-K knowledge-debt clusters surfaced as `debt-spinning`.
+   * Defaults to `THRESHOLDS.surprises.debtSpinningTopK`.
+   */
   readonly debtSpinningTopK?: number;
-  /** Minimum cluster size for `debt-spinning`. Default 3. */
+  /**
+   * Minimum cluster size for `debt-spinning`. Defaults to
+   * `THRESHOLDS.surprises.debtSpinningMinClusterSize`.
+   */
   readonly debtSpinningMinClusterSize?: number;
 }
-
-const DEFAULTS = {
-  streakMin: 5,
-  itsQValueMax: 0.1,
-  itsDeltaMin: 0.15,
-  reflexiveDeltaMin: 0.1,
-  decisionGoodFollowupsMin: 2,
-  debtSpinningTopK: 3,
-  debtSpinningMinClusterSize: 3,
-} as const;
 
 // ─── Kernel entry point ────────────────────────────────────────────
 
@@ -229,16 +273,22 @@ export function computeSurprises(
   input: ComputeSurprisesInput,
   options: ComputeSurprisesOptions = {},
 ): SurprisesOutput {
+  // All defaults route through THRESHOLDS.surprises so the no-hardcoded-
+  // numbers rule applies uniformly. Test overrides flow through `options`
+  // unchanged.
+  const defaults = THRESHOLDS.surprises;
   const opts = {
-    streakMin: options.streakMin ?? DEFAULTS.streakMin,
-    itsQValueMax: options.itsQValueMax ?? DEFAULTS.itsQValueMax,
-    itsDeltaMin: options.itsDeltaMin ?? DEFAULTS.itsDeltaMin,
-    reflexiveDeltaMin: options.reflexiveDeltaMin ?? DEFAULTS.reflexiveDeltaMin,
+    streakMin: options.streakMin ?? defaults.streakMin,
+    itsQValueMax: options.itsQValueMax ?? defaults.itsQValueMax,
+    itsDeltaMin: options.itsDeltaMin ?? defaults.itsDeltaMin,
+    reflexiveDeltaMin: options.reflexiveDeltaMin ?? defaults.reflexiveDeltaMin,
+    reflexiveEValueMin:
+      options.reflexiveEValueMin ?? defaults.reflexiveEValueMin,
     decisionGoodFollowupsMin:
-      options.decisionGoodFollowupsMin ?? DEFAULTS.decisionGoodFollowupsMin,
-    debtSpinningTopK: options.debtSpinningTopK ?? DEFAULTS.debtSpinningTopK,
+      options.decisionGoodFollowupsMin ?? defaults.decisionGoodFollowupsMin,
+    debtSpinningTopK: options.debtSpinningTopK ?? defaults.debtSpinningTopK,
     debtSpinningMinClusterSize:
-      options.debtSpinningMinClusterSize ?? DEFAULTS.debtSpinningMinClusterSize,
+      options.debtSpinningMinClusterSize ?? defaults.debtSpinningMinClusterSize,
   };
 
   const surprises: Surprise[] = [];
@@ -267,6 +317,7 @@ export function computeSurprises(
       itsQValueMax: opts.itsQValueMax,
       itsDeltaMin: opts.itsDeltaMin,
       reflexiveDeltaMin: opts.reflexiveDeltaMin,
+      reflexiveEValueMin: opts.reflexiveEValueMin,
       decisionGoodFollowupsMin: opts.decisionGoodFollowupsMin,
       debtSpinningTopK: opts.debtSpinningTopK,
       debtSpinningMinClusterSize: opts.debtSpinningMinClusterSize,
@@ -417,28 +468,60 @@ function computePatternClosed(input: ComputeSurprisesInput): Surprise[] {
 }
 
 /**
- * `reflexive-positive`: meanDelta ≥ reflexiveDeltaMin AND CI strictly
- * positive (low > 0). One surprise at most (reflexive is whole-corpus).
+ * `reflexive-positive`: three-gate associational surprise.
+ *
+ *   1. `meanDelta ≥ reflexiveDeltaMin` — practical significance.
+ *   2. `ci.low > 0` — Wilson CI strictly positive (not just a
+ *      directional point estimate; we want some inferential
+ *      confidence the contrast isn't noise).
+ *   3. `eValueStatus === 'computed' && eValueCIBound ≥
+ *      reflexiveEValueMin` — VanderWeele & Ding (2017) E-value on the
+ *      CI bound nearest the null. If the E-value is small, a
+ *      modestly-strong unobserved confounder could drag the
+ *      observation to RR=1. We refuse to surface contrasts that are
+ *      one weak confounder away from disappearing.
+ *
+ * Iter-1 adversarial finding: prior version emitted on (1)+(2) and
+ * called the contrast a "lift" — both the gating and the copy
+ * suggested a causal interpretation the matched-pair primitive
+ * doesn't support. Tightened to gate on E-value AND softened the
+ * verb to "is associated with" to match the methodology disclosure
+ * the viewer already shows.
+ *
+ * One surprise at most (reflexive is whole-corpus).
  *
  * Score: `min(1, meanDelta * 2)` — same convention as config-helped.
  */
 function computeReflexivePositive(
   input: ComputeSurprisesInput,
-  opts: { reflexiveDeltaMin: number },
+  opts: { reflexiveDeltaMin: number; reflexiveEValueMin: number },
 ): Surprise[] {
   const r = input.reflexive;
   if (r === null) return [];
   if (!Number.isFinite(r.meanDelta) || r.meanDelta < opts.reflexiveDeltaMin) return [];
   if (r.ci.low <= 0) return [];
+  // E-value sensitivity gate. `'ci-straddles-null'` / `'p-control-zero'`
+  // mean the kernel couldn't compute a meaningful E-value at all —
+  // those cases fail the gate by definition.
+  if (
+    r.eValueStatus !== 'computed' ||
+    r.eValueCIBound === null ||
+    !Number.isFinite(r.eValueCIBound) ||
+    r.eValueCIBound < opts.reflexiveEValueMin
+  ) {
+    return [];
+  }
   const score = Math.max(0, Math.min(1, r.meanDelta * 2));
   return [
     {
       id: 'reflexive-positive:whole-corpus',
       kind: 'reflexive-positive',
       tone: 'positive',
+      // Associational language (not "lifted") — the matched-pair
+      // primitive is descriptive, the E-value is sensitivity-bounded.
       summary: clip(
-        `Touching chat-arch lifted good-share by ${(r.meanDelta * 100).toFixed(0)}pp ` +
-          `(CI low ${(r.ci.low * 100).toFixed(0)}pp).`,
+        `Touching chat-arch is associated with +${(r.meanDelta * 100).toFixed(0)}pp ` +
+          `good-share (CI low ${(r.ci.low * 100).toFixed(0)}pp, E-value ${r.eValueCIBound.toFixed(2)}).`,
       ),
       evidence: {
         sessionIds: r.pairs.map((p) => p.treatedSessionId),
@@ -452,12 +535,35 @@ function computeReflexivePositive(
 /**
  * `decision-paid-off`: a decision whose outcome was `good` AND was
  * followed by at least `decisionGoodFollowupsMin` additional good
- * composite outcomes (across the whole corpus — V1 doesn't restrict
- * to same-project; that's a follow-on once decisions carry a project
- * pointer in the join).
+ * composite outcomes IN THE SAME PROJECT, AND whose followup good-
+ * rate's Wilson lower bound (α=0.05) exceeds the corpus-wide good
+ * base rate.
  *
- * Score: saturating in follow-up count. `min(1, (followups + 1) / 10)`
- * — a decision with 9 good followups caps the score at 1.
+ * Iter-1 adversarial findings:
+ *
+ *   - **Cross-project leak.** Prior version counted followups across
+ *     the WHOLE corpus, so any decision made early in a productive
+ *     week scored "paid off" by virtue of the user shipping in
+ *     unrelated projects. Now restricted to same-project followups
+ *     (rows where both decision-session and followup-session carry
+ *     the same `projectId`).
+ *   - **Threshold too loose.** Prior floor was 2 followups; Wilson
+ *     lower bound on 2/2 with Beta(1,1) prior is ≈0.16, well below
+ *     any plausible base rate. Raised to 5 (see
+ *     `THRESHOLDS.surprises.decisionGoodFollowupsMin`).
+ *   - **No lift test.** "K good followups happened" doesn't establish
+ *     the decision moved the curve — the user might just have a
+ *     consistent good week. Added a Wilson-low > base-rate gate so we
+ *     only emit when the followup good-rate is provably higher than
+ *     the user's typical share.
+ *
+ * Decisions whose `projectId` is unset are skipped (we cannot scope
+ * followups for them); composite rows whose `projectId` is unset are
+ * NOT counted as followups (same reason) but ARE counted in the
+ * corpus base-rate denominator (every scored session contributes to
+ * the user's overall good-share).
+ *
+ * Score: saturating in followup count. `min(1, (followups + 1) / 10)`.
  */
 function computeDecisionPaidOff(
   input: ComputeSurprisesInput,
@@ -465,8 +571,23 @@ function computeDecisionPaidOff(
 ): Surprise[] {
   if (input.decisions.length === 0) return [];
 
-  // Build a sorted (updatedAt, sessionId) lookup once for the followup
-  // count. O(N log N) once, then O(log N) per decision.
+  // Corpus-wide base rate of good outcomes. Denominator is every
+  // scored composite row (binary !== 'unknown' is the conservative
+  // line — 'unknown' rows had no measurable outcome).
+  let baseGood = 0;
+  let baseDenom = 0;
+  for (const row of input.composites) {
+    if (row.composite.binary === 'unknown') continue;
+    baseDenom += 1;
+    if (row.composite.binary === 'good') baseGood += 1;
+  }
+  // No scored composites at all → no base rate exists → cannot
+  // make the lift claim. Fall back to 0 so the Wilson gate trivially
+  // passes; the count floor still applies.
+  const baseRateGoodShare = baseDenom > 0 ? baseGood / baseDenom : 0;
+
+  // Build a sorted (updatedAt, sessionId) lookup once. O(N log N) once,
+  // then O(N) per decision (worst case scans the tail).
   const sessionByUpdatedAt = input.composites
     .slice()
     .sort((a, b) => a.updatedAt - b.updatedAt || a.sessionId.localeCompare(b.sessionId));
@@ -474,23 +595,40 @@ function computeDecisionPaidOff(
   const out: Surprise[] = [];
   for (const d of input.decisions) {
     if (d.binaryClass !== 'good') continue;
+    // Same-project scoping requires a projectId on the decision.
+    if (d.projectId === undefined) continue;
     // Anchor on this decision's session in the sorted list.
     const anchor = sessionByUpdatedAt.findIndex((s) => s.sessionId === d.sessionId);
     if (anchor === -1) continue;
-    let followups = 0;
+    let followupsGood = 0;
+    let followupsTotal = 0;
     for (let i = anchor + 1; i < sessionByUpdatedAt.length; i += 1) {
       const row = sessionByUpdatedAt[i] as SurpriseCompositeRow;
-      if (row.composite.binary === 'good') followups += 1;
+      // Same-project gate; skip cross-project ships entirely.
+      if (row.projectId === undefined || row.projectId !== d.projectId) continue;
+      if (row.composite.binary === 'unknown') continue;
+      followupsTotal += 1;
+      if (row.composite.binary === 'good') followupsGood += 1;
     }
-    if (followups < opts.decisionGoodFollowupsMin) continue;
-    const score = Math.max(0, Math.min(1, (followups + 1) / 10));
+    if (followupsGood < opts.decisionGoodFollowupsMin) continue;
+    // Wilson lower bound on the followup good-rate. Only emit when it
+    // strictly exceeds the corpus base rate — i.e. the decision is
+    // followed by a *higher* good-share than the user's typical week,
+    // with enough samples that the lower bound clears the bar.
+    const wilson = wilsonCI(followupsGood / followupsTotal, followupsTotal);
+    if (wilson.low <= baseRateGoodShare) continue;
+    const score = Math.max(0, Math.min(1, (followupsGood + 1) / 10));
     const label = d.label ?? 'a decision';
     out.push({
       id: `decision-paid-off:${d.decisionId}`,
       kind: 'decision-paid-off',
       tone: 'positive',
+      // Summary surfaces the lift: same-project K/N + Wilson-low + base
+      // rate. The user can see at a glance that we're not just counting
+      // good sessions in a row.
       summary: clip(
-        `${label} paid off — ${followups} good sessions followed.`,
+        `${label} paid off — same-project followups: ${followupsGood}/${followupsTotal} good ` +
+          `(Wilson low ${wilson.low.toFixed(2)}, base rate ${baseRateGoodShare.toFixed(2)}).`,
       ),
       evidence: { decisionId: d.decisionId, sessionIds: [d.sessionId] },
       score,
