@@ -291,6 +291,20 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `skill-curves.json` — per-topic weekly ask-count series + Mann-
   Kendall trend test with BH-FDR. PII: topic + time series.
 
+**Intermediate sidecars (no direct UI surface).** A few artifacts
+under `analysis/` exist as inputs to other kernels or downstream
+sidecars rather than as something a UI surface reads. If you're
+wondering why one of these doesn't show up in the viewer, that's
+the reason — not a missing feature, by design. Don't add a surface
+for them; the consuming sidecar is what gets rendered.
+
+| Sidecar | Consumer | Direct surface? |
+|---|---|---|
+| `audit-claims.json` | input to the audit verifier (which writes `audit-results.json`) | no — `/audit` + `/results` read `audit-results.json` |
+| `discovery-scores.json` | input to the curator ranker (which writes `curator-feed.json`) | no |
+| `duplicates.semantic.json` | input to other clustering kernels | no |
+| `pr-land-cache.json` | input to `composite-outcomes.json` (gated by `--enable-pr-join`) | no |
+
 ### Feed-redesign Phase A sidecar (EXPORTER_VERSION 1.4.0)
 
 One additional sidecar under `apps/standalone/public/chat-arch-data/
