@@ -11,8 +11,8 @@
 //   4. BROKEN   — concerning surprises + audit concerns + continuum health
 //   5. STORIES  — recent narratives + blog-draft slugs
 //
-// The header (TODAY title, RESCAN/MINE/REGEN/FULL SCAN buttons,
-// progress UI) sits above section 1. A new FULL SCAN button
+// The header (TODAY title, SCAN/REGEN buttons, progress UI) sits
+// above section 1. SCAN is the user's mental-model match: one click
 // orchestrates the four producers sequentially via fullScan.ts.
 export const prerender = false;
 
@@ -84,7 +84,6 @@ const brokenEmpty =
   surprisesBroken.length === 0 &&
   concerns.length === 0 &&
   (health === null || health.warnings.length === 0);
-const storiesEmpty = recentNarratives.length === 0 && drafts.length === 0;
 const narrativesEmpty = recentNarratives.length === 0;
 
 // Phase β review-loop iter-1 fix: the four new FEED sections (BRIEF /
@@ -156,11 +155,9 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         {brief !== null ? <span class="today__chip">brief at {brief.date}</span> : null}
       </p>
       <div class="today__actions">
-        <button id="action-full-scan" type="button" class="today__btn-primary">
-          FULL SCAN
+        <button id="action-rescan" type="button" class="today__btn-primary">
+          SCAN
         </button>
-        <button id="action-rescan" type="button">RESCAN</button>
-        <button id="action-mine" type="button">MINE CORRECTIONS</button>
         <button id="action-brief" type="button">REGEN BRIEF</button>
         <span id="action-status" class="today__action-status"></span>
       </div>
@@ -226,7 +223,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
       {newEmpty ? (
         <section
           class="today__row-demo"
-          aria-label="Example data — your real NEW surprises populate after FULL SCAN runs"
+          aria-label="Example data — your real NEW surprises populate after SCAN runs"
         >
           <span class="sr-only">Example data, not your data:</span>
           <p class="today__act-lede">
@@ -251,7 +248,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                     {s.evidence.sessionIds.slice(0, 4).map((sid, ix) => (
                       <>
                         {ix > 0 ? ' · ' : ' '}
-                        <a href={`/sessions/${sid}`}>{sid.slice(0, 8)}</a>
+                        <a href={`/sessions#session/${sid}`}>{sid.slice(0, 8)}</a>
                       </>
                     ))}
                   </p>
@@ -293,7 +290,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
                   {s.evidence.sessionIds.slice(0, 4).map((sid, ix) => (
                     <>
                       {ix > 0 ? ' · ' : ' '}
-                      <a href={`/sessions/${sid}`}>{sid.slice(0, 8)}</a>
+                      <a href={`/sessions#session/${sid}`}>{sid.slice(0, 8)}</a>
                     </>
                   ))}
                   {s.evidence.sessionIds.length > 4 ? (
@@ -467,7 +464,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         brokenEmpty ? (
           <section
             class="today__row-demo"
-            aria-label="Example data — your real BROKEN surprises populate after FULL SCAN runs"
+            aria-label="Example data — your real BROKEN surprises populate after SCAN runs"
           >
             <span class="sr-only">Example data, not your data:</span>
             <p class="today__act-lede">
@@ -703,10 +700,11 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
   </main>
 
   <script>
-    // Action-button wiring. The original RESCAN / MINE / REGEN paths
-    // stay verbatim (NDJSON streaming for rescan + mine, synchronous
-    // POST for regen-brief). FULL SCAN orchestrates all four
-    // producers sequentially via the fullScan.ts module.
+    // Action-button wiring. SCAN runs the full producer chain
+    // (exporter → mine-corrections → curate → falsify) via the
+    // fullScan.ts orchestrator. REGEN BRIEF runs the lightweight
+    // markdown-only path. In-section CTAs let power users re-run a
+    // single producer without the whole chain.
     import {
       FULL_SCAN_STEPS,
       formatStepLabel,
@@ -723,9 +721,7 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
     const barFillEl = document.getElementById('progress-bar-fill') as HTMLElement | null;
     const logEl = document.getElementById('progress-log') as HTMLElement | null;
     const buttons = [
-      document.getElementById('action-full-scan'),
       document.getElementById('action-rescan'),
-      document.getElementById('action-mine'),
       document.getElementById('action-brief'),
       document.getElementById('action-brief-cta'),
       document.getElementById('action-mine-cta'),
@@ -990,10 +986,6 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
       );
     }
 
-    async function runRescan(): Promise<void> {
-      await streamNdjson('/api/rescan', 'chat-arch-rescan', 'rescan', {});
-    }
-
     async function runRegenBrief(): Promise<void> {
       showProgress('regen brief');
       setButtonsDisabled(true);
@@ -1061,13 +1053,13 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
         onChainDone(success, lastError) {
           if (success) {
             setPhase('complete');
-            setStatus('FULL SCAN complete — refreshing…', false);
+            setStatus('SCAN complete — refreshing…', false);
             hideProgress();
             reloadSoon();
           } else {
             hideProgress();
             setButtonsDisabled(false);
-            setStatus(`FULL SCAN failed: ${lastError ?? 'unknown'}`, true);
+            setStatus(`SCAN failed: ${lastError ?? 'unknown'}`, true);
           }
         },
       };
@@ -1075,12 +1067,15 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
       await runFullScan(ui);
     }
 
-    document.getElementById('action-full-scan')?.addEventListener('click', () => {
+    // SCAN button runs the full chain (exporter → mine-corrections → curate
+    // → falsify). The user's mental model is "scan = everything refreshed";
+    // having a separate FULL SCAN button next to RESCAN was redundant chrome.
+    // In-section CTAs (CURATE, MINE CORRECTIONS, REGEN BRIEF) remain for the
+    // rare case where someone wants to re-run just one producer without the
+    // whole chain.
+    document.getElementById('action-rescan')?.addEventListener('click', () => {
       void runFullScanFlow();
     });
-    document.getElementById('action-rescan')?.addEventListener('click', () => { void runRescan(); });
-    document.getElementById('action-mine')?.addEventListener('click', () => { void runMine(); });
-    // In-section CTAs share handlers with their header twins.
     document.getElementById('action-mine-cta')?.addEventListener('click', () => { void runMine(); });
     document.getElementById('action-curate-cta')?.addEventListener('click', () => { void runCurate(); });
     document.getElementById('action-brief')?.addEventListener('click', () => { void runRegenBrief(); });
@@ -1176,9 +1171,9 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
     font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 12px;
     cursor: pointer; border-radius: 2px;
   }
-  /* FULL SCAN — sunflower-gold primary, larger pad. Visual hierarchy
-     says "this is the everything button"; the other three remain
-     available as escape hatches. */
+  /* SCAN — sunflower-gold primary, larger pad. Visual hierarchy says
+     "this is the everything button". REGEN BRIEF stays secondary;
+     per-section CTAs handle the rare single-producer reruns. */
   .today__btn-primary {
     background: #FFCC33 !important;
     color: #0a0a0a;
