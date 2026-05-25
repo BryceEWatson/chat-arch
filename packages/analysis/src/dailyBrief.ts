@@ -262,7 +262,13 @@ export function buildDailyBrief(inputs: DailyBriefInputs): DailyBriefResult {
     out.push(`The strongest signal: ${clip120(openerStrong)}`);
     out.push('');
   } else {
-    out.push('Quiet week — no commits to main and no strong positive signals.');
+    // Wave-2 review iter-1 fix: catch-all opener used to say "no strong
+    // positive signals" — kernel-tier jargon ("signals", "strong") that
+    // a reader doesn't have context for. Also misleading when a STRONG
+    // concerning surprise exists below (reader sees "Quiet" then a wall
+    // of red two lines later). Reworded to neutral framing that survives
+    // a concerning-heavy week.
+    out.push('No commits to main this week; the sections below summarize everything else.');
     out.push('');
   }
 
@@ -272,10 +278,10 @@ export function buildDailyBrief(inputs: DailyBriefInputs): DailyBriefResult {
     .filter((p) => p.lastSeen >= windowStart)
     .sort(sortByLastSeenDesc);
   if (shifted.length > 0) {
-    out.push(`► ${shifted.length} pattern(s) shifted in the last ${thresholds.patternRecencyDays} days`);
+    out.push(`► ${pluralize(shifted.length, 'pattern')} shifted in the last ${thresholds.patternRecencyDays} days`);
     for (const p of shifted.slice(0, 5)) {
       out.push(`  • ${shortenRule(p.canonicalRule)}`);
-      out.push(`    (${p.occurrenceCount} occurrence(s), scope=${p.scope.kind})`);
+      out.push(`    (${pluralize(p.occurrenceCount, 'occurrence')}, scope=${p.scope.kind})`);
     }
     out.push('');
   }
@@ -296,7 +302,7 @@ export function buildDailyBrief(inputs: DailyBriefInputs): DailyBriefResult {
     })
     .slice(0, thresholds.upgradesShown);
   if (upgradeCandidates.length > 0) {
-    out.push(`► ${upgradeCandidates.length} upgrade(s) to propose`);
+    out.push(`► ${pluralize(upgradeCandidates.length, 'upgrade')} to propose`);
     for (const p of upgradeCandidates) {
       out.push(
         `  • ${pickUpgradeTarget(p.proposedUpgrades)}: "${pickHeadline(p.proposedUpgrades)}"`,
@@ -313,7 +319,7 @@ export function buildDailyBrief(inputs: DailyBriefInputs): DailyBriefResult {
     .sort((a, b) => b.audit.passRate - a.audit.passRate)
     .slice(0, thresholds.blogDraftsShown);
   if (sortedDrafts.length > 0) {
-    out.push(`► ${sortedDrafts.length} blog draft(s) ready for review`);
+    out.push(`► ${pluralize(sortedDrafts.length, 'blog draft')} ready for review`);
     for (const d of sortedDrafts) {
       const pct = (d.audit.passRate * 100).toFixed(0);
       out.push(

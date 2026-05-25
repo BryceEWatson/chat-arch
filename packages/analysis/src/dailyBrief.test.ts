@@ -794,7 +794,7 @@ describe('buildDailyBrief', () => {
         'The strongest signal: 8 sessions in a row landed as composite-good.',
       );
       // The opener-fallback line must NOT appear.
-      expect(r.markdown).not.toContain('Quiet week');
+      expect(r.markdown).not.toContain('No commits to main this week');
       expect(r.markdown).not.toContain('This week you shipped');
     });
 
@@ -811,8 +811,11 @@ describe('buildDailyBrief', () => {
         shippedThisWeek: null,
         topStrongPositiveSurprise: null,
       });
+      // Wave-2 review iter-1 fix A3: opener rephrased to drop kernel-tier
+      // jargon ("strong positive signals") and to survive concerning-heavy
+      // weeks (where "Quiet" would have been misleading).
       expect(r.markdown).toContain(
-        'Quiet week — no commits to main and no strong positive signals.',
+        'No commits to main this week; the sections below summarize everything else.',
       );
       expect(r.markdown).not.toContain('This week you shipped');
       expect(r.markdown).not.toContain('The strongest signal');

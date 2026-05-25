@@ -338,9 +338,26 @@ export function computeSurprises(
   // null` and returns [] cleanly, so passing the current streak rows
   // (which the streak-extended kernel needs) is safe even on a
   // first-ever scan.
+  //
+  // Wave-2 review iter-1 fix (B3): defend against threshold drift
+  // between scans. If the operator bumped THRESHOLDS.surprises.streakMin
+  // (e.g. 3 → 5) between this scan and the archived prior, the prior
+  // file's `streak` rows were emitted under a looser gate — comparing
+  // them against the current run's tighter gate produces spurious
+  // streak-broken / streak-extended emissions because the corpus is
+  // unchanged but the threshold isn't. The schema exposes prior.thresholds
+  // so we can detect drift and fail soft: skip the affected delta kind
+  // entirely (degrade to V1-snapshot behavior for that kind) when the
+  // gate doesn't match. The streak delta family is the only one with
+  // a single-threshold dependency today; trajectory + pattern deltas
+  // don't yet expose a threshold-snapshot to compare against.
   const prior = input.priorSurprises ?? null;
-  pushAll(surprises, computeStreakExtended(prior, streakRows));
-  pushAll(surprises, computeStreakBroken(prior, streakRows));
+  const streakGateMatches =
+    prior === null || prior.thresholds.streakMin === opts.streakMin;
+  if (streakGateMatches) {
+    pushAll(surprises, computeStreakExtended(prior, streakRows));
+    pushAll(surprises, computeStreakBroken(prior, streakRows));
+  }
   pushAll(surprises, computeTrajectoryFlipUp(input, prior));
   pushAll(surprises, computeTrajectoryFlipDown(input, prior));
   pushAll(surprises, computePatternRecurrenceResumed(input, prior));
@@ -902,10 +919,15 @@ function computeTrajectoryFlipUp(
   for (const t of input.trajectories) {
     if (t.classification !== 'accelerating') continue;
     const priorKind = priorByProject.get(t.projectId);
-    // Flip-up qualifies when prior was stalled OR absent (the project
-    // didn't surface either way). An already-accelerating project is
-    // not a flip.
-    if (priorKind === 'trajectory-accelerating') continue;
+    // Wave-2 review iter-1 fix (B1): tightened from "stalled OR absent
+    // qualifies" to "ONLY stalled qualifies." Reason: a project absent
+    // from prior could be (a) genuinely new, or (b) classified `flat` /
+    // `series-too-short` in prior so the trajectory kernel emitted
+    // nothing. Case (b) is NOT a directional change — the slope just
+    // tightened — so claiming a flip is a false positive. The narrower
+    // gate loses the freshly-discovered-accelerating-project case (V1
+    // tradeoff: better to silently miss than to noisily lie).
+    if (priorKind !== 'trajectory-stalled') continue;
     const slope = t.slope ?? 0;
     const score = Math.max(0, Math.min(1, slope * 10));
     out.push({
@@ -951,7 +973,11 @@ function computeTrajectoryFlipDown(
       continue;
     }
     const priorKind = priorByProject.get(t.projectId);
-    if (priorKind === 'trajectory-stalled') continue;
+    // Wave-2 review iter-1 fix (B1): tightened — only emit when prior
+    // explicitly had `trajectory-accelerating`. Absent-in-prior may be
+    // a project that was `flat` (not a downward direction). See flip-up
+    // for the symmetric rationale.
+    if (priorKind !== 'trajectory-accelerating') continue;
     const slope = t.slope ?? 0;
     const score = Math.max(0, Math.min(1, Math.abs(slope) * 10));
     out.push({
@@ -983,18 +1009,31 @@ function computePatternRecurrenceResumed(
 ): Surprise[] {
   if (prior === null) return [];
 
-  const priorClosedIds = new Set<string>();
+  // Wave-2 review iter-1 fix (B2): track prior pattern-closed SCORE per
+  // patternId (not just ID presence). The closed-score directly encodes
+  // hold strength via `1 - failureRateUpperBound95` — a 5-session hold
+  // that recurs is materially weaker evidence than a 50-session hold
+  // that recurs. Previously fixed score 0.85 forced every recurrence
+  // into the STRONG tier (>= 0.75) regardless of underlying strength,
+  // undermining the confidence ladder feedback_confidence_per_step asks
+  // for. Now we propagate the prior score (floor 0.5 so a closed-then-
+  // recurred surprise stays at least MODERATE — it's still a real
+  // signal even if the prior hold was weak).
+  const priorClosedScoreByPattern = new Map<string, number>();
   for (const s of prior.surprises) {
     if (s.kind !== 'pattern-closed') continue;
     const nid = s.evidence.narrativeId;
-    if (typeof nid === 'string' && nid.length > 0) priorClosedIds.add(nid);
+    if (typeof nid === 'string' && nid.length > 0) {
+      priorClosedScoreByPattern.set(nid, s.score);
+    }
   }
-  if (priorClosedIds.size === 0) return [];
+  if (priorClosedScoreByPattern.size === 0) return [];
 
   const out: Surprise[] = [];
   for (const w of input.patternWatchers) {
     if (w.verdict.kind !== 'recurring') continue;
-    if (!priorClosedIds.has(w.patternId)) continue;
+    const priorScore = priorClosedScoreByPattern.get(w.patternId);
+    if (priorScore === undefined) continue;
     out.push({
       id: `pattern-recurrence-resumed:${w.patternId}`,
       kind: 'pattern-recurrence-resumed',
@@ -1006,7 +1045,10 @@ function computePatternRecurrenceResumed(
         projectId: w.projectId,
         narrativeId: w.verdict.recurrenceNarrativeId,
       },
-      score: 0.85,
+      // Floor at 0.5 so a recurrence is at least MODERATE; ceiling at
+      // 0.95 so an unusually strong prior hold doesn't pin every
+      // recurrence at perfect-1.0 (rooms for genuine 1.0 elsewhere).
+      score: Math.max(0.5, Math.min(0.95, priorScore)),
       generatedAt: 0,
     });
   }

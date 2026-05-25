@@ -797,21 +797,33 @@ describe('cross-cutting properties', () => {
 
 // ─── Wave 2 #1 — delta kinds ───────────────────────────────────────
 
-function priorWith(surprises: readonly Surprise[]): SurprisesOutput {
+/**
+ * priorWith — build a SurprisesOutput fixture suitable for the
+ * `priorSurprises` slot. Optional thresholds override lets tests pin
+ * the prior's gates to match the current opts (Wave-2 review iter-1
+ * fix B3 rejects deltas when streakMin drifts between scans, so tests
+ * that pass non-default opts must build a prior with the same gate).
+ */
+function priorWith(
+  surprises: readonly Surprise[],
+  thresholdOverrides: Partial<SurprisesOutput['thresholds']> = {},
+): SurprisesOutput {
+  const baseThresholds = {
+    streakMin: 5,
+    itsQValueMax: 0.1,
+    itsDeltaMin: 0.15,
+    reflexiveDeltaMin: 0.1,
+    reflexiveEValueMin: 1.5,
+    decisionGoodFollowupsMin: 5,
+    debtSpinningTopK: 3,
+    debtSpinningMinClusterSize: 3,
+    archiveRetentionDays: 30,
+  };
   return {
     version: 1,
     generatedAt: GENERATED_AT - 86_400_000,
     surprises,
-    thresholds: {
-      streakMin: 5,
-      itsQValueMax: 0.1,
-      itsDeltaMin: 0.15,
-      reflexiveDeltaMin: 0.1,
-      reflexiveEValueMin: 1.5,
-      decisionGoodFollowupsMin: 5,
-      debtSpinningTopK: 3,
-      debtSpinningMinClusterSize: 3,
-    },
+    thresholds: { ...baseThresholds, ...thresholdOverrides },
   };
 }
 
@@ -865,7 +877,7 @@ describe('streak-extended (delta)', () => {
       compositeRow('s4', 4, 'good'),
       compositeRow('s5', 5, 'good'),
     ];
-    const prior = priorWith([streakSurprise(['s3', 's4', 's5'])]);
+    const prior = priorWith([streakSurprise(['s3', 's4', 's5'])], { streakMin: 3 });
     const out = computeSurprises(
       { ...emptyInput({ composites }), priorSurprises: prior },
       { streakMin: 3 },
@@ -883,7 +895,7 @@ describe('streak-extended (delta)', () => {
       compositeRow('s2', 2, 'good'),
       compositeRow('s3', 3, 'good'),
     ];
-    const prior = priorWith([streakSurprise(['x1', 'x2', 'x3'])]);
+    const prior = priorWith([streakSurprise(['x1', 'x2', 'x3'])], { streakMin: 3 });
     const out = computeSurprises(
       { ...emptyInput({ composites }), priorSurprises: prior },
       { streakMin: 3 },
@@ -910,7 +922,7 @@ describe('streak-extended (delta)', () => {
       compositeRow('s2', 2, 'good'),
       compositeRow('s3', 3, 'good'),
     ];
-    const prior = priorWith([streakSurprise(['s1', 's2', 's3'])]);
+    const prior = priorWith([streakSurprise(['s1', 's2', 's3'])], { streakMin: 3 });
     const out = computeSurprises(
       { ...emptyInput({ composites }), priorSurprises: prior },
       { streakMin: 3 },
@@ -943,7 +955,7 @@ describe('streak-broken (delta)', () => {
       compositeRow('s2', 2, 'good'),
       compositeRow('s3', 3, 'good'),
     ];
-    const prior = priorWith([streakSurprise(['p1', 'p2', 'p3'])]);
+    const prior = priorWith([streakSurprise(['p1', 'p2', 'p3'])], { streakMin: 3 });
     const out = computeSurprises(
       { ...emptyInput({ composites }), priorSurprises: prior },
       { streakMin: 3 },
@@ -980,7 +992,12 @@ describe('trajectory-flip-up (delta)', () => {
     expect(flip?.score).toBeCloseTo(0.8, 5); // 0.08 * 10
   });
 
-  it('emits when an absent project flips to accelerating', () => {
+  // Wave-2 review iter-1 fix B1: the kernel previously emitted flip-up
+  // for absent-in-prior projects, but absence has two meanings (genuinely
+  // new vs prior-flat-so-no-surprise). The narrower rule (only fire when
+  // prior had explicit `trajectory-stalled`) is safer. This test was
+  // inverted from `toContain` → `not.toContain` to match the new contract.
+  it('does NOT emit when project was ABSENT in prior (could be new OR flat)', () => {
     const trajectories: SurpriseTrajectoryRow[] = [
       trajectoryRow('p-new', 'accelerating', 0.05, { low: 0.01, high: 0.1 }),
     ];
@@ -989,7 +1006,7 @@ describe('trajectory-flip-up (delta)', () => {
       ...emptyInput({ trajectories }),
       priorSurprises: prior,
     });
-    expect(kindsOf(out.surprises)).toContain('trajectory-flip-up');
+    expect(kindsOf(out.surprises)).not.toContain('trajectory-flip-up');
   });
 
   it('does NOT emit when prior was already accelerating', () => {
@@ -1091,7 +1108,12 @@ describe('pattern-recurrence-resumed (delta)', () => {
     );
     expect(resumed).toBeDefined();
     expect(resumed?.tone).toBe('concerning');
-    expect(resumed?.score).toBeCloseTo(0.85, 5);
+    // Wave-2 review iter-1 fix B2: score now derives from the prior
+    // pattern-closed score (clamped to [0.5, 0.95]) instead of fixed
+    // 0.85, so weak prior holds don't all surface as STRONG-tier
+    // recurrences. Fixture's prior pattern-closed score is 0.5
+    // (MODERATE-ish hold), so the recurrence floors at 0.5.
+    expect(resumed?.score).toBeCloseTo(0.5, 5);
     expect(resumed?.evidence.narrativeId).toBe('narr-1');
   });
 
