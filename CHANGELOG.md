@@ -14,6 +14,55 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-05-25
+
+Auto-brief + SCAN-chain bug fixes.
+
+### Fixed
+
+- **Auto-brief was silently dropping 4 sections.** The daily-brief
+  kernel grew 5 optional inputs (`shippedThisWeek`, `surprises`,
+  `projectTrajectories`, `appliedPatternClosures`,
+  `topStrongPositiveSurprise`) in the 1.4.1 → 1.5.0 window. The
+  `/api/regen-brief` endpoint wired them; the exporter's auto-brief
+  writer at `packages/exporter/src/analysis/semanticAnalysis.ts`
+  did not. Every scan-time brief produced under 1.5.0 was missing
+  the "Shipped this week", "Surprises today", "Project momentum",
+  and "Applied-pattern closures" sections. This release wires
+  `shippedThisWeek` + `surprises` + `projectTrajectories` through
+  the auto-brief path. `appliedPatternClosures` remains `null`
+  pending the `listWatcherVerdicts` SDK accessor (TODO at
+  `semanticAnalysis.ts` ~ line 985, with companion TODOs at
+  `dailyBrief.ts` ~ line 360 and `regen-brief.ts:193`). The brief
+  kernel skips the section cleanly on null — same end-state as
+  pre-fix for that one section, but the other three are restored.
+- **SCAN chain occasionally halted at step 1.** The NDJSON parser
+  in `apps/standalone/src/scripts/fullScan.ts` could swallow a
+  terminal `done` event when the producer's final stdout chunk
+  carried the event without a trailing newline (Windows stream-
+  flush behavior under fetch). The post-stream drain now parses
+  any unterminated trailing fragment in the buffer before
+  reporting "stream ended without done."
+- **Docstring drift in `fullScan.ts`.** Header comment said
+  "4-step chain"; the array has been 5 since #102 (persona). Fixed
+  to match.
+
+### Why bump 1.5.0 → 1.5.1
+
+Per the existing CHANGELOG precedent (1.4.0 → 1.4.1 in feed-redesign
+Phase γ), brief-shape changes warrant a patch bump so consumers
+inspecting `analysis/meta.json.exporterVersion` can correlate the
+on-disk bundle with the fix.
+
+### Known limitations
+
+The fixed SCAN-chain halt is the most plausible root cause for the
+symptom Bryce observed, but the original repro was not
+deterministically captured before the fix. If post-merge SCAN still
+halts at step 1, the new `console.warn` in the NDJSON drain path
+surfaces the actual line that failed to parse — paste into a bug
+report so the next iteration has ground truth.
+
 ## [1.5.0] — 2026-05-25
 
 Feed-redesign Wave 2 #1 — delta surprises. The `computeSurprises`

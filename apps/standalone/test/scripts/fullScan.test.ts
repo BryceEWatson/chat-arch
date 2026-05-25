@@ -235,6 +235,35 @@ describe('runFullScan chain semantics', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('final `done` event with NO trailing newline is still parsed (buf-drain)', async () => {
+    // Producer flushes the terminal event without the closing `\n`.
+    // Without the post-stream buffer drain in runOneStep, that line
+    // would stay in `buf` and the chain would report "stream ended
+    // without done" even though the producer completed cleanly — the
+    // symptom Bryce hit where SCAN only fired /api/rescan and the
+    // chain silently halted at step 1.
+    const noNewlineStream = (): Response => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"type":"start"}\n'));
+          // Final `done` event WITHOUT trailing newline.
+          controller.enqueue(encoder.encode('{"type":"done","ok":true}'));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    };
+    fetchSpy.mockImplementation(() => Promise.resolve(noNewlineStream()));
+    const { ui, cap } = makeCapturingUi();
+
+    const ok = await runFullScan(ui);
+
+    expect(ok).toBe(true);
+    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true]);
+    expect(cap.chainDones).toEqual([{ success: true, lastError: null }]);
+  });
+
   it('stream ends without a done event → reports "stream ended without done"', async () => {
     // No terminal { type: 'done' } row — the producer crashed silently.
     fetchSpy.mockImplementationOnce(() =>

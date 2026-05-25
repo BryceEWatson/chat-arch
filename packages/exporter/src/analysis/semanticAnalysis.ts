@@ -20,8 +20,10 @@
  * write empty sidecars so downstream consumers see a deterministic shape.
  */
 
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import type {
   AppliedImprovement,
   AppliedImprovementsFile,
@@ -49,16 +51,22 @@ import {
   discoverTopicsLocal,
   extractClaims,
   scoreManifest,
+  SURPRISE_TIER_STRONG_MIN,
   verifySessions,
   type AppliedImprovementLite,
   type AssistantMessage,
+  type BriefTrajectoryRow,
   type CalibrationCurve,
   type DuplicatesFile,
+  type SurprisesOutput,
   type TimelineEvent,
   type VerifySessionInput,
 } from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
 import { countDefinedFields } from '../merge.js';
+import { findRepoRoot } from '../lib/repo-root.js';
+
+const execFileAsync = promisify(execFile);
 
 export interface RunSemanticAnalysisOptions {
   outDir: string;
@@ -515,6 +523,69 @@ async function loadContinuumHealth(analysisDir: string): Promise<ContinuumHealth
   }
 }
 
+async function readJsonOrNull<T>(absPath: string): Promise<T | null> {
+  try {
+    const raw = await readFile(absPath, 'utf8');
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Narrow on-disk shape of `analysis/project-trajectories.json` — only the
+ * 5 fields the brief renders. Mirrors the same inline narrowing in
+ * `apps/standalone/src/pages/api/regen-brief.ts` so the brief writer
+ * stays decoupled from the exporter-shell trajectories type.
+ */
+interface ProjectTrajectoriesFileShape {
+  projects?: ReadonlyArray<{
+    projectId: string;
+    projectName: string;
+    classification: BriefTrajectoryRow['classification'];
+    slope: number | null;
+    totalSessions: number;
+  }>;
+}
+
+/**
+ * Run `git log --since="7 days ago" ... main` against the repo root to
+ * power the brief's "Shipped this week" section. Returns `null` on any
+ * failure (not a git repo, no `main` branch, `git` missing) so the
+ * kernel skips the section cleanly. Mirrors the inline helper in
+ * `apps/standalone/src/pages/api/regen-brief.ts` — the exporter and
+ * the regen-brief endpoint deliberately keep their own copy rather
+ * than crossing the apps/packages boundary for a 25-line helper.
+ */
+async function shippedThisWeekFromGit(
+  repoRoot: string,
+): Promise<{ commitCount: number; recentSubjects: string[] } | null> {
+  try {
+    const [countResult, subjectsResult] = await Promise.all([
+      execFileAsync(
+        'git',
+        ['log', '--since=7 days ago', '--pretty=format:%H', 'main'],
+        { cwd: repoRoot, maxBuffer: 256 * 1024 },
+      ),
+      execFileAsync(
+        'git',
+        ['log', '--since=7 days ago', '--pretty=format:%s', 'main'],
+        { cwd: repoRoot, maxBuffer: 256 * 1024 },
+      ),
+    ]);
+    const commitCount = countResult.stdout
+      .split('\n')
+      .filter((l) => l.trim().length > 0).length;
+    const recentSubjects = subjectsResult.stdout
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .slice(0, 5);
+    return { commitCount, recentSubjects };
+  } catch {
+    return null;
+  }
+}
+
 function isoDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
@@ -877,9 +948,40 @@ export async function runSemanticAnalysis(
   }
   logger.info(`semantic: wrote ${top.length} blog-draft prompt(s) to ${draftsDir}`);
 
-  // ---- Wave 3: daily brief ----
+  // ---- Wave 3 + Phase γ + Wave 2 #4: daily brief ----
+  // The brief kernel was extended in Phase γ (EXPORTER_VERSION 1.4.1)
+  // + Wave 2 #4 (1.5.0) with 5 optional inputs: shippedThisWeek,
+  // projectTrajectories, surprises, appliedPatternClosures,
+  // topStrongPositiveSurprise. The /api/regen-brief endpoint wires
+  // them; the exporter must too, otherwise the auto-brief silently
+  // skips those 4 sections after every scan.
   const corrections = await loadCorrections(analysisDir);
   const continuumHealth = await loadContinuumHealth(analysisDir);
+  const surprises = await readJsonOrNull<SurprisesOutput>(
+    path.join(analysisDir, 'surprises.json'),
+  );
+  const topStrongPositiveSurprise: string | null =
+    surprises?.surprises.find(
+      (s) => s.tone === 'positive' && s.score >= SURPRISE_TIER_STRONG_MIN,
+    )?.summary ?? null;
+  const trajectoriesFile = await readJsonOrNull<ProjectTrajectoriesFileShape>(
+    path.join(analysisDir, 'project-trajectories.json'),
+  );
+  const projectTrajectories: BriefTrajectoryRow[] =
+    trajectoriesFile?.projects?.map((p) => ({
+      projectId: p.projectId,
+      projectName: p.projectName,
+      classification: p.classification,
+      slope: p.slope,
+      totalSessions: p.totalSessions,
+    })) ?? [];
+  const shippedThisWeek = await shippedThisWeekFromGit(findRepoRoot());
+  // TODO(applyWatcher-sdk): once `listWatcherVerdicts(db)` (or similar)
+  // exists in @chat-arch/exporter/db/sdk, change this to
+  // `listWatcherVerdicts(db).filter(v => v.verdict === 'no-recurrence').length`.
+  // Companion TODOs at packages/analysis/src/dailyBrief.ts line ~360 and
+  // apps/standalone/src/pages/api/regen-brief.ts:193.
+  const appliedPatternClosures: number | null = null;
   const briefDate = isoDate(now);
   const briefDir = path.join(analysisDir, 'briefs');
   await mkdir(briefDir, { recursive: true });
@@ -892,6 +994,11 @@ export async function runSemanticAnalysis(
     auditResults: verifyResult.results,
     auditSummary: verifyResult.summary,
     continuumHealth,
+    shippedThisWeek,
+    surprises,
+    projectTrajectories,
+    appliedPatternClosures,
+    topStrongPositiveSurprise,
   });
   const briefPath = path.join(briefDir, `${briefDate}.md`);
   await writeFile(briefPath, brief.markdown, 'utf8');
