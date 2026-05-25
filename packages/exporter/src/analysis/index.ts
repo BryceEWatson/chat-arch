@@ -172,8 +172,19 @@ export interface RunAnalysisResult {
  * artifact — the brief shape change is internal to the regen-brief
  * endpoint's output markdown — but the patch bump labels the bundle so
  * operators can correlate.
+ *
+ * Bumped 1.4.1 → 1.5.0 in feed-redesign Wave 2 #1 (delta surprises):
+ * a new `analysis/archive/` sidecar family lands —
+ * `surprises-YYYY-MM-DD.json` daily snapshots that the
+ * `surprisesBuilder` writes after each scan and reads on the NEXT scan
+ * to feed the kernel's new `priorSurprises` input. Five new delta
+ * surprise kinds (streak-extended / streak-broken / trajectory-flip-up
+ * / trajectory-flip-down / pattern-recurrence-resumed) emit when a
+ * prior archive exists; on a first-ever scan they skip cleanly. New
+ * threshold `THRESHOLDS.surprises.archiveRetentionDays = 30` gates the
+ * filename-based prune.
  */
-export const EXPORTER_VERSION = '1.4.1';
+export const EXPORTER_VERSION = '1.5.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

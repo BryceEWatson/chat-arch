@@ -16,6 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import {
   buildDailyBrief,
+  SURPRISE_TIER_STRONG_MIN,
   type BriefTrajectoryRow,
   type SurprisesOutput,
 } from '@chat-arch/analysis';
@@ -168,6 +169,16 @@ export const POST: APIRoute = async ({ request }) => {
   const surprises = await readJsonOrNull<SurprisesOutput>(
     join(analysisDir, 'surprises.json'),
   );
+  // Wave 2 — top STRONG positive summary for the journal-y opener.
+  // Kernel's `computeSurprises` pre-sorts by score desc, so the first
+  // positive row meeting the STRONG floor (score ≥
+  // SURPRISE_TIER_STRONG_MIN) is the highest-confidence surprise the
+  // user shipped this week. Passed as a precomputed string so the
+  // kernel stays decoupled from the surprise-tier helper.
+  const topStrongPositiveSurprise: string | null =
+    surprises?.surprises.find(
+      (s) => s.tone === 'positive' && s.score >= SURPRISE_TIER_STRONG_MIN,
+    )?.summary ?? null;
   // Phase γ §3 — `analysis/project-trajectories.json` (produced by the
   // project-trajectory builder). Narrowed inline so we don't pull the
   // exporter type across.
@@ -215,6 +226,7 @@ export const POST: APIRoute = async ({ request }) => {
     surprises,
     projectTrajectories,
     appliedPatternClosures,
+    topStrongPositiveSurprise,
   });
 
   const outPath = join(briefsDir, `${date}.md`);

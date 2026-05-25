@@ -219,7 +219,8 @@ describe('buildDailyBrief', () => {
           ],
         },
       });
-      expect(r.markdown).toContain('Shipped this week: 12 commit(s) to main');
+      // Wave 2 — narrative opener line (replaces "Shipped this week: …").
+      expect(r.markdown).toContain('► You shipped 12 commits to main this week.');
       expect(r.markdown).toContain('feat: ship one');
       expect(r.markdown).toContain('refactor: rename five');
       // Top-5 cap on subjects.
@@ -239,6 +240,8 @@ describe('buildDailyBrief', () => {
         continuumHealth: null,
         shippedThisWeek: { commitCount: 0, recentSubjects: [] },
       });
+      // No "you shipped …" header line + no original count line.
+      expect(r.markdown).not.toContain('You shipped');
       expect(r.markdown).not.toContain('Shipped this week');
       expect(r.counts.shippedCommits).toBe(0);
     });
@@ -255,6 +258,7 @@ describe('buildDailyBrief', () => {
         continuumHealth: null,
         shippedThisWeek: null,
       });
+      expect(r.markdown).not.toContain('You shipped');
       expect(r.markdown).not.toContain('Shipped this week');
       expect(r.counts.shippedCommits).toBe(0);
     });
@@ -298,7 +302,9 @@ describe('buildDailyBrief', () => {
           recentSubjects: ['feat: many things'],
         },
       });
-      expect(r.markdown).toContain('1,234 commit(s) to main');
+      // Wave 2 — pluralize + locale grouping carry over into the
+      // new narrative phrasing.
+      expect(r.markdown).toContain('You shipped 1,234 commits to main this week.');
     });
   });
 
@@ -375,7 +381,8 @@ describe('buildDailyBrief', () => {
           },
         ]),
       });
-      expect(r.markdown).toContain('Surprises today: 4 positive, 1 concerning');
+      // Wave 2 — header renamed "Surprises today: …" → "Surprises: …".
+      expect(r.markdown).toContain('► Surprises: 4 positive, 1 concerning.');
       expect(r.markdown).toContain('[streak] 5 in a row');
       expect(r.markdown).toContain(
         '[trajectory-accelerating] Project chat-arch on the rise',
@@ -399,7 +406,11 @@ describe('buildDailyBrief', () => {
         continuumHealth: null,
         surprises: null,
       });
+      // Both the pre-Wave-2 header copy AND the new copy are absent
+      // when the section skips — the assertion guards the rename
+      // against accidental re-introduction.
       expect(r.markdown).not.toContain('Surprises today');
+      expect(r.markdown).not.toMatch(/► Surprises:/u);
       expect(r.counts.surprisesPositive).toBe(0);
       expect(r.counts.surprisesConcerning).toBe(0);
     });
@@ -417,6 +428,7 @@ describe('buildDailyBrief', () => {
         surprises: surprisesFile([]),
       });
       expect(r.markdown).not.toContain('Surprises today');
+      expect(r.markdown).not.toMatch(/► Surprises:/u);
     });
 
     it('handles concerning-only files (zero positive summaries listed)', () => {
@@ -438,7 +450,7 @@ describe('buildDailyBrief', () => {
           },
         ]),
       });
-      expect(r.markdown).toContain('Surprises today: 0 positive, 1 concerning');
+      expect(r.markdown).toContain('► Surprises: 0 positive, 1 concerning.');
       // No positive rows ⇒ no `[kind]` bullet beneath the header.
       expect(r.markdown).not.toContain('[pattern-recurring]');
     });
@@ -508,8 +520,11 @@ describe('buildDailyBrief', () => {
           }),
         ],
       });
+      // Wave 2 — header renamed "Project trajectories: …" →
+      // "Project momentum: …" and bucket label normalised
+      // "stalling/stalled" → "stalling".
       expect(r.markdown).toContain(
-        'Project trajectories: 2 accelerating, 1 flat, 2 stalling/stalled',
+        '► Project momentum: 2 accelerating, 1 flat, 2 stalling.',
       );
       // Top 3 by totalSessions: alpha (50), bravo (40), charlie (30).
       expect(r.markdown).toContain('alpha — accelerating (slope +0.50, 50 sessions)');
@@ -536,6 +551,7 @@ describe('buildDailyBrief', () => {
         projectTrajectories: [],
       });
       expect(r.markdown).not.toContain('Project trajectories');
+      expect(r.markdown).not.toContain('Project momentum');
       expect(r.counts.trajectoriesAccelerating).toBe(0);
       expect(r.counts.trajectoriesFlat).toBe(0);
       expect(r.counts.trajectoriesStalling).toBe(0);
@@ -554,6 +570,7 @@ describe('buildDailyBrief', () => {
         projectTrajectories: null,
       });
       expect(r.markdown).not.toContain('Project trajectories');
+      expect(r.markdown).not.toContain('Project momentum');
     });
 
     it('renders "slope n/a" for null slopes', () => {
@@ -594,9 +611,10 @@ describe('buildDailyBrief', () => {
         continuumHealth: null,
         appliedPatternClosures: 4,
       });
-      expect(r.markdown).toContain(
-        'Applied-pattern closures: 4 pattern(s) held (no recurrence past cooldown)',
-      );
+      // Wave 2 — narrative header "K pattern(s) you applied are still
+      // holding." (pre-Wave-2: "Applied-pattern closures: K pattern(s)
+      // held (no recurrence past cooldown)").
+      expect(r.markdown).toContain('► 4 patterns you applied are still holding.');
       expect(r.counts.appliedPatternClosures).toBe(4);
     });
 
@@ -613,6 +631,7 @@ describe('buildDailyBrief', () => {
         appliedPatternClosures: 0,
       });
       expect(r.markdown).not.toContain('Applied-pattern closures');
+      expect(r.markdown).not.toContain('you applied are still holding');
       expect(r.counts.appliedPatternClosures).toBe(0);
     });
 
@@ -629,6 +648,7 @@ describe('buildDailyBrief', () => {
         appliedPatternClosures: null,
       });
       expect(r.markdown).not.toContain('Applied-pattern closures');
+      expect(r.markdown).not.toContain('you applied are still holding');
       expect(r.counts.appliedPatternClosures).toBe(0);
     });
   });
@@ -682,11 +702,15 @@ describe('buildDailyBrief', () => {
       ],
       appliedPatternClosures: 1,
     });
-    const audit = r.markdown.indexOf('audit concern');
-    const shipped = r.markdown.indexOf('Shipped this week');
-    const surprises = r.markdown.indexOf('Surprises today');
-    const trajectories = r.markdown.indexOf('Project trajectories');
-    const closures = r.markdown.indexOf('Applied-pattern closures');
+    // Wave 2 — anchors updated to new section headers. The audit
+    // section's narrative opener leads with the count + "didn't have
+    // supporting tool calls" phrase; the rest of the openers each lift
+    // a unique substring.
+    const audit = r.markdown.indexOf("didn't have supporting tool calls");
+    const shipped = r.markdown.indexOf('You shipped');
+    const surprises = r.markdown.indexOf('► Surprises:');
+    const trajectories = r.markdown.indexOf('Project momentum');
+    const closures = r.markdown.indexOf('you applied are still holding');
     const continuum = r.markdown.indexOf('Continuum health');
     expect(audit).toBeGreaterThan(-1);
     expect(shipped).toBeGreaterThan(audit);
@@ -694,5 +718,332 @@ describe('buildDailyBrief', () => {
     expect(trajectories).toBeGreaterThan(surprises);
     expect(closures).toBeGreaterThan(trajectories);
     expect(continuum).toBeGreaterThan(closures);
+  });
+
+  // ── Wave 2 — journal-y opener paragraph ──────────────────────────
+
+  describe('opener paragraph', () => {
+    it('opens with the shipped-commit narrative when commits exist', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        shippedThisWeek: {
+          commitCount: 7,
+          recentSubjects: [
+            'feat: opener test one',
+            'fix: opener test two',
+            'chore: opener test three',
+          ],
+        },
+      });
+      expect(r.markdown).toContain(
+        'This week you shipped 7 commits to main.',
+      );
+      // Top 1-2 subjects inlined; the 3rd subject is shipped-section
+      // detail only and shouldn't promote into the opener.
+      expect(r.markdown).toContain(
+        'Top of the list: "feat: opener test one" and "fix: opener test two".',
+      );
+      expect(r.markdown.indexOf('Top of the list')).toBeLessThan(
+        r.markdown.indexOf('► You shipped'),
+      );
+    });
+
+    it('inlines a single subject when only one is provided', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        shippedThisWeek: {
+          commitCount: 1,
+          recentSubjects: ['feat: solo commit'],
+        },
+      });
+      expect(r.markdown).toContain('This week you shipped 1 commit to main.');
+      expect(r.markdown).toContain('Top of the list: "feat: solo commit".');
+      // Singular form: no trailing "s" on "commit" anywhere in the
+      // opener line.
+      expect(r.markdown).not.toContain('1 commits');
+    });
+
+    it('opens with the strongest signal when no commits but a STRONG positive', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        shippedThisWeek: null,
+        topStrongPositiveSurprise: '8 sessions in a row landed as composite-good.',
+      });
+      expect(r.markdown).toContain(
+        'The strongest signal: 8 sessions in a row landed as composite-good.',
+      );
+      // The opener-fallback line must NOT appear.
+      expect(r.markdown).not.toContain('Quiet week');
+      expect(r.markdown).not.toContain('This week you shipped');
+    });
+
+    it('opens with a quiet-week disclaimer when neither commits nor strong positives', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        shippedThisWeek: null,
+        topStrongPositiveSurprise: null,
+      });
+      expect(r.markdown).toContain(
+        'Quiet week — no commits to main and no strong positive signals.',
+      );
+      expect(r.markdown).not.toContain('This week you shipped');
+      expect(r.markdown).not.toContain('The strongest signal');
+    });
+
+    it('prefers the shipped-opener when both shipped AND strong positives exist', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        shippedThisWeek: {
+          commitCount: 3,
+          recentSubjects: ['feat: dominant'],
+        },
+        topStrongPositiveSurprise: 'streak summary that should be suppressed',
+      });
+      // Shipped wins; the strongest-signal line does not appear in the
+      // opener (the surprise itself still gets its dedicated section
+      // when surprises != null — but that's a separate concern).
+      expect(r.markdown).toContain('This week you shipped 3 commits to main.');
+      expect(r.markdown).not.toContain('The strongest signal:');
+    });
+  });
+
+  // ── Wave 2 — narrative section openers ───────────────────────────
+
+  describe('audit-concerns narrative opener', () => {
+    it('renders the singular phrasing when one claim fails', () => {
+      const fail: AuditResult = {
+        sessionId: 'sid-x',
+        source: 'cowork',
+        lineNumber: 1,
+        claimType: 'tests-pass-claim',
+        span: 'green',
+        surroundingContext: 'ctx',
+        outcome: 'fail',
+        reason: 'no tool calls',
+      };
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [fail],
+        auditSummary: null,
+        continuumHealth: null,
+      });
+      // Singular "1 claim"; underlying bullet still appears.
+      expect(r.markdown).toContain(
+        "► 1 claim didn't have supporting tool calls this week.",
+      );
+      expect(r.markdown).toContain('[SID:sid-x]');
+      // Singular discipline: never "1 claims".
+      expect(r.markdown).not.toContain('1 claims');
+    });
+
+    it('reports the full failure count even when the bullet list is truncated', () => {
+      // Generate 8 failures — top-N cap is 5 (DEFAULT_THRESHOLDS), so
+      // the bullet list should be 5 long but the opener should report 8.
+      const fails: AuditResult[] = Array.from({ length: 8 }, (_, i) => ({
+        sessionId: `sid-${String(i).padStart(2, '0')}`,
+        source: 'cowork',
+        lineNumber: 1,
+        claimType: 'tests-pass-claim',
+        span: 'green',
+        surroundingContext: 'ctx',
+        outcome: 'fail',
+        reason: `r${i}`,
+      }));
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: fails,
+        auditSummary: null,
+        continuumHealth: null,
+      });
+      expect(r.markdown).toContain(
+        "► 8 claims didn't have supporting tool calls this week.",
+      );
+      // Top-N cap on bullets: ids 00..04 listed, 05..07 not.
+      expect(r.markdown).toContain('[SID:sid-04]');
+      expect(r.markdown).not.toContain('[SID:sid-05]');
+    });
+
+    it('skips the section entirely when no audit failures exist', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+      });
+      expect(r.markdown).not.toContain("didn't have supporting tool calls");
+      expect(r.markdown).not.toContain('audit concern');
+    });
+  });
+
+  describe('surprises STRONG framing', () => {
+    it('promotes a STRONG positive into a "standout positive" sentence', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        surprises: surprisesFile([
+          {
+            kind: 'streak',
+            tone: 'positive',
+            summary: 'big streak summary',
+            score: 0.9, // STRONG (≥ 0.75)
+          },
+          {
+            kind: 'config-helped',
+            tone: 'positive',
+            summary: 'moderate positive summary',
+            score: 0.6, // MODERATE — must NOT promote
+          },
+        ]),
+      });
+      expect(r.markdown).toContain('The standout positive: big streak summary');
+      // Moderate positive doesn't get a "standout" sentence — but it
+      // still appears in the bulleted list below.
+      expect(r.markdown).not.toContain(
+        'The standout positive: moderate positive summary',
+      );
+      expect(r.markdown).toContain('[config-helped] moderate positive summary');
+    });
+
+    it('promotes a STRONG concerning into a "worth attention" sentence', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        surprises: surprisesFile([
+          {
+            kind: 'pattern-recurring',
+            tone: 'concerning',
+            summary: 'a pattern recurred',
+            score: 0.95,
+          },
+        ]),
+      });
+      expect(r.markdown).toContain('Worth attention: a pattern recurred');
+    });
+
+    it('omits both STRONG sentences when only MODERATE/WEAK rows exist', () => {
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [],
+        auditSummary: null,
+        continuumHealth: null,
+        surprises: surprisesFile([
+          {
+            kind: 'streak',
+            tone: 'positive',
+            summary: 'mid-band positive',
+            score: 0.6,
+          },
+          {
+            kind: 'trajectory-stalled',
+            tone: 'concerning',
+            summary: 'mid-band concerning',
+            score: 0.55,
+          },
+        ]),
+      });
+      // Count header still appears…
+      expect(r.markdown).toContain('► Surprises: 1 positive, 1 concerning.');
+      // …but neither STRONG promotion sentence does.
+      expect(r.markdown).not.toContain('The standout positive');
+      expect(r.markdown).not.toContain('Worth attention');
+    });
+  });
+
+  describe('singular/plural discipline', () => {
+    it('renders all single-count phrasings with no trailing "s"', () => {
+      const fail: AuditResult = {
+        sessionId: 'sid-solo',
+        source: 'cowork',
+        lineNumber: 1,
+        claimType: 'tests-pass-claim',
+        span: 'green',
+        surroundingContext: 'ctx',
+        outcome: 'fail',
+        reason: 'r',
+      };
+      const r = buildDailyBrief({
+        date: '2026-05-16',
+        now: NOW,
+        patterns: [],
+        upgradeOutcomes: [],
+        blogDrafts: [],
+        auditResults: [fail],
+        auditSummary: null,
+        continuumHealth: null,
+        shippedThisWeek: { commitCount: 1, recentSubjects: ['feat: solo'] },
+        appliedPatternClosures: 1,
+      });
+      // Spot-check the singular forms.
+      expect(r.markdown).toContain('1 commit to main');
+      expect(r.markdown).toContain('1 claim');
+      expect(r.markdown).toContain('1 pattern you applied');
+      // The 6-tuple of "1 NOUNs" we explicitly want to avoid.
+      expect(r.markdown).not.toContain('1 commits');
+      expect(r.markdown).not.toContain('1 claims');
+      expect(r.markdown).not.toContain('1 patterns you applied');
+    });
   });
 });

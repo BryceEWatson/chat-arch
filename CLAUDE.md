@@ -341,6 +341,23 @@ analysis/` (gitignored — locally generated, carry PII):
   finding claim text + cited session turn excerpts. Read by the
   curator ranker as a tie-breaker / surfacing gate.
 
+### Wave 2 #1 delta-surprises archive (EXPORTER_VERSION 1.5.0)
+
+One additional sidecar family under
+`apps/standalone/public/chat-arch-data/analysis/archive/` (gitignored
+under the same wildcard — locally generated, PII-bearing):
+
+- `surprises-YYYY-MM-DD.json` — per-scan snapshot copy of
+  `analysis/surprises.json`. Written by `surprisesBuilder` after
+  each rescan; pruned to `THRESHOLDS.surprises.archiveRetentionDays`
+  (default 30) by filename — NOT mtime, because `git checkout` resets
+  timestamps and would otherwise evict the archive. Read by the next
+  scan as `priorSurprises` so the kernel can emit delta kinds
+  (`streak-extended`, `streak-broken`, `trajectory-flip-up`,
+  `trajectory-flip-down`, `pattern-recurrence-resumed`). PII: same
+  shape as `surprises.json` itself (summary text + evidence session
+  IDs).
+
 The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
 and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
 #12 post-mortems + knowledge-debt) are also gitignored. The wildcard
@@ -392,8 +409,9 @@ out of date and needs an update:
 4. **What sidecars under `analysis/` carry PII vs aggregate-only?**
    - PII-bearing (most files): composite-outcomes, knowledge-debt,
      reflexive, decisions, archetypes, project-trajectories,
-     skill-curves, surprises, curator-feed, falsifier-verdicts,
-     correction-candidates, corrections, correction-status-*.
+     skill-curves, surprises, archive/surprises-YYYY-MM-DD,
+     curator-feed, falsifier-verdicts, correction-candidates,
+     corrections, correction-status-*.
    - Aggregate-numbers-only (lower-PII): its-analysis, surface-
      comparison. These are gitignored conservatively anyway.
 5. **What's the difference between hosted (`chat-arch.dev`) and

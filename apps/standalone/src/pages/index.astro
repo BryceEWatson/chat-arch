@@ -169,6 +169,12 @@ const SURPRISE_KIND_LABEL: Record<string, string> = {
   'trajectory-stalled': 'stalled',
   'pattern-recurring': 'pattern recurring',
   'debt-spinning': 'debt spinning',
+  // Wave 2 #1 — delta kinds.
+  'streak-extended': 'streak extended',
+  'streak-broken': 'streak broken',
+  'trajectory-flip-up': 'flipped up',
+  'trajectory-flip-down': 'flipped down',
+  'pattern-recurrence-resumed': 'recurrence resumed',
 };
 
 // Wave 1 Fix B: per-kind drill-in target for the "→ in context" link
@@ -187,6 +193,14 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   'pattern-closed': '/sessions#corrections',
   'pattern-recurring': '/sessions#corrections',
   'debt-spinning': '/sessions#insights',
+  // Wave 2 #1 — delta kinds reuse the same parent surfaces as their
+  // snapshot siblings (effectiveness for streaks, trends for
+  // trajectories, corrections for the pattern-recurrence resumption).
+  'streak-extended': '/sessions#effectiveness',
+  'streak-broken': '/sessions#effectiveness',
+  'trajectory-flip-up': '/sessions#trends',
+  'trajectory-flip-down': '/sessions#trends',
+  'pattern-recurrence-resumed': '/sessions#corrections',
 };
 ---
 <BaseLayout title="Chat Archaeologist — Today" current="TODAY">

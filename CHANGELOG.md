@@ -14,6 +14,107 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-05-25
+
+Feed-redesign Wave 2 #1 — delta surprises. The `computeSurprises`
+kernel grows an optional `priorSurprises` input that, when provided,
+unlocks five new surprise kinds that compare the current snapshot
+against the most recent prior snapshot (loaded by the builder from a
+new `analysis/archive/` sidecar family). On a first-ever scan no
+prior exists and the delta kinds skip cleanly; the kernel's V1
+snapshot behavior is byte-identical to the pre-bump output when
+`priorSurprises === null`.
+
+### Added
+
+- **`analysis/archive/surprises-YYYY-MM-DD.json`** — per-scan
+  snapshot of the surprises sidecar. Written by `surprisesBuilder`
+  after each rescan via `atomicWriteJsonSync`. PII-bearing under the
+  same rules as `surprises.json` itself (carries summary text +
+  evidence session IDs). Covered by the existing
+  `apps/standalone/public/chat-arch-data/*` gitignore wildcard.
+- **Five delta surprise kinds** in the `computeSurprises` kernel:
+  - `streak-extended` (positive) — current streak's terminal session
+    matches prior's AND the run grew. Score = `clamp(diff/5, 0, 1)`.
+  - `streak-broken` (concerning) — prior had a streak row, current
+    does not. Score = `clamp(priorCount/10, 0, 1)`.
+  - `trajectory-flip-up` (positive) — project was stalled / absent
+    in prior, now accelerating. Score = `clamp(slope*10, 0, 1)`.
+  - `trajectory-flip-down` (concerning) — mirror of flip-up.
+  - `pattern-recurrence-resumed` (concerning) — pattern was
+    `pattern-closed` in prior, `pattern-recurring` in current. Fixed
+    score 0.85 (high-attention signal).
+- **`THRESHOLDS.surprises.archiveRetentionDays = 30`** — filename-
+  based prune horizon. Pre-launch placeholder; calibrate when the
+  rescan cadence stabilizes (e.g. lower if user scans every few
+  days, raise if multiple scans per day).
+- **`loadMostRecentArchive` + `archiveAndPrune` helpers** exported
+  from `surprisesBuilder.ts` so the per-scan archive lifecycle is
+  unit-testable end-to-end.
+- **UI mappings** for the five new kinds in
+  `apps/standalone/src/pages/index.astro` (`SURPRISE_KIND_LABEL` +
+  `SURPRISE_DRILL_IN`). Drill-ins reuse the parent surfaces of each
+  snapshot sibling (effectiveness for streaks, trends for
+  trajectories, corrections for the pattern-recurrence resumption).
+
+### Changed
+
+- `ComputeSurprisesInput` gains an optional `priorSurprises:
+  SurprisesOutput | null` field. Callers that omit the field continue
+  to receive V1 snapshot-only output — back-compat is preserved.
+- `surprisesBuilder` orchestrates the archive lifecycle internally:
+  read the most-recent-prior on entry, write today's snapshot to
+  `archive/` after the primary file lands, prune archive entries
+  older than `archiveRetentionDays`. The orchestrator
+  (`packages/exporter/src/analysis/index.ts`) does not need to
+  change.
+- `surprisesBuilder` info log gains a `priorArchive=none|loaded`
+  marker so operators can confirm whether the delta kinds had any
+  prior to compare against.
+
+### Notes
+
+- **Race window:** archive write + prune are separate filesystem
+  ops. A concurrent rescan racing the prune could lose at most one
+  day of archive history (never today's freshly-written file —
+  today is always within the retention window by definition).
+  Read-side is tolerant: a partial / malformed archive returns null
+  and the delta kinds skip cleanly.
+- **Date stamps:** UTC YYYY-MM-DD via `Date#toISOString()`.
+  Lexicographic sort = chronological sort under ISO-8601, so prune
+  + "most recent" both work by filename without depending on mtime
+  (which `git checkout` resets).
+- **CLAUDE.md sidecar table** documents the new artifact under the
+  outcome-substrate sidecars section as PII-bearing.
+
+### Changed — daily brief reads as a journal, not a status panel (Wave 2 #4)
+
+- The brief now opens with a single short paragraph that names the
+  week's headline — shipped commits if any, otherwise the top STRONG
+  positive surprise, otherwise a "quiet week" disclaimer — and each
+  section's leader line is re-cast in narrative voice ("you shipped
+  7 commits to main this week" not "► Shipped this week: 7
+  commit(s) to main"). The Surprises section gains optional "The
+  standout positive: …" and "Worth attention: …" framing sentences
+  gated on STRONG-tier rows (score ≥ `SURPRISE_TIER_STRONG_MIN` =
+  0.75). All count gates are preserved — zero-input sections still
+  render nothing.
+- `DailyBriefInputs` gains `topStrongPositiveSurprise?: string |
+  null`; the `regen-brief.ts` shell extracts it from
+  `analysis/surprises.json` by finding the first positive row whose
+  score meets the STRONG floor. Kernel stays decoupled from the tier
+  helper.
+- Singular/plural now routes through a `pluralize(n, singular)`
+  helper so the brief reads "1 commit", "1 claim", "1 pattern"
+  without the `(s)` suffix pattern leaking into prose.
+- 12 new tests in `dailyBrief.test.ts` (35 total, up from 23)
+  covering opener paths (commits / strong-signal / quiet-week /
+  shipped-wins-over-strong), STRONG-tier promotion gating,
+  singular-form discipline, and audit-count truncation honesty.
+- Shape-coherent with the 1.4.1 → 1.5.0 bump above; the brief
+  markdown is shell-produced (not exporter-produced), so this change
+  itself doesn't drive the version bump.
+
 ## [1.4.1] — 2026-05-24
 
 Feed-redesign Phase γ polish — enriches the daily brief now that
