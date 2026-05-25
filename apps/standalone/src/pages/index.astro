@@ -359,15 +359,17 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
             return (
               <li class={`today__card today__card--${s.kind}`}>
                 <div class="today__card-head">
-                  <span class={`today__kind today__kind--${s.tone}`}>
-                    {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                  </span>
-                  <span
-                    class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
-                    title={`raw score ${s.score.toFixed(3)}`}
-                  >
-                    {tier}
-                  </span>
+                  <div class="today__card-head-left">
+                    <span class={`today__kind today__kind--${s.tone}`}>
+                      {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                    </span>
+                    <span
+                      class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                      title={`raw score ${s.score.toFixed(3)}`}
+                    >
+                      {tier}
+                    </span>
+                  </div>
                   <span class="today__card-score">
                     score {(s.score * 100).toFixed(0)}
                   </span>
@@ -573,15 +575,17 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
                 return (
                   <li class={`today__card today__card--alert today__card--${s.kind}`}>
                     <div class="today__card-head">
-                      <span class={`today__kind today__kind--${s.tone}`}>
-                        {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                      </span>
-                      <span
-                        class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
-                        title={`raw score ${s.score.toFixed(3)}`}
-                      >
-                        {tier}
-                      </span>
+                      <div class="today__card-head-left">
+                        <span class={`today__kind today__kind--${s.tone}`}>
+                          {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                        </span>
+                        <span
+                          class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                          title={`raw score ${s.score.toFixed(3)}`}
+                        >
+                          {tier}
+                        </span>
+                      </div>
                       <span class="today__card-score">
                         score {(s.score * 100).toFixed(0)}
                       </span>
