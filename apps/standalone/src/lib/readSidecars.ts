@@ -20,9 +20,11 @@ import type {
   ContinuumHealth,
   CorrectionPattern,
   CorrectionsFile,
+  Narrative,
   PlaybookCandidatesFile,
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
+import type { Surprise, SurprisesOutput } from '@chat-arch/analysis';
 
 function dataDir(): string {
   return path.join(process.cwd(), 'public', 'chat-arch-data');
@@ -328,4 +330,150 @@ export async function listBlogDraftSlugs(): Promise<
     }
   }
   return Array.from(seen.values()).sort((a, b) => b.slug.localeCompare(a.slug));
+}
+
+/**
+ * Read the surprises sidecar produced by the Phase α surprises kernel
+ * (`packages/analysis/src/computeSurprises.ts`). Returns null when the
+ * file is missing OR fails minimal shape validation. The TODAY page's
+ * NEW + BROKEN sections both filter the same array — NEW takes
+ * `tone: 'positive'`, BROKEN takes `tone: 'concerning'`.
+ */
+export async function readSurprises(): Promise<SurprisesOutput | null> {
+  const raw = await readJson<unknown>(path.join(analysisDir(), 'surprises.json'));
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (r.version !== 1) return null;
+  if (typeof r.generatedAt !== 'number') return null;
+  if (!Array.isArray(r.surprises)) return null;
+  if (!r.thresholds || typeof r.thresholds !== 'object') return null;
+  // Trust the kernel's emitted shape for items; the kernel writes
+  // through atomicWriteJsonSync and is the only producer.
+  return raw as SurprisesOutput;
+}
+
+/**
+ * Filter surprises by tone and clamp to `limit`. Pure — the caller
+ * decides whether to render an empty state or the badges.
+ */
+export function pickSurprises(
+  file: SurprisesOutput | null,
+  tone: 'positive' | 'concerning',
+  limit: number,
+): readonly Surprise[] {
+  if (file === null) return [];
+  const matches = file.surprises.filter((s) => s.tone === tone);
+  // Kernel emits sorted-desc by score; honor that and just slice.
+  return matches.slice(0, limit);
+}
+
+/**
+ * Curator-feed sidecar reader — SSR-side equivalent of the viewer's
+ * `loadCuratorFeed`. The on-disk shape is pinned by the `/curate`
+ * skill SKILL.md Stage 3 and mirrored by
+ * `packages/viewer/src/data/curatorFeedClient.ts`. We re-declare the
+ * minimal types here so the standalone app doesn't have to import a
+ * non-exported viewer subpath.
+ */
+export type CuratorItemKind = 'narrative' | 'knowledge-debt' | 'applied-pattern';
+export type CuratorFalsifierStatus =
+  | 'verified'
+  | 'skipped-by-user'
+  | 'unavailable';
+
+export interface CuratorFeedItemSsr {
+  kind: CuratorItemKind;
+  entityId: string;
+  title: string;
+  rank: number;
+  compositeScore: number;
+  tieBrokenByCorrelation?: boolean;
+  falsifierStatus?: CuratorFalsifierStatus;
+  reasoning?: string;
+}
+
+export interface CuratorFeedFileSsr {
+  schemaVersion: 1;
+  generatedAt: number;
+  ranAt: string;
+  items: readonly CuratorFeedItemSsr[];
+}
+
+const CURATOR_KINDS: ReadonlySet<CuratorItemKind> = new Set([
+  'narrative',
+  'knowledge-debt',
+  'applied-pattern',
+]);
+
+function isCuratorItem(raw: unknown): raw is CuratorFeedItemSsr {
+  if (!raw || typeof raw !== 'object') return false;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.kind !== 'string' || !CURATOR_KINDS.has(o.kind as CuratorItemKind)) {
+    return false;
+  }
+  if (typeof o.entityId !== 'string' || o.entityId.length === 0) return false;
+  if (typeof o.title !== 'string') return false;
+  if (typeof o.rank !== 'number' || !Number.isFinite(o.rank)) return false;
+  if (typeof o.compositeScore !== 'number' || !Number.isFinite(o.compositeScore)) {
+    return false;
+  }
+  return true;
+}
+
+export async function readCuratorFeed(): Promise<CuratorFeedFileSsr | null> {
+  const raw = await readJson<unknown>(path.join(analysisDir(), 'curator-feed.json'));
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (r.schemaVersion !== 1) return null;
+  if (!Array.isArray(r.items)) return null;
+  const items: CuratorFeedItemSsr[] = [];
+  for (const it of r.items) {
+    if (isCuratorItem(it)) items.push(it);
+  }
+  return {
+    schemaVersion: 1,
+    generatedAt: typeof r.generatedAt === 'number' ? r.generatedAt : Date.now(),
+    ranAt: typeof r.ranAt === 'string' ? r.ranAt : new Date().toISOString(),
+    items,
+  };
+}
+
+/**
+ * Recent narratives — surfaced by the STORIES section. The sidecar
+ * has `{ narratives: Narrative[] }`; we sort descending by
+ * `generatedAt` (ISO string) so the most-recent one floats to the
+ * top, then slice to `limit`.
+ *
+ * The narrative table carries PII (see CLAUDE.md "data on disk")
+ * — title + body excerpts. We surface only title + sentiment +
+ * projectId here; the body is left for click-through.
+ */
+export interface RecentNarrative {
+  id: string;
+  title: string;
+  sentiment: 'positive' | 'negative' | 'neutral';
+  projectId: string;
+  sessionIds: readonly string[];
+  generatedAt: string;
+}
+
+export async function readRecentNarratives(
+  limit: number = 5,
+): Promise<RecentNarrative[]> {
+  const file = await readJson<{ narratives?: readonly Narrative[] }>(
+    path.join(analysisDir(), 'narratives.json'),
+  );
+  const all = file?.narratives ?? [];
+  // Defensive sort + slice — the sidecar doesn't guarantee order.
+  const sorted = [...all].sort((a, b) =>
+    String(b.generatedAt).localeCompare(String(a.generatedAt)),
+  );
+  return sorted.slice(0, limit).map((n) => ({
+    id: n.id,
+    title: n.title,
+    sentiment: n.sentiment,
+    projectId: n.projectId,
+    sessionIds: n.sessionIds,
+    generatedAt: n.generatedAt,
+  }));
 }

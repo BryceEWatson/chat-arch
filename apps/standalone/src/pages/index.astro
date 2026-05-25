@@ -1,17 +1,31 @@
 ---
-// v2 §FD.1 — TODAY page. Reframed against research/refocus-plan.md
-// north star: "Find the rules Claude keeps breaking. Patch your
-// CLAUDE.md / skills. Prove the loop closed." The hero panel is the
-// workshop-loop status (corrections to apply, applies made, loop
-// closure rate). Audit concerns + brief content are demoted below.
+// Phase β — TODAY as a 5-section FEED. The page is the single home
+// surface for a daily-journal behavioral feedback tool. It answers
+// "what should I keep doing / stop doing / what just changed / what's
+// broken" plus "happy surprises and stories that track the work."
+//
+// Sections (in DOM order, rendered top → bottom):
+//   1. BRIEF    — latest daily brief, full markdown body
+//   2. NEW      — happy surprises (positive-tone surprise rows)
+//   3. ACT      — curator feed (top-K) + corrections to APPLY
+//   4. BROKEN   — concerning surprises + audit concerns + continuum health
+//   5. STORIES  — recent narratives + blog-draft slugs
+//
+// The header (TODAY title, RESCAN/MINE/REGEN/FULL SCAN buttons,
+// progress UI) sits above section 1. A new FULL SCAN button
+// orchestrates the four producers sequentially via fullScan.ts.
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import {
   listBlogDraftSlugs,
+  pickSurprises,
   readContinuumHealth,
   readCorrectionCandidatesSummary,
+  readCuratorFeed,
   readLatestBrief,
+  readRecentNarratives,
+  readSurprises,
   readTopAuditConcerns,
   readWorkshopStatus,
 } from '../lib/readSidecars.ts';
@@ -30,41 +44,83 @@ const health = await readContinuumHealth();
 const candidatesSummary = await readCorrectionCandidatesSummary();
 const candidateCount = candidatesSummary?.candidateCount ?? 0;
 
-// 3-state detection for the WORKSHOP LOOP hero:
-//   (1) workshopMined — corrections.json has patterns OR applied-improvements
-//       has entries. Real workshop status renders normally.
-//   (2) workshopJustScanned — the exporter has populated
-//       `correction-candidates.json` (candidateCount > 0) but mining
-//       hasn't run yet, so workshop counts are all 0. This is the
-//       "scan done, mine next" state — render a real-data card with
-//       a clear CTA to MINE CORRECTIONS, NOT the demo grid (the demo
-//       reads as "your scan didn't work" when the real story is
-//       "your scan worked, now run mining").
-//   (3) workshopUnscanned — neither candidates nor patterns exist
-//       (fresh install / hosted demo / brand-new clone). Demo grid
-//       fires with full DEMO badge + aria-label.
-// Memory: feedback_positioning_by_features — show the loop in motion,
-// don't describe it. The (2) state previously fell through to (3),
-// which was actively confusing once we'd verified the scan ran.
+const surprisesFile = await readSurprises();
+const surprisesNew = pickSurprises(surprisesFile, 'positive', 5);
+const surprisesBroken = pickSurprises(surprisesFile, 'concerning', 5);
+
+const curatorFeed = await readCuratorFeed();
+const recentNarratives = await readRecentNarratives(5);
+
+// Workshop sub-detection (preserved from prior page — drives the ACT
+// section's "corrections to APPLY" line + the "mine next" CTA wiring).
 const workshopHasPatterns =
   workshop.unappliedPatternCount > 0 ||
   workshop.appliedPatternCount > 0 ||
   workshop.recurringAfterApplyCount > 0;
 const workshopJustScanned = !workshopHasPatterns && candidateCount > 0;
 const workshopUnscanned = !workshopHasPatterns && candidateCount === 0;
-// Demo grid only fires for the truly-unscanned case now.
 const workshopEmpty = workshopUnscanned;
 const draftsEmpty = drafts.length === 0;
 const concernsEmpty = concerns.length === 0;
 
-// View binding — when a surface is empty, swap in the demo. Same JSX
-// renders against either source; the demo path adds the badge + sr-only.
+// Demo fixtures fire for empty surfaces (memory: feedback_positioning
+// _by_features — show the loop in motion, don't describe it).
 const wsView = workshopEmpty ? makeDemoWorkshopStatus() : workshop;
 const draftsView = draftsEmpty ? makeDemoBlogDraftSlugs() : drafts;
 const concernsView = concernsEmpty ? makeDemoTopAuditConcerns() : concerns;
 
 const draftFinals = draftsView.filter((d) => !d.isPrompt).length;
 const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
+
+// Empty-state flags for the 5 sections (drives copy + button rendering).
+const briefEmpty = brief === null;
+const newEmpty = surprisesNew.length === 0;
+const curatorEmpty = curatorFeed === null || curatorFeed.items.length === 0;
+const brokenEmpty =
+  surprisesBroken.length === 0 &&
+  concerns.length === 0 &&
+  (health === null || health.warnings.length === 0);
+const storiesEmpty = recentNarratives.length === 0 && drafts.length === 0;
+
+// SectionBar label rendering helper — keeps every section's heading
+// consistent without hand-rolling the same markup five times.
+const SECTIONS = [
+  { key: 'BRIEF', sub: brief?.date ?? null },
+  { key: 'NEW', sub: `${surprisesNew.length} positive` },
+  {
+    key: 'ACT',
+    sub: `${workshop.unappliedPatternCount} to APPLY · ${
+      curatorFeed?.items.length ?? 0
+    } curated`,
+  },
+  {
+    key: 'BROKEN',
+    sub: `${surprisesBroken.length + concerns.length} concern${
+      surprisesBroken.length + concerns.length === 1 ? '' : 's'
+    }`,
+  },
+  {
+    key: 'STORIES',
+    sub: `${recentNarratives.length} narrative${
+      recentNarratives.length === 1 ? '' : 's'
+    } · ${draftFinals} draft${draftFinals === 1 ? '' : 's'}`,
+  },
+] as const;
+
+// SurpriseKind → human badge label. Each kind also gets a CSS class so
+// the badge color can subtly differentiate (config-helped reads as a
+// blue/teal beat against streak's gold, etc. — see CSS at bottom).
+const SURPRISE_KIND_LABEL: Record<string, string> = {
+  streak: 'streak',
+  'trajectory-accelerating': 'accelerating',
+  'config-helped': 'config helped',
+  'pattern-closed': 'pattern closed',
+  'reflexive-positive': 'reflexive',
+  'decision-paid-off': 'decision paid off',
+  'trajectory-stalled': 'stalled',
+  'pattern-recurring': 'pattern recurring',
+  'debt-spinning': 'debt spinning',
+};
 ---
 <BaseLayout title="Chat Archaeologist — Today" current="TODAY">
   <main class="today">
@@ -75,6 +131,9 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
         {brief !== null ? <span class="today__chip">brief at {brief.date}</span> : null}
       </p>
       <div class="today__actions">
+        <button id="action-full-scan" type="button" class="today__btn-primary">
+          FULL SCAN
+        </button>
         <button id="action-rescan" type="button">RESCAN</button>
         <button id="action-mine" type="button">MINE CORRECTIONS</button>
         <button id="action-brief" type="button">REGEN BRIEF</button>
@@ -95,99 +154,142 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       </div>
     </header>
 
-    {/* ======================= WORKSHOP LOOP ======================= */}
-    {/* Three states:
-          (a) workshopJustScanned — real data exists (candidates from
-              exporter) but mining hasn't classified them yet. Render
-              a real-data card pointing at MINE CORRECTIONS. NO demo
-              badge, NO fake metrics.
-          (b) workshopEmpty (unscanned) — fresh install / hosted demo.
-              Demo modifier + DEMO badge + aria-label + sr-only.
-          (c) mined — render real workshop status with normal chrome. */}
-    {workshopJustScanned ? (
-      <section
-        class="today__hero today__hero--scanned"
-        aria-label="Scan complete — mine corrections next to populate the workshop loop"
-      >
-        <h2>
-          WORKSHOP LOOP
-          <span class="today__hero-status">· SCAN COMPLETE · MINE NEXT</span>
-        </h2>
-        <p class="today__hero-lede">
-          The exporter found{' '}
-          <code>{candidateCount.toLocaleString()}</code> correction candidate{candidateCount === 1 ? '' : 's'}
-          {candidatesSummary && candidatesSummary.sessionsScanned > 0 ? (
-            <>
-              {' '}across <code>{candidatesSummary.sessionsScanned.toLocaleString()}</code> of{' '}
-              <code>{candidatesSummary.sessionsInManifest.toLocaleString()}</code> sessions
-            </>
-          ) : null}
-          . Click <strong>MINE CORRECTIONS</strong> to classify them into patterns — each pattern is a
-          CLAUDE.md / skill / agent fix you can review and APPLY.
-        </p>
-        <p class="today__hero-cta">
-          <button id="action-mine-cta" type="button" class="today__hero-cta-btn">
-            MINE CORRECTIONS →
-          </button>
-          <span class="today__hero-cta-hint">
-            Typically 1–3 minutes depending on candidate count.
-          </span>
-        </p>
-      </section>
-    ) : (
-      <section
-        class={`today__hero${workshopEmpty ? ' today__hero--demo' : ''}`}
-        aria-label={workshopEmpty
-          ? 'Example data — your real WORKSHOP LOOP populates after running /mine-corrections'
-          : undefined}
-      >
-        {workshopEmpty ? (
-          <span class="sr-only">Example data, not your data:</span>
+    {/* ─────────────────────── 1. BRIEF ─────────────────────── */}
+    <section class="today__section today__brief" aria-labelledby="sec-brief">
+      <div class="today__bar">
+        <span class="today__bar-key" id="sec-brief">{SECTIONS[0].key}</span>
+        {SECTIONS[0].sub ? (
+          <span class="today__bar-sub">{SECTIONS[0].sub}</span>
         ) : null}
-        <h2>
-          WORKSHOP LOOP
-          {workshopEmpty ? <span class="demo-badge">DEMO</span> : null}
-        </h2>
-        <div class="today__hero-grid">
-          <div class="today__metric today__metric--big">
-            <span class="today__metric-label">to APPLY</span>
-            <span class="today__metric-value">{wsView.unappliedPatternCount}</span>
-            <span class="today__metric-sub">new patterns waiting for review</span>
-          </div>
-          <div class="today__metric">
-            <span class="today__metric-label">applied total</span>
-            <span class="today__metric-value">{wsView.appliedPatternCount}</span>
-            <span class="today__metric-sub">CLAUDE.md / skill patches shipped</span>
-          </div>
-          <div class={`today__metric ${wsView.recurringAfterApplyCount > 0 ? 'today__metric--warn' : ''}`}>
-            <span class="today__metric-label">still recurring</span>
-            <span class="today__metric-value">{wsView.recurringAfterApplyCount}</span>
-            <span class="today__metric-sub">
-              {wsView.recurringAfterApplyCount > 0
-                ? 'rules patched but Claude still breaks them'
-                : 'no patched rule recurring'}
-            </span>
-          </div>
-          <div class="today__metric">
-            <span class="today__metric-label">loop closure</span>
-            <span class="today__metric-value">
-              {wsView.loopClosureRate === null
-                ? '—'
-                : `${(wsView.loopClosureRate * 100).toFixed(0)}%`}
-            </span>
-            <span class="today__metric-sub">
-              {wsView.loopClosureRate === null
-                ? 'no observed windows yet'
-                : 'patches that stuck (no recurrence in window)'}
-            </span>
-          </div>
+      </div>
+      {briefEmpty ? (
+        <div class="today__empty-block">
+          <p class="today__empty">
+            No daily brief on disk. The brief synthesizes recent scan
+            output — workshop status, audit deltas, surprises — into a
+            short morning-coffee summary.
+          </p>
+          <p>
+            <button id="action-brief-cta" type="button" class="today__cta-btn">
+              REGEN BRIEF →
+            </button>
+          </p>
         </div>
+      ) : (
+        <article class="today__brief-body">
+          {/* V1 markdown rendering: render the raw markdown inside a
+              <pre> with whitespace preservation. The repo has no
+              markdown lib in the dep tree (verified — no marked /
+              markdown-it / remark) and the user permitted this
+              fallback. Brief content is short (≤ a few KB) so this
+              reads cleanly. */}
+          <pre class="today__brief-md">{brief.markdown}</pre>
+        </article>
+      )}
+    </section>
 
-        {wsView.topUnapplied.length > 0 ? (
-          <div class="today__queue">
-            <h3>NEXT TO REVIEW · top {wsView.topUnapplied.length} by confidence</h3>
-            <ul>
-              {wsView.topUnapplied.map((p) => (
+    {/* ─────────────────────── 2. NEW ─────────────────────── */}
+    <section class="today__section today__new" aria-labelledby="sec-new">
+      <div class="today__bar">
+        <span class="today__bar-key" id="sec-new">{SECTIONS[1].key}</span>
+        <span class="today__bar-sub">{SECTIONS[1].sub}</span>
+      </div>
+      {newEmpty ? (
+        <p class="today__empty">
+          No surprises detected. Surprises arrive after a scan finds
+          positive thresholds-crossings.
+        </p>
+      ) : (
+        <ul class="today__cards">
+          {surprisesNew.map((s) => (
+            <li class={`today__card today__card--${s.kind}`}>
+              <div class="today__card-head">
+                <span class={`today__kind today__kind--${s.tone}`}>
+                  {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                </span>
+                <span class="today__card-score">
+                  score {(s.score * 100).toFixed(0)}
+                </span>
+              </div>
+              <p class="today__card-summary">{s.summary}</p>
+              {s.evidence.sessionIds && s.evidence.sessionIds.length > 0 ? (
+                <p class="today__card-evidence">
+                  <span class="today__card-evlabel">sessions:</span>
+                  {s.evidence.sessionIds.slice(0, 4).map((sid, ix) => (
+                    <>
+                      {ix > 0 ? ' · ' : ' '}
+                      <a href={`/sessions/${sid}`}>{sid.slice(0, 8)}</a>
+                    </>
+                  ))}
+                  {s.evidence.sessionIds.length > 4 ? (
+                    <span> · +{s.evidence.sessionIds.length - 4} more</span>
+                  ) : null}
+                </p>
+              ) : null}
+              {s.evidence.projectId ? (
+                <p class="today__card-evidence">
+                  <span class="today__card-evlabel">project:</span>{' '}
+                  <a href={`/projects/${s.evidence.projectId}`}>
+                    {s.evidence.projectId}
+                  </a>
+                </p>
+              ) : null}
+              {s.evidence.configSha ? (
+                <p class="today__card-evidence">
+                  <span class="today__card-evlabel">config:</span>{' '}
+                  <code>{s.evidence.configSha.slice(0, 7)}</code>
+                </p>
+              ) : null}
+              {s.evidence.decisionId ? (
+                <p class="today__card-evidence">
+                  <span class="today__card-evlabel">decision:</span>{' '}
+                  <code>{s.evidence.decisionId}</code>
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+
+    {/* ─────────────────────── 3. ACT ─────────────────────── */}
+    <section class="today__section today__act" aria-labelledby="sec-act">
+      <div class="today__bar">
+        <span class="today__bar-key" id="sec-act">{SECTIONS[2].key}</span>
+        <span class="today__bar-sub">{SECTIONS[2].sub}</span>
+      </div>
+
+      {/* Corrections to APPLY — preserve the workshop loop signal that
+          previously dominated the hero. Three states: real / just-
+          scanned / unscanned (demo). */}
+      {workshopJustScanned ? (
+        <div class="today__act-block today__act-block--scanned">
+          <p class="today__act-lede">
+            The exporter found{' '}
+            <code>{candidateCount.toLocaleString()}</code> correction candidate{candidateCount === 1 ? '' : 's'}
+            {candidatesSummary && candidatesSummary.sessionsScanned > 0 ? (
+              <>
+                {' '}across <code>{candidatesSummary.sessionsScanned.toLocaleString()}</code> of{' '}
+                <code>{candidatesSummary.sessionsInManifest.toLocaleString()}</code> sessions
+              </>
+            ) : null}
+            . Run <strong>MINE CORRECTIONS</strong> to classify them into
+            patterns you can APPLY.
+          </p>
+          <p>
+            <button id="action-mine-cta" type="button" class="today__cta-btn">
+              MINE CORRECTIONS →
+            </button>
+          </p>
+        </div>
+      ) : workshop.unappliedPatternCount > 0 ? (
+        <div class="today__act-block">
+          <p class="today__act-lede">
+            <code>{workshop.unappliedPatternCount}</code> pattern{workshop.unappliedPatternCount === 1 ? '' : 's'} waiting for review and APPLY.
+          </p>
+          {workshop.topUnapplied.length > 0 ? (
+            <ul class="today__act-list">
+              {workshop.topUnapplied.map((p) => (
                 <li>
                   <span class="today__confidence">
                     {(p.confidence * 100).toFixed(0)}%
@@ -196,93 +298,221 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
                   <span class="today__scope">
                     ({p.occurrenceCount}× · scope={p.scope.kind})
                   </span>
-                  <a href={`/sessions#corrections`}>review →</a>
+                  <a href="/sessions#corrections">review →</a>
                 </li>
               ))}
             </ul>
-          </div>
-        ) : null}
-
-        {wsView.recentApplies.length > 0 ? (
-          <div class="today__applies">
-            <h3>RECENT APPLIES</h3>
-            <ul>
-              {wsView.recentApplies.map((a) => (
-                <li>
-                  <code>{new Date(a.appliedAt).toISOString().slice(0, 10)}</code>
-                  · {a.ruleSummary}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </section>
-    )}
-
-    {/* ======================= DRAFTS READY ======================= */}
-    <section class="today__row">
-      <h2>BLOG DRAFTS</h2>
-      {draftsEmpty ? (
+          ) : null}
+        </div>
+      ) : workshopEmpty ? (
         <section
-          class="today__row-demo"
-          aria-label="Example data — your real BLOG DRAFTS populate after the candidate selector emits any"
+          class="today__act-block today__row-demo"
+          aria-label="Example data — your real ACT items populate after MINE CORRECTIONS runs"
         >
           <span class="sr-only">Example data, not your data:</span>
-          <p class="today__row-summary">
+          <p class="today__act-lede">
             <span class="demo-badge">DEMO</span>
-            <a href="/blog-drafts">
-              {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
-            </a>
+            <code>{wsView.unappliedPatternCount}</code> pattern{wsView.unappliedPatternCount === 1 ? '' : 's'} would be waiting for review here once the scan + mine cycle runs.
           </p>
         </section>
       ) : (
-        <p class="today__row-summary">
-          <a href="/blog-drafts">
-            {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
-          </a>
+        <p class="today__empty">
+          No corrections waiting. Every mined pattern is already APPLY'd.
         </p>
       )}
-    </section>
 
-    {/* ======================= AUDIT CONCERNS (demoted) ======================= */}
-    <section class="today__row">
-      <h2>AUDIT CONCERNS · top {concernsView.length}</h2>
-      {concernsEmpty ? (
-        <section
-          class="today__row-demo"
-          aria-label="Example data — your real AUDIT CONCERNS populate after the F-layer verifier runs"
-        >
-          <span class="sr-only">Example data, not your data:</span>
-          <span class="demo-badge">DEMO</span>
-          <ul class="today__concerns">
-            {concernsView.map((c) => (
-              <li>
-                <code class="today__concern-type">{c.claimType}</code>
-                <span class="today__concern-span">claimed "{c.span}"</span>
-                <span class="today__concern-reason">— {c.reason}</span>
-                <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {/* Curator feed — top-K ranked items the /curate skill emitted. */}
+      <h3 class="today__act-subhead">CURATED FEED · top {curatorFeed?.items.length ?? 0}</h3>
+      {curatorEmpty ? (
+        <div class="today__empty-block">
+          <p class="today__empty">
+            No curated items. Run <strong>CURATE</strong> after a scan
+            to rank narratives and knowledge-debt clusters worth
+            looking at now.
+          </p>
+          <p>
+            <button id="action-curate-cta" type="button" class="today__cta-btn">
+              CURATE →
+            </button>
+          </p>
+        </div>
       ) : (
-        <ul class="today__concerns">
-          {concernsView.map((c) => (
+        <ul class="today__curator-list">
+          {curatorFeed!.items.slice(0, 10).map((item) => (
             <li>
-              <code class="today__concern-type">{c.claimType}</code>
-              <span class="today__concern-span">claimed "{c.span}"</span>
-              <span class="today__concern-reason">— {c.reason}</span>
-              <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+              <span class="today__curator-rank">#{item.rank}</span>
+              <span class={`today__curator-kind today__curator-kind--${item.kind}`}>
+                {item.kind}
+              </span>
+              <span class="today__curator-title">{item.title}</span>
+              <span class="today__curator-score">
+                {(item.compositeScore * 100).toFixed(0)}
+              </span>
+              {item.falsifierStatus === 'verified' ? (
+                <span class="today__curator-verified">verified</span>
+              ) : null}
             </li>
           ))}
         </ul>
       )}
-      <p class="today__row-summary">
-        <a href="/audit">full audit table →</a>
-      </p>
     </section>
 
-    {/* ======================= CORPUS HEALTH (footer-y) ======================= */}
+    {/* ─────────────────────── 4. BROKEN ─────────────────────── */}
+    <section class="today__section today__broken" aria-labelledby="sec-broken">
+      <div class="today__bar">
+        <span class="today__bar-key" id="sec-broken">{SECTIONS[3].key}</span>
+        <span class="today__bar-sub">{SECTIONS[3].sub}</span>
+      </div>
+
+      {brokenEmpty && concernsEmpty ? (
+        <p class="today__empty">Nothing broken right now.</p>
+      ) : (
+        <>
+          {surprisesBroken.length > 0 ? (
+            <ul class="today__cards">
+              {surprisesBroken.map((s) => (
+                <li class={`today__card today__card--alert today__card--${s.kind}`}>
+                  <div class="today__card-head">
+                    <span class={`today__kind today__kind--${s.tone}`}>
+                      {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                    </span>
+                    <span class="today__card-score">
+                      score {(s.score * 100).toFixed(0)}
+                    </span>
+                  </div>
+                  <p class="today__card-summary">{s.summary}</p>
+                  {s.evidence.projectId ? (
+                    <p class="today__card-evidence">
+                      <span class="today__card-evlabel">project:</span>{' '}
+                      <a href={`/projects/${s.evidence.projectId}`}>
+                        {s.evidence.projectId}
+                      </a>
+                    </p>
+                  ) : null}
+                  {s.evidence.narrativeId ? (
+                    <p class="today__card-evidence">
+                      <span class="today__card-evlabel">narrative:</span>{' '}
+                      <code>{s.evidence.narrativeId}</code>
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {/* AUDIT CONCERNS — preserved from prior page, demoted from a
+              standalone row into the BROKEN section. */}
+          <h3 class="today__broken-subhead">AUDIT CONCERNS · top {concernsView.length}</h3>
+          {concernsEmpty ? (
+            <section
+              class="today__row-demo"
+              aria-label="Example data — your real AUDIT CONCERNS populate after the F-layer verifier runs"
+            >
+              <span class="sr-only">Example data, not your data:</span>
+              <span class="demo-badge">DEMO</span>
+              <ul class="today__concerns">
+                {concernsView.map((c) => (
+                  <li>
+                    <code class="today__concern-type">{c.claimType}</code>
+                    <span class="today__concern-span">claimed "{c.span}"</span>
+                    <span class="today__concern-reason">— {c.reason}</span>
+                    <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : (
+            <ul class="today__concerns">
+              {concernsView.map((c) => (
+                <li>
+                  <code class="today__concern-type">{c.claimType}</code>
+                  <span class="today__concern-span">claimed "{c.span}"</span>
+                  <span class="today__concern-reason">— {c.reason}</span>
+                  <span class="today__concern-sid">[SID:{c.sessionId.slice(0, 8)}…]</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p class="today__row-summary">
+            <a href="/audit">full audit table →</a>
+          </p>
+
+          {/* CONTINUUM HEALTH warnings — show only when they exist. */}
+          {health !== null && health.warnings.length > 0 ? (
+            <div class="today__broken-health">
+              <h3 class="today__broken-subhead">CONTINUUM WARNINGS</h3>
+              <ul class="today__concerns">
+                {health.warnings.map((w) => (
+                  <li>
+                    <span class="today__warn">{String(w)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </>
+      )}
+    </section>
+
+    {/* ─────────────────────── 5. STORIES ─────────────────────── */}
+    <section class="today__section today__stories" aria-labelledby="sec-stories">
+      <div class="today__bar">
+        <span class="today__bar-key" id="sec-stories">{SECTIONS[4].key}</span>
+        <span class="today__bar-sub">{SECTIONS[4].sub}</span>
+      </div>
+
+      {storiesEmpty ? (
+        <p class="today__empty">
+          No stories yet. Stories arrive when a scan finds project-level
+          narrative arcs.
+        </p>
+      ) : (
+        <>
+          {recentNarratives.length > 0 ? (
+            <ul class="today__story-list">
+              {recentNarratives.map((n) => (
+                <li>
+                  <span class={`today__story-sentiment today__story-sentiment--${n.sentiment}`}>
+                    {n.sentiment}
+                  </span>
+                  <span class="today__story-title">{n.title}</span>
+                  <a class="today__story-project" href={`/projects/${n.projectId}`}>
+                    {n.projectId}
+                  </a>
+                  <span class="today__story-date">
+                    {n.generatedAt.slice(0, 10)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <h3 class="today__stories-subhead">BLOG DRAFTS</h3>
+          {draftsEmpty ? (
+            <section
+              class="today__row-demo"
+              aria-label="Example data — your real BLOG DRAFTS populate after the candidate selector emits any"
+            >
+              <span class="sr-only">Example data, not your data:</span>
+              <p class="today__row-summary">
+                <span class="demo-badge">DEMO</span>
+                <a href="/blog-drafts">
+                  {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+                </a>
+              </p>
+            </section>
+          ) : (
+            <p class="today__row-summary">
+              <a href="/blog-drafts">
+                {draftFinals} draft{draftFinals === 1 ? '' : 's'} · {draftPrompts} prompt scaffold{draftPrompts === 1 ? '' : 's'} →
+              </a>
+            </p>
+          )}
+        </>
+      )}
+    </section>
+
+    {/* ─────────────────────── CORPUS HEALTH (footer-y) ─────────────────────── */}
     <section class="today__row today__row--footer">
       <h2>CORPUS HEALTH</h2>
       {health === null ? (
@@ -301,41 +531,39 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
         </p>
       )}
     </section>
-
-    {brief !== null ? (
-      <details class="today__raw">
-        <summary>raw daily brief markdown</summary>
-        <pre>{brief.markdown}</pre>
-      </details>
-    ) : null}
   </main>
 
-  <script is:inline>
-    // Wire the action buttons against the per-endpoint streams.
-    //
-    // /api/rescan and /api/mine-corrections both return NDJSON
-    // (start / stdout / stderr / phase / done). The mine-corrections
-    // skill additionally writes a status file at
-    //   /chat-arch-data/analysis/correction-status-${requestId}.json
-    // that we poll for stage-level progress (claude -p stdout doesn't
-    // expose internal stages). /api/regen-brief is a fast synchronous
-    // JSON endpoint so we just POST and reload on success.
-    const status = document.getElementById('action-status');
-    const progressEl = document.getElementById('action-progress');
-    const labelEl = document.getElementById('progress-label');
-    const elapsedEl = document.getElementById('progress-elapsed');
-    const phaseEl = document.getElementById('progress-phase');
-    const barEl = document.getElementById('progress-bar');
-    const barFillEl = document.getElementById('progress-bar-fill');
-    const logEl = document.getElementById('progress-log');
+  <script>
+    // Action-button wiring. The original RESCAN / MINE / REGEN paths
+    // stay verbatim (NDJSON streaming for rescan + mine, synchronous
+    // POST for regen-brief). FULL SCAN orchestrates all four
+    // producers sequentially via the fullScan.ts module.
+    import {
+      FULL_SCAN_STEPS,
+      formatStepLabel,
+      runFullScan,
+      type FullScanUi,
+    } from '../scripts/fullScan.ts';
+
+    const status = document.getElementById('action-status') as HTMLElement | null;
+    const progressEl = document.getElementById('action-progress') as HTMLElement | null;
+    const labelEl = document.getElementById('progress-label') as HTMLElement | null;
+    const elapsedEl = document.getElementById('progress-elapsed') as HTMLElement | null;
+    const phaseEl = document.getElementById('progress-phase') as HTMLElement | null;
+    const barEl = document.getElementById('progress-bar') as HTMLElement | null;
+    const barFillEl = document.getElementById('progress-bar-fill') as HTMLElement | null;
+    const logEl = document.getElementById('progress-log') as HTMLElement | null;
     const buttons = [
+      document.getElementById('action-full-scan'),
       document.getElementById('action-rescan'),
       document.getElementById('action-mine'),
       document.getElementById('action-brief'),
+      document.getElementById('action-brief-cta'),
       document.getElementById('action-mine-cta'),
-    ].filter(Boolean);
+      document.getElementById('action-curate-cta'),
+    ].filter((b): b is HTMLButtonElement => b !== null);
 
-    const STAGE_LABELS = {
+    const STAGE_LABELS: Record<string, string> = {
       starting: 'starting',
       classifying: 'classifying candidates',
       'ingesting-configs': 'ingesting config history',
@@ -343,32 +571,33 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       clustering: 'clustering corrections',
       proposing: 'proposing upgrades',
       'tagging-topics': 'tagging topics',
-      writing: 'writing corrections.json',
+      writing: 'writing output',
       complete: 'complete',
       error: 'error',
     };
 
-    let elapsedTimer = null;
-    let statusPollTimer = null;
+    let elapsedTimer: number | null = null;
+    let statusPollTimer: number | null = null;
 
-    function setStatus(text, isError) {
+    function setStatus(text: string, isError: boolean): void {
       if (!status) return;
       status.textContent = text;
       status.style.color = isError ? '#f08080' : '#88e088';
     }
 
-    function setButtonsDisabled(disabled) {
+    function setButtonsDisabled(disabled: boolean): void {
       for (const b of buttons) b.disabled = disabled;
     }
 
-    function formatElapsed(startedAt) {
+    function formatElapsed(startedAt: number): string {
       const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
       const m = Math.floor(sec / 60);
       const s = sec % 60;
       return `${m}:${s.toString().padStart(2, '0')} elapsed`;
     }
 
-    function showProgress(label) {
+    function showProgress(label: string): void {
+      if (!progressEl || !labelEl || !phaseEl || !barEl || !logEl || !elapsedEl) return;
       progressEl.hidden = false;
       labelEl.textContent = label;
       phaseEl.textContent = '';
@@ -379,8 +608,8 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       setStatus('', false);
     }
 
-    function hideProgress() {
-      progressEl.hidden = true;
+    function hideProgress(): void {
+      if (progressEl) progressEl.hidden = true;
       if (elapsedTimer !== null) {
         clearInterval(elapsedTimer);
         elapsedTimer = null;
@@ -391,16 +620,18 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       }
     }
 
-    function startElapsedTicker(startedAt) {
+    function startElapsedTicker(startedAt: number): void {
+      if (!elapsedEl) return;
       if (elapsedTimer !== null) clearInterval(elapsedTimer);
       elapsedEl.textContent = formatElapsed(startedAt);
-      elapsedTimer = setInterval(() => {
-        elapsedEl.textContent = formatElapsed(startedAt);
+      elapsedTimer = window.setInterval(() => {
+        if (elapsedEl) elapsedEl.textContent = formatElapsed(startedAt);
       }, 1000);
     }
 
-    function setPhase(phase, current, total) {
-      const friendly = STAGE_LABELS[phase] || phase;
+    function setPhase(phase: string, current?: number, total?: number): void {
+      if (!phaseEl || !barEl || !barFillEl) return;
+      const friendly = STAGE_LABELS[phase] ?? phase;
       let line = `· ${friendly}`;
       if (typeof current === 'number' && typeof total === 'number' && total > 0) {
         line += ` (${current}/${total})`;
@@ -410,32 +641,36 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       phaseEl.textContent = line;
     }
 
-    function appendLog(line) {
+    function appendLog(line: string): void {
+      if (!logEl) return;
       const trimmed = line.trim();
       if (trimmed.length === 0) return;
       logEl.hidden = false;
       // Keep last 6 lines only — this region is a heartbeat, not a transcript.
-      const next = (logEl.textContent + '\n' + trimmed)
+      const next = ((logEl.textContent ?? '') + '\n' + trimmed)
         .split('\n')
         .filter((l) => l.length > 0);
       logEl.textContent = next.slice(-6).join('\n');
     }
 
-    function reloadSoon() {
+    function reloadSoon(): void {
       // Brief delay so "complete" is visible before the page refreshes.
-      setTimeout(() => window.location.reload(), 800);
+      window.setTimeout(() => window.location.reload(), 800);
     }
 
-    async function pollMineStatus(requestId) {
+    async function pollMineStatus(requestId: string): Promise<void> {
       try {
         const res = await fetch(
           `/chat-arch-data/analysis/correction-status-${requestId}.json`,
           { cache: 'no-store' },
         );
         if (!res.ok) return;
-        const body = await res.json();
+        const body = (await res.json()) as {
+          status?: string;
+          progress?: { current?: number; total?: number; phase?: string };
+        };
         if (body && typeof body.status === 'string') {
-          const p = body.progress || {};
+          const p = body.progress ?? {};
           setPhase(body.status, p.current, p.total);
           if (typeof p.phase === 'string' && p.phase.length > 0) {
             appendLog(`[${body.status}] ${p.phase}`);
@@ -447,14 +682,26 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       }
     }
 
-    async function streamNdjson(url, header, label, opts) {
-      const { onStart, onPhase, onLine, onDone } = opts || {};
+    interface StreamOpts {
+      onStart?: (evt: Record<string, unknown>) => void;
+      onPhase?: (evt: Record<string, unknown>) => void;
+      onLine?: (evt: Record<string, unknown>) => void;
+      onDone?: (evt: Record<string, unknown>) => void;
+    }
+
+    async function streamNdjson(
+      url: string,
+      header: string,
+      label: string,
+      opts: StreamOpts,
+    ): Promise<void> {
+      const { onStart, onPhase, onLine, onDone } = opts;
       showProgress(label);
       setButtonsDisabled(true);
       const startedAt = Date.now();
       startElapsedTicker(startedAt);
 
-      let res;
+      let res: Response;
       try {
         res = await fetch(url, {
           method: 'POST',
@@ -464,7 +711,7 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       } catch (err) {
         hideProgress();
         setButtonsDisabled(false);
-        setStatus(`${label} failed: ${(err && err.message) || err}`, true);
+        setStatus(`${label} failed: ${(err as Error).message ?? String(err)}`, true);
         return;
       }
 
@@ -486,7 +733,7 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
-      let terminalOk = null;
+      let terminalOk: boolean | null = null;
       let terminalErr = '';
 
       try {
@@ -499,20 +746,26 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
           for (const raw of parts) {
             const line = raw.trim();
             if (line.length === 0) continue;
-            let evt;
-            try { evt = JSON.parse(line); } catch { continue; }
+            let evt: Record<string, unknown>;
+            try {
+              evt = JSON.parse(line) as Record<string, unknown>;
+            } catch {
+              continue;
+            }
             if (evt.type === 'start') {
               if (onStart) onStart(evt);
             } else if (evt.type === 'phase') {
               if (onPhase) onPhase(evt);
-              else setPhase(evt.phase, evt.ix, evt.total);
+              else setPhase(String(evt.phase), evt.ix as number, evt.total as number);
             } else if (evt.type === 'stdout' || evt.type === 'stderr') {
               if (onLine) onLine(evt);
-              else appendLog(evt.line);
+              else appendLog(String(evt.line ?? ''));
             } else if (evt.type === 'done') {
               terminalOk = evt.ok === true;
               if (!terminalOk) {
-                terminalErr = (evt.stderrTail || evt.stdoutTail || '').trim().slice(-400);
+                terminalErr = String(evt.stderrTail ?? evt.stdoutTail ?? '')
+                  .trim()
+                  .slice(-400);
               }
               if (onDone) onDone(evt);
             }
@@ -521,7 +774,7 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       } catch (err) {
         hideProgress();
         setButtonsDisabled(false);
-        setStatus(`${label} stream broke: ${(err && err.message) || err}`, true);
+        setStatus(`${label} stream broke: ${(err as Error).message ?? String(err)}`, true);
         return;
       }
 
@@ -537,7 +790,7 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       }
     }
 
-    async function runMine() {
+    async function runMine(): Promise<void> {
       await streamNdjson(
         '/api/mine-corrections',
         'chat-arch-mine-corrections',
@@ -547,12 +800,20 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
             // The headless claude -p stream is mostly silent; the
             // skill's status file is the real progress source.
             if (statusPollTimer !== null) clearInterval(statusPollTimer);
-            pollMineStatus(evt.requestId);
-            statusPollTimer = setInterval(() => pollMineStatus(evt.requestId), 1500);
-            if (evt.autoWindow && typeof evt.autoWindow.candidateCount === 'number') {
-              const w = evt.autoWindow;
+            const requestId = String(evt.requestId ?? '');
+            if (requestId.length > 0) {
+              void pollMineStatus(requestId);
+              statusPollTimer = window.setInterval(
+                () => void pollMineStatus(requestId),
+                1500,
+              );
+            }
+            const aw = evt.autoWindow as
+              | { mode?: string; candidateCount?: number; windowDays?: number }
+              | undefined;
+            if (aw && typeof aw.candidateCount === 'number') {
               appendLog(
-                `auto-window: ${w.mode} · ${w.candidateCount} candidate${w.candidateCount === 1 ? '' : 's'} · ~${w.windowDays} day${w.windowDays === 1 ? '' : 's'}`,
+                `auto-window: ${aw.mode} · ${aw.candidateCount} candidate${aw.candidateCount === 1 ? '' : 's'} · ~${aw.windowDays} day${aw.windowDays === 1 ? '' : 's'}`,
               );
             }
           },
@@ -560,11 +821,11 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       );
     }
 
-    async function runRescan() {
+    async function runRescan(): Promise<void> {
       await streamNdjson('/api/rescan', 'chat-arch-rescan', 'rescan', {});
     }
 
-    async function runRegenBrief() {
+    async function runRegenBrief(): Promise<void> {
       showProgress('regen brief');
       setButtonsDisabled(true);
       const startedAt = Date.now();
@@ -590,83 +851,127 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
       } catch (err) {
         hideProgress();
         setButtonsDisabled(false);
-        setStatus(`regen brief failed: ${(err && err.message) || err}`, true);
+        setStatus(`regen brief failed: ${(err as Error).message ?? String(err)}`, true);
       }
     }
 
+    async function runCurate(): Promise<void> {
+      await streamNdjson('/api/curate', 'chat-arch-curate', 'curate', {});
+    }
+
+    async function runFullScanFlow(): Promise<void> {
+      const total = FULL_SCAN_STEPS.length;
+      showProgress(`STEP 1 OF ${total}: ${FULL_SCAN_STEPS[0]!.label}`);
+      setButtonsDisabled(true);
+      const startedAt = Date.now();
+      startElapsedTicker(startedAt);
+
+      const ui: FullScanUi = {
+        onStepStart(stepIx, totalSteps, step) {
+          if (labelEl) labelEl.textContent = formatStepLabel(stepIx, totalSteps, step);
+          if (phaseEl) phaseEl.textContent = '';
+          // Reset per-step progress bar — each producer has its own
+          // (ix/total) range and we don't want stale fill carrying over.
+          if (barEl) barEl.hidden = true;
+          if (barFillEl) barFillEl.style.width = '0%';
+          appendLog(`▶ ${step.label}`);
+        },
+        onPhase(_step, phase, current, total) {
+          setPhase(phase, current, total);
+        },
+        onLine(_step, _kind, line) {
+          appendLog(line);
+        },
+        onStepDone(step, ok, errSummary) {
+          if (ok) {
+            appendLog(`✓ ${step.label}`);
+          } else {
+            appendLog(`✗ ${step.label}${errSummary ? ': ' + errSummary : ''}`);
+          }
+        },
+        onChainDone(success, lastError) {
+          if (success) {
+            setPhase('complete');
+            setStatus('FULL SCAN complete — refreshing…', false);
+            hideProgress();
+            reloadSoon();
+          } else {
+            hideProgress();
+            setButtonsDisabled(false);
+            setStatus(`FULL SCAN failed: ${lastError ?? 'unknown'}`, true);
+          }
+        },
+      };
+
+      await runFullScan(ui);
+    }
+
+    document.getElementById('action-full-scan')?.addEventListener('click', () => {
+      void runFullScanFlow();
+    });
     document.getElementById('action-rescan')?.addEventListener('click', () => { void runRescan(); });
     document.getElementById('action-mine')?.addEventListener('click', () => { void runMine(); });
-    // In-hero CTA on the scanned-but-not-mined state shares the handler.
+    // In-section CTAs share handlers with their header twins.
     document.getElementById('action-mine-cta')?.addEventListener('click', () => { void runMine(); });
+    document.getElementById('action-curate-cta')?.addEventListener('click', () => { void runCurate(); });
     document.getElementById('action-brief')?.addEventListener('click', () => { void runRegenBrief(); });
+    document.getElementById('action-brief-cta')?.addEventListener('click', () => { void runRegenBrief(); });
 
     // On page load, if a mining run is already in flight from a prior
     // tab/session, attach to its status file so the user sees live
-    // progress instead of a stale UI. We can't re-attach to the
-    // original POST's stream from a new connection, but the status
-    // file gives us everything that matters.
-    //
-    // XN3 refactor: named function with an explicit `deps` object
-    // (rather than the previous IIFE closing over module-scope state).
-    // Dependencies are surfaced in one place so a future Vite-bundled
-    // module extraction can lift this verbatim. The function is still
-    // invoked once at module-load time below.
-    async function attachIfBusy(deps) {
+    // progress instead of a stale UI.
+    async function attachIfBusy(): Promise<void> {
       try {
         const res = await fetch('/api/mine-corrections', { method: 'GET' });
         if (!res.ok) return;
-        const body = await res.json();
+        const body = (await res.json()) as {
+          busy?: boolean;
+          busyRequestId?: string;
+        };
         if (body && body.busy === true && typeof body.busyRequestId === 'string') {
-          deps.showProgress('mine corrections (resumed)');
-          deps.setButtonsDisabled(true);
-          deps.startElapsedTicker(Date.now());
+          showProgress('mine corrections (resumed)');
+          setButtonsDisabled(true);
+          startElapsedTicker(Date.now());
           const requestId = body.busyRequestId;
-          await deps.pollMineStatus(requestId);
-          deps.setStatusPollTimer(setInterval(async () => {
-            await deps.pollMineStatus(requestId);
-            // When the status file flips to complete/error, refresh.
+          await pollMineStatus(requestId);
+          statusPollTimer = window.setInterval(async () => {
+            await pollMineStatus(requestId);
             try {
-              const r = await fetch(`/chat-arch-data/analysis/correction-status-${requestId}.json`, { cache: 'no-store' });
+              const r = await fetch(
+                `/chat-arch-data/analysis/correction-status-${requestId}.json`,
+                { cache: 'no-store' },
+              );
               if (!r.ok) return;
-              const s = await r.json();
+              const s = (await r.json()) as { status?: string; error?: string };
               if (s && (s.status === 'complete' || s.status === 'error')) {
-                deps.clearStatusPollTimer();
+                if (statusPollTimer !== null) {
+                  clearInterval(statusPollTimer);
+                  statusPollTimer = null;
+                }
                 if (s.status === 'complete') {
-                  deps.setStatus('mine corrections complete — refreshing…', false);
-                  deps.hideProgress();
-                  deps.reloadSoon();
+                  setStatus('mine corrections complete — refreshing…', false);
+                  hideProgress();
+                  reloadSoon();
                 } else {
-                  deps.hideProgress();
-                  deps.setButtonsDisabled(false);
-                  deps.setStatus(`mine corrections failed${s.error ? ': ' + String(s.error).slice(0, 200) : ''}`, true);
+                  hideProgress();
+                  setButtonsDisabled(false);
+                  setStatus(
+                    `mine corrections failed${s.error ? ': ' + String(s.error).slice(0, 200) : ''}`,
+                    true,
+                  );
                 }
               }
             } catch {
               // Transient — keep polling.
             }
-          }, 1500));
+          }, 1500);
         }
       } catch {
         // No backend / network error — silently skip the attach.
       }
     }
 
-    void attachIfBusy({
-      showProgress,
-      setButtonsDisabled,
-      startElapsedTicker,
-      pollMineStatus,
-      setStatus,
-      hideProgress,
-      reloadSoon,
-      setStatusPollTimer: (handle) => { statusPollTimer = handle; },
-      clearStatusPollTimer: () => {
-        if (statusPollTimer !== null) {
-          clearInterval(statusPollTimer);
-          statusPollTimer = null;
-        }
-      },
-    });
+    void attachIfBusy();
   </script>
 </BaseLayout>
 
@@ -693,12 +998,26 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     background: #FFCC9911; padding: 2px 8px; border-radius: 3px;
     font-family: 'JetBrains Mono', monospace; font-size: 11px;
   }
-  .today__actions { display: flex; gap: 12px; align-items: center; margin-bottom: 32px; }
+  .today__actions {
+    display: flex; gap: 12px; align-items: center; margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
   .today__actions button {
     background: #FFCC99; color: #0a0a0a; border: none; padding: 8px 16px;
     font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 12px;
     cursor: pointer; border-radius: 2px;
   }
+  /* FULL SCAN — sunflower-gold primary, larger pad. Visual hierarchy
+     says "this is the everything button"; the other three remain
+     available as escape hatches. */
+  .today__btn-primary {
+    background: #FFCC33 !important;
+    color: #0a0a0a;
+    padding: 10px 22px !important;
+    font-size: 13px !important;
+    font-weight: 700;
+  }
+  .today__btn-primary:hover { background: #ffdb5c !important; }
   .today__actions button:hover { background: #ffd680; }
   .today__actions button:disabled {
     opacity: 0.5;
@@ -761,52 +1080,157 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     overflow-y: auto;
   }
 
-  .today__hero {
-    border: 1px solid #FFCC9944;
-    background: linear-gradient(180deg, #0a0a0a, #050505);
-    padding: 24px;
-    border-radius: 4px;
-    margin-bottom: 32px;
+  /* ─── Section scaffolding ──────────────────────────────────────── */
+  .today__section { margin-bottom: 32px; }
+  /* LCARS mid-bar — the key + sub on a thin sunflower-gold bar.
+     Each section opens with one so the page reads as a stack of
+     feed cards rather than one continuous wall of text. */
+  .today__bar {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 4px 12px;
+    margin: 0 0 12px;
+    background: linear-gradient(90deg, rgba(255, 204, 153, 0.18) 0%, rgba(255, 204, 153, 0.03) 70%, rgba(255, 204, 153, 0) 100%);
+    border-left: 3px solid #FFCC99;
+    border-radius: 2px;
   }
-  /* Demo modifier on the WHOLE hero section — the peach left-rule +
-     subtle horizontal tint mirror the .today__hero-demo / .today__row-demo
-     treatment defined in BaseLayout, but layered ON TOP of the hero's
-     dark vertical gradient (two stacked backgrounds) so the section
-     keeps its dark fill instead of being replaced by a peach wash. */
-  .today__hero--demo {
-    padding-left: 12px;
-    border-left: 3px solid rgba(255, 153, 51, 0.55);
-    background:
-      linear-gradient(90deg, rgba(255, 153, 51, 0.06) 0%, rgba(255, 153, 51, 0) 60%),
-      linear-gradient(180deg, #0a0a0a, #050505);
+  .today__bar-key {
+    font-family: 'Antonio', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    font-size: 16px;
+    color: #FFCC99;
   }
-  /* Scanned-but-not-mined modifier. Different cue from --demo (which
-     warns "fake values"): a sunflower-gold left-rule + tint signals
-     "real data, action required" — the visual conveys "you're in the
-     loop, your next move is MINE." Mirrors the demo's two-gradient
-     layering so the hero keeps its dark fill. */
-  .today__hero--scanned {
-    padding-left: 12px;
-    border-left: 3px solid rgba(255, 204, 153, 0.6);
-    background:
-      linear-gradient(90deg, rgba(255, 204, 153, 0.05) 0%, rgba(255, 204, 153, 0) 60%),
-      linear-gradient(180deg, #0a0a0a, #050505);
-  }
-  .today__hero-status {
+  .today__bar-sub {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: #FFCC99cc;
+    color: #FFCC9999;
+  }
+
+  .today__empty { color: #FFCC99cc; font-size: 13px; line-height: 1.6; margin: 8px 0; }
+  .today__empty code { background: #FFCC9911; padding: 1px 6px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .today__empty-block { padding: 12px 0; }
+  .today__cta-btn {
+    background: #FFCC99;
+    color: #0a0a0a;
+    border: none;
+    padding: 8px 16px;
+    font-family: 'Antonio', sans-serif;
     letter-spacing: 0.08em;
-    margin-left: 8px;
-    font-weight: normal;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 2px;
+    margin-top: 8px;
   }
-  .today__hero-lede {
-    font-size: 13px;
-    line-height: 1.6;
+  .today__cta-btn:hover { background: #ffd680; }
+
+  /* ─── 1. BRIEF ─────────────────────────────────────────────────── */
+  .today__brief-body { margin: 0; }
+  /* Markdown rendered as monospace pre — V1 fallback per task spec
+     (no markdown lib in dep tree). Inherits .today__progress-log's
+     dark surface for visual consistency with the other "raw text"
+     regions. */
+  .today__brief-md {
+    margin: 0;
+    padding: 16px 18px;
+    background: #0a0a0a;
+    border: 1px solid #FFCC9933;
+    border-left: 3px solid #FFCC99cc;
+    border-radius: 3px;
     color: #FFCC99cc;
-    margin: 0 0 16px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 480px;
+    overflow-y: auto;
   }
-  .today__hero-lede code {
+
+  /* ─── 2. NEW / 4. BROKEN cards (shared) ────────────────────────── */
+  .today__cards {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .today__card {
+    background: #0a0a0a;
+    border: 1px solid #FFCC9933;
+    border-left: 3px solid #FFCC99;
+    border-radius: 3px;
+    padding: 12px 14px;
+  }
+  .today__card--alert {
+    border-left-color: #ff9933;
+  }
+  .today__card-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; margin-bottom: 6px;
+  }
+  .today__kind {
+    display: inline-block;
+    font-family: 'Antonio', sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: #FFCC99;
+    color: #0a0a0a;
+    font-weight: 700;
+  }
+  .today__kind--concerning {
+    background: #ff9933;
+  }
+  .today__card-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #FFCC9999;
+  }
+  .today__card-summary {
+    margin: 4px 0 8px;
+    color: #FFCC99;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .today__card-evidence {
+    margin: 2px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #FFCC9999;
+  }
+  .today__card-evidence a {
+    color: #FFCC99;
+    text-decoration: none;
+    border-bottom: 1px dashed #FFCC9955;
+  }
+  .today__card-evidence code {
+    background: #FFCC9911;
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+  .today__card-evlabel {
+    color: #FFCC9966;
+    margin-right: 4px;
+  }
+
+  /* ─── 3. ACT ──────────────────────────────────────────────────── */
+  .today__act-block { margin-bottom: 16px; padding: 8px 0; }
+  .today__act-block--scanned {
+    padding-left: 12px;
+    border-left: 3px solid rgba(255, 204, 153, 0.55);
+  }
+  .today__act-lede {
+    margin: 0 0 8px;
+    color: #FFCC99cc;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .today__act-lede code {
     background: #FFCC9911;
     padding: 1px 6px;
     border-radius: 2px;
@@ -814,83 +1238,125 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     font-size: 12px;
     color: #FFCC99;
   }
-  .today__hero-lede strong {
-    color: #FFCC99;
-    font-weight: 700;
+  .today__act-list {
+    list-style: none; padding: 0; margin: 8px 0 0;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
   }
-  .today__hero-cta {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin: 0;
-    flex-wrap: wrap;
+  .today__act-list li {
+    padding: 6px 0;
+    border-bottom: 1px solid #FFCC9922;
+    display: flex; align-items: baseline; gap: 10px;
   }
-  .today__hero-cta-btn {
-    background: #FFCC99;
-    color: #0a0a0a;
-    border: none;
-    padding: 10px 20px;
-    font-family: 'Antonio', sans-serif;
-    letter-spacing: 0.1em;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    border-radius: 2px;
-  }
-  .today__hero-cta-btn:hover {
-    background: #ffd680;
-  }
-  .today__hero-cta-hint {
-    font-size: 11px;
-    color: #FFCC9999;
-    font-style: italic;
-  }
-  .today__hero h2 {
-    font-family: 'Antonio', sans-serif; letter-spacing: 0.12em;
-    font-size: 14px; color: #FFCC99; margin: 0 0 16px;
-  }
-  .today__hero-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px; margin-bottom: 24px;
-  }
-  .today__metric {
-    background: #0a0a0a; border: 1px solid #FFCC9933; padding: 16px;
-    border-radius: 3px; display: flex; flex-direction: column;
-  }
-  .today__metric--big { border-color: #FFCC9988; }
-  .today__metric--warn { border-color: #ffaa3388; }
-  .today__metric--warn .today__metric-value { color: #ffd680; }
-  .today__metric-label { font-size: 11px; color: #FFCC9999; letter-spacing: 0.08em; }
-  .today__metric-value {
-    font-family: 'Antonio', sans-serif; font-size: 36px; line-height: 1.1;
-    margin: 6px 0; color: #FFCC99;
-  }
-  .today__metric-sub { font-size: 11px; color: #FFCC9999; }
-
-  .today__empty { color: #FFCC99cc; font-size: 14px; line-height: 1.6; }
-  .today__empty code { background: #FFCC9911; padding: 1px 6px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-  .today__empty-note { font-size: 12px; color: #FFCC9999; font-style: italic; margin-top: 12px; }
-
-  .today__queue, .today__applies { margin-top: 16px; }
-  .today__queue h3, .today__applies h3 {
-    font-family: 'Antonio', sans-serif; font-size: 12px; letter-spacing: 0.1em;
-    color: #FFCC9999; margin: 0 0 8px;
-  }
-  .today__queue ul, .today__applies ul {
-    list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  }
-  .today__queue li {
-    padding: 6px 0; border-bottom: 1px solid #FFCC9922;
-    display: flex; align-items: baseline; gap: 12px;
-  }
-  .today__queue li:last-child { border-bottom: none; }
+  .today__act-list li:last-child { border-bottom: none; }
   .today__confidence { color: #FFCC99; font-weight: 600; min-width: 40px; }
   .today__rule { flex: 1; color: #FFCC99cc; }
   .today__scope { color: #FFCC9999; font-size: 11px; }
-  .today__queue a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
-  .today__applies li { padding: 4px 0; color: #FFCC99cc; }
-  .today__applies code { color: #FFCC9999; }
+  .today__act-list a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
 
+  .today__act-subhead, .today__broken-subhead, .today__stories-subhead {
+    font-family: 'Antonio', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: #FFCC9999;
+    margin: 18px 0 8px;
+  }
+
+  .today__curator-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .today__curator-list li {
+    padding: 6px 0;
+    border-bottom: 1px solid #FFCC9922;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .today__curator-list li:last-child { border-bottom: none; }
+  .today__curator-rank {
+    color: #FFCC9966; min-width: 30px; font-size: 11px;
+  }
+  .today__curator-kind {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 2px;
+    background: #FFCC9922;
+    color: #FFCC99cc;
+    letter-spacing: 0.04em;
+    min-width: 60px;
+    text-align: center;
+  }
+  .today__curator-title {
+    flex: 1;
+    color: #FFCC99;
+  }
+  .today__curator-score {
+    color: #FFCC9999;
+    font-size: 11px;
+  }
+  .today__curator-verified {
+    color: #88e088;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  /* ─── 4. BROKEN extras ─────────────────────────────────────────── */
+  .today__concerns { list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .today__concerns li { padding: 4px 0; color: #FFCC99cc; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+  .today__concern-type { color: #ffd680; font-size: 11px; }
+  .today__concern-span { color: #FFCC99; }
+  .today__concern-reason { color: #FFCC9999; }
+  .today__concern-sid { color: #FFCC9966; font-size: 11px; }
+  .today__warn { color: #ff9933; }
+  .today__broken-health { margin-top: 16px; }
+
+  /* ─── 5. STORIES ──────────────────────────────────────────────── */
+  .today__story-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .today__story-list li {
+    padding: 6px 0;
+    border-bottom: 1px solid #FFCC9922;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .today__story-list li:last-child { border-bottom: none; }
+  .today__story-sentiment {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 2px;
+    letter-spacing: 0.06em;
+    min-width: 60px;
+    text-align: center;
+  }
+  .today__story-sentiment--positive {
+    background: #FFCC99; color: #0a0a0a;
+  }
+  .today__story-sentiment--negative {
+    background: #ff9933; color: #0a0a0a;
+  }
+  .today__story-sentiment--neutral {
+    background: #FFCC9922; color: #FFCC9999;
+  }
+  .today__story-title {
+    flex: 1;
+    color: #FFCC99;
+  }
+  .today__story-project {
+    color: #FFCC99cc;
+    text-decoration: none;
+    border-bottom: 1px dashed #FFCC9955;
+  }
+  .today__story-date {
+    color: #FFCC9966;
+    font-size: 11px;
+  }
+
+  /* ─── footer corpus-health row (preserved) ─────────────────────── */
   .today__row { margin-bottom: 28px; }
   .today__row--footer { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #FFCC9933; }
   .today__row h2 {
@@ -898,23 +1364,6 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
     color: #FFCC99; margin: 0 0 8px;
   }
   .today__row code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FFCC99; }
-  .today__row-empty { color: #FFCC9999; font-size: 13px; }
   .today__row-summary { font-size: 13px; }
   .today__row-summary a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
-
-  .today__concerns { list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-  .today__concerns li { padding: 4px 0; color: #FFCC99cc; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-  .today__concern-type { color: #ffd680; font-size: 11px; }
-  .today__concern-span { color: #FFCC99; }
-  .today__concern-reason { color: #FFCC9999; }
-  .today__concern-sid { color: #FFCC9966; font-size: 11px; }
-  .today__warn { color: #ffd680; }
-
-  .today__raw { margin-top: 32px; font-size: 12px; color: #FFCC9999; }
-  .today__raw summary { cursor: pointer; padding: 6px 0; font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; }
-  .today__raw pre {
-    background: #0a0a0a; border: 1px solid #FFCC9922; padding: 12px 16px;
-    margin-top: 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;
-    font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap;
-  }
 </style>

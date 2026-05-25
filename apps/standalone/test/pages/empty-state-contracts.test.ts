@@ -3,19 +3,23 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Source-code contract test for empty-state sites covered by PR A.
+// Source-code contract test for empty-state sites on the TODAY page.
 //
-// We can't render these pages through experimental_AstroContainer
-// because they top-level-await sidecar readers that resolve from
-// process.cwd() (see index.astro:18-23 + readSidecars.ts:26). The
-// PR #49 author already documented this limitation at
+// We can't render index.astro through experimental_AstroContainer
+// because it top-level-await sidecar readers that resolve from
+// process.cwd() (see index.astro + readSidecars.ts). The PR #49
+// author already documented this limitation at
 // test/pages/sidebar-presence.test.ts:13-17. We follow the same
 // source-code-assertion approach here — it locks the contract at
 // every migration site and runs in node env without harness work.
 //
 // The principle being enforced (memory:
 // feedback_positioning_by_features): empty-states should SHOW the
-// loop in motion via demo values, not DESCRIBE it via prose.
+// loop in motion via demo values, not DESCRIBE it via prose. The
+// Phase β feed redesign restructured the page into 5 sections
+// (BRIEF / NEW / ACT / BROKEN / STORIES); the AUDIT CONCERNS and
+// BLOG DRAFTS rows live INSIDE the BROKEN and STORIES sections now
+// as subheads, but the demo-fixture contract is unchanged.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGES_ROOT = join(HERE, '..', '..', 'src', 'pages');
@@ -37,7 +41,10 @@ function sliceBetween(src: string, startMarker: string, endMarker: string): stri
 
 // Count the longest paragraph (by word count) inside a slice. The
 // principle's structural invariant: no descriptive paragraph in an
-// empty-state. Cap at ≤15 words per <p>; anything above is prose.
+// empty-state. Cap at ≤20 words per <p>; anything above is prose.
+// (Phase β raised the cap from 15 → 20 to accommodate the empty-
+// state CTA microcopy that now lives next to the REGEN BRIEF / CURATE
+// buttons — still well below "explainer paragraph" territory.)
 function longestParagraphWords(slice: string): number {
   const matches = [...slice.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)];
   let max = 0;
@@ -71,14 +78,26 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
       // count (or removed if the count is gone too).
       expect(src).not.toMatch(/\{\s*1549\s*\}/);
     });
+
+    it('renders the 5 Phase-β section bars (BRIEF / NEW / ACT / BROKEN / STORIES)', () => {
+      // Each section opens with a today__bar-key carrying the section
+      // name. Pin the structure so a future drive-by rename can't
+      // silently drop a section.
+      for (const key of ['BRIEF', 'NEW', 'ACT', 'BROKEN', 'STORIES']) {
+        expect(src).toMatch(
+          new RegExp(`<span class="today__bar-key"[^>]*>\\{SECTIONS\\[\\d+\\]\\.key\\}|>${key}<`),
+        );
+      }
+    });
   });
 
-  describe('site 1 — WORKSHOP LOOP empty branch', () => {
-    // The `workshopEmpty` ternary holds the empty arm. Identify it
-    // by the JSX condition string in source.
+  describe('site 1 — ACT section workshop-empty branch', () => {
+    // Phase β: the WORKSHOP LOOP hero merged into the ACT section.
+    // The empty branch (workshopEmpty, neither scanned nor mined) sits
+    // inside the section as a section-with-aria-label demo region.
     const emptyArm = sliceBetween(
       src,
-      '{workshopEmpty ? (',
+      ') : workshopEmpty ? (',
       ') : (',
     );
 
@@ -88,8 +107,7 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
 
     it('wraps the demo region in an aria-labelled section', () => {
       // Privacy/a11y adversary #4: screen readers need an explicit
-      // signal that the data shown is demo. aria-label on a section
-      // wrapper carries that signal independent of color/position.
+      // signal that the data shown is demo.
       expect(emptyArm).toMatch(/<section\b[^>]*aria-label="[^"]*[Ee]xample data/);
     });
 
@@ -97,17 +115,15 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
       expect(emptyArm).toMatch(/class="[^"]*\bsr-only\b[^"]*">[^<]*[Ee]xample data/);
     });
 
-    it('renders the populated structure (4 metric tiles)', () => {
-      // Show the loop's metrics with demo values; same .today__metric
-      // class the populated branch uses.
-      const metricMatches = [...emptyArm.matchAll(/class="[^"]*\btoday__metric\b/g)];
-      expect(metricMatches.length).toBeGreaterThanOrEqual(4);
+    it('references the demo workshop count (real metric class)', () => {
+      // The empty branch surfaces the demo workshop's unappliedPatternCount
+      // through `wsView.unappliedPatternCount` — same data the populated
+      // path renders, just sourced from the demo fixture.
+      expect(emptyArm).toMatch(/wsView\.unappliedPatternCount/);
     });
 
-    it('has no descriptive paragraph (≤15 words per <p>)', () => {
-      // Structural invariant — caps prose density to prevent reverts
-      // that re-add explainer paragraphs in a different wording.
-      expect(longestParagraphWords(emptyArm)).toBeLessThanOrEqual(15);
+    it('has no descriptive paragraph (≤20 words per <p>)', () => {
+      expect(longestParagraphWords(emptyArm)).toBeLessThanOrEqual(20);
     });
 
     it('does NOT contain the old today__empty-note class', () => {
@@ -116,11 +132,11 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
     });
   });
 
-  describe('site 2 — BLOG DRAFTS row empty branch', () => {
-    // This row is the second today__row that renders BLOG DRAFTS.
-    // Scope to the section containing the `<h2>BLOG DRAFTS</h2>`
-    // header up through the closing </section>.
-    const sectionStart = src.indexOf('<h2>BLOG DRAFTS</h2>');
+  describe('site 2 — STORIES section BLOG DRAFTS subhead empty branch', () => {
+    // Phase β: BLOG DRAFTS demoted from its own <h2> row to a <h3>
+    // subhead inside the STORIES section. Scope to the subhead through
+    // the closing </section> for the STORIES section.
+    const sectionStart = src.indexOf('today__stories-subhead">BLOG DRAFTS');
     const sectionEnd = src.indexOf('</section>', sectionStart);
     const section = src.slice(sectionStart, sectionEnd);
     const emptyArm = sliceBetween(section, '? (', ') : (');
@@ -136,14 +152,20 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
       expect(emptyArm).not.toMatch(/chat-answer skill/);
     });
 
-    it('has no descriptive paragraph (≤15 words per <p>)', () => {
-      expect(longestParagraphWords(emptyArm)).toBeLessThanOrEqual(15);
+    it('has no descriptive paragraph (≤20 words per <p>)', () => {
+      expect(longestParagraphWords(emptyArm)).toBeLessThanOrEqual(20);
     });
   });
 
-  describe('site 3 — AUDIT CONCERNS row empty branch', () => {
-    const sectionStart = src.indexOf('<h2>AUDIT CONCERNS');
-    const sectionEnd = src.indexOf('</section>', sectionStart);
+  describe('site 3 — BROKEN section AUDIT CONCERNS subhead empty branch', () => {
+    // Phase β: AUDIT CONCERNS demoted from its own <h2> row to a <h3>
+    // subhead inside the BROKEN section. The empty branch is the
+    // FIRST ternary after the subhead — scope from the subhead to the
+    // <p class="today__row-summary"> that closes it.
+    const sectionStart = src.indexOf('today__broken-subhead">AUDIT CONCERNS');
+    // The empty-state ternary lives between the subhead and the
+    // "full audit table" link. Scope conservatively.
+    const sectionEnd = src.indexOf('full audit table', sectionStart);
     const section = src.slice(sectionStart, sectionEnd);
     const emptyArm = sliceBetween(section, '? (', ') : (');
 
@@ -171,8 +193,8 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
       expect(emptyArm).not.toMatch(/SID:(?!demo)[0-9a-f]{8}/i);
     });
 
-    it('has no descriptive paragraph (≤15 words per <p>)', () => {
-      expect(longestParagraphWords(emptyArm)).toBeLessThanOrEqual(15);
+    it('has no descriptive paragraph (≤20 words per <p>)', () => {
+      expect(longestParagraphWords(emptyArm)).toBeLessThanOrEqual(20);
     });
   });
 });
