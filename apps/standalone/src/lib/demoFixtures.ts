@@ -269,9 +269,12 @@ export function makeDemoSurprises(): SurprisesOutput {
         tone: 'positive',
         // Score parked in the WEAK band so the FEED's three-tier
         // confidence ribbon (STRONG / MODERATE / WEAK) renders every
-        // tier at least once across the 5 demo surprises (Wave 1
-        // Fix A).
-        summary: 'Adopting ripgrep dropped average re-prompt rate by 23% on demo-project-B.',
+        // tier at least once across the 5 demo surprises. Copy hedged
+        // (single-session, weak evidence) so the WEAK tier label and
+        // the summary's claim-strength agree — earlier copy asserted
+        // a confident measured outcome that visually contradicted the
+        // WEAK badge.
+        summary: 'Single-session signal: ripgrep adoption coincided with -23% re-prompts on demo-project-B (n=1, weak evidence).',
         evidence: {
           decisionId: 'dec_demo_ripgrep',
           projectId: 'demo-project-B',

@@ -99,10 +99,16 @@ const draftPrompts = draftsView.filter((d) => d.isPrompt).length;
 const briefEmpty = brief === null;
 const newEmpty = surprisesNew.length === 0;
 const curatorEmpty = curatorFeed === null || curatorFeed.items.length === 0;
-const brokenEmpty =
-  surprisesBroken.length === 0 &&
-  concerns.length === 0 &&
-  (health === null || health.warnings.length === 0);
+// brokenEmpty gates whether the page falls back to demo concerning cards
+// or renders real BROKEN data. Wave-1 review iter-1 fix: previously this
+// required ALL three (surprises-concerning + audit concerns + health
+// warnings) to be empty, which meant the demo MODERATE/STRONG concerning
+// cards never rendered on any populated install — the demo tier-2/3
+// pedagogy was hidden behind a never-true gate. Now only the surprises-
+// concerning slot drives the swap; audit concerns + health warnings
+// render alongside the demo cards when present, which is the actual
+// "is this BROKEN section empty?" question the user is asking.
+const brokenEmpty = surprisesBroken.length === 0;
 const narrativesEmpty = recentNarratives.length === 0;
 
 // Phase β review-loop iter-1 fix: the four new FEED sections (BRIEF /
@@ -280,15 +286,17 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
               return (
                 <li class={`today__card today__card--${s.kind}`}>
                   <div class="today__card-head">
-                    <span class={`today__kind today__kind--${s.tone}`}>
-                      {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                    </span>
-                    <span
-                      class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
-                      title={`raw score ${s.score.toFixed(3)}`}
-                    >
-                      {tier}
-                    </span>
+                    <div class="today__card-head-left">
+                      <span class={`today__kind today__kind--${s.tone}`}>
+                        {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                      </span>
+                      <span
+                        class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                        title={`raw score ${s.score.toFixed(3)}`}
+                      >
+                        {tier}
+                      </span>
+                    </div>
                     <span class="today__card-score">
                       score {(s.score * 100).toFixed(0)}
                     </span>
@@ -591,15 +599,17 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
               return (
                 <li class={`today__card today__card--alert today__card--${s.kind}`}>
                   <div class="today__card-head">
-                    <span class={`today__kind today__kind--${s.tone}`}>
-                      {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
-                    </span>
-                    <span
-                      class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
-                      title={`raw score ${s.score.toFixed(3)}`}
-                    >
-                      {tier}
-                    </span>
+                    <div class="today__card-head-left">
+                      <span class={`today__kind today__kind--${s.tone}`}>
+                        {SURPRISE_KIND_LABEL[s.kind] ?? s.kind}
+                      </span>
+                      <span
+                        class={`today__card-tier today__card-tier--${tier.toLowerCase()}`}
+                        title={`raw score ${s.score.toFixed(3)}`}
+                      >
+                        {tier}
+                      </span>
+                    </div>
                     <span class="today__card-score">
                       score {(s.score * 100).toFixed(0)}
                     </span>
@@ -1180,8 +1190,15 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     // selective-wipe surface in DATA panel is preserved for the "clear
     // without rescan" path.
     async function runWipeAndScan(): Promise<void> {
+      // Wave-1 review iter-1 fix: confirm copy tightened to actual scope.
+      // /api/clear only wipes the server-side data dir + SQLite ledger;
+      // it does NOT touch the three IndexedDB databases (uploaded ZIP
+      // bytes, semantic-label cache, bench results) — that's
+      // NuclearReset's job in the DATA panel. Saying "all local data"
+      // here implied IndexedDB ZIPs would also go, which is false.
       const proceed = window.confirm(
-        'Wipe all local data and rescan? This deletes the SQLite ledger, sidecars, and cached PR data.',
+        'Wipe local chat-arch-data/ (SQLite ledger + analysis sidecars + manifest + cloud-conversations + exports + cached PR data) and rescan?\n\n' +
+        'Uploaded ZIP bytes in browser storage are NOT affected — use DATA panel for that.',
       );
       if (!proceed) return;
       showProgress('wipe local data');
@@ -1212,10 +1229,16 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
         setStatus(`wipe failed: ${(err as Error).message ?? String(err)}`, true);
         return;
       }
-      // Clear succeeded — hand off to the full-scan chain. It manages
-      // its own progress UI, button state, and reload-on-success.
+      // Wave-1 review iter-1 fix: previously called setButtonsDisabled(false)
+      // here before handing off to runFullScanFlow, opening a microtask
+      // window where WIPE+SCAN could double-fire and race a second
+      // /api/clear against the in-flight exporter step (worst case:
+      // unlinking the .db file while the exporter has it open). Now keep
+      // buttons disabled across the handoff — runFullScanFlow's own
+      // setButtonsDisabled(true) on entry is idempotent, and the final
+      // success-path reload + the failure-path setButtonsDisabled(false)
+      // inside runFullScanFlow handle reset.
       hideProgress();
-      setButtonsDisabled(false);
       await runFullScanFlow();
     }
 
@@ -1337,19 +1360,22 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     font-weight: 700;
   }
   .today__btn-primary:hover { background: #ffdb5c !important; }
-  /* Wave 1 Fix C: WIPE + SCAN — destructive secondary. Outlined,
-     not filled, so it reads as "use sparingly" against the SCAN
-     primary. Hover slightly tints in to signal interactivity
-     without promoting it to a CTA. */
+  /* Wave-1 review iter-1 fix: secondary visual weight wasn't enough —
+     the button read as "another way to scan" rather than "destructive."
+     Switched the border + label to the same peach tone the page already
+     uses for alert cards + concerning-kind badges, so it reads as
+     in-system "warn" affordance at a glance even before the confirm
+     dialog fires. Filled outline only on hover to keep the destructive
+     framing without promoting it to a CTA. */
   .today__btn-secondary {
     background: transparent !important;
-    color: #FFCC99 !important;
-    border: 1px solid #FFCC9966 !important;
+    color: #ff9933 !important;
+    border: 1px solid #ff993366 !important;
     padding: 7px 14px !important;
   }
   .today__btn-secondary:hover {
-    background: #FFCC9911 !important;
-    border-color: #FFCC99 !important;
+    background: #ff993315 !important;
+    border-color: #ff9933 !important;
   }
   .today__actions button:hover { background: #ffd680; }
   .today__actions button:disabled {
@@ -1501,9 +1527,18 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   .today__card--alert {
     border-left-color: #ff9933;
   }
+  /* Wave-1 review iter-1 fix: was 3 children in flex space-between, so
+     the tier badge floated awkwardly at the visual midpoint. Now [kind +
+     tier] cluster on the left (both label-the-card things) and score
+     stays on the right (the metric). flex-wrap so narrow cards stack
+     gracefully instead of crushing. */
   .today__card-head {
     display: flex; align-items: baseline; justify-content: space-between;
-    gap: 8px; margin-bottom: 6px;
+    gap: 8px; margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .today__card-head-left {
+    display: flex; align-items: baseline; gap: 6px;
+    flex: 1 1 auto; min-width: 0;
   }
   .today__kind {
     display: inline-block;
@@ -1531,15 +1566,23 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
      so the user reads load-bearing vs speculative at a glance even
      when scores are close. Tooltip surfaces the raw 3-decimal score
      on hover for the pedant. */
+  /* Wave-1 review iter-1 fix: bump font-size + reduce tracking so the
+     text label (the load-bearing distinguisher under colorblindness)
+     is actually legible — STRONG vs MODERATE are both amber-family at
+     high luminance and color alone collapses under protanopia. */
   .today__card-tier {
     display: inline-block;
     font-family: 'Antonio', sans-serif;
-    font-size: 10px;
-    letter-spacing: 0.12em;
+    font-size: 11px;
+    letter-spacing: 0.08em;
     padding: 2px 6px;
     border-radius: 2px;
     font-weight: 700;
   }
+  /* STRONG: filled gold. MODERATE: filled cream with outline. WEAK:
+     outline only with solid text — gives a shape-channel (filled vs
+     outlined vs outline-only) that's orthogonal to hue, so the three
+     tiers stay distinguishable even when color drops out. */
   .today__card-tier--strong {
     background: #FFCC33;
     color: #0a0a0a;
@@ -1547,23 +1590,33 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   .today__card-tier--moderate {
     background: #FFCC99;
     color: #0a0a0a;
+    box-shadow: inset 0 0 0 1px #DD9944;
   }
+  /* WEAK was alpha-on-alpha (#FFCC9999 over #FFCC9933 over #0a0a0a)
+     which computed to 4.20:1 — under WCAG AA 4.5:1 for small text.
+     Outline pattern with solid text fixes contrast (FFCC99cc on
+     #0a0a0a ≈ 8.5:1) and adds the shape-distinguisher. */
   .today__card-tier--weak {
-    background: #FFCC9933;
-    color: #FFCC9999;
+    background: transparent;
+    color: #FFCC99cc;
+    box-shadow: inset 0 0 0 1px #FFCC9966;
   }
   /* Wave 1 Fix B: per-card "→ in context" drill-in link. Smaller +
      muted vs the evidence rows so it reads as an exit, not a CTA;
      mirrors the page-level today__row-secondary treatment. */
+  /* Wave-1 review iter-1 fix: was too subtle to find — color #FFCC9988
+     with dashed underline at alpha 44 read as a comment, not a link.
+     Bumped to solid color + alpha-66 underline so it reads as clickable
+     while still subordinate to the primary evidence-row links above. */
   .today__card-drill {
     margin: 8px 0 0;
     font-size: 11px;
-    color: #FFCC9988;
+    color: #FFCC99aa;
   }
   .today__card-drill a {
-    color: #FFCC99aa;
+    color: #FFCC99cc;
     text-decoration: none;
-    border-bottom: 1px dashed #FFCC9944;
+    border-bottom: 1px dashed #FFCC9966;
   }
   .today__card-summary {
     margin: 4px 0 8px;
