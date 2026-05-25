@@ -150,6 +150,39 @@ export async function runOneStep(
   let terminalOk: boolean | null = null;
   let terminalErr = '';
 
+  // Parse one complete NDJSON line. Pulled out so the streaming loop
+  // and the post-stream buffer-drain (below) can share the same logic
+  // — without the drain, a `done` event whose trailing newline doesn't
+  // arrive before reader-close stays in `buf` forever and the chain
+  // reports "stream ended without done", silently halting at step 1.
+  const handleLine = (raw: string): void => {
+    const line = raw.trim();
+    if (line.length === 0) return;
+    let evt: NdjsonEvent;
+    try {
+      evt = JSON.parse(line) as NdjsonEvent;
+    } catch {
+      return;
+    }
+    if (evt.type === 'phase' && typeof evt.phase === 'string') {
+      const ix = typeof evt.ix === 'number' ? evt.ix : undefined;
+      const total = typeof evt.total === 'number' ? evt.total : undefined;
+      ui.onPhase(step, evt.phase, ix, total);
+    } else if (evt.type === 'stdout' || evt.type === 'stderr') {
+      const ln = typeof evt.line === 'string' ? evt.line : '';
+      if (ln.length > 0) ui.onLine(step, evt.type, ln);
+    } else if (evt.type === 'done') {
+      terminalOk = evt.ok === true;
+      if (!terminalOk) {
+        const tail =
+          (typeof evt.stderrTail === 'string' && evt.stderrTail) ||
+          (typeof evt.stdoutTail === 'string' && evt.stdoutTail) ||
+          '';
+        terminalErr = tail.trim().slice(-400);
+      }
+    }
+  };
+
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -157,34 +190,20 @@ export async function runOneStep(
       buf += decoder.decode(value, { stream: true });
       const parts = buf.split('\n');
       buf = parts.pop() ?? '';
-      for (const raw of parts) {
-        const line = raw.trim();
-        if (line.length === 0) continue;
-        let evt: NdjsonEvent;
-        try {
-          evt = JSON.parse(line) as NdjsonEvent;
-        } catch {
-          continue;
-        }
-        if (evt.type === 'phase' && typeof evt.phase === 'string') {
-          const ix = typeof evt.ix === 'number' ? evt.ix : undefined;
-          const total = typeof evt.total === 'number' ? evt.total : undefined;
-          ui.onPhase(step, evt.phase, ix, total);
-        } else if (evt.type === 'stdout' || evt.type === 'stderr') {
-          const ln = typeof evt.line === 'string' ? evt.line : '';
-          if (ln.length > 0) ui.onLine(step, evt.type, ln);
-        } else if (evt.type === 'done') {
-          terminalOk = evt.ok === true;
-          if (!terminalOk) {
-            const tail =
-              (typeof evt.stderrTail === 'string' && evt.stderrTail) ||
-              (typeof evt.stdoutTail === 'string' && evt.stdoutTail) ||
-              '';
-            terminalErr = tail.trim().slice(-400);
-          }
-        }
-      }
+      for (const raw of parts) handleLine(raw);
     }
+    // Final flush — `decoder.decode()` (no stream flag) emits any
+    // bytes buffered for an incomplete multi-byte sequence, and any
+    // trailing content in `buf` that arrived without a closing newline
+    // is parsed as one last line. The producers all emit `JSON + '\n'`,
+    // but Node-stream / fetch-stream flushes on Windows sometimes
+    // deliver the final `done` event without its newline visible
+    // before reader-close. Without this drain that event was lost and
+    // the chain reported failure even when the producer completed
+    // cleanly — the symptom Bryce observed where SCAN only fired
+    // /api/rescan and never advanced to step 2.
+    buf += decoder.decode();
+    if (buf.length > 0) handleLine(buf);
   } catch (err) {
     return {
       ok: false,
@@ -205,6 +224,14 @@ export async function runOneStep(
  * Drive the full 4-step chain. Returns true iff every step succeeded.
  * On any failure, returns false and stops the chain — the UI port's
  * `onChainDone(false, ...)` is called with the offending step's error.
+ *
+ * Logs the halting step + reason to `console.warn` (the eslint config
+ * permits `warn`/`error` only) so DevTools is a viable debug surface
+ * when the in-page status line is ambiguous about why the chain
+ * stopped. Bryce previously saw SCAN fire only `/api/rescan` with no
+ * in-page breadcrumb for why steps 2-4 never started; the warn line
+ * makes that recoverable without rebuilding mental state from the dev
+ * server log.
  */
 export async function runFullScan(
   ui: FullScanUi,
@@ -216,6 +243,9 @@ export async function runFullScan(
     const result = await runOneStep(step, ui);
     ui.onStepDone(step, result.ok, result.error);
     if (!result.ok) {
+      console.warn(
+        `[SCAN] step ${i + 1}/${steps.length} (${step.id}) failed — chain halting. error: ${result.error ?? 'unknown'}`,
+      );
       ui.onChainDone(false, `${step.label} failed — ${result.error ?? 'unknown'}`);
       return false;
     }
