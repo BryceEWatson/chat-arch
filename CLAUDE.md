@@ -291,6 +291,25 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `skill-curves.json` — per-topic weekly ask-count series + Mann-
   Kendall trend test with BH-FDR. PII: topic + time series.
 
+### Feed-redesign Phase A sidecar (EXPORTER_VERSION 1.4.0)
+
+One additional sidecar under `apps/standalone/public/chat-arch-data/
+analysis/` (gitignored — locally generated, carries PII):
+
+- `surprises.json` — produced by the `computeSurprises` kernel +
+  `surprisesBuilder` shell. Snapshot kernel over the other Phase 1-3
+  sidecars; emits a ranked list of nine surprise kinds segmented by
+  `tone`: positive (streak / trajectory-accelerating / config-helped
+  / pattern-closed / reflexive-positive / decision-paid-off) and
+  concerning (trajectory-stalled / pattern-recurring / debt-spinning)
+  observations the user might not have noticed. Each row carries
+  `{ id, kind, tone, summary (≤120 chars), evidence, score (0-1),
+  generatedAt }`. The file also exposes the threshold snapshot it
+  used so the UI can disclaim. PII: session IDs + project IDs +
+  knowledge-debt canonical-question prose (for `debt-spinning` rows).
+  Read by the upcoming feed-redesign UI surface (Phase B, not yet
+  landed).
+
 ### Rev3-F curator + falsifier output (EXPORTER_VERSION 1.3.0)
 
 Two additional sidecars under `apps/standalone/public/chat-arch-data/
@@ -359,8 +378,8 @@ out of date and needs an update:
 4. **What sidecars under `analysis/` carry PII vs aggregate-only?**
    - PII-bearing (most files): composite-outcomes, knowledge-debt,
      reflexive, decisions, archetypes, project-trajectories,
-     skill-curves, curator-feed, falsifier-verdicts, correction-
-     candidates, corrections, correction-status-*.
+     skill-curves, surprises, curator-feed, falsifier-verdicts,
+     correction-candidates, corrections, correction-status-*.
    - Aggregate-numbers-only (lower-PII): its-analysis, surface-
      comparison. These are gitignored conservatively anyway.
 5. **What's the difference between hosted (`chat-arch.dev`) and
@@ -377,4 +396,6 @@ out of date and needs an update:
      appears in `analysis/meta.json` so operators can correlate a
      bundle with the CHANGELOG. Bumped 1.2.0 → 1.3.0 in Phase
      Rev3-I I5 for the Rev3 substrate cutover; see CHANGELOG.md
-     `[1.3.0]` for the full ledger of what landed.
+     `[1.3.0]` for the full ledger of what landed. Bumped 1.3.0
+     → 1.4.0 in the feed-redesign Phase A plumbing when
+     `analysis/surprises.json` landed; see CHANGELOG.md `[1.4.0]`.

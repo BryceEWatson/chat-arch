@@ -395,6 +395,23 @@ export {
 } from './applyWatcher.js';
 
 export {
+  computeSurprises,
+  type ComputeSurprisesInput,
+  type ComputeSurprisesOptions,
+  type Surprise,
+  type SurpriseCompositeRow,
+  type SurpriseDecisionRow,
+  type SurpriseEvidence,
+  type SurpriseKind,
+  type SurpriseKnowledgeDebtRow,
+  type SurpriseThresholdsSnapshot,
+  type SurpriseTone,
+  type SurpriseTrajectoryRow,
+  type SurpriseWatcherEntry,
+  type SurprisesOutput,
+} from './computeSurprises.js';
+
+export {
   rankCuratorCandidates,
   type CuratorCandidate,
   type CuratorCandidateKind,

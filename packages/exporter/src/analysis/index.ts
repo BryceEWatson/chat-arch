@@ -23,6 +23,9 @@
  *   - project-trajectories.json  (reads composite)
  *   - surface-comparison.json    (reads archetypes + composite)
  *   - skill-curves.json          (reads topics)
+ *   - surprises.json             (feed-redesign Phase A — reads
+ *                                 composite + trajectories + its +
+ *                                 reflexive + decisions + knowledge-debt)
  *
  * Phase 7 writers do NOT land here (they live in a separate skill/package
  * per Decision 1). Never writes tier-2 filenames.
@@ -60,6 +63,7 @@ import { buildArchetypesFile } from './archetypesBuilder.js';
 import { buildProjectTrajectoriesFile } from './projectTrajectoryBuilder.js';
 import { buildSurfaceComparisonFile } from './surfaceComparisonBuilder.js';
 import { buildSkillCurvesFile } from './skillCurvesBuilder.js';
+import { buildSurprisesFile } from './surprisesBuilder.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -101,6 +105,7 @@ export interface RunAnalysisResult {
     projectTrajectories: string;
     surfaceComparison: string;
     skillCurves: string;
+    surprises: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -124,6 +129,7 @@ export interface RunAnalysisResult {
     projectTrajectories: number;
     surfaceCells: number;
     skillCurves: number;
+    surprises: number;
   };
 }
 
@@ -151,8 +157,15 @@ export interface RunAnalysisResult {
  * because their per-file heuristic versions didn't change. The bump
  * is a coarse signal to operators that the bundle now reflects the
  * Rev3 substrate, not just outcome-substrate Phase 1-4.
+ *
+ * Bumped 1.3.0 → 1.4.0 in the feed-redesign Phase A plumbing:
+ * `analysis/surprises.json` lands as a new sidecar (per-kind ranked
+ * list of positive observations + concerns, snapshot-based — reads
+ * composite-outcomes + project-trajectories + its-analysis +
+ * reflexive + decisions + knowledge-debt). Pre-existing sidecars are
+ * unchanged.
  */
-export const EXPORTER_VERSION = '1.3.0';
+export const EXPORTER_VERSION = '1.4.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -523,6 +536,23 @@ export async function runAnalysis(
   }
   const skillCurvesPath = path.join(analysisDir, 'skill-curves.json');
 
+  // surprises — feed-redesign Phase A. Snapshot kernel over the other
+  // Phase 1-3 sidecars; runs last so every input it consumes has had
+  // a chance to land on disk.
+  let surprisesCount = 0;
+  try {
+    const r = await buildSurprisesFile(manifest, {
+      outDir: options.outDir,
+      now,
+    });
+    surprisesCount = r.surpriseCount;
+  } catch (err) {
+    logger.warn(
+      `analysis: surprises soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const surprisesPath = path.join(analysisDir, 'surprises.json');
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -555,6 +585,7 @@ export async function runAnalysis(
           'project-trajectories.json',
           'surface-comparison.json',
           'skill-curves.json',
+          'surprises.json',
         ],
       },
     },
@@ -581,6 +612,7 @@ export async function runAnalysis(
       projectTrajectories: projectTrajectoriesCount,
       surfaceCells: surfaceCellsCount,
       skillCurves: skillCurvesCount,
+      surprises: surprisesCount,
     },
   };
   const metaPath = path.join(analysisDir, 'meta.json');
@@ -625,6 +657,7 @@ export async function runAnalysis(
       projectTrajectories: projectTrajectoriesPath,
       surfaceComparison: surfaceComparisonPath,
       skillCurves: skillCurvesPath,
+      surprises: surprisesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -646,6 +679,7 @@ export async function runAnalysis(
       projectTrajectories: projectTrajectoriesCount,
       surfaceCells: surfaceCellsCount,
       skillCurves: skillCurvesCount,
+      surprises: surprisesCount,
     },
   };
 }

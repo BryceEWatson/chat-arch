@@ -14,6 +14,42 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-24
+
+Feed-redesign Phase A plumbing — adds a new `analysis/surprises.json`
+sidecar produced by the pure `computeSurprises` kernel in
+`@chat-arch/analysis`. Snapshot-based: reads the existing Phase 1-3
+sidecars (composite-outcomes, project-trajectories, its-analysis,
+reflexive, decisions, knowledge-debt) and emits a ranked list of
+positive observations (`tone: 'positive'`) + concerns
+(`tone: 'concerning'`) the user might not have noticed about their
+recent work. No new kernel dependencies; no UI yet (Phase B lands the
+"happy surprises and stories" surface that consumes this sidecar).
+
+### Added
+
+- **`analysis/surprises.json` sidecar.** Nine surprise kinds:
+  `streak` / `trajectory-accelerating` / `config-helped` /
+  `pattern-closed` / `reflexive-positive` / `decision-paid-off`
+  (positive) and `trajectory-stalled` / `pattern-recurring` /
+  `debt-spinning` (concerns). Each row carries `{ id, kind, tone,
+  summary (≤120 chars), evidence, score (0-1), generatedAt }`. File
+  also exposes the threshold snapshot it used so the UI can disclaim.
+- `computeSurprises` kernel (pure, browser-safe, deterministic given
+  identical inputs) + `surprisesBuilder` Node shell that wires the
+  sidecar reads + writes. Fail-soft: any missing input sidecar
+  degrades the corresponding kinds to zero rows rather than aborting
+  the build.
+- `EXPORTER_VERSION` bumped 1.3.0 → 1.4.0 to mark the new artifact.
+
+### Notes
+
+- `pattern-closed` / `pattern-recurring` currently produce zero rows
+  in the builder — the applied-pattern watcher ledger lives in the
+  SQLite substrate and wiring the SDK call into the builder is a
+  follow-on. The kernel accepts watcher entries directly (used by
+  the test suite); only the I/O shell is stubbed.
+
 ## [1.3.0] — 2026-05-24
 
 Bumped from 1.2.0 to mark the Rev3 substrate landing. The on-disk
