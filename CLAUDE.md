@@ -413,3 +413,8 @@ out of date and needs an update:
      `[1.3.0]` for the full ledger of what landed. Bumped 1.3.0
      → 1.4.0 in the feed-redesign Phase A plumbing when
      `analysis/surprises.json` landed; see CHANGELOG.md `[1.4.0]`.
+     Bumped 1.4.0 → 1.4.1 in feed-redesign Phase γ when
+     `buildDailyBrief` gained shipped-this-week / surprises /
+     trajectories / applied-pattern-closures sections (no new on-
+     disk sidecar; brief markdown shape grew); see CHANGELOG.md
+     `[1.4.1]`.

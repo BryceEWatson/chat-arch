@@ -362,6 +362,8 @@ export function buildDailyBrief(inputs: DailyBriefInputs): DailyBriefResult {
   // The shell is expected to pass `null` until the accessor lands;
   // we ALSO skip the section when the count is 0 to keep the brief
   // tight in the meantime.
+  // TODO(applyWatcher-sdk): wiring lives in
+  // apps/standalone/src/pages/api/regen-brief.ts (search the same marker).
   const closures = inputs.appliedPatternClosures ?? null;
   let appliedPatternClosures = 0;
   if (closures !== null && closures > 0) {
