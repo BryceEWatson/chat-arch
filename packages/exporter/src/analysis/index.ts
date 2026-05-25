@@ -184,7 +184,7 @@ export interface RunAnalysisResult {
  * threshold `THRESHOLDS.surprises.archiveRetentionDays = 30` gates the
  * filename-based prune.
  */
-export const EXPORTER_VERSION = '1.5.0';
+export const EXPORTER_VERSION = '1.5.1';
 
 export async function runAnalysis(
   manifest: SessionManifest,

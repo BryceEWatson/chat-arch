@@ -161,4 +161,47 @@ describe('runSemanticAnalysis brief — Phase γ + Wave 2 #4 inputs', () => {
     expect(brief).toContain('1 accelerating');
     expect(brief).toContain('1 flat');
   }, 60_000);
+
+  it('failure path: missing sidecars produce a brief WITHOUT the section headers and WITHOUT throwing', async () => {
+    // Per CLAUDE.md "Include failure paths for every success path
+    // tested." If a regression made any of the new wire-ups throw
+    // instead of skip on null, the auto-brief would fail outright.
+    // This case exercises the null-tolerance contract: run the
+    // pipeline against a fixture where the load-bearing sidecars
+    // are EXPLICITLY absent (renamed-aside) and verify the brief
+    // still produces, just without the optional sections.
+    const now = 1_700_000_010_000;
+    const manifest = await readJson<SessionManifest>(
+      path.join(tmpDataDir, 'manifest.json'),
+    );
+
+    await runAnalysis(manifest, { outDir: tmpDataDir, now });
+
+    // runAnalysis writes empty surprises.json + project-trajectories.json
+    // from the single-session fixture. To exercise the FULLY-MISSING
+    // path, delete those sidecars before the brief writer runs.
+    await rm(path.join(tmpDataDir, 'analysis', 'surprises.json'), {
+      force: true,
+    });
+    await rm(path.join(tmpDataDir, 'analysis', 'project-trajectories.json'), {
+      force: true,
+    });
+
+    // Must not throw. The brief writer's null-tolerance is the
+    // load-bearing contract.
+    await runSemanticAnalysis({ outDir: tmpDataDir, manifest, now });
+
+    const briefDate = new Date(now).toISOString().slice(0, 10);
+    const brief = await readFile(
+      path.join(tmpDataDir, 'analysis', 'briefs', `${briefDate}.md`),
+      'utf8',
+    );
+
+    // The section headers SHOULD NOT appear when the corresponding
+    // input is null. (Note: "Shipped this week" is git-driven and
+    // intentionally not asserted — it can fire from the host repo's
+    // recent commits regardless of fixture content.)
+    expect(brief).not.toContain('► Surprises:');
+    expect(brief).not.toContain('► Project momentum:');
+  }, 60_000);
 });

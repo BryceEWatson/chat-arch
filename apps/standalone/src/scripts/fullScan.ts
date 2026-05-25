@@ -221,7 +221,8 @@ export async function runOneStep(
 }
 
 /**
- * Drive the full 4-step chain. Returns true iff every step succeeded.
+ * Drive the full chain (5 steps as of #102 — rescan / mine / curate
+ * / falsify / persona). Returns true iff every step succeeded.
  * On any failure, returns false and stops the chain — the UI port's
  * `onChainDone(false, ...)` is called with the offending step's error.
  *
