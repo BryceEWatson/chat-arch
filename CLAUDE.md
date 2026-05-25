@@ -291,6 +291,20 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `skill-curves.json` — per-topic weekly ask-count series + Mann-
   Kendall trend test with BH-FDR. PII: topic + time series.
 
+**Intermediate sidecars (no direct UI surface).** A few artifacts
+under `analysis/` exist as inputs to other kernels or downstream
+sidecars rather than as something a UI surface reads. If you're
+wondering why one of these doesn't show up in the viewer, that's
+the reason — not a missing feature, by design. Don't add a surface
+for them; the consuming sidecar is what gets rendered.
+
+| Sidecar | Consumer | Direct surface? |
+|---|---|---|
+| `audit-claims.json` | input to the audit verifier (which writes `audit-results.json`) | no — `/audit` + `/results` read `audit-results.json` |
+| `discovery-scores.json` | input to the curator ranker (which writes `curator-feed.json`) | no |
+| `duplicates.semantic.json` | input to other clustering kernels | no |
+| `pr-land-cache.json` | input to `composite-outcomes.json` (gated by `--enable-pr-join`) | no |
+
 ### Feed-redesign Phase A sidecar (EXPORTER_VERSION 1.4.0)
 
 One additional sidecar under `apps/standalone/public/chat-arch-data/
@@ -399,3 +413,8 @@ out of date and needs an update:
      `[1.3.0]` for the full ledger of what landed. Bumped 1.3.0
      → 1.4.0 in the feed-redesign Phase A plumbing when
      `analysis/surprises.json` landed; see CHANGELOG.md `[1.4.0]`.
+     Bumped 1.4.0 → 1.4.1 in feed-redesign Phase γ when
+     `buildDailyBrief` gained shipped-this-week / surprises /
+     trajectories / applied-pattern-closures sections (no new on-
+     disk sidecar; brief markdown shape grew); see CHANGELOG.md
+     `[1.4.1]`.

@@ -9,10 +9,16 @@
  * a local hostname AND `X-Requested-With: chat-arch-regen-brief`.
  */
 import type { APIRoute } from 'astro';
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { buildDailyBrief } from '@chat-arch/analysis';
+import { promisify } from 'node:util';
+import {
+  buildDailyBrief,
+  type BriefTrajectoryRow,
+  type SurprisesOutput,
+} from '@chat-arch/analysis';
 import type {
   AuditResultsFile,
   AuditSummary,
@@ -21,6 +27,24 @@ import type {
   CorrectionsFile,
   UpgradeOutcomesFile,
 } from '@chat-arch/schema';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Project-trajectories sidecar shape. We only need the four fields the
+ * brief renders, so we narrow the on-disk type here instead of pulling
+ * the full `ProjectTrajectoriesFile` from the exporter package (which
+ * would create a cross-app dependency we don't otherwise have).
+ */
+interface ProjectTrajectoriesFileShape {
+  projects?: ReadonlyArray<{
+    projectId: string;
+    projectName: string;
+    classification: BriefTrajectoryRow['classification'];
+    slope: number | null;
+    totalSessions: number;
+  }>;
+}
 
 export const prerender = false;
 
@@ -61,6 +85,55 @@ async function readJsonOrNull<T>(absPath: string): Promise<T | null> {
   }
 }
 
+/**
+ * Locate the repo root by walking up from this file. We mirror the same
+ * 5-level climb that `dataDirAbs()` uses; resolving once and re-using
+ * keeps the two paths consistent.
+ */
+function repoRootAbs(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return resolve(here, '..', '..', '..', '..', '..');
+}
+
+/**
+ * Run `git log --since="7 days ago" ... main` against the repo root.
+ * Returns `null` on any failure (not a git repo, no `main` branch,
+ * `git` not on PATH, etc.) so the kernel skips the section cleanly.
+ *
+ * We pass each `git log` flag as a separate argv entry to `execFile`
+ * so no shell quoting is involved. Bounded `maxBuffer` (256KB) caps
+ * the output for very busy weeks; we'd still get the count line even
+ * if the subject lines were truncated.
+ */
+async function shippedThisWeekFromGit(
+  repoRoot: string,
+): Promise<{ commitCount: number; recentSubjects: string[] } | null> {
+  try {
+    const [countResult, subjectsResult] = await Promise.all([
+      execFileAsync(
+        'git',
+        ['log', '--since=7 days ago', '--pretty=format:%H', 'main'],
+        { cwd: repoRoot, maxBuffer: 256 * 1024 },
+      ),
+      execFileAsync(
+        'git',
+        ['log', '--since=7 days ago', '--pretty=format:%s', 'main'],
+        { cwd: repoRoot, maxBuffer: 256 * 1024 },
+      ),
+    ]);
+    const commitCount = countResult.stdout
+      .split('\n')
+      .filter((l) => l.trim().length > 0).length;
+    const recentSubjects = subjectsResult.stdout
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .slice(0, 5);
+    return { commitCount, recentSubjects };
+  } catch {
+    return null;
+  }
+}
+
 export const POST: APIRoute = async ({ request }) => {
   if (!isLocalOrigin(request.headers.get('origin'))) {
     return reject(403, 'Forbidden: non-local origin');
@@ -89,6 +162,39 @@ export const POST: APIRoute = async ({ request }) => {
   const upgradeOutcomes = await readJsonOrNull<UpgradeOutcomesFile>(
     join(analysisDir, 'upgrade-outcomes.json'),
   );
+  // Phase γ §2 — `analysis/surprises.json` (produced by the surprises
+  // builder). Fail-soft: missing/unparseable ⇒ kernel skips the
+  // section.
+  const surprises = await readJsonOrNull<SurprisesOutput>(
+    join(analysisDir, 'surprises.json'),
+  );
+  // Phase γ §3 — `analysis/project-trajectories.json` (produced by the
+  // project-trajectory builder). Narrowed inline so we don't pull the
+  // exporter type across.
+  const trajectoriesFile = await readJsonOrNull<ProjectTrajectoriesFileShape>(
+    join(analysisDir, 'project-trajectories.json'),
+  );
+  const projectTrajectories: BriefTrajectoryRow[] =
+    trajectoriesFile?.projects?.map((p) => ({
+      projectId: p.projectId,
+      projectName: p.projectName,
+      classification: p.classification,
+      slope: p.slope,
+      totalSessions: p.totalSessions,
+    })) ?? [];
+  // Phase γ §1 — `git log` for the shipped-this-week counter. Pure
+  // I/O in the shell; the kernel just formats the numbers.
+  const shippedThisWeek = await shippedThisWeekFromGit(repoRootAbs());
+  // Phase γ §4 — applied-pattern closures. The watcher verdict ledger
+  // lives in the SQLite substrate (see CLAUDE.md "Data on disk"), but
+  // no SDK accessor for it ships under `@chat-arch/exporter/db/sdk`
+  // yet. We pass `null` so the kernel skips the section instead of
+  // pretending zero-is-known; wiring lands when the SDK accessor does.
+  // TODO(applyWatcher-sdk): once `listWatcherVerdicts(db)` (or similar)
+  // exists in @chat-arch/exporter/db/sdk, change this to
+  // `listWatcherVerdicts(db).filter(v => v.verdict === 'no-recurrence').length`.
+  // Companion TODO at packages/analysis/src/dailyBrief.ts line ~360.
+  const appliedPatternClosures: number | null = null;
   // Blog-drafts index isn't currently written as a single file — we
   // pass [] for now. The Today page reads blog drafts separately.
   void (null as unknown as BlogDraftsIndexFile);
@@ -105,6 +211,10 @@ export const POST: APIRoute = async ({ request }) => {
     auditResults: auditResults?.results ?? [],
     auditSummary,
     continuumHealth,
+    shippedThisWeek,
+    surprises,
+    projectTrajectories,
+    appliedPatternClosures,
   });
 
   const outPath = join(briefsDir, `${date}.md`);

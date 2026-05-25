@@ -164,8 +164,16 @@ export interface RunAnalysisResult {
  * composite-outcomes + project-trajectories + its-analysis +
  * reflexive + decisions + knowledge-debt). Pre-existing sidecars are
  * unchanged.
+ *
+ * Bumped 1.4.0 → 1.4.1 in the feed-redesign Phase γ polish:
+ * `dailyBrief.ts` grows four new sections (shipped this week / surprises
+ * today / project trajectories / applied-pattern closures) plus the
+ * matching count fields on `DailyBriefResult.counts`. No new on-disk
+ * artifact — the brief shape change is internal to the regen-brief
+ * endpoint's output markdown — but the patch bump labels the bundle so
+ * operators can correlate.
  */
-export const EXPORTER_VERSION = '1.4.0';
+export const EXPORTER_VERSION = '1.4.1';
 
 export async function runAnalysis(
   manifest: SessionManifest,
