@@ -28,7 +28,7 @@ export const prerender = false;
  * The viewer's `useRescan()` hook sends both. Anything that doesn't
  * (curl one-liner, hostile <form>, DNS-rebinding probe) gets 403.
  */
-const REQUIRED_HEADER = 'chat-arch-rescan';
+export const REQUIRED_HEADER = 'chat-arch-rescan';
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 function isLocalOrigin(origin: string | null): boolean {
