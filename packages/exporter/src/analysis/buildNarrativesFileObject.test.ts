@@ -97,6 +97,47 @@ describe('buildNarrativesFileObject', () => {
     }
   });
 
+  it('drops JS prototype-related keys (__proto__ / constructor / prototype) from passthrough with warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // `JSON.parse('{"__proto__": {...}}')` lands `__proto__` as an
+      // own property on the resulting object — the on-disk attack
+      // vector this defense guards against. A JS object literal
+      // `{ __proto__: ... }` would SET the prototype instead (not
+      // create an own property), so use JSON.parse to model the
+      // attacker payload accurately.
+      const adversarialPassthrough = JSON.parse(
+        '{"__proto__": {"polluted": true}, "constructor": {"polluted": true}, "prototype": {"polluted": true}, "okExtra": "ok"}',
+      ) as Record<string, unknown>;
+      const file = buildNarrativesFileObject(
+        {
+          generatedAt: 0,
+          exporterVersion: '1.7.0',
+          thresholds: THRESHOLDS_SNAPSHOT,
+          narratives: [],
+          skipped: [],
+        },
+        adversarialPassthrough,
+      );
+      // The okExtra non-proto key still round-trips.
+      expect((file as unknown as Record<string, unknown>)['okExtra']).toBe('ok');
+      // None of the proto keys end up as own properties of the result.
+      expect(
+        Object.prototype.hasOwnProperty.call(file, '__proto__'),
+      ).toBe(false);
+      expect(
+        Object.prototype.hasOwnProperty.call(file, 'constructor'),
+      ).toBe(false);
+      expect(
+        Object.prototype.hasOwnProperty.call(file, 'prototype'),
+      ).toBe(false);
+      // Three proto-related drops + zero other warnings.
+      expect(warn).toHaveBeenCalledTimes(3);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('handles empty narratives and skipped arrays', () => {
     const file = buildNarrativesFileObject({
       generatedAt: 0,

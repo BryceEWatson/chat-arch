@@ -114,7 +114,6 @@ export function mergeNarrativeFamilies(
       if (row.projectId === scopedProjectId) {
         scopedIncomingLlm.push(row);
       } else {
-        // eslint-disable-next-line no-console
         console.warn(
           `mergeNarrativeFamilies: dropping off-project LLM row ${row.id} (projectId=${row.projectId}, scope=${scopedProjectId}).`,
         );
@@ -126,7 +125,6 @@ export function mergeNarrativeFamilies(
   const filteredExistingLlm: Narrative[] = [];
   for (const row of survivingExistingLlm) {
     if (heuristicIds.has(row.id)) {
-      // eslint-disable-next-line no-console
       console.warn(
         `mergeNarrativeFamilies: dropping existing LLM row ${row.id} that collides with a heuristic row id (id namespace was breached on disk).`,
       );
@@ -137,7 +135,6 @@ export function mergeNarrativeFamilies(
   const filteredIncomingLlm: Narrative[] = [];
   for (const row of scopedIncomingLlm) {
     if (heuristicIds.has(row.id)) {
-      // eslint-disable-next-line no-console
       console.warn(
         `mergeNarrativeFamilies: dropping incoming LLM row ${row.id} that collides with a heuristic row id (id namespace breached upstream).`,
       );

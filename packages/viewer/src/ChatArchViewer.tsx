@@ -3011,6 +3011,24 @@ export function ChatArchViewer({
                           }
                         }}
                         onSelectSession={onSelect}
+                        onRegenNarratives={(projectId) => {
+                          // V1 narrative-mining REGEN button. POSTs to
+                          // `/api/mine-narratives` with the project
+                          // scope; the endpoint streams NDJSON back.
+                          // We fire-and-forget here (the user reloads
+                          // when the run completes) — matching the
+                          // shape of the chain-orchestrator's
+                          // step-runners.
+                          if (typeof fetch !== 'function') return;
+                          void fetch('/api/mine-narratives', {
+                            method: 'POST',
+                            headers: {
+                              'X-Requested-With': 'chat-arch-mine-narratives',
+                              'content-type': 'application/json',
+                            },
+                            body: JSON.stringify({ projectId }),
+                          });
+                        }}
                       />
                     ) : baseMode === 'practice' ? (
                       <PracticeMode

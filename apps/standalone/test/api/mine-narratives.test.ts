@@ -154,4 +154,137 @@ describe('mine-narratives — classifyOutcome (silent-abort detection)', () => {
     expect(verdict.ok).toBe(false);
     expect(verdict.reason).toMatch(/narratives\.json was not refreshed/);
   });
+
+  // ---- CAS retry path coverage (spec §"Test plan" requirement) ----
+  // The skill captures `existingNarrativesGeneratedAt` at Stage 0
+  // (Stage 2c per spec) and re-reads before writing. If the rescan
+  // refreshes `narratives.json` mid-run, the skill writes
+  // `status: 'concurrent-rescan-aborted'` and exits cleanly. Endpoint
+  // observability:
+  //   - skill writes `status: 'complete'` with skipped[] containing
+  //     per-project `concurrent-rescan-aborted` rows; classifyOutcome
+  //     should still report `ok: true` (the run completed normally —
+  //     skipped projects are part of the normal output shape, not a
+  //     failure mode).
+  //   - skill writes `status: 'error'` only on unrecoverable error,
+  //     not on CAS-aborted projects.
+  // This pins both paths.
+
+  it('CAS retry: per-project concurrent-rescan-aborted does NOT fail the overall run', () => {
+    // The skill recorded the project's CAS abort in narratives.json's
+    // skipped[] field but the overall run completed normally — the
+    // status file is `complete` and narratives.json was refreshed
+    // (with the skipped[] entry). classifyOutcome only cares about
+    // the top-level run outcome; per-project skipped rows are
+    // observability, not failure.
+    const verdict = classifyOutcome(started, 0, null, {
+      narrativesGeneratedAt: started + 5_000,
+      statusFileStatus: 'complete',
+      statusFileError: null,
+    });
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('CAS retry: skill error on unrecoverable CAS mismatch surfaces as ok=false', () => {
+    // If the CAS retry hits an unrecoverable error (e.g., second
+    // mismatch + partial-write halt), the skill writes
+    // `status: 'error'` with a CAS-related message. The outcome
+    // probe surfaces ok=false with the skill's error reason.
+    const verdict = classifyOutcome(started, 0, null, {
+      narrativesGeneratedAt: started - 1_000, // stale (write never landed)
+      statusFileStatus: 'error',
+      statusFileError:
+        'concurrent rescan abort: CAS mismatched twice; canonical write is rescan',
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/skill reported error:.*CAS mismatched/);
+  });
+});
+
+// ---- Sentiment-polarization rule (spec §"Test plan" requirement) ----
+// The Stage 2a sub-agent prompt mandates: never emit `sentiment:
+// 'neutral'`; polarize by outcome-majority of supporting sessions and
+// DROP the theme on tie. validateNarrative is the downstream
+// defense-in-depth: it throws on `sentiment === 'neutral'`. This unit
+// suite pins the validator path so a future schema change can't
+// silently allow neutral through.
+
+describe('mine-narratives — sentiment-polarization defense-in-depth', () => {
+  it('validateNarrative throws on neutral sentiment (drop signal for Stage 2c)', async () => {
+    const { validateNarrative, InvalidNarrativeError } = await import(
+      '@chat-arch/schema'
+    );
+    const neutralRow = {
+      id: 'narr_llm_proj_x_neutral',
+      projectId: 'proj_x',
+      sessionIds: ['s1', 's2'],
+      sentiment: 'neutral' as const,
+      actionType: 'encode-as-pattern' as const,
+      title: 'tied-majority theme',
+      body: 'body',
+      evidence: [],
+      generatedAt: new Date(0).toISOString(),
+      schemaVersion: 2 as const,
+      attributedTo: 'llm-derived' as const,
+      provenance: { intent: 'i', observation: 'o', inference: 'inf' },
+      confidence: 0.5,
+      supportingCount: 2,
+      contradictingCount: 0,
+      verifiedAt: null,
+    };
+    expect(() => validateNarrative(neutralRow)).toThrow(InvalidNarrativeError);
+    expect(() => validateNarrative(neutralRow)).toThrow(/neutral sentiment/);
+  });
+
+  it('validateNarrative accepts positive sentiment with matching encode-as-pattern action', async () => {
+    const { validateNarrative } = await import('@chat-arch/schema');
+    const positiveRow = {
+      id: 'narr_llm_proj_x_p',
+      projectId: 'proj_x',
+      sessionIds: ['s1', 's2'],
+      sentiment: 'positive' as const,
+      actionType: 'encode-as-pattern' as const,
+      title: 't',
+      body: 'b',
+      evidence: [],
+      generatedAt: new Date(0).toISOString(),
+      schemaVersion: 2 as const,
+      attributedTo: 'llm-derived' as const,
+      provenance: { intent: 'i', observation: 'o', inference: 'inf' },
+      confidence: 0.5,
+      supportingCount: 2,
+      contradictingCount: 0,
+      verifiedAt: null,
+    };
+    expect(() => validateNarrative(positiveRow)).not.toThrow();
+  });
+
+  it('validateNarrative throws on actionType-sentiment mismatch', async () => {
+    const { validateNarrative, InvalidNarrativeError } = await import(
+      '@chat-arch/schema'
+    );
+    // Positive sentiment with the corrective-prompt action — Stage 2c
+    // stamps the action deterministically from sentiment, but a
+    // forged/buggy row could mismatch.
+    const mismatch = {
+      id: 'narr_llm_proj_x_m',
+      projectId: 'proj_x',
+      sessionIds: ['s1', 's2'],
+      sentiment: 'positive' as const,
+      actionType: 'generate-corrective-prompt' as const,
+      title: 't',
+      body: 'b',
+      evidence: [],
+      generatedAt: new Date(0).toISOString(),
+      schemaVersion: 2 as const,
+      attributedTo: 'llm-derived' as const,
+      provenance: { intent: 'i', observation: 'o', inference: 'inf' },
+      confidence: 0.5,
+      supportingCount: 2,
+      contradictingCount: 0,
+      verifiedAt: null,
+    };
+    expect(() => validateNarrative(mismatch)).toThrow(InvalidNarrativeError);
+    expect(() => validateNarrative(mismatch)).toThrow(/actionType.*mismatches/);
+  });
 });

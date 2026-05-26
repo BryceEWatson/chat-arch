@@ -51,9 +51,19 @@ export function buildNarrativesFileObject(
   if (passthrough !== undefined) {
     for (const [k, v] of Object.entries(passthrough)) {
       if (RESERVED_KEYS.has(k)) {
-        // eslint-disable-next-line no-console
         console.warn(
           `buildNarrativesFileObject: dropping passthrough key '${k}' — reserved by the known-field contract.`,
+        );
+        continue;
+      }
+      // Defense against prototype pollution: skip JS prototype-related
+      // keys. JSON.parse can land `__proto__` / `constructor` /
+      // `prototype` as own properties on the parsed object; spreading
+      // them through `extras` into the output would propagate the
+      // pollution down to readers. Drop with warning instead.
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') {
+        console.warn(
+          `buildNarrativesFileObject: dropping passthrough key '${k}' — JS prototype-related identifier.`,
         );
         continue;
       }
