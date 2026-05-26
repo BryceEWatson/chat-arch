@@ -1,7 +1,7 @@
 /**
  * FULL SCAN orchestrator — Phase β.
  *
- * Sequentially fires the five NDJSON producers behind the TODAY page's
+ * Sequentially fires the six NDJSON producers behind the TODAY page's
  * single "FULL SCAN" button:
  *
  *   1. /api/rescan           (exporter — writes every analysis sidecar)
@@ -9,6 +9,7 @@
  *   3. /api/curate           (curator skill — ranks the feed)
  *   4. /api/falsify          (falsifier skill — verifies cited evidence)
  *   5. /api/mine-persona     (persona skill — per-project personas)
+ *   6. /api/mine-narratives  (narrative skill — per-project LLM narratives)
  *
  * Each call is awaited to completion (NDJSON stream end OR HTTP error)
  * before the next starts. The page reloads exactly once after step 5
@@ -36,7 +37,7 @@ export interface FullScanStep {
 }
 
 /**
- * The canonical 5-step sequence. Header values mirror each endpoint's
+ * The canonical 6-step sequence. Header values mirror each endpoint's
  * `REQUIRED_HEADER` constant verbatim — re-export divergence here is a
  * silent 403, so the test alongside this file pins both sides.
  */
@@ -70,6 +71,12 @@ export const FULL_SCAN_STEPS: readonly FullScanStep[] = [
     label: 'mine personas',
     url: '/api/mine-persona',
     header: 'chat-arch-mine-persona',
+  },
+  {
+    id: 'narratives',
+    label: 'mine narratives',
+    url: '/api/mine-narratives',
+    header: 'chat-arch-mine-narratives',
   },
 ];
 
@@ -228,8 +235,8 @@ export async function runOneStep(
 }
 
 /**
- * Drive the full 5-step chain (rescan / mine / curate / falsify /
- * persona). Returns true iff every step succeeded.
+ * Drive the full 6-step chain (rescan / mine / curate / falsify /
+ * persona / narratives). Returns true iff every step succeeded.
  * On any failure, returns false and stops the chain — the UI port's
  * `onChainDone(false, ...)` is called with the offending step's error.
  *

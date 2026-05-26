@@ -14,6 +14,140 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-05-26
+
+Narrative-mining V1 — per-project LLM-driven thematic narratives,
+automatically generated on every SCAN as the 6th chain step (after
+`/mine-persona`). The existing deterministic kernel
+(`packages/analysis/src/discoverNarratives.ts`) stays as the always-on
+tier-1 baseline; LLM rows land alongside the heuristic rows in the
+shared `analysis/narratives.json`, distinguished by `attributedTo:
+'llm-derived'`. Projects with ≥ `THRESHOLDS.narrative.minSessionsForLlm`
+(default 20) get 3-8 LLM-derived narratives with full provenance
+(intent / observation / inference) and confidence-ladder participation.
+
+### Added
+
+- **`analysis/narrative-candidates.json`** — Stage-1 deterministic
+  per-project candidate-evidence pool. Per-session candidates
+  pre-bucketed by recency quartile (`founding` / `mid-early` /
+  `mid-late` / `recent`), each carrying `{ sessionId, updatedAt,
+  title, previewExcerpt, summaryExcerpt, sentimentPolarity,
+  sentimentStrength, outcomeMarkers }`. The candidate is the SESSION
+  (not the user turn — narratives describe session-level themes, not
+  user-voice patterns). New builder at
+  `packages/exporter/src/analysis/narrativeCandidates.ts`. Sampled
+  stratified-by-recency up to `THRESHOLDS.narrative.maxSessionsForCorpus`
+  (default 200), with a per-recency-bucket cap of 300 candidates.
+  PII-bearing — gitignored under the
+  `apps/standalone/public/chat-arch-data/*` wildcard.
+- **Two additive optional top-level fields on `analysis/narratives.json`**:
+  - `thresholds` — snapshot of `THRESHOLDS.narrative.*` so the viewer
+    can disclose the calibration values the bundle was emitted under.
+  - `skipped[]` — per-project skip rows (`insufficient-corpus` /
+    `budget-exceeded` / `no-durable-themes` / `synthesis-failed` /
+    `concurrent-rescan-aborted`) explaining why a project did NOT
+    receive LLM enrichment this run.
+
+  NO file-level `schemaVersion` bump (existing readers ignore unknown
+  top-level keys; the row-level `schemaVersion` 1 | 2 from Rev3-B
+  remains the load-bearing version axis). `EXPORTER_VERSION` 1.6.0 →
+  1.7.0 is the auditable cutover marker.
+- **`.claude/skills/mine-narratives/SKILL.md`** — Stage-2 LLM skill.
+  4 parallel per-recency-bucket sub-agents per project + 1 synthesis
+  sub-agent per project + deterministic Stage 2c stamping
+  (`attributedTo: 'llm-derived'` / `confidence` / `actionType` /
+  `schemaVersion: 2`) + `validateNarrative` drop + sessionId-membership
+  hallucination guard + supportingCount floor + compare-and-swap on
+  `generatedAt` for cross-writer concurrency.
+- **`/api/mine-narratives` endpoint** — NDJSON-streaming endpoint
+  driving the `/mine-narratives` skill. Tighter projectId sanitization
+  than `/api/mine-persona` (regex
+  `^[a-zA-Z0-9](?:[a-zA-Z0-9_.-]{0,126}[a-zA-Z0-9])?$` +
+  manifest-membership check against `projects.json`). `REQUIRED_HEADER
+  = 'chat-arch-mine-narratives'`. Silent-abort detection via
+  `NarrativeOutcomeProbe` (BOTH status file `complete` AND fresh
+  `narratives.json.generatedAt`).
+- **`/api/clear-narratives` endpoint** — selective wipe: removes LLM
+  rows + sweeps `narrative-status-*.json` + `narratives.json.tmp.*`
+  orphans. Preserves heuristic rows + `thresholds` snapshot + unknown
+  top-level fields (round-trip via `buildNarrativesFileObject`'s
+  passthrough).
+- **PROJECTS detail two-tier UI** — LLM-derived narrative cards
+  render as primary (sorted by tier desc, confidence desc,
+  supportingCount desc, generatedAt desc), with tier badge + collapsed
+  provenance triple disclosure. Heuristic narratives collapse into a
+  "Raw sentiment clusters (deterministic)" disclosure. Per-project
+  "REGEN NARRATIVES" button. Skipped-row hint when a project has zero
+  LLM rows AND a skip-row explaining why (NOT both card-render AND
+  skip-listing).
+- **`THRESHOLDS.narrative.*`** — new block with `minSessionsForLlm:
+  20`, `maxSessionsForCorpus: 200`, `maxLlmUsdPerProject: 0.50`,
+  `minPerProject: 3`, `maxPerProject: 8`, `evidenceMinPerNarrative:
+  2`, `maxCandidatesPerRecencyBucket: 300`. **All pre-launch
+  placeholders** — see Calibration notes below.
+
+### Changed
+
+- **`discoverNarratives` emission stamping** — heuristic rows now
+  carry `attributedTo: 'deterministic'` + `schemaVersion: 1`. Legacy
+  on-disk rows missing the field continue to read correctly via
+  `normalizeNarrativeRow` (defaults to deterministic). The exporter's
+  writer-side migration explicitly migrates the on-disk file on every
+  rescan: read → classify families → merge → atomic write.
+- **`narrativeTier()` signature** — extended with optional
+  `opts?: { attributedTo?: NarrativeAttribution }`. When
+  `opts.attributedTo === 'llm-derived'`, the returned tier is clamped
+  to ≤ 2 (V1 cap — embedded in the function to preserve the
+  "single point of truth" invariant). REMOVED in V1.1 when the
+  contrary-evidence finder lands. Legacy callers without `opts`
+  behave identically (back-compat).
+- **SCAN chain — step count 5 → 6.** `FULL_SCAN_STEPS` appends a 6th
+  entry for `/api/mine-narratives`. Sequential await — step 6 doesn't
+  POST until step 5 (persona) closes.
+
+### Calibration notes (placeholders flagged in [1.7.0])
+
+Pre-launch values that need empirical calibration once V1 has corpus
+data — calibrate against the same 4-week rolling window as
+`CHATARCH_THRASH_DETECT`:
+
+1. `THRESHOLDS.narrative.minSessionsForLlm = 20` — re-calibrate
+   against hand-labeled narrative-usefulness ratings after the first
+   10 personas + narratives co-emit.
+2. `THRESHOLDS.narrative.maxLlmUsdPerProject = 0.50` — recalibrate
+   after observing actual Stage-2 USD per project across 10 runs;
+   set to the 95th-percentile observed cost. `candidateBudgetProxy`
+   is DELIBERATELY ABSENT in V1 (unreachable as designed at
+   `maxSessionsForCorpus=200` × 1 candidate/session); V1.1 may
+   re-introduce a per-recency-bucket count gate once empirical
+   candidate counts justify the bound.
+3. `THRESHOLDS.narrative.minPerProject / maxPerProject = 3 / 8` —
+   refit after hand-labeling 50 LLM narratives.
+4. Confidence-ladder priors (`THRESHOLDS.narrativeRung.defaultPrior`
+   interaction) — once 50 LLM narratives land, refit per the same
+   calibration plan under `narrativeRung`.
+
+### Known V1 limitations (deliberately deferred to V1.1)
+
+- LLM rows are tier-capped at ≤ 2 (no `encode-as-pattern` action
+  promotion). V1.1 lifts it when the contrary-evidence finder lands.
+- `contradictingCount` is always 0 (no contrary-evidence finder).
+- The SQLite `narratives` mirror is NOT updated by the skill — V1
+  writes the sidecar only. V1.1 wires `insertNarrative` so MCP
+  read-only consumers see LLM rows too.
+- The `/falsify` skill does NOT yet verify LLM narratives' evidence
+  chains. The `attributedTo: 'llm-derived'` field is the hookup; the
+  V1.1 PR wires the call.
+- REGEN is wipe-and-rewrite per-project — fresh UUID IDs per
+  emission, not idempotent. V1.1 introduces a Stage-2 cache for
+  diffability across runs.
+- The Stage-2c pipeline bypasses `effectivePriorForKernel` (using
+  `defaultPrior=2` directly) — a deliberate visibility-vs-safety
+  trade-off. LLM rows surface at tier-2 immediately instead of
+  tier-0 until calibration completes. Disclosed in
+  `MethodologyDisclosure`.
+
 ## [1.6.0] — 2026-05-25
 
 Persona-mining V1 — per-project data-grounded personas, automatically

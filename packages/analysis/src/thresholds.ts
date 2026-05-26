@@ -506,6 +506,62 @@ export const THRESHOLDS = {
      */
     maxCandidatesPerBucket: 40,
   },
+  /**
+   * Per-project narrative mining (feature: narrative-mining V1).
+   *
+   * Driven by the `mine-narratives` skill / `/api/mine-narratives`
+   * endpoint as SCAN chain step 6 (after `/mine-persona`). Projects
+   * below `minSessionsForLlm` get a skip-row in `narratives.json`'s
+   * `skipped[]` with reason `insufficient-corpus`; the heuristic
+   * kernel still emits its (≤2-per-project) deterministic narratives.
+   *
+   * Pre-launch placeholders — calibrate against hand-labels after the
+   * first 50 LLM narratives land. Calibration plan tracked in
+   * CHANGELOG `[1.7.0]` calibration notes.
+   *
+   * `candidateBudgetProxy` is DELIBERATELY ABSENT in V1: with
+   * `maxSessionsForCorpus=200` × 1 candidate/session capping each
+   * project at ≤200 candidates, a proxy at 1200 (the persona analog
+   * scaled to ~25% richer rows) is unreachable as designed. V1.1 may
+   * re-introduce a per-recency-bucket candidate-count gate once
+   * empirical per-project candidate counts justify it. V1's only
+   * budget mechanism is `maxLlmUsdPerProject`.
+   *
+   * Field-name note: persona's `maxCandidatesPerBucket` caps SEMANTIC
+   * buckets (6 × 40); narrative's analog caps RECENCY buckets (4 ×
+   * 300). Renamed `maxCandidatesPerRecencyBucket` so the axis-change
+   * is greppable.
+   */
+  narrative: {
+    /** Minimum project session count to dispatch Stage 2 (LLM) at all. */
+    minSessionsForLlm: 20,
+    /**
+     * Cap on how many sessions Stage 1 surfaces to Stage 2 per project.
+     * Stratified by 4 recency quartiles — mirrors `personaCandidates`'s
+     * `sampleSessionsStratifiedByRecency` so founding-era signal is
+     * preserved when a project's session count exceeds the cap.
+     */
+    maxSessionsForCorpus: 200,
+    /** Hard per-project USD budget for Stage 2; skip above. */
+    maxLlmUsdPerProject: 0.5,
+    /** Minimum narratives Stage 2b emits per project. */
+    minPerProject: 3,
+    /** Maximum narratives Stage 2b emits per project. */
+    maxPerProject: 8,
+    /**
+     * Minimum supporting sessionIds per emitted narrative. Single-
+     * session "narratives" are anecdotes, not themes (iter-1 stat-
+     * rigor finding from persona-mining applies identically). Enforced
+     * at BOTH Stage 2a emission time AND Stage 2c post-LLM gate.
+     */
+    evidenceMinPerNarrative: 2,
+    /**
+     * Per-recency-bucket cap on candidates per project. Stage 1 emits
+     * up to this many candidates per quartile (4 × 300 = 1200 worst
+     * case per project), bounding Stage 2 sub-agent input size.
+     */
+    maxCandidatesPerRecencyBucket: 300,
+  },
   appliedRuleWatcher: {
     /** Number of post-application sessions observed before closing. */
     watcherSessionsN: 5,

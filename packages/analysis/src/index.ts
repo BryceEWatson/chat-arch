@@ -303,7 +303,19 @@ export {
   narrativeTier,
   type EffectivePriorOptions,
   type NarrativeSaturation,
+  type NarrativeTierOptions,
 } from './narrativeRung.js';
+
+export {
+  classifyAttribution,
+  normalizeNarrativeRow,
+  type NarrativeFamily,
+} from './normalizeNarrativeRow.js';
+
+export {
+  mergeNarrativeFamilies,
+  type MergeNarrativeFamiliesInputs,
+} from './mergeNarrativeFamilies.js';
 
 export {
   bhFdrAdjust,

@@ -12,6 +12,7 @@ import { REQUIRED_HEADER as MINE_HEADER } from '../../src/pages/api/mine-correct
 import { REQUIRED_HEADER as CURATE_HEADER } from '../../src/pages/api/curate.ts';
 import { REQUIRED_HEADER as FALSIFY_HEADER } from '../../src/pages/api/falsify.ts';
 import { REQUIRED_HEADER as PERSONA_HEADER } from '../../src/pages/api/mine-persona.ts';
+import { REQUIRED_HEADER as NARRATIVES_HEADER } from '../../src/pages/api/mine-narratives.ts';
 
 // Phase β review-loop iter-1 fix: fullScan.ts docstring (line 42)
 // promises "the test alongside this file pins both sides" of the
@@ -56,13 +57,18 @@ describe('FULL_SCAN_STEPS header pinning (vs. endpoint REQUIRED_HEADER)', () => 
     expect(byId.get('persona')?.header).toBe(PERSONA_HEADER);
   });
 
-  it('exposes exactly 5 steps in the canonical order', () => {
+  it('narratives step matches /api/mine-narratives REQUIRED_HEADER', () => {
+    expect(byId.get('narratives')?.header).toBe(NARRATIVES_HEADER);
+  });
+
+  it('exposes exactly 6 steps in the canonical order', () => {
     expect(FULL_SCAN_STEPS.map((s) => s.id)).toEqual([
       'rescan',
       'mine',
       'curate',
       'falsify',
       'persona',
+      'narratives',
     ]);
   });
 
@@ -152,7 +158,7 @@ afterEach(() => {
 });
 
 describe('runFullScan chain semantics', () => {
-  it('all 5 steps succeed → onChainDone(true, null) and 5 step labels start', async () => {
+  it('all 6 steps succeed → onChainDone(true, null) and 6 step labels start', async () => {
     // Each step returns a stream that ends with done.ok=true.
     fetchSpy.mockImplementation(() =>
       Promise.resolve(ndjsonResponse(['{"type":"done","ok":true}'])),
@@ -168,10 +174,59 @@ describe('runFullScan chain semantics', () => {
       'curate',
       'falsify',
       'persona',
+      'narratives',
     ]);
-    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true, true]);
+    expect(cap.stepDones.map((s) => s.ok)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
     expect(cap.chainDones).toEqual([{ success: true, lastError: null }]);
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
+  });
+
+  it('step 6 (narratives) does NOT POST until step 5 (persona) NDJSON stream closes', async () => {
+    // Track POST order across all 6 steps.
+    const postOrder: string[] = [];
+    let resolveStep5: ((value: Response) => void) | null = null;
+
+    fetchSpy.mockImplementation((input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : (input as Request).url ?? String(input);
+      postOrder.push(url);
+      if (url.includes('/api/mine-persona')) {
+        // Hold step 5's response open until we manually resolve it.
+        return new Promise<Response>((res) => {
+          resolveStep5 = res;
+        });
+      }
+      // Other steps complete immediately.
+      return Promise.resolve(ndjsonResponse(['{"type":"done","ok":true}']));
+    });
+
+    const { ui } = makeCapturingUi();
+    const chainPromise = runFullScan(ui);
+
+    // Let the chain progress through steps 1-4, then pause at step 5.
+    await new Promise((res) => setTimeout(res, 50));
+
+    // At this point, the chain MUST have posted /api/rescan, /api/mine-corrections,
+    // /api/curate, /api/falsify, /api/mine-persona — but NOT /api/mine-narratives.
+    expect(
+      postOrder.some((u) => u.includes('/api/mine-narratives')),
+    ).toBe(false);
+    expect(postOrder.some((u) => u.includes('/api/mine-persona'))).toBe(true);
+
+    // Now release step 5's response. Step 6 should fire.
+    resolveStep5!(ndjsonResponse(['{"type":"done","ok":true}']));
+    const ok = await chainPromise;
+
+    expect(ok).toBe(true);
+    expect(
+      postOrder.some((u) => u.includes('/api/mine-narratives')),
+    ).toBe(true);
   });
 
   it('step 2 returns HTTP 409 → chain halts, steps 3+4+5 never started', async () => {
@@ -267,7 +322,14 @@ describe('runFullScan chain semantics', () => {
     const ok = await runFullScan(ui);
 
     expect(ok).toBe(true);
-    expect(cap.stepDones.map((s) => s.ok)).toEqual([true, true, true, true, true]);
+    expect(cap.stepDones.map((s) => s.ok)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
     expect(cap.chainDones).toEqual([{ success: true, lastError: null }]);
   });
 

@@ -34,6 +34,7 @@ import {
   ChatMode,
 } from './components/modes/index.js';
 import { ProjectsMode } from './components/modes/ProjectsMode.js';
+import { startMineNarratives } from './data/mineNarrativesClient.js';
 import { TopicsMode } from './components/modes/TopicsMode.js';
 import { PracticeMode } from './components/modes/PracticeMode.js';
 import { EffectivenessMode } from './components/modes/EffectivenessMode.js';
@@ -3011,6 +3012,34 @@ export function ChatArchViewer({
                           }
                         }}
                         onSelectSession={onSelect}
+                        onRegenNarratives={(projectId) => {
+                          // V1 narrative-mining REGEN button. Drives
+                          // `startMineNarratives` (the same NDJSON-drain
+                          // shape as `mineDecisionsClient`) — handles
+                          // 409-busy + network errors + sanitization
+                          // failures via the client's structured
+                          // error path. Result is logged at warn
+                          // level on failure; on success the user
+                          // sees fresh LLM rows on next page load.
+                          void startMineNarratives({ projectId }).then(
+                            (result) => {
+                              if (!result.ok && result.error !== undefined) {
+                                console.warn(
+                                  `[REGEN NARRATIVES] ${projectId}: ${result.error}`,
+                                );
+                              }
+                            },
+                            (err) => {
+                              // Defensive — startMineNarratives's own
+                              // catch should map all rejection paths
+                              // to {ok:false, error}, but a future
+                              // refactor could regress that contract.
+                              console.warn(
+                                `[REGEN NARRATIVES] ${projectId}: unhandled rejection ${String(err)}`,
+                              );
+                            },
+                          );
+                        }}
                       />
                     ) : baseMode === 'practice' ? (
                       <PracticeMode

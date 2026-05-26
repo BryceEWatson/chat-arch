@@ -153,6 +153,19 @@ scripts/             One-off audits (audit-correction-recall.mjs) +
                      bucketed sub-agents per project, synthesizes
                      into analysis/personas/<project-id>.md +
                      updates analysis/personas.json index.
+  mine-narratives/   Per-project narrative auto-generation V1.
+                     SCAN chain step 6 (after persona). Reads
+                     analysis/narrative-candidates.json (Stage 1
+                     written by the exporter), dispatches 4 parallel
+                     recency-bucket sub-agents per project + 1
+                     synthesis sub-agent per project, stamps Stage 2c
+                     fields (attributedTo='llm-derived' / confidence /
+                     actionType / schemaVersion=2) + validateNarrative
+                     drop + sessionId-membership hallucination guard +
+                     CAS-on-generatedAt for cross-writer concurrency.
+                     Merges via mergeNarrativeFamilies into the shared
+                     analysis/narratives.json. Heuristic rows
+                     untouched.
   chat-arch-thrash-detect/  NOT in this repo — lives under
                             ~/.claude/skills/ as a global hook
                             (writes thrash-fires.json into the
@@ -409,6 +422,73 @@ progress file the skill writes during a mining pass. Wiped by
 existing `wipeAll` path — no new code needed because the personas
 family lives under the same root.
 
+### Narrative-mining V1 sidecar family (EXPORTER_VERSION 1.7.0)
+
+One new artifact + two additive optional top-level fields on the
+existing `analysis/narratives.json` under
+`apps/standalone/public/chat-arch-data/analysis/` (all gitignored —
+locally generated, PII-bearing):
+
+- `narrative-candidates.json` — Stage-1 deterministic per-project
+  candidate-evidence pool. Per-session candidates (NOT per-user-turn
+  like personas — narratives describe session-level themes, not
+  user-voice patterns) pre-bucketed by recency quartile (`founding` /
+  `mid-early` / `mid-late` / `recent`), each carrying
+  `{ sessionId, updatedAt, title, previewExcerpt, summaryExcerpt,
+  sentimentPolarity, sentimentStrength, outcomeMarkers }`. Written
+  by `packages/exporter/src/analysis/narrativeCandidates.ts` as part
+  of `runAnalysis`. PII: verbatim session titles + preview/summary
+  excerpts. Read by the `/mine-narratives` skill.
+- `narratives.json` (PRE-EXISTING file, V1 adds two additive optional
+  top-level fields and a new row family):
+  - `thresholds` snapshot — `THRESHOLDS.narrative.*` values the file
+    was emitted under. Readers fall back to live `THRESHOLDS` when
+    absent.
+  - `skipped[]` — per-project skip rows
+    (`{ projectId, status, reason }`). `status` is one of
+    `insufficient-corpus` / `budget-exceeded` / `no-durable-themes` /
+    `synthesis-failed` / `concurrent-rescan-aborted`.
+  - New row family: `attributedTo: 'llm-derived'` rows with
+    schemaVersion 2, populated provenance triple (intent /
+    observation / inference), confidence/supportingCount/contradictingCount.
+    Existing heuristic rows continue with `attributedTo:
+    'deterministic'` + schemaVersion 1.
+  - NO file-level `schemaVersion` bump (existing readers ignore
+    unknown top-level keys; the row-level `schemaVersion` 1 | 2
+    remains the load-bearing version axis). `EXPORTER_VERSION` 1.6.0
+    → 1.7.0 is the auditable cutover.
+- `narrative-status-${requestId}.json` — per-run progress file the
+  skill writes during a mining pass. Wiped by `/api/clear-narratives`
+  alongside any `narratives.json.tmp.*` orphans.
+
+**Two writers, one file.** `narratives.json` has two writers: the
+exporter's writer-side migration on every rescan and the
+`/mine-narratives` skill on every Stage 2 write. Both route through
+`mergeNarrativeFamilies` (preserves heuristic rows + LLM rows of
+other projects) + `buildNarrativesFileObject` (file-shape composer)
++ atomic tmp+rename. The skill captures `generatedAt` at Stage 0 and
+compare-and-swap-checks before writing; on CAS mismatch it retries
+once, then records `concurrent-rescan-aborted` and exits.
+
+**V1 tier-cap on LLM rows.** `narrativeTier()` was extended with an
+optional `opts?: { attributedTo?: NarrativeAttribution }` parameter.
+When `opts.attributedTo === 'llm-derived'`, the returned tier is
+clamped to ≤ 2 — embedded inside `narrativeTier` to preserve the
+"single point of truth" invariant. The cap is REMOVED in V1.1 when
+the contrary-evidence finder lands; deleting one clause inside
+`narrativeTier` is the lift.
+
+**Wipe coverage.** `/api/clear-narratives` (selective) rewrites
+`narratives.json` to remove ONLY `attributedTo === 'llm-derived' |
+'falsifier-verified'` rows, preserves heuristic rows + `thresholds`
+snapshot + unknown top-level keys (round-trip), clears `skipped[]`,
+sweeps `narrative-status-*.json` + `narratives.json.tmp.*` orphans.
+`/api/clear` (kitchen-sink) wipes everything under `chat-arch-data/`
+including `narrative-candidates.json` via the existing `wipeAll`
+path. NB the input file `narrative-candidates.json` is NEVER
+touched by `/api/clear-narratives` (regenerating it requires
+re-running the exporter).
+
 The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
 and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
 #12 post-mortems + knowledge-debt) are also gitignored. The wildcard
@@ -463,7 +543,9 @@ out of date and needs an update:
      skill-curves, surprises, archive/surprises-YYYY-MM-DD,
      curator-feed, falsifier-verdicts, correction-candidates,
      corrections, correction-status-*, persona-candidates, personas,
-     personas/<project-id>.md, persona-status-*.
+     personas/<project-id>.md, persona-status-*, narrative-candidates,
+     narratives (including the V1 LLM-derived row family + the
+     `skipped[]` reason text), narrative-status-*.
    - Aggregate-numbers-only (lower-PII): its-analysis, surface-
      comparison. These are gitignored conservatively anyway.
 5. **What's the difference between hosted (`chat-arch.dev`) and
@@ -490,3 +572,8 @@ out of date and needs an update:
      `[1.4.1]`. Bumped 1.5.0 → 1.6.0 in the persona-mining V1 land
      (`persona-candidates.json` + `personas.json` +
      `personas/<project-id>.md` family); see CHANGELOG.md `[1.6.0]`.
+     Bumped 1.6.0 → 1.7.0 in the narrative-mining V1 land
+     (`narrative-candidates.json` new sidecar + two additive optional
+     top-level fields on existing `narratives.json` + new LLM-derived
+     row family with `attributedTo: 'llm-derived'`); see CHANGELOG.md
+     `[1.7.0]`.

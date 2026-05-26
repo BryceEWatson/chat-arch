@@ -45,6 +45,7 @@
  * all consume these directly.
  */
 
+import type { NarrativeAttribution } from '@chat-arch/schema';
 import { THRESHOLDS } from './thresholds.js';
 
 /**
@@ -134,11 +135,29 @@ export function effectivePriorForKernel(
  * Use this helper at every surface that gates display on rung. NEVER
  * inline the threshold comparisons at callsites; this function is the
  * single point of truth.
+ *
+ * **V1 narrative-mining tier-cap (embedded here to preserve the
+ * single-point-of-truth invariant).** When `opts.attributedTo ===
+ * 'llm-derived'`, the returned tier is clamped to ≤ 2. This is
+ * unconditional in V1 — V1's hardcoded `contradictingCount=0` (no
+ * contrary-evidence finder until V1.1) means any conditional exemption
+ * would be inactive anyway. The cap is REMOVED in V1.1 when the
+ * contrary-evidence finder lands; deleting the clamp clause is the
+ * one-line lift. Pinned in narrative-mining V1 spec §"V1 tier-cap rule".
+ *
+ * Legacy callers that omit `opts` behave identically to today — back-
+ * compat preserved.
  */
+export interface NarrativeTierOptions {
+  /** Row-level attribution. When `'llm-derived'`, tier is clamped ≤ 2 in V1. */
+  attributedTo?: NarrativeAttribution;
+}
+
 export function narrativeTier(
   confidence: number,
   supporting: number,
   contradicting: number,
+  opts?: NarrativeTierOptions,
 ): 0 | 1 | 2 | 3 {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     return 0;
@@ -151,20 +170,24 @@ export function narrativeTier(
   }
   const r = THRESHOLDS.narrativeRung;
   // Walk from highest tier downward; first joint-gate-satisfied tier wins.
+  let tier: 0 | 1 | 2 | 3 = 0;
   if (
     confidence >= r.tier3 &&
     supporting >= r.tier3SupportingMin &&
     contradicting <= Math.ceil(supporting / r.contradictingCapDivisor)
   ) {
-    return 3;
+    tier = 3;
+  } else if (confidence >= r.tier2 && supporting >= r.tier2SupportingMin) {
+    tier = 2;
+  } else if (confidence >= r.tier1 && supporting >= r.tier1SupportingMin) {
+    tier = 1;
   }
-  if (confidence >= r.tier2 && supporting >= r.tier2SupportingMin) {
-    return 2;
+  // V1 cap: clamp LLM-derived rows to tier ≤ 2 unconditionally. V1.1
+  // removes this clause when the contrary-evidence finder lands.
+  if (opts?.attributedTo === 'llm-derived' && tier === 3) {
+    tier = 2;
   }
-  if (confidence >= r.tier1 && supporting >= r.tier1SupportingMin) {
-    return 1;
-  }
-  return 0;
+  return tier;
 }
 
 /**

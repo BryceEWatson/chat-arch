@@ -46,3 +46,12 @@ export type { CloudSourceData, CloudMappingResult } from '@chat-arch/analysis';
 export { mergeSources } from './merge.js';
 export { validateEntries } from './lib/validate-entry.js';
 export type { ValidationError } from './lib/validate-entry.js';
+// Re-exports needed by the standalone Astro app's API endpoints
+// (`/api/clear-narratives` etc.). Keeping the surface narrow rather
+// than exposing the whole `analysis/` and `lib/` subtrees via package
+// exports.
+export { atomicWriteJson } from './lib/atomicWrite.js';
+export {
+  buildNarrativesFileObject,
+  type BuildNarrativesFileObjectKnown,
+} from './analysis/buildNarrativesFileObject.js';
