@@ -47,7 +47,16 @@ export function buildNarrativesFileObject(
   known: BuildNarrativesFileObjectKnown,
   passthrough?: Record<string, unknown>,
 ): NarrativesFile {
-  const extras: Record<string, unknown> = {};
+  // Use a null-prototype object as the accumulator so any inherited
+  // `Object.prototype` method names (`toString`, `hasOwnProperty`,
+  // etc.) in `passthrough` land as own properties without poisoning
+  // the prototype chain. The explicit `__proto__` / `constructor` /
+  // `prototype` blocklist below covers the targeted attacker payload
+  // that JSON.parse can land as own properties; the null-prototype
+  // accumulator catches the broader Object.prototype-method-name
+  // surface (toString / valueOf / propertyIsEnumerable / etc.) by
+  // construction.
+  const extras: Record<string, unknown> = Object.create(null);
   if (passthrough !== undefined) {
     for (const [k, v] of Object.entries(passthrough)) {
       if (RESERVED_KEYS.has(k)) {

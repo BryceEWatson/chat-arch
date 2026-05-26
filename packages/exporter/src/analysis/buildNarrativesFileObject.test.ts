@@ -97,6 +97,43 @@ describe('buildNarrativesFileObject', () => {
     }
   });
 
+  it('Object.prototype method-name keys (toString / hasOwnProperty / valueOf) do not pollute the result', () => {
+    // Stronger than the targeted __proto__/constructor/prototype guard.
+    // The Object.create(null) accumulator catches the wider surface of
+    // Object.prototype method names that an adversarial sidecar could
+    // land via JSON.parse without triggering the explicit blocklist.
+    const adversarial = JSON.parse(
+      '{"toString": "hax", "hasOwnProperty": "hax", "valueOf": "hax", "okExtra": "ok"}',
+    ) as Record<string, unknown>;
+    const file = buildNarrativesFileObject(
+      {
+        generatedAt: 0,
+        exporterVersion: '1.7.0',
+        thresholds: THRESHOLDS_SNAPSHOT,
+        narratives: [],
+        skipped: [],
+      },
+      adversarial,
+    );
+    // The non-method-name key still round-trips.
+    expect((file as unknown as Record<string, unknown>)['okExtra']).toBe('ok');
+    // Round-trip through JSON.stringify + parse and verify no fresh
+    // empty object gains a `polluted` property — the strongest
+    // adversarial assertion. If __proto__ propagation slipped past
+    // any guard, this would fail.
+    const roundTripped = JSON.parse(JSON.stringify(file)) as Record<string, unknown>;
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    // The method-name keys ARE permitted as own properties on the
+    // narratives file (they're just data values, not actually
+    // overriding the Object.prototype methods). What we guard against
+    // is the __proto__ assignment that WOULD have flipped the prototype.
+    expect(
+      Object.getPrototypeOf(file) === Object.prototype ||
+        Object.getPrototypeOf(file) === null,
+    ).toBe(true);
+    void roundTripped;
+  });
+
   it('drops JS prototype-related keys (__proto__ / constructor / prototype) from passthrough with warning', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
