@@ -635,3 +635,269 @@ describe('ProjectsMode cap-K integration gate (Rev3-D D5)', () => {
     ).toBeNull();
   });
 });
+
+// ---- V1 narrative-mining two-tier UI (spec §UI surface) ----
+// Fixture has both heuristic and llm-derived narratives. Primary cards
+// = LLM; collapsed disclosure = heuristic. Tier badges only render on
+// LLM rows (V1 cap clamps LLM rows to ≤ 2, so no TIER-3 ever).
+
+describe('ProjectsMode V1 narrative-mining — two-tier UI', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function llmNarrative(
+    id: string,
+    overrides: Partial<Narrative> = {},
+  ): Narrative {
+    return {
+      ...narrative(id, 2),
+      schemaVersion: 2,
+      attributedTo: 'llm-derived',
+      confidence: 0.667,
+      supportingCount: 6,
+      contradictingCount: 0,
+      provenance: {
+        intent: `intent-${id}`,
+        observation: `observation-${id}`,
+        inference: `inference-${id}`,
+      },
+      verifiedAt: null,
+      ...overrides,
+    };
+  }
+
+  function heuristicNarrative(
+    id: string,
+    overrides: Partial<Narrative> = {},
+  ): Narrative {
+    return {
+      ...narrative(id, 2),
+      schemaVersion: 1,
+      attributedTo: 'deterministic',
+      ...overrides,
+    };
+  }
+
+  it('renders LLM-derived cards as primary, heuristic in collapsed disclosure', async () => {
+    const llmA = llmNarrative('llm-a', { title: 'LLM A pattern', confidence: 0.8 });
+    const llmB = llmNarrative('llm-b', { title: 'LLM B pattern', confidence: 0.5 });
+    const llmC = llmNarrative('llm-c', { title: 'LLM C pattern', confidence: 0.6 });
+    const heurA = heuristicNarrative('heur-a', { title: 'Raw cluster positive' });
+    const heurB = heuristicNarrative('heur-b', { title: 'Raw cluster negative' });
+    renderDetail({ narratives: [llmA, llmB, llmC, heurA, heurB] });
+    // All 3 LLM card titles render (primary slot).
+    for (const t of ['LLM A pattern', 'LLM B pattern', 'LLM C pattern']) {
+      expect(await screen.findByText(t)).toBeTruthy();
+    }
+    // Heuristic disclosure summary renders ("Raw sentiment clusters
+    // (deterministic, 2)").
+    expect(
+      screen.getByText(/raw sentiment clusters \(deterministic, 2\)/i),
+    ).toBeTruthy();
+    // Heuristic titles render in the DOM (the <details> element keeps
+    // children mounted; only the visual collapse is browser-rendered).
+    expect(screen.getByText('Raw cluster positive')).toBeTruthy();
+    expect(screen.getByText('Raw cluster negative')).toBeTruthy();
+  });
+
+  it('LLM rows render a tier badge (TIER-1 or TIER-2; TIER-3 NEVER under V1 cap)', async () => {
+    // Force a confidence that WOULD reach tier-3 absent the V1 cap
+    // (supporting=6, contradicting=1, confidence ~0.667). The cap
+    // clamps to tier-2 — assert no TIER-3 badge surfaces.
+    const wouldBeTier3 = llmNarrative('llm-tier3-attempt', {
+      confidence: 0.667,
+      supportingCount: 6,
+      contradictingCount: 1,
+    });
+    renderDetail({ narratives: [wouldBeTier3] });
+    await screen.findByText('Title for llm-tier3-attempt');
+    expect(screen.queryByText(/TIER-3/)).toBeNull();
+    expect(screen.getByText(/TIER-2/)).toBeTruthy();
+  });
+
+  it('heuristic rows do NOT show a tier badge', async () => {
+    renderDetail({ narratives: [heuristicNarrative('heur-only')] });
+    await screen.findByText(/raw sentiment clusters/i);
+    expect(screen.queryByText(/TIER-[123]/)).toBeNull();
+  });
+
+  it('legacy row missing attributedTo defaults to heuristic family (collapsed)', async () => {
+    // Build a narrative with no attributedTo field at all.
+    const legacy: Narrative = {
+      id: 'legacy-no-attr',
+      projectId: 'p1',
+      sentiment: 'positive',
+      actionType: 'encode-as-pattern',
+      title: 'Legacy cluster',
+      body: 'b',
+      generatedAt: '2026-01-02T00:00:00Z',
+      evidence: [{ sessionId: 'legacy-s0', excerpt: 'x' }],
+      sessionIds: ['legacy-s0'],
+      schemaVersion: 1,
+    };
+    renderDetail({ narratives: [legacy] });
+    // The disclosure renders (heuristic family). Wait for entity-states
+    // to settle.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/raw sentiment clusters \(deterministic, 1\)/i),
+      ).toBeTruthy();
+    });
+  });
+
+  it('renders a skip hint when the project has zero LLM rows AND a skip-row is present', async () => {
+    const script: FetchScript = {
+      responses: new Map<string, unknown>([
+        [
+          '/api/entity-states',
+          { ok: true, available: true, entries: [] },
+        ],
+      ]),
+      recordedPosts: [],
+    };
+    installFetchStub(script);
+    const proj = project('p1', ['heur-only']);
+    render(
+      <ProjectsMode
+        projects={[proj]}
+        topics={[]}
+        narratives={[heuristicNarrative('heur-only')]}
+        narrativesSkipped={[
+          {
+            projectId: 'p1',
+            status: 'synthesis-failed',
+            reason: '2/3 narratives failed validateNarrative',
+          },
+        ]}
+        sessions={[session('p1-s0')]}
+        selectedProjectId="p1"
+        onSelectProject={() => {}}
+        onSelectSession={() => {}}
+        dataDirBaseUrl="/test-data"
+      />,
+    );
+    expect(
+      await screen.findByText(
+        /LLM found no durable narratives this run; raw clusters still available\./i,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('does NOT render the skip hint when the project has LLM rows', async () => {
+    const script: FetchScript = {
+      responses: new Map<string, unknown>([
+        [
+          '/api/entity-states',
+          { ok: true, available: true, entries: [] },
+        ],
+      ]),
+      recordedPosts: [],
+    };
+    installFetchStub(script);
+    const proj = project('p1', ['llm-a']);
+    render(
+      <ProjectsMode
+        projects={[proj]}
+        topics={[]}
+        narratives={[llmNarrative('llm-a')]}
+        narrativesSkipped={[
+          {
+            projectId: 'p1',
+            status: 'synthesis-failed',
+            reason: '...',
+          },
+        ]}
+        sessions={[session('p1-s0')]}
+        selectedProjectId="p1"
+        onSelectProject={() => {}}
+        onSelectSession={() => {}}
+        dataDirBaseUrl="/test-data"
+      />,
+    );
+    await screen.findByText('Title for llm-a');
+    expect(
+      screen.queryByText(/LLM found no durable narratives this run/i),
+    ).toBeNull();
+  });
+
+  it('renders a REGEN NARRATIVES button when onRegenNarratives is provided', async () => {
+    const script: FetchScript = {
+      responses: new Map<string, unknown>([
+        ['/api/entity-states', { ok: true, available: true, entries: [] }],
+      ]),
+      recordedPosts: [],
+    };
+    installFetchStub(script);
+    const proj = project('p1', ['llm-a']);
+    const onRegen = vi.fn();
+    render(
+      <ProjectsMode
+        projects={[proj]}
+        topics={[]}
+        narratives={[llmNarrative('llm-a')]}
+        sessions={[session('p1-s0')]}
+        selectedProjectId="p1"
+        onSelectProject={() => {}}
+        onSelectSession={() => {}}
+        dataDirBaseUrl="/test-data"
+        onRegenNarratives={onRegen}
+      />,
+    );
+    const btn = await screen.findByRole('button', {
+      name: /regenerate narratives for/i,
+    });
+    fireEvent.click(btn);
+    expect(onRegen).toHaveBeenCalledWith('p1');
+  });
+
+  it('does NOT render REGEN NARRATIVES when onRegenNarratives is undefined (hosted build)', async () => {
+    renderDetail({ narratives: [llmNarrative('llm-a')] });
+    await screen.findByText('Title for llm-a');
+    expect(
+      screen.queryByRole('button', { name: /regenerate narratives for/i }),
+    ).toBeNull();
+  });
+
+  it('LLM card renders the provenance triple in a collapsed disclosure', async () => {
+    renderDetail({
+      narratives: [
+        llmNarrative('llm-prov', {
+          provenance: {
+            intent: 'identify durable workflow patterns',
+            observation: '12 of 14 sessions invoke /review-loop',
+            inference: 'review-loop discipline is project-defining',
+          },
+        }),
+      ],
+    });
+    await screen.findByText('Title for llm-prov');
+    // The provenance summary text is rendered. The <details> element
+    // keeps children mounted in the DOM regardless of open/closed
+    // state, so we can assert the prose appears.
+    expect(
+      screen.getByText(/how this narrative was derived \(provenance\)/i),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('identify durable workflow patterns'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('12 of 14 sessions invoke /review-loop'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('review-loop discipline is project-defining'),
+    ).toBeTruthy();
+  });
+
+  it('heuristic narrative without provenance does NOT render a provenance disclosure', async () => {
+    renderDetail({ narratives: [heuristicNarrative('heur-only')] });
+    await waitFor(() => {
+      expect(
+        screen.getByText(/raw sentiment clusters/i),
+      ).toBeTruthy();
+    });
+    expect(
+      screen.queryByText(/how this narrative was derived/i),
+    ).toBeNull();
+  });
+});

@@ -154,6 +154,49 @@ describe('THRESHOLDS.persona (per-project persona generation V1)', () => {
   });
 });
 
+describe('THRESHOLDS.narrative (per-project narrative-mining V1)', () => {
+  it('minSessionsForLlm ≥ 1 (no thin LLM stage)', () => {
+    expect(THRESHOLDS.narrative.minSessionsForLlm).toBeGreaterThanOrEqual(1);
+  });
+
+  it('maxSessionsForCorpus ≥ minSessionsForLlm (cap must accommodate the floor)', () => {
+    const { minSessionsForLlm, maxSessionsForCorpus } = THRESHOLDS.narrative;
+    expect(maxSessionsForCorpus).toBeGreaterThanOrEqual(minSessionsForLlm);
+  });
+
+  it('maxSessionsForCorpus divisible by 4 (4-quartile stratified sampler)', () => {
+    expect(THRESHOLDS.narrative.maxSessionsForCorpus % 4).toBe(0);
+  });
+
+  it('maxLlmUsdPerProject > 0 (a $0 cap would skip every project)', () => {
+    expect(THRESHOLDS.narrative.maxLlmUsdPerProject).toBeGreaterThan(0);
+  });
+
+  it('minPerProject ≤ maxPerProject (count bounds well-ordered)', () => {
+    const { minPerProject, maxPerProject } = THRESHOLDS.narrative;
+    expect(minPerProject).toBeLessThanOrEqual(maxPerProject);
+    expect(minPerProject).toBeGreaterThanOrEqual(1);
+  });
+
+  it('evidenceMinPerNarrative ≥ 2 (single-session narratives are anecdotes, not themes)', () => {
+    expect(THRESHOLDS.narrative.evidenceMinPerNarrative).toBeGreaterThanOrEqual(2);
+  });
+
+  it('maxCandidatesPerRecencyBucket > 0', () => {
+    expect(THRESHOLDS.narrative.maxCandidatesPerRecencyBucket).toBeGreaterThan(0);
+  });
+
+  it('narrative block does NOT expose candidateBudgetProxy in V1 (deliberately absent — see spec)', () => {
+    // Persona has it; narrative does NOT. Iter-4 spec audit found the
+    // proxy unreachable as designed (200 sessions × 1 candidate/session
+    // < proxy=1200). Re-introduce in V1.1 once per-recency-bucket
+    // candidate counts justify the bound.
+    expect(
+      (THRESHOLDS.narrative as Record<string, unknown>)['candidateBudgetProxy'],
+    ).toBeUndefined();
+  });
+});
+
 describe('THRESHOLDS.appliedRuleWatcher (Rev3 applied-rule outcome watcher — Closure C)', () => {
   it('watcher caps are positive: N sessions, wall-clock days, stale-project days', () => {
     const { watcherSessionsN, watcherWallClockDays, staleProjectDays } =

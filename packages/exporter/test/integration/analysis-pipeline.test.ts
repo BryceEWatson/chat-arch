@@ -156,6 +156,10 @@ describe('Phase 6 analysis pipeline integration', () => {
         // markdown are skill-emitted and not registered in
         // meta.tiers.browser.files, mirroring corrections.json).
         'persona-candidates.json',
+        // V1 narrative-mining Stage 1 (Stage-2 LLM rows merge INTO
+        // narratives.json by the /mine-narratives skill — no separate
+        // file is registered).
+        'narrative-candidates.json',
       ].sort(),
     );
     // Phase 6 does not populate the `local` tier.

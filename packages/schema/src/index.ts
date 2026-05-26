@@ -21,3 +21,4 @@ export * from './upgrade-outcome.js';
 export * from './duplicates-semantic.js';
 export * from './blog.js';
 export * from './personas.js';
+export * from './narrativeCandidates.js';

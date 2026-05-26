@@ -7,7 +7,12 @@ import type {
   ProjectSentiment,
 } from '@chat-arch/schema';
 import { isUnassignedProject } from '@chat-arch/schema';
-import { narrativeSaturation } from '@chat-arch/analysis';
+import {
+  classifyAttribution,
+  narrativeSaturation,
+  narrativeTier,
+  normalizeNarrativeRow,
+} from '@chat-arch/analysis';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
 import { SessionCard } from '../SessionCard.js';
@@ -43,6 +48,23 @@ import {
  * the viewer's data layer for the parity wiring.
  */
 
+/**
+ * One per-project skip-row from `analysis/narratives.json`'s top-level
+ * `skipped[]` (V1 narrative-mining feature). Surfaces a hint in the
+ * detail surface when a project has zero LLM-derived narratives AND
+ * a skip-row explaining why.
+ */
+export interface NarrativeProjectSkip {
+  projectId: string;
+  status:
+    | 'insufficient-corpus'
+    | 'budget-exceeded'
+    | 'no-durable-themes'
+    | 'synthesis-failed'
+    | 'concurrent-rescan-aborted';
+  reason: string;
+}
+
 export interface ProjectsModeProps {
   /** All projects, including the `[UNASSIGNED]` pseudo-project. */
   projects: readonly Project[];
@@ -50,6 +72,12 @@ export interface ProjectsModeProps {
   topics: readonly Topic[];
   /** All narratives — keyed by id for the detail surface's narrative cards. */
   narratives: readonly Narrative[];
+  /**
+   * Optional `skipped[]` rows from `analysis/narratives.json` (V1
+   * narrative-mining). When the array is undefined / empty, the
+   * detail surface omits the per-project skipped-row hint.
+   */
+  narrativesSkipped?: readonly NarrativeProjectSkip[];
   /** Full session set so detail can render the project's sessions. */
   sessions: readonly UnifiedSessionEntry[];
   /** Selected project id (null = index view). Driven by URL hash in the host. */
@@ -62,6 +90,13 @@ export interface ProjectsModeProps {
    * to load per-narrative dismissal state for the audit affordance.
    */
   dataDirBaseUrl?: string;
+  /**
+   * V1 narrative-mining REGEN NARRATIVES handler. When undefined the
+   * REGEN affordance does not render (hosted-static build / test
+   * harness). The standalone shell wires this to POST `/api/mine-
+   * narratives` with `{ projectId }`.
+   */
+  onRegenNarratives?: (projectId: string) => void;
 }
 
 const SENTIMENT_LABEL: Record<ProjectSentiment, string> = {
@@ -96,11 +131,13 @@ export function ProjectsMode({
   projects,
   topics,
   narratives,
+  narrativesSkipped,
   sessions,
   selectedProjectId,
   onSelectProject,
   onSelectSession,
   dataDirBaseUrl = 'chat-arch-data',
+  onRegenNarratives,
 }: ProjectsModeProps) {
   const now = useMemo(() => Date.now(), []);
 
@@ -144,16 +181,21 @@ export function ProjectsMode({
         />
       );
     }
+    const projSkip = (narrativesSkipped ?? []).find(
+      (s) => s.projectId === proj.id,
+    ) ?? null;
     return (
       <ProjectDetail
         project={proj}
         narratives={proj.narrativeIds.map((id) => narrativeById.get(id)).filter(Boolean) as Narrative[]}
+        narrativeSkip={projSkip}
         topicNameById={topicNameById}
         sessionById={sessionById}
         onBack={() => onSelectProject(null)}
         onSelectSession={onSelectSession}
         now={now}
         dataDirBaseUrl={dataDirBaseUrl}
+        onRegenNarratives={onRegenNarratives}
       />
     );
   }
@@ -254,12 +296,15 @@ function ProjectsIndex({ projects, onSelectProject, now }: ProjectsIndexProps) {
 interface ProjectDetailProps {
   project: Project;
   narratives: readonly Narrative[];
+  /** Per-project skip row from narratives.json, or null. */
+  narrativeSkip: NarrativeProjectSkip | null;
   topicNameById: ReadonlyMap<string, string>;
   sessionById: ReadonlyMap<string, UnifiedSessionEntry>;
   onBack: () => void;
   onSelectSession: (id: string) => void;
   now: number;
   dataDirBaseUrl: string;
+  onRegenNarratives: ((projectId: string) => void) | undefined;
 }
 
 /**
@@ -280,12 +325,14 @@ interface NarrativeAuditState {
 function ProjectDetail({
   project,
   narratives,
+  narrativeSkip,
   topicNameById,
   sessionById,
   onBack,
   onSelectSession,
   now,
   dataDirBaseUrl,
+  onRegenNarratives,
 }: ProjectDetailProps) {
   const projectSessions = useMemo(() => {
     const list: UnifiedSessionEntry[] = [];
@@ -392,6 +439,55 @@ function ProjectDetail({
     return { visibleNarratives: visible, shelvedNarrativeIds: shelvedIds };
   }, [narratives, narrativeStates, showShelved]);
 
+  // V1 narrative-mining — split the visible narratives into LLM-derived
+  // (primary cards) and heuristic (collapsed "raw clusters" disclosure).
+  // Every row routes through `normalizeNarrativeRow` so legacy rows
+  // missing `attributedTo` bucket to heuristic. Sort LLM cards by
+  // `narrativeTier(...)` desc, then `confidence` desc, then
+  // `supportingCount` desc, then `generatedAt` desc.
+  const { llmNarratives, heuristicNarratives } = useMemo(() => {
+    const llm: Narrative[] = [];
+    const heur: Narrative[] = [];
+    for (const raw of visibleNarratives) {
+      const n = normalizeNarrativeRow(raw);
+      const family = classifyAttribution(n);
+      if (family === 'llm') {
+        llm.push(n);
+      } else if (family === 'heuristic') {
+        heur.push(n);
+      }
+      // 'unknown' rows are dropped intentionally — the spec calls them
+      // out as a drop-with-log case at the consumer level.
+    }
+    llm.sort((a, b) => {
+      const tierA = narrativeTier(
+        a.confidence ?? 0,
+        a.supportingCount ?? 0,
+        a.contradictingCount ?? 0,
+        a.attributedTo !== undefined ? { attributedTo: a.attributedTo } : undefined,
+      );
+      const tierB = narrativeTier(
+        b.confidence ?? 0,
+        b.supportingCount ?? 0,
+        b.contradictingCount ?? 0,
+        b.attributedTo !== undefined ? { attributedTo: b.attributedTo } : undefined,
+      );
+      if (tierA !== tierB) return tierB - tierA;
+      const ca = a.confidence ?? 0;
+      const cb = b.confidence ?? 0;
+      if (ca !== cb) return cb - ca;
+      const sa = a.supportingCount ?? 0;
+      const sb = b.supportingCount ?? 0;
+      if (sa !== sb) return sb - sa;
+      return (
+        new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
+      );
+    });
+    return { llmNarratives: llm, heuristicNarratives: heur };
+  }, [visibleNarratives]);
+
+  const showSkipHint = llmNarratives.length === 0 && narrativeSkip !== null;
+
   return (
     <div className="lcars-project-detail" id={`project-${project.id}`}>
       {/*
@@ -437,15 +533,23 @@ function ProjectDetail({
         aria-label="discovered narratives"
       >
         <div className="lcars-project-detail__narratives-header">
-          <h3 className="lcars-project-detail__section-title">NARRATIVES</h3>
+          <h3 className="lcars-project-detail__section-title">
+            NARRATIVES{llmNarratives.length > 0 ? ` (${llmNarratives.length})` : ''}
+          </h3>
+          {onRegenNarratives !== undefined && (
+            <button
+              type="button"
+              className="lcars-project-detail__regen-narratives"
+              onClick={() => onRegenNarratives(project.id)}
+              aria-label={`regenerate narratives for ${project.displayName}`}
+            >
+              REGEN NARRATIVES
+            </button>
+          )}
           {/*
             Rev3-D D4 — show-shelved toggle. Narratives whose
             `dismissalCount >= maxDismissals` (see narrativeSaturation)
-            are hidden from the active pile by default; flipping the
-            toggle reveals them so the user can audit or re-promote.
-            Transient session-state (no localStorage) — the safe
-            default is "shelved hidden" so a high-friction narrative
-            doesn't keep reappearing across reloads.
+            are hidden from the active pile by default.
           */}
           {shelvedNarrativeIds.size > 0 && (
             <label
@@ -467,25 +571,79 @@ function ProjectDetail({
             </label>
           )}
         </div>
-        {visibleNarratives.length === 0 ? (
+
+        {/* V1 narrative-mining — skipped-row hint when LLM enrichment
+            failed AND the project has zero LLM rows. Per spec, do NOT
+            show this AND render LLM cards for the same project. */}
+        {showSkipHint && narrativeSkip !== null && (
+          <p
+            className="lcars-project-detail__llm-skip-hint"
+            role="status"
+            data-skip-status={narrativeSkip.status}
+          >
+            {narrativeSkip.status === 'synthesis-failed'
+              ? 'LLM found no durable narratives this run; raw clusters still available.'
+              : narrativeSkip.status === 'insufficient-corpus'
+                ? 'Project below the LLM-narrative session threshold; raw clusters still available.'
+                : narrativeSkip.status === 'budget-exceeded'
+                  ? 'LLM-narrative budget exceeded for this project; raw clusters still available.'
+                  : narrativeSkip.status === 'no-durable-themes'
+                    ? 'LLM synthesis returned no durable themes this run; raw clusters still available.'
+                    : 'LLM-narrative run aborted by a concurrent rescan; raw clusters still available.'}
+          </p>
+        )}
+
+        {llmNarratives.length === 0 && heuristicNarratives.length === 0 ? (
           <p className="lcars-project-detail__empty-narratives">
             {narratives.length === 0
               ? 'No narratives for this project yet — narratives only emerge once a project has multiple same-sentiment sessions.'
               : `All ${narratives.length} narrative${narratives.length === 1 ? ' is' : 's are'} shelved. Toggle "show shelved" to audit.`}
           </p>
         ) : (
-          <ul className="lcars-project-detail__narrative-list" role="list">
-            {visibleNarratives.map((n) => (
-              <li key={n.id} role="listitem">
-                <NarrativeCard
-                  narrative={n}
-                  sessionById={sessionById}
-                  auditState={narrativeStates.get(n.id) ?? null}
-                  onStateChange={onNarrativeStateChange}
-                />
-              </li>
-            ))}
-          </ul>
+          <>
+            {/* LLM-derived narratives — primary cards. */}
+            {llmNarratives.length > 0 && (
+              <ul className="lcars-project-detail__narrative-list" role="list">
+                {llmNarratives.map((n) => (
+                  <li key={n.id} role="listitem">
+                    <NarrativeCard
+                      narrative={n}
+                      sessionById={sessionById}
+                      auditState={narrativeStates.get(n.id) ?? null}
+                      onStateChange={onNarrativeStateChange}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* Heuristic narratives — collapsed disclosure (raw clusters). */}
+            {heuristicNarratives.length > 0 && (
+              <details className="lcars-project-detail__heuristic-cluster">
+                <summary
+                  className="lcars-project-detail__heuristic-cluster-summary"
+                  aria-label={`show ${heuristicNarratives.length} raw sentiment clusters`}
+                >
+                  Raw sentiment clusters (deterministic, {heuristicNarratives.length})
+                </summary>
+                <ul
+                  className="lcars-project-detail__narrative-list lcars-project-detail__narrative-list--heuristic"
+                  role="list"
+                >
+                  {heuristicNarratives.map((n) => (
+                    <li key={n.id} role="listitem">
+                      <NarrativeCard
+                        narrative={n}
+                        sessionById={sessionById}
+                        auditState={narrativeStates.get(n.id) ?? null}
+                        onStateChange={onNarrativeStateChange}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         )}
       </section>
 
@@ -625,10 +783,59 @@ function NarrativeCard({
         >
           {narrative.sentiment.toUpperCase()}
         </span>
+        {(() => {
+          // V1 narrative-mining — render a tier badge for LLM-derived
+          // rows. The V1 cap (embedded in `narrativeTier`) clamps LLM
+          // rows to tier ≤ 2; tier-3 should never render here for an
+          // LLM row. Heuristic rows are rendered inside the collapsed
+          // "raw clusters" disclosure and don't need a tier badge.
+          const family = classifyAttribution(narrative);
+          if (family !== 'llm') return null;
+          const tier = narrativeTier(
+            narrative.confidence ?? 0,
+            narrative.supportingCount ?? 0,
+            narrative.contradictingCount ?? 0,
+            narrative.attributedTo !== undefined
+              ? { attributedTo: narrative.attributedTo }
+              : undefined,
+          );
+          if (tier === 0) return null;
+          return (
+            <span
+              className={`lcars-narrative-card__tier lcars-narrative-card__tier--t${tier}`}
+              aria-label={`tier ${tier}`}
+              data-tier={tier}
+            >
+              TIER-{tier}
+            </span>
+          );
+        })()}
         <h4 className="lcars-narrative-card__title">{narrative.title}</h4>
       </header>
       {narrative.body && (
         <p className="lcars-narrative-card__body">{narrative.body}</p>
+      )}
+      {narrative.provenance && (
+        // V1 narrative-mining — provenance triple, collapsed by default.
+        // Renders intent / observation / inference for LLM rows. The
+        // existing heuristic kernel doesn't emit provenance, so the
+        // block is gated on presence.
+        <details
+          className="lcars-narrative-card__provenance"
+          data-narrative-attribution={narrative.attributedTo}
+        >
+          <summary className="lcars-narrative-card__provenance-summary">
+            How this narrative was derived (provenance)
+          </summary>
+          <dl className="lcars-narrative-card__provenance-dl">
+            <dt>Intent</dt>
+            <dd>{narrative.provenance.intent}</dd>
+            <dt>Observation</dt>
+            <dd>{narrative.provenance.observation}</dd>
+            <dt>Inference</dt>
+            <dd>{narrative.provenance.inference}</dd>
+          </dl>
+        </details>
       )}
       {narrative.evidence.length > 0 && (
         <ul className="lcars-narrative-card__evidence" role="list" aria-label="evidence sessions">

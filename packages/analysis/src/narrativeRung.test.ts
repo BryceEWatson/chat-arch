@@ -187,6 +187,71 @@ describe('narrativeTier (joint-gate dispatch)', () => {
     const confidence = computeConfidence(supporting, contradicting, prior);
     expect(narrativeTier(confidence, supporting, contradicting)).toBe(3);
   });
+
+  // ---- V1 narrative-mining tier-cap (spec §"V1 tier-cap rule") ----
+  // When opts.attributedTo === 'llm-derived', tier is clamped to ≤ 2.
+  // Unconditional in V1; removed in V1.1 when the contrary-evidence
+  // finder lands.
+
+  it('V1 cap: clamps LLM-derived row to tier-2 even at would-be-tier-3 confidence', () => {
+    // supporting=6, contradicting=1, prior=2 → confidence 6/9 ≈ 0.667
+    // which would clear tier3 (0.66) AND tier3SupportingMin (6) AND
+    // contradicting-cap (ceil(6/6)=1). Without opts the row reaches
+    // tier 3.
+    const supporting = THRESHOLDS.narrativeRung.tier3SupportingMin;
+    const contradicting = 1;
+    const confidence = 0.667;
+    expect(narrativeTier(confidence, supporting, contradicting)).toBe(3);
+    // With opts.attributedTo === 'llm-derived' the cap clamps to 2.
+    expect(
+      narrativeTier(confidence, supporting, contradicting, {
+        attributedTo: 'llm-derived',
+      }),
+    ).toBe(2);
+  });
+
+  it('V1 cap: deterministic attribution does NOT trigger the clamp', () => {
+    const supporting = THRESHOLDS.narrativeRung.tier3SupportingMin;
+    const contradicting = 1;
+    const confidence = 0.667;
+    expect(
+      narrativeTier(confidence, supporting, contradicting, {
+        attributedTo: 'deterministic',
+      }),
+    ).toBe(3);
+    expect(
+      narrativeTier(confidence, supporting, contradicting, {
+        attributedTo: 'deterministic-with-prior',
+      }),
+    ).toBe(3);
+  });
+
+  it('V1 cap: legacy callers without opts param behave identically to today', () => {
+    // Back-compat: every call shape exercised above without opts must
+    // continue to produce the same tier. This freezes the contract.
+    expect(narrativeTier(0.5, 0, 0)).toBe(0);
+    expect(narrativeTier(0.1, 100, 0)).toBe(0);
+    expect(narrativeTier(0.67, 6, 1)).toBe(3);
+  });
+
+  it('V1 cap: LLM-derived row at tier-2 stays at tier-2 (cap inactive when tier already ≤ 2)', () => {
+    // confidence=0.5, supporting=2, prior=2 → exactly the tier-2 floor
+    // (the modal V1 LLM emission per spec §"Confidence ladder").
+    expect(
+      narrativeTier(0.5, 2, 0, { attributedTo: 'llm-derived' }),
+    ).toBe(2);
+  });
+
+  it('V1 cap: falsifier-verified row is NOT capped (kept at its computed tier)', () => {
+    // Spec §"V1 tier-cap rule": the cap clause is ONLY active on
+    // attributedTo === 'llm-derived'. A row that has subsequently
+    // graduated to 'falsifier-verified' bypasses the cap. (Note:
+    // V1 doesn't yet emit falsifier-verified rows; this freezes the
+    // signature for V1.1.)
+    expect(
+      narrativeTier(0.667, 6, 1, { attributedTo: 'falsifier-verified' }),
+    ).toBe(3);
+  });
 });
 
 describe('narrativeSaturation (D1 — Closure B saturation rule)', () => {

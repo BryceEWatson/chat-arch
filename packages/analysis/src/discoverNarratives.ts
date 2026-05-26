@@ -179,8 +179,13 @@ function buildNarrative(
     actionType:
       sentiment === 'positive' ? 'encode-as-pattern' : 'generate-corrective-prompt',
     // Legacy v1 shape — Rev3-B backfill (B5) bumps existing rows to
-    // v2 with provenance + confidence populated.
+    // v2 with provenance + confidence populated. Narrative-mining V1
+    // (EXPORTER_VERSION 1.7.0) stamps every heuristic emission with
+    // `attributedTo: 'deterministic'` so the merge helper + viewer
+    // two-tier surface can classify families without reader-side
+    // defaulting.
     schemaVersion: 1,
+    attributedTo: 'deterministic',
   };
 }
 

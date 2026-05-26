@@ -72,6 +72,10 @@ out/
 !.claude/skills/curate/SKILL.md
 !.claude/skills/falsify/
 !.claude/skills/falsify/SKILL.md
+# Narrative-mining V1 skill (drives /api/mine-narratives — the SCAN
+# chain's 6th step). Per-project LLM-driven narrative synthesis.
+!.claude/skills/mine-narratives/
+!.claude/skills/mine-narratives/SKILL.md
 # Persona-mining V1 skill (drives /api/mine-persona — the SCAN
 # chain's 5th step). Ships with the repo because the endpoint +
 # UI affordance depend on the contract this SKILL.md pins.
@@ -136,6 +140,13 @@ apps/standalone/public/chat-arch-data/analysis/falsifier-verdicts.json
 apps/standalone/public/chat-arch-data/analysis/persona-candidates.json
 apps/standalone/public/chat-arch-data/analysis/personas.json
 apps/standalone/public/chat-arch-data/analysis/personas/
+# Per-project narrative-mining V1 Stage-1 sidecar. PII: verbatim
+# session title + preview + summary excerpts. Stage-2 LLM rows are
+# merged INTO narratives.json (the existing file gains `attributedTo:
+# 'llm-derived'` rows + optional `skipped[]` / `thresholds` top-level
+# fields — already covered by the wildcard above, no separate
+# `narratives.json` line needed because it predates V1).
+apps/standalone/public/chat-arch-data/analysis/narrative-candidates.json
 apps/standalone/public/chat-arch-data/exports/
 .claude/review-loop.disabled
 .claude/review-loop.disabled-roles

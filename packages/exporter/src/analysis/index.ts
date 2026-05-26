@@ -37,7 +37,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type {
   ContinuumHealth,
+  Narrative,
   SessionManifest,
+  SkippedRow,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
 import { logger } from '../lib/logger.js';
@@ -45,11 +47,16 @@ import {
   buildContinuumHealth,
   buildDuplicatesFile,
   buildZombiesFile,
+  classifyAttribution,
   discoverProjects,
   discoverTopics,
   discoverNarratives,
+  mergeNarrativeFamilies,
+  normalizeNarrativeRow,
+  THRESHOLDS,
   type DuplicateInput,
 } from '@chat-arch/analysis';
+import { atomicWriteJson } from '../lib/atomicWrite.js';
 import { buildCorrectionsCandidatesFile } from './corrections.js';
 import { buildPlaybookCandidatesFile } from './playbook.js';
 import { buildCompositeOutcomesFile } from './composeOutcomesBuilder.js';
@@ -65,6 +72,8 @@ import { buildSurfaceComparisonFile } from './surfaceComparisonBuilder.js';
 import { buildSkillCurvesFile } from './skillCurvesBuilder.js';
 import { buildSurprisesFile } from './surprisesBuilder.js';
 import { buildPersonaCandidatesFile } from './personaCandidates.js';
+import { buildNarrativeCandidatesFile } from './narrativeCandidates.js';
+import { buildNarrativesFileObject } from './buildNarrativesFileObject.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -108,6 +117,7 @@ export interface RunAnalysisResult {
     skillCurves: string;
     surprises: string;
     personaCandidates: string;
+    narrativeCandidates: string;
   };
   counts: {
     duplicatesClusters: number;
@@ -134,6 +144,8 @@ export interface RunAnalysisResult {
     surprises: number;
     personaCandidatesTotal: number;
     personaCandidatesProjects: number;
+    narrativeCandidatesTotal: number;
+    narrativeCandidatesProjects: number;
   };
 }
 
@@ -198,8 +210,25 @@ export interface RunAnalysisResult {
  * prior archive exists; on a first-ever scan they skip cleanly. New
  * threshold `THRESHOLDS.surprises.archiveRetentionDays = 30` gates the
  * filename-based prune.
+ *
+ * Bumped 1.6.0 → 1.7.0 in the narrative-mining V1 land:
+ * `analysis/narrative-candidates.json` lands as a new Stage-1 sidecar
+ * (per-project per-session candidate-evidence pool, pre-bucketed by
+ * recency quartile) AND `analysis/narratives.json` gains two additive
+ * optional top-level fields (`thresholds` snapshot + `skipped[]`) plus
+ * a new row family with `attributedTo: 'llm-derived'` written by the
+ * `/mine-narratives` skill (SCAN chain step 6). NO file-level
+ * schemaVersion bump on `narratives.json` — readers ignore unknown
+ * top-level keys; the row-level `schemaVersion` axis (1 | 2 per
+ * Rev3-B) is the load-bearing version. New THRESHOLDS family
+ * `THRESHOLDS.narrative.{minSessionsForLlm, maxSessionsForCorpus,
+ * maxLlmUsdPerProject, minPerProject, maxPerProject,
+ * evidenceMinPerNarrative, maxCandidatesPerRecencyBucket}` gates
+ * emission. Heuristic rows emitted by `discoverNarratives` now stamp
+ * `attributedTo: 'deterministic'`; existing on-disk legacy rows still
+ * read via `normalizeNarrativeRow`'s reader-side defaults.
  */
-export const EXPORTER_VERSION = '1.6.0';
+export const EXPORTER_VERSION = '1.7.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
@@ -309,17 +338,93 @@ export async function runAnalysis(
   logger.info(`analysis: topics.json — ${topicsResult.topics.length} topics`);
 
   const narrativesPath = path.join(analysisDir, 'narratives.json');
-  await writeFile(
+  // V1 narrative-mining (EXPORTER_VERSION 1.7.0): the rescan path is
+  // ONE of two writers to narratives.json (the other is the
+  // `/mine-narratives` skill, see spec §"Concurrency model"). The
+  // rescan side reads the existing file, classifies rows via
+  // `classifyAttribution(normalizeNarrativeRow(...))`, replaces the
+  // heuristic family with this rescan's freshly-emitted rows, preserves
+  // the LLM family + skipped[] verbatim, refreshes the thresholds
+  // snapshot, and forwards unrecognized top-level keys via the
+  // `_passthrough` opt for forward-compat. Atomic-renames via
+  // `atomicWriteJson`.
+  const existingLlmRows: Narrative[] = [];
+  let existingSkipped: readonly SkippedRow[] = [];
+  const reservedPassthroughKeys = new Set<string>([
+    'generatedAt',
+    'exporterVersion',
+    'thresholds',
+    'narratives',
+    'skipped',
+  ]);
+  const existingExtras: Record<string, unknown> = {};
+  try {
+    const raw = await readFile(narrativesPath, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed !== null && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const rows = Array.isArray(obj['narratives']) ? obj['narratives'] : [];
+      for (const r of rows) {
+        if (r === null || typeof r !== 'object') continue;
+        const row = normalizeNarrativeRow(r as Narrative);
+        const family = classifyAttribution(row);
+        if (family === 'llm') {
+          existingLlmRows.push(row);
+        } else if (family === 'unknown') {
+          logger.warn(
+            `analysis: narratives.json — dropping row ${String((row as { id?: string }).id)} with unknown attributedTo ${String((row as { attributedTo?: string }).attributedTo)}`,
+          );
+        }
+        // 'heuristic' rows are intentionally NOT preserved: the new
+        // rescan's emission replaces the heuristic family wholesale
+        // (spec §"Writer-side absent-project rule").
+      }
+      if (Array.isArray(obj['skipped'])) {
+        existingSkipped = obj['skipped'] as readonly SkippedRow[];
+      }
+      for (const [k, v] of Object.entries(obj)) {
+        if (!reservedPassthroughKeys.has(k)) {
+          existingExtras[k] = v;
+        }
+      }
+    }
+  } catch {
+    // No prior narratives.json yet — first-ever run. Skip read silently.
+  }
+
+  const mergedNarratives = mergeNarrativeFamilies({
+    heuristic: narrativesResult.narratives,
+    existingLlm: existingLlmRows,
+    mode: 'full-rewrite',
+  });
+
+  const narrativesFileObj = buildNarrativesFileObject(
+    {
+      generatedAt: now,
+      exporterVersion: EXPORTER_VERSION,
+      thresholds: {
+        minSessionsForLlm: THRESHOLDS.narrative.minSessionsForLlm,
+        maxSessionsForCorpus: THRESHOLDS.narrative.maxSessionsForCorpus,
+        minPerProject: THRESHOLDS.narrative.minPerProject,
+        maxPerProject: THRESHOLDS.narrative.maxPerProject,
+        evidenceMinPerNarrative: THRESHOLDS.narrative.evidenceMinPerNarrative,
+        maxLlmUsdPerProject: THRESHOLDS.narrative.maxLlmUsdPerProject,
+      },
+      narratives: mergedNarratives,
+      // Exporter PRESERVES existing skipped[] verbatim — the skill owns
+      // skipped[] (only LLM-stage skip-reasons exist; the rescan path
+      // has no LLM state to update).
+      skipped: existingSkipped,
+    },
+    existingExtras,
+  );
+
+  await atomicWriteJson(
     narrativesPath,
-    JSON.stringify(
-      { generatedAt: now, narratives: narrativesResult.narratives },
-      null,
-      2,
-    ) + '\n',
-    'utf8',
+    JSON.stringify(narrativesFileObj, null, 2) + '\n',
   );
   logger.info(
-    `analysis: narratives.json — ${narrativesResult.narratives.length} narratives`,
+    `analysis: narratives.json — ${narrativesResult.narratives.length} heuristic + ${existingLlmRows.length} preserved LLM = ${mergedNarratives.length} total`,
   );
 
   // ---- Correction candidates (stage-1 heuristic only) ----
@@ -621,6 +726,39 @@ export async function runAnalysis(
   }
   const personaCandidatesPath = path.join(analysisDir, 'persona-candidates.json');
 
+  // ---- Narrative candidates (V1 — feature: narrative-mining) ----
+  //
+  // Stage-1 deterministic extractor. Per-project candidate-evidence
+  // pool pre-bucketed by recency quartile (founding / mid-early /
+  // mid-late / recent). Input to the Stage-2 LLM skill
+  // `/mine-narratives` (SCAN chain step 6, after `/mine-persona`),
+  // which writes `attributedTo: 'llm-derived'` rows back into the
+  // shared `analysis/narratives.json` via `mergeNarrativeFamilies`.
+  //
+  // Per-session candidates (NOT per-user-turn like persona) — the unit
+  // of narrative evidence is the SESSION's outcome markers + sentiment,
+  // not the user-voice patterns triangulated from individual prompts.
+  let narrativeCandidatesTotal = 0;
+  let narrativeCandidatesProjects = 0;
+  try {
+    const r = buildNarrativeCandidatesFile(manifest, {
+      now,
+      projects: enrichedProjects,
+    });
+    narrativeCandidatesTotal = r.candidatesTotal;
+    narrativeCandidatesProjects = r.projectsAnalyzed;
+    await writeFile(
+      path.join(analysisDir, 'narrative-candidates.json'),
+      JSON.stringify(r.file, null, 2) + '\n',
+      'utf8',
+    );
+  } catch (err) {
+    logger.warn(
+      `analysis: narrative-candidates soft-failed (continuing): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const narrativeCandidatesPath = path.join(analysisDir, 'narrative-candidates.json');
+
   // ---- Meta ----
   const exporterRunId = options.exporterRunId ?? randomUUID();
   const gitSha = options.gitSha !== undefined ? options.gitSha : detectGitSha();
@@ -661,6 +799,10 @@ export async function runAnalysis(
           // for the same reason `corrections.json` isn't:
           // runAnalysis only registers what it actually emits.).
           'persona-candidates.json',
+          // V1 narrative-mining Stage-1 sidecar (Stage-2 LLM rows
+          // are merged INTO narratives.json by the /mine-narratives
+          // skill — not a separate file).
+          'narrative-candidates.json',
         ],
       },
     },
@@ -691,6 +833,10 @@ export async function runAnalysis(
       personaCandidates: {
         total: personaCandidatesTotal,
         projects: personaCandidatesProjects,
+      },
+      narrativeCandidates: {
+        total: narrativeCandidatesTotal,
+        projects: narrativeCandidatesProjects,
       },
     },
   };
@@ -738,6 +884,7 @@ export async function runAnalysis(
       skillCurves: skillCurvesPath,
       surprises: surprisesPath,
       personaCandidates: personaCandidatesPath,
+      narrativeCandidates: narrativeCandidatesPath,
     },
     counts: {
       duplicatesClusters: duplicatesFile.clusters.length,
@@ -762,6 +909,8 @@ export async function runAnalysis(
       surprises: surprisesCount,
       personaCandidatesTotal,
       personaCandidatesProjects,
+      narrativeCandidatesTotal,
+      narrativeCandidatesProjects,
     },
   };
 }
