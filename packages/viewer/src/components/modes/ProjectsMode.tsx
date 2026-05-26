@@ -8,7 +8,6 @@ import type {
 } from '@chat-arch/schema';
 import { isUnassignedProject } from '@chat-arch/schema';
 import { narrativeSaturation } from '@chat-arch/analysis';
-import { BlurredPii } from '../BlurredPii.js';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
 import { SessionCard } from '../SessionCard.js';
@@ -618,11 +617,7 @@ function NarrativeCard({
   return (
     <article
       className={`lcars-narrative-card lcars-narrative-card--${accent}`}
-      // PII-safe aria-label: sentiment + sentinel only. The title is
-      // PII-blurred by default (B9) so it can't be in the article's
-      // accessible name where a screen-reader would announce it
-      // unconditionally.
-      aria-label={`${narrative.sentiment} narrative (title PII-blurred until revealed)`}
+      aria-label={`${narrative.sentiment} narrative: ${narrative.title}`}
     >
       <header className="lcars-narrative-card__header">
         <span
@@ -630,14 +625,10 @@ function NarrativeCard({
         >
           {narrative.sentiment.toUpperCase()}
         </span>
-        <h4 className="lcars-narrative-card__title">
-          <BlurredPii label="narrative title">{narrative.title}</BlurredPii>
-        </h4>
+        <h4 className="lcars-narrative-card__title">{narrative.title}</h4>
       </header>
       {narrative.body && (
-        <p className="lcars-narrative-card__body">
-          <BlurredPii label="narrative body">{narrative.body}</BlurredPii>
-        </p>
+        <p className="lcars-narrative-card__body">{narrative.body}</p>
       )}
       {narrative.evidence.length > 0 && (
         <ul className="lcars-narrative-card__evidence" role="list" aria-label="evidence sessions">
@@ -649,9 +640,6 @@ function NarrativeCard({
                 <a
                   className="lcars-narrative-card__evidence-pill"
                   href={`#session/${e.sessionId}`}
-                  // Don't expose the evidence excerpt via the hover
-                  // title attribute (B9 — excerpt is per-narrative
-                  // PII; reveal happens via the BlurredPii body above).
                   title={label}
                 >
                   ▸ {label}
