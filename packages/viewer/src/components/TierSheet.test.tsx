@@ -52,7 +52,7 @@ describe('TierSheet (AC14 / AC15)', () => {
     expect(screen.getByText('2026-04-17')).toBeDefined();
   });
 
-  it('shows "present" (no date) when generatedAt is missing', () => {
+  it('shows the present marker (icon only, no redundant timestamp text) when generatedAt is missing', () => {
     const files = emptyFiles();
     files['skill-seeds.json'] = { present: true };
     render(
@@ -63,8 +63,15 @@ describe('TierSheet (AC14 / AC15)', () => {
         onClose={() => {}}
       />,
     );
-    // "present" string must appear exactly once in the per-file timestamp column
-    expect(screen.getAllByText('present').length).toBeGreaterThanOrEqual(1);
+    // Visual presence is conveyed by the ✓ icon labelled "present" — the
+    // timestamp slot is intentionally empty so screen readers don't hear
+    // "present" twice (icon aria-label + a redundant text fallback).
+    // See iteration log entry F31.
+    const icons = screen.getAllByLabelText('present');
+    expect(icons.length).toBeGreaterThanOrEqual(1);
+    // The icon's text content is the ✓ glyph (its aria-label carries
+    // the semantic meaning).
+    expect(icons[0]?.textContent).toBe('✓');
   });
 
   it('header copy in CORE state names it as the active tier and flags extended as planned', () => {

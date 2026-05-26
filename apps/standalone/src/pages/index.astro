@@ -204,7 +204,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
 };
 ---
 <BaseLayout title="Chat Archaeologist — Today" current="TODAY">
-  <main class="today">
+  <main id="main-content" class="today" tabindex="-1">
     <header class="today__header">
       <h1>TODAY</h1>
       <p class="today__date">
@@ -232,7 +232,26 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
           <span class="today__progress-elapsed" id="progress-elapsed"></span>
         </div>
         <div class="today__progress-phase" id="progress-phase"></div>
-        <div class="today__progress-bar" id="progress-bar" hidden>
+        {/*
+          aria-live="off" cancels the inherited polite live region
+          from #action-progress. SCAN fires per-step setPhase()
+          updates dozens of times per run; without this, every
+          aria-valuenow change spawns a polite announcement and the
+          channel floods. SR users still get the phase label
+          (sibling #progress-phase stays polite) and can poll the
+          progressbar with their own commands.
+        */}
+        <div
+          class="today__progress-bar"
+          id="progress-bar"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-label="scan progress"
+          aria-live="off"
+          hidden
+        >
           <div class="today__progress-bar-fill" id="progress-bar-fill"></div>
         </div>
         <pre class="today__progress-log" id="progress-log" hidden></pre>
@@ -242,7 +261,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     {/* ─────────────────────── 1. BRIEF ─────────────────────── */}
     <section class="today__section today__brief" aria-labelledby="sec-brief">
       <div class="today__bar">
-        <span class="today__bar-key" id="sec-brief">{SECTIONS[0].key}</span>
+        <h2 class="today__bar-key" id="sec-brief">{SECTIONS[0].key}</h2>
         {SECTIONS[0].sub ? (
           <span class="today__bar-sub">{SECTIONS[0].sub}</span>
         ) : null}
@@ -261,7 +280,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
             </button>
           </p>
           <article class="today__brief-body">
-            <pre class="today__brief-md">{briefView!.markdown}</pre>
+            <pre class="today__brief-md" tabindex="0">{briefView!.markdown}</pre>
           </article>
         </section>
       ) : (
@@ -280,7 +299,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     {/* ─────────────────────── 2. NEW ─────────────────────── */}
     <section class="today__section today__new" aria-labelledby="sec-new">
       <div class="today__bar">
-        <span class="today__bar-key" id="sec-new">{SECTIONS[1].key}</span>
+        <h2 class="today__bar-key" id="sec-new">{SECTIONS[1].key}</h2>
         <span class="today__bar-sub">{SECTIONS[1].sub}</span>
       </div>
       {newEmpty ? (
@@ -424,7 +443,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     {/* ─────────────────────── 3. ACT ─────────────────────── */}
     <section class="today__section today__act" aria-labelledby="sec-act">
       <div class="today__bar">
-        <span class="today__bar-key" id="sec-act">{SECTIONS[2].key}</span>
+        <h2 class="today__bar-key" id="sec-act">{SECTIONS[2].key}</h2>
         <span class="today__bar-sub">{SECTIONS[2].sub}</span>
       </div>
 
@@ -547,7 +566,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     {/* ─────────────────────── 4. BROKEN ─────────────────────── */}
     <section class="today__section today__broken" aria-labelledby="sec-broken">
       <div class="today__bar">
-        <span class="today__bar-key" id="sec-broken">{SECTIONS[3].key}</span>
+        <h2 class="today__bar-key" id="sec-broken">{SECTIONS[3].key}</h2>
         <span class="today__bar-sub">{SECTIONS[3].sub}</span>
       </div>
 
@@ -722,7 +741,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     {/* ─────────────────────── 5. STORIES ─────────────────────── */}
     <section class="today__section today__stories" aria-labelledby="sec-stories">
       <div class="today__bar">
-        <span class="today__bar-key" id="sec-stories">{SECTIONS[4].key}</span>
+        <h2 class="today__bar-key" id="sec-stories">{SECTIONS[4].key}</h2>
         <span class="today__bar-sub">{SECTIONS[4].sub}</span>
       </div>
 
@@ -810,8 +829,8 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     </section>
 
     {/* ─────────────────────── CORPUS HEALTH (footer-y) ─────────────────────── */}
-    <section class="today__row today__row--footer">
-      <h2>CORPUS HEALTH</h2>
+    <section class="today__row today__row--footer" aria-labelledby="sec-corpus-health">
+      <h2 id="sec-corpus-health">CORPUS HEALTH</h2>
       {health === null ? (
         <p>No continuum snapshot.</p>
       ) : (
@@ -933,7 +952,11 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
       if (typeof current === 'number' && typeof total === 'number' && total > 0) {
         line += ` (${current}/${total})`;
         barEl.hidden = false;
-        barFillEl.style.width = `${Math.min(100, (current / total) * 100)}%`;
+        const pct = Math.min(100, (current / total) * 100);
+        barFillEl.style.width = `${pct}%`;
+        // Keep the ARIA progressbar in sync with the visual fill so SR
+        // users hear the percentage update alongside the phase label.
+        barEl.setAttribute('aria-valuenow', String(Math.round(pct)));
       }
       phaseEl.textContent = line;
     }
@@ -1449,7 +1472,10 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     background: #0a0a0a;
     border: 1px solid #FFCC9922;
     border-radius: 2px;
-    color: #FFCC9988;
+    /* Live SCAN progress log — functional readout. #FFCC9988 was
+       ~4.4:1 on near-black (borderline under AA's 4.5:1 floor for
+       11px text); #FFCC99cc clears at ~9:1. */
+    color: #FFCC99cc;
     font-size: 11px;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -1473,6 +1499,11 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     border-radius: 2px;
   }
   .today__bar-key {
+    /* Was a <span>; promoted to <h2> for heading-outline navigation
+       (a11y iter-2 F12 — the five FEED sections were unreachable via
+       SR heading nav before). Reset default <h2> margin so the bar's
+       inline pill layout is unchanged. */
+    margin: 0;
     font-family: 'Antonio', sans-serif;
     font-weight: 700;
     letter-spacing: 0.16em;
@@ -1525,6 +1556,15 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     max-height: 480px;
     overflow-y: auto;
   }
+  /* Keyboard accessibility for the scrollable brief region — without
+     tabindex, sighted keyboard users can't scroll the overflow when
+     the markdown exceeds max-height. The :focus-visible outline
+     makes the reachable boundary obvious. */
+  .today__brief-md:focus,
+  .today__brief-md:focus-visible {
+    outline: 2px solid #99ccff;
+    outline-offset: 2px;
+  }
 
   /* ─── 2. NEW / 4. BROKEN cards (shared) ────────────────────────── */
   .today__cards {
@@ -1574,7 +1614,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   }
   .today__card-score {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 12px;
     color: #FFCC9999;
   }
   /* Wave 1 Fix A: confidence tier ribbon. Sits inline between the
@@ -1659,7 +1699,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     border-radius: 2px;
   }
   .today__card-evlabel {
-    color: #FFCC9966;
+    color: #FFCC9999;
     margin-right: 4px;
   }
 
@@ -1720,7 +1760,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   }
   .today__curator-list li:last-child { border-bottom: none; }
   .today__curator-rank {
-    color: #FFCC9966; min-width: 30px; font-size: 11px;
+    color: #FFCC9999; min-width: 30px; font-size: 12px;
   }
   .today__curator-kind {
     font-size: 10px;
@@ -1752,7 +1792,7 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   .today__concern-type { color: #ffd680; font-size: 11px; }
   .today__concern-span { color: #FFCC99; }
   .today__concern-reason { color: #FFCC9999; }
-  .today__concern-sid { color: #FFCC9966; font-size: 11px; }
+  .today__concern-sid { color: #FFCC9999; font-size: 11px; }
   .today__warn { color: #ff9933; }
   .today__broken-health { margin-top: 16px; }
 
@@ -1784,8 +1824,11 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
   .today__story-sentiment--negative {
     background: #ff9933; color: #0a0a0a;
   }
+  /* Neutral sentiment matches positive/negative's solid-bg + dark-text
+     pattern so the chip clears 4.5:1 at 10px. The prior alpha-on-alpha
+     stack (#FFCC9922 bg + #FFCC9999 fg) computed to ~3.5:1. */
   .today__story-sentiment--neutral {
-    background: #FFCC9922; color: #FFCC9999;
+    background: #FFCC99cc; color: #0a0a0a;
   }
   .today__story-title {
     flex: 1;
@@ -1797,8 +1840,8 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
     border-bottom: 1px dashed #FFCC9955;
   }
   .today__story-date {
-    color: #FFCC9966;
-    font-size: 11px;
+    color: #FFCC9999;
+    font-size: 12px;
   }
 
   /* ─── footer corpus-health row (preserved) ─────────────────────── */
@@ -1816,8 +1859,8 @@ const SURPRISE_DRILL_IN: Record<string, string> = {
      Muted color + smaller size so they read as exits, not CTAs. */
   .today__row-secondary {
     font-size: 12px;
-    color: #FFCC9988;
+    color: #FFCC99cc;
     margin-top: 4px;
   }
-  .today__row-secondary a { color: #FFCC99aa; }
+  .today__row-secondary a { color: #FFCC99; }
 </style>

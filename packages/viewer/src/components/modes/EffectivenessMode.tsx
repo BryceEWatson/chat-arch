@@ -242,10 +242,10 @@ export function EffectivenessMode({
       </header>
       <section
         className="lcars-effectiveness__panel"
-        aria-label="weekly mean composite score"
+        aria-labelledby="effectiveness-mean-h"
       >
         <header className="lcars-effectiveness__panel-header">
-          <h3 className="lcars-effectiveness__panel-title">
+          <h3 id="effectiveness-mean-h" className="lcars-effectiveness__panel-title">
             WEEKLY MEAN COMPOSITE
           </h3>
           {latestMean !== undefined && (
@@ -264,10 +264,10 @@ export function EffectivenessMode({
       </section>
       <section
         className="lcars-effectiveness__panel"
-        aria-label="weekly binarized-good share"
+        aria-labelledby="effectiveness-good-h"
       >
         <header className="lcars-effectiveness__panel-header">
-          <h3 className="lcars-effectiveness__panel-title">
+          <h3 id="effectiveness-good-h" className="lcars-effectiveness__panel-title">
             WEEKLY GOOD SHARE
           </h3>
           {latestGood !== undefined && (
@@ -295,14 +295,17 @@ export function EffectivenessMode({
           )}
         </header>
         {verdict !== null && (
+          // Verdict is static page content (computed at render from
+          // props), not an async status. role="status" + aria-live
+          // would re-announce on every parent re-render — same noise
+          // pattern iter-3 Bundle E quieted on the SCAN progressbar.
+          // (iter-5 finding.)
           <p
             className={
               'lcars-effectiveness__verdict lcars-effectiveness__verdict--' +
               verdict.direction
             }
             data-testid="effectiveness-verdict"
-            role="status"
-            aria-live="polite"
           >
             Trajectory:{' '}
             <strong>
@@ -339,6 +342,7 @@ export function EffectivenessMode({
                 key={c.sha}
                 className="lcars-effectiveness__commit-tick"
                 title={`${c.subject} (${c.shaShort}) — ${formatTickDate(c.ts)}`}
+                aria-label={`commit ${c.shaShort} on ${formatTickDate(c.ts)}: ${c.subject}`}
               >
                 <span aria-hidden="true">▲</span>{' '}
                 <code>{c.shaShort}</code> {c.subject}

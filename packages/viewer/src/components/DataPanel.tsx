@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { onActivate } from '../util/a11y.js';
+import { onActivate, useFocusTrap } from '../util/a11y.js';
 import { InfoPopover } from './InfoPopover.js';
 import { NuclearReset } from './NuclearReset.js';
 import type { RescanStatus, UploadStatus } from './TopBar.js';
@@ -87,6 +87,7 @@ export function DataPanel({
   deleteCounts,
 }: DataPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [, setForceRerender] = useState(0);
 
@@ -99,12 +100,10 @@ export function DataPanel({
       }
     };
     window.addEventListener('keydown', onKey);
-    const t = window.setTimeout(() => closeButtonRef.current?.focus(), 50);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.clearTimeout(t);
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
+
+  useFocusTrap(isOpen, dialogRef, closeButtonRef);
 
   if (!isOpen) return null;
 
@@ -175,13 +174,16 @@ export function DataPanel({
     <>
       <div className="lcars-data-panel__scrim" onClick={onClose} aria-hidden="true" />
       <aside
+        ref={dialogRef}
         className="lcars-data-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="data sources panel"
+        aria-labelledby="lcars-data-panel-title"
       >
         <header className="lcars-data-panel__header">
-          <h2 className="lcars-data-panel__title">DATA</h2>
+          <h2 id="lcars-data-panel-title" className="lcars-data-panel__title">
+            DATA
+          </h2>
           <button
             ref={closeButtonRef}
             type="button"
@@ -197,6 +199,37 @@ export function DataPanel({
           Add chat data, refresh existing sources, or delete what&rsquo;s indexed. Nothing
           here leaves your machine.
         </p>
+        {/*
+          sr-only live region announcing UPLOAD CLOUD + SCAN LOCAL
+          state transitions. The visible buttons are <div role="button">
+          whose visible label text changes (UPLOAD CLOUD → UPLOADING…
+          → LOADED ✓), but SRs don't pick up visible-text changes
+          inside a custom role=button. This polite live region carries
+          the state change so SR users hear the transition. (iter-4
+          F29_c + F50 + F51.)
+        */}
+        <span className="lcars-sr-only" role="status">
+          {(() => {
+            const u =
+              uploadStatus === 'running'
+                ? 'Cloud upload running' + (uploadBusy && uploadLabel ? `, ${uploadLabel.toLowerCase()}` : '')
+                : uploadStatus === 'ok'
+                  ? (hasCloudData ? 'Cloud upload updated' : 'Cloud upload loaded')
+                  : uploadStatus === 'error'
+                    ? 'Cloud upload failed'
+                    : '';
+            const phaseSuffix = runningPhaseSuffix ? `, ${runningPhaseSuffix.toLowerCase()}` : '';
+            const s =
+              rescanStatus === 'running'
+                ? (hasLocalData ? 'Local update running' : 'Local scan running') + phaseSuffix
+                : rescanStatus === 'ok'
+                  ? (hasLocalData ? 'Local data updated' : 'Local scan complete')
+                  : rescanStatus === 'error'
+                    ? (hasLocalData ? 'Local update failed' : 'Local scan failed')
+                    : '';
+            return [u, s].filter(Boolean).join('. ');
+          })()}
+        </span>
 
         {onCloudUpload && (
           <section className="lcars-data-panel__section">

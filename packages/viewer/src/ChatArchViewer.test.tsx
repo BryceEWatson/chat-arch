@@ -608,7 +608,7 @@ describe('ChatArchViewer', () => {
       window.location.hash = '#data';
       render(<ChatArchViewer manifest={sampleManifest} />);
       await waitFor(() =>
-        expect(screen.getByRole('dialog', { name: /data sources panel/i })).toBeDefined(),
+        expect(screen.getByRole('dialog', { name: /^DATA$/ })).toBeDefined(),
       );
       // Action hash — the viewer strips it so a back-nav / reload doesn't
       // re-fire the open.

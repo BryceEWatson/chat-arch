@@ -120,9 +120,12 @@ describe('DecisionsMode', () => {
       decision(`d${i}`, 'explicit-go-with', 'good'),
     );
     render(<DecisionsMode file={buildFile(decisions)} />);
-    expect(
-      screen.getByTestId('rate-hidden-explicit-go-with').textContent,
-    ).toContain(`n < ${min}`);
+    // iter-5: visible text changed from "rate hidden — n < N" to
+    // "rate hidden — n=X of N required" so SR users hear the actual n
+    // (was previously mouse-hover-only via title=).
+    const hidden = screen.getByTestId('rate-hidden-explicit-go-with').textContent ?? '';
+    expect(hidden).toContain(`of ${min} required`);
+    expect(hidden).toContain('rate hidden');
     // The CI text isn't present.
     expect(screen.queryByTestId('rate-explicit-go-with')).toBeNull();
   });

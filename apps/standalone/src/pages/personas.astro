@@ -128,7 +128,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
 }
 ---
 <BaseLayout title="Chat Archaeologist — Personas" current="PERSONAS">
-  <main class="personas">
+  <main id="main-content" class="personas" tabindex="-1">
     <header class="personas__header">
       <h1>PERSONAS</h1>
       <p class="personas__lede">
@@ -278,6 +278,24 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
       const btn = document.getElementById('personas-regen');
       const feedback = document.getElementById('personas-regen-feedback');
       if (!btn || !feedback) return;
+      // Friendly-label map mirrors index.astro's STAGE_LABELS pattern.
+      // Raw skill phase tokens like "stage-1-load" are skill-internal —
+      // a SR user hearing every token sequentially in the aria-live
+      // region gets noise instead of signal. Falling back to the raw
+      // token preserves forward-compat with new skill phases.
+      const PHASE_LABELS = {
+        'stage-1-load': 'Loading evidence',
+        'stage-2-bucket-founding': 'Synthesizing founding-era patterns',
+        'stage-2-bucket-mid-early': 'Synthesizing mid-early patterns',
+        'stage-2-bucket-mid-late': 'Synthesizing mid-late patterns',
+        'stage-2-bucket-recent': 'Synthesizing recent patterns',
+        'stage-2-synthesize': 'Combining into final persona',
+        'stage-3-write': 'Writing persona to disk',
+      };
+      function friendlyPhase(raw) {
+        if (typeof raw !== 'string') return '';
+        return PHASE_LABELS[raw] || raw;
+      }
       btn.addEventListener('click', function () {
         const pid = btn.getAttribute('data-project-id');
         if (!pid) return;
@@ -323,7 +341,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
                 try {
                   const evt = JSON.parse(line);
                   if (evt.type === 'phase' && typeof evt.phase === 'string') {
-                    feedback.textContent = evt.phase;
+                    feedback.textContent = friendlyPhase(evt.phase);
                   } else if (evt.type === 'done') {
                     done = true;
                     ok = evt.ok === true;
@@ -365,7 +383,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
     .personas__lede {
       max-width: 72ch;
       line-height: 1.5;
-      color: #d9ad82;
+      color: #FFCC99cc;
       margin: 0 0 20px;
     }
     .personas__lede code {
@@ -423,7 +441,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
     }
     .personas__nav-empty {
       font-size: 12px;
-      color: #d9ad82;
+      color: #FFCC99cc;
     }
     .personas__nav-list {
       list-style: none;
@@ -452,9 +470,15 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
       background: rgba(255, 153, 51, 0.15);
       border-color: #ff9933;
     }
+    /* Skipped rows convey "not navigable" via cursor + the inline
+       skip-reason text; the prior `opacity: 0.6` compressed the
+       nested 11px meta text below 4.5:1 AA. Switched to direct color
+       on the name so the meta keeps its contrast budget. */
     .personas__nav-item--skipped {
       cursor: default;
-      opacity: 0.6;
+    }
+    .personas__nav-item--skipped .personas__nav-name {
+      color: #FFCC9999;
     }
     .personas__nav-item--skipped:hover {
       background: rgba(255, 204, 153, 0.05);
@@ -467,7 +491,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
     }
     .personas__nav-meta {
       font-size: 11px;
-      color: #d9ad82;
+      color: #FFCC99cc;
     }
     .personas__nav-skipped[open] .personas__nav-label {
       color: #ffcc99;
@@ -482,7 +506,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
       gap: 6px 10px;
       align-items: baseline;
       font-size: 12px;
-      color: #d9ad82;
+      color: #FFCC99cc;
       margin-bottom: 16px;
     }
     .personas__meta-label {
@@ -528,13 +552,13 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
     }
     .personas__regen-feedback {
       font-size: 12px;
-      color: #d9ad82;
+      color: #FFCC99cc;
       font-style: italic;
     }
 
     .personas__md {
       background: rgba(0, 0, 0, 0.4);
-      border: 1px solid rgba(221, 153, 68, 0.3);
+      border: 1px solid rgba(221, 153, 68, 0.6);
       border-radius: 8px;
       padding: 18px 22px;
       white-space: pre-wrap;
@@ -542,7 +566,7 @@ function skipReasonLabel(p: { status: string; reason?: string }): string {
       font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
       font-size: 13px;
       line-height: 1.55;
-      color: #f4e1cc;
+      color: #FFCC99;
       max-height: 80vh;
       overflow-y: auto;
       margin: 0;

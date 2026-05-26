@@ -86,9 +86,15 @@ describe('ExportMode', () => {
     expect(btn.disabled).toBe(false);
     fireEvent.click(btn);
     // GENERATING… caption flashes; on success the result panel shows.
-    await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toMatch(/Generated/),
-    );
+    // iter-6: two role="status" regions now exist on this surface
+    // (the in-flight sr-only announcer + the done-state visible
+    // block). Disambiguate by name; the done-state one carries
+    // "Generated" text and is on the result <div>.
+    await waitFor(() => {
+      const statuses = screen.getAllByRole('status');
+      const done = statuses.find((el) => /Generated/.test(el.textContent ?? ''));
+      expect(done).toBeDefined();
+    });
     expect(screen.getByText('/tmp/exports')).toBeDefined();
     expect(screen.getByTestId('open-output-btn')).toBeDefined();
   });

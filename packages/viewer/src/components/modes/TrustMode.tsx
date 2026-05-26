@@ -194,10 +194,13 @@ export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
   const misCalibrated =
     bothRowsQualified && cisDisjoint(acceptRow.ci, overrideRow.ci);
 
+  // Outer aria-label dropped — divs without role don't expose
+  // aria-label to AT (ARIA 1.2 §5.2.7.2). The <h2>TRUST</h2> below
+  // is the accessible name source for region-nav. (iter-6)
   return (
-    <div className="lcars-trust" aria-label="trust calibration">
+    <div className="lcars-trust">
       <header className="lcars-trust__header">
-        <h2 className="lcars-trust__title">TRUST</h2>
+        <h2 id="trust-h" className="lcars-trust__title">TRUST</h2>
         <p className="lcars-trust__lead">
           Your accept-vs-override behavior on detected decisions, joined to the
           composite-outcome &lsquo;landed&rsquo; signal. Cells with n &lt; {minN} are
@@ -211,7 +214,10 @@ export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
         aria-label="accept/override × landed/didn't land"
       >
         <div className="lcars-trust__row lcars-trust__row--head" role="row">
-          <span role="columnheader" aria-label="row label" />
+          {/* Empty corner cell — no aria-label (was "row label",
+              which polluted column-header nav with meta-noise).
+              (iter-6) */}
+          <span role="columnheader" />
           <span role="columnheader">LANDED</span>
           <span role="columnheader">DIDN&rsquo;T LAND</span>
           <span role="columnheader">LANDED-RATE (95% CI)</span>
@@ -248,13 +254,19 @@ export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
           testId="copy-trust-2x2"
         />
       </div>
+      {/*
+        role="status" + aria-live="polite" removed iter-6. The flag
+        is computed from props synchronously at render time, not an
+        async state change. The polite live region re-announced the
+        full sentence on every parent re-render — same spam pattern
+        iter-3 F25 (SCAN progressbar) and iter-5 Bundle B
+        (EffectivenessMode verdict) cleaned up.
+      */}
       <div
         className={
           'lcars-trust__flag' +
           (misCalibrated ? ' lcars-trust__flag--fired' : ' lcars-trust__flag--quiet')
         }
-        role="status"
-        aria-live="polite"
         data-testid="miscalibration-flag"
         data-fired={misCalibrated ? 'true' : 'false'}
       >
@@ -287,6 +299,15 @@ interface CellProps {
 
 function Cell({ label, n, minN }: CellProps) {
   const insufficient = n < minN;
+  // Cell labels like "accept-land" disambiguate the row × column
+  // intersection in screen-reader announcements — without this, the
+  // SR user hears bare numbers ("12", "3") with no anchoring back
+  // to "accepted × landed". Mirrors iter-4 F69 heatmap pattern.
+  const rowName = label.startsWith('accept-') ? 'accepted Claude' : 'overrode Claude';
+  const colName = label.endsWith('-land') ? 'landed' : "didn't land";
+  const ariaLabel = insufficient
+    ? `${rowName} and ${colName}: n=${n}, below threshold of ${minN}`
+    : `${rowName} and ${colName}: n=${n}`;
   return (
     <span
       role="cell"
@@ -298,8 +319,16 @@ function Cell({ label, n, minN }: CellProps) {
       data-testid={`trust-cell-${label}`}
       data-insufficient={insufficient ? 'true' : 'false'}
       title={insufficient ? `n=${n} < ${minN}` : `n=${n}`}
+      aria-label={ariaLabel}
     >
       {n}
+      {/* Visible asterisk marker when below threshold — non-color
+          fallback for the (planned) grey-cell encoding. (iter-6) */}
+      {insufficient && (
+        <sup aria-hidden="true" className="lcars-trust__cell-mark">
+          *
+        </sup>
+      )}
     </span>
   );
 }
@@ -310,12 +339,14 @@ interface RateCellProps {
 }
 
 function RateCell({ row, qualified }: RateCellProps) {
+  const rowName = row.accepted ? 'accepted Claude' : 'overrode Claude';
   if (!qualified) {
     return (
       <span
         role="cell"
         className="lcars-trust__rate lcars-trust__rate--hidden"
         data-testid={`rate-${row.accepted ? 'accept' : 'override'}-hidden`}
+        aria-label={`${rowName} landed-rate hidden: cell n is below threshold`}
       >
         rate hidden — cell n &lt; threshold
       </span>
@@ -326,9 +357,14 @@ function RateCell({ row, qualified }: RateCellProps) {
       role="cell"
       className="lcars-trust__rate"
       data-testid={`rate-${row.accepted ? 'accept' : 'override'}`}
+      aria-label={
+        `${rowName} landed-rate ${formatRate(row.pHat)}, ` +
+        `Wilson 95% CI ${formatRate(row.ci.low)} to ${formatRate(row.ci.high)}, ` +
+        `n=${row.total}`
+      }
     >
       {formatRate(row.pHat)}{' '}
-      <span className="lcars-trust__ci">
+      <span className="lcars-trust__ci" aria-hidden="true">
         [{formatRate(row.ci.low)}–{formatRate(row.ci.high)}]
       </span>
     </span>

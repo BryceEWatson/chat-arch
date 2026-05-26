@@ -4,7 +4,7 @@ export const prerender = false;
 import BaseLayout from '../layouts/BaseLayout.astro';
 ---
 <BaseLayout title="Chat Archaeologist — Calibrate" current="CALIBRATE">
-  <main class="calibrate">
+  <main id="main-content" class="calibrate" tabindex="-1">
     <header class="calibrate__head">
       <h1>THRESHOLD CALIBRATION</h1>
       <p class="calibrate__sub">
@@ -15,14 +15,26 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         even coverage. Labels save to the same file as
         <code>pnpm label:threshold</code> — switch tools mid-session.
       </p>
-      <ul id="bucket-legend" class="calibrate__buckets" hidden></ul>
+      <ul id="bucket-legend" class="calibrate__buckets" aria-label="cosine-bucket coverage" hidden></ul>
     </header>
+
+    {/*
+      sr-only live region announces pair advance + section transitions.
+      `render()` writes a compact status string here (iter-4 F13).
+      role="status" implies aria-live="polite" + aria-atomic="true".
+    */}
+    <div id="calibrate-announce" role="status" class="sr-only"></div>
 
     <section id="loading" class="calibrate__state">
       <p>Loading pairs… <span class="calibrate__dim">(scanning embeddings, ~5s on a ~1k corpus)</span></p>
     </section>
 
-    <section id="error" class="calibrate__state" hidden>
+    {/*
+      role="alert" so a textContent change on #error-msg fires an
+      assertive announcement (iter-4 F49). Without this, label-save
+      failures revealed via `hidden=false` go silent to SR users.
+    */}
+    <section id="error" class="calibrate__state" role="alert" hidden>
       <p class="calibrate__error">Couldn't load pairs.</p>
       <pre id="error-msg" class="calibrate__error-detail"></pre>
     </section>
@@ -35,7 +47,14 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     <section id="labeler" class="calibrate__labeler" hidden>
       <div class="calibrate__progress">
         <span id="progress-text">0 / 0</span>
-        <div class="calibrate__progress-bar">
+        <div
+          class="calibrate__progress-bar"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-label="labeling progress"
+        >
           <div id="progress-fill" class="calibrate__progress-fill"></div>
         </div>
       </div>
@@ -46,29 +65,40 @@ import BaseLayout from '../layouts/BaseLayout.astro';
         </div>
 
         <div class="calibrate__sessions">
-          <article class="calibrate__session calibrate__session--a">
-            <h2 id="a-title">A</h2>
+          {/* <article> wrappers replaced with <div> — pair-halves are
+              transient label-inputs, not self-contained syndicatable
+              content. Avoids landmark inflation. (iter-4 F17) */}
+          <div class="calibrate__session calibrate__session--a">
+            <h2 id="a-title">Session A</h2>
             <p id="a-preview" class="calibrate__preview"></p>
-          </article>
+          </div>
 
-          <article class="calibrate__session calibrate__session--b">
-            <h2 id="b-title">B</h2>
+          <div class="calibrate__session calibrate__session--b">
+            <h2 id="b-title">Session B</h2>
             <p id="b-preview" class="calibrate__preview"></p>
-          </article>
+          </div>
         </div>
 
+        {/* <kbd> aria-hidden so the keyboard hint doesn't become a
+            prefix of each button's accessible name. aria-keyshortcuts
+            on the button is the modern WAI-ARIA pattern for declaring
+            single-key shortcuts. (iter-4 F16) */}
+        {/* Defensive glyph prefix on Y/N (iter-5 F30): verdict
+            survives grayscale + protanopia. Y/N buttons share the
+            same --lcars-pass/--lcars-fail color palette as audit
+            badges. */}
         <div class="calibrate__actions">
-          <button type="button" id="btn-y" class="calibrate__btn calibrate__btn--y">
-            <kbd>Y</kbd> near-duplicate
+          <button type="button" id="btn-y" class="calibrate__btn calibrate__btn--y" aria-keyshortcuts="y">
+            <kbd aria-hidden="true">Y</kbd> <span aria-hidden="true">✓</span> near-duplicate
           </button>
-          <button type="button" id="btn-n" class="calibrate__btn calibrate__btn--n">
-            <kbd>N</kbd> not
+          <button type="button" id="btn-n" class="calibrate__btn calibrate__btn--n" aria-keyshortcuts="n">
+            <kbd aria-hidden="true">N</kbd> <span aria-hidden="true">✗</span> not
           </button>
-          <button type="button" id="btn-s" class="calibrate__btn calibrate__btn--s">
-            <kbd>S</kbd> skip
+          <button type="button" id="btn-s" class="calibrate__btn calibrate__btn--s" aria-keyshortcuts="s">
+            <kbd aria-hidden="true">S</kbd> skip
           </button>
-          <button type="button" id="btn-back" class="calibrate__btn calibrate__btn--back">
-            <kbd>B</kbd> back
+          <button type="button" id="btn-back" class="calibrate__btn calibrate__btn--back" aria-keyshortcuts="b">
+            <kbd aria-hidden="true">B</kbd> back
           </button>
         </div>
 
@@ -76,6 +106,20 @@ import BaseLayout from '../layouts/BaseLayout.astro';
           Gut-feel based on titles + previews — you don't need to read the full sessions.
           Press <kbd>?</kbd> for shortcuts.
         </p>
+        {/* Help affordance — was an alert() in iter-3; replaced iter-4
+            (F18) with an inline <details> so SRs can discover it, the
+            keyboard `?` handler still toggles open/close, and touch
+            users (no `?` key on virtual keyboards) can reach it. */}
+        <details id="calibrate-help" class="calibrate__help">
+          <summary>Keyboard shortcuts</summary>
+          <dl class="calibrate__help-dl">
+            <dt><kbd>Y</kbd></dt><dd>near-duplicate</dd>
+            <dt><kbd>N</kbd></dt><dd>not a duplicate</dd>
+            <dt><kbd>S</kbd></dt><dd>skip (no label written)</dd>
+            <dt><kbd>B</kbd> / <kbd>←</kbd></dt><dd>back one pair</dd>
+            <dt><kbd>?</kbd></dt><dd>toggle this help</dd>
+          </dl>
+        </details>
       </div>
     </section>
 
@@ -141,11 +185,11 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   }
   .calibrate__sub { color: #FFCC9999; font-size: 13px; line-height: 1.6; }
   .calibrate__state { padding: 2rem 0; }
-  .calibrate__error { color: #f08080; font-weight: 700; font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; }
+  .calibrate__error { color: var(--lcars-fail); font-weight: 700; font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; }
   .calibrate__error-detail {
     background: #0a0a0a;
-    border: 1px solid #FFCC9933;
-    border-left: 3px solid #f08080;
+    border: 1px solid #FFCC9988;
+    border-left: 3px solid var(--lcars-fail);
     padding: 12px 14px;
     border-radius: 3px;
     font-family: 'JetBrains Mono', 'Consolas', monospace;
@@ -155,10 +199,14 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   }
 
   .calibrate__progress { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; }
+  /* Progress rail bg uses #FFCC9988 (~4.4:1 on #000) to clear WCAG
+     1.4.11's 3:1 floor for UI graphical objects. The fill on top is
+     solid sunflower, so the visual contrast inside the rail is
+     unchanged; only the rail-vs-page-bg contrast improved. */
   .calibrate__progress-bar {
     flex: 1;
     height: 6px;
-    background: #FFCC9922;
+    background: #FFCC9988;
     border-radius: 3px;
     overflow: hidden;
   }
@@ -201,10 +249,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   .calibrate__preview { margin: 0; font-size: 13px; line-height: 1.5; color: #FFCC99cc; }
 
   .calibrate__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  /* Button border at #FFCC9988 (~4.4:1) clears WCAG 1.4.11's 3:1 for
+     UI control boundaries; the prior #FFCC9955 was ~2.3:1. Hover
+     darkens to the same border alpha — single visual state at rest. */
   .calibrate__btn {
     padding: 8px 16px;
     border-radius: 2px;
-    border: 1px solid #FFCC9955;
+    border: 1px solid #FFCC9988;
     background: transparent;
     color: #FFCC99;
     cursor: pointer;
@@ -213,15 +264,15 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     letter-spacing: 0.08em;
     transition: background 80ms linear, border-color 80ms linear, transform 0.05s ease;
   }
-  .calibrate__btn:hover { background: #FFCC9911; border-color: #FFCC9988; }
+  .calibrate__btn:hover { background: #FFCC9911; border-color: #FFCC99cc; }
   .calibrate__btn:active { transform: translateY(1px); }
-  /* Y/N semantic accents — match audit.astro's pass/fail tones
-     (#88e088 / #f08080). Peach (#FF9933) reserved for destructive
-     elsewhere; here Y is pass, N is reject. */
-  .calibrate__btn--y { border-color: #88e088; color: #88e088; }
-  .calibrate__btn--y:hover { background: rgba(136, 224, 136, 0.1); border-color: #88e088; }
-  .calibrate__btn--n { border-color: #f08080; color: #f08080; }
-  .calibrate__btn--n:hover { background: rgba(240, 128, 128, 0.1); border-color: #f08080; }
+  /* Y/N semantic accents — share BaseLayout's --lcars-pass / --lcars-fail
+     tokens with audit.astro's verdict badges and index.astro's inline
+     status colors. */
+  .calibrate__btn--y { border-color: var(--lcars-pass); color: var(--lcars-pass); }
+  .calibrate__btn--y:hover { background: rgba(136, 224, 136, 0.1); border-color: var(--lcars-pass); }
+  .calibrate__btn--n { border-color: var(--lcars-fail); color: var(--lcars-fail); }
+  .calibrate__btn--n:hover { background: rgba(240, 128, 128, 0.1); border-color: var(--lcars-fail); }
   .calibrate__btn kbd {
     display: inline-block;
     padding: 0 0.4em;
@@ -233,7 +284,43 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   }
 
   .calibrate__hint { font-size: 12px; color: #FFCC9999; margin-top: 0.5rem; line-height: 1.5; }
-  .calibrate__dim { opacity: 0.6; }
+  /* Direct color rather than `opacity: 0.6` so the contrast math is
+     locked to the foreground regardless of any parent color override. */
+  .calibrate__dim { color: #FFCC9999; }
+  /* Keyboard-shortcuts help (iter-4 F18 replaces alert()). Collapsed
+     by default; `?` keypress toggles open. Visible-summary doubles as
+     the SR landmark. */
+  .calibrate__help {
+    margin-top: 1rem;
+    padding: 8px 12px;
+    border: 1px solid #FFCC9988;
+    border-radius: 4px;
+    background: #0a0a0a;
+    font-size: 12px;
+  }
+  .calibrate__help > summary {
+    cursor: pointer;
+    font-family: 'Antonio', sans-serif;
+    letter-spacing: 0.08em;
+    color: #FFCC99;
+    padding: 2px 4px;
+  }
+  .calibrate__help > summary:focus-visible {
+    outline: 2px solid #99CCFF;
+    outline-offset: 2px;
+  }
+  .calibrate__help-dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    margin: 8px 0 0;
+    color: #FFCC99cc;
+    line-height: 1.5;
+  }
+  .calibrate__help-dl dt {
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+  }
+  .calibrate__help-dl dd { margin: 0; }
 
   .calibrate__buckets {
     list-style: none;
@@ -243,7 +330,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     flex-wrap: wrap;
     gap: 0.5rem;
     font-family: 'JetBrains Mono', 'Consolas', monospace;
-    font-size: 11px;
+    /* Bumped from 11px to 12px to meet the body-prose floor — these
+       legend lines are functional information ("12/25 labeled, 13 more
+       needed"), not chrome ALL-CAPS. (iter-4 F44) */
+    font-size: 12px;
     color: #FFCC9999;
   }
   .calibrate__buckets li {
@@ -337,6 +427,17 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     for (const id of all) {
       $(id).hidden = !sectionIds.includes(id);
     }
+    // SR a11y: when the visible state swaps (loading → labeler →
+    // empty / error / sweep), focus the newly-visible section so
+    // assistive tech announces the new content. Otherwise the
+    // section change is silent — the user's virtual cursor stays
+    // wherever it was on the stale section.
+    const firstVisible = sectionIds[0];
+    if (firstVisible !== undefined) {
+      const target = $(firstVisible);
+      target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: false });
+    }
   }
 
   interface Bucket {
@@ -428,13 +529,27 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     const totalPosition = state.labeledAtStart + state.cursor + 1;
     $('progress-text').textContent = `${totalPosition} / ${state.total}`;
     const fill = $('progress-fill') as HTMLElement;
-    fill.style.width = `${(totalPosition / Math.max(1, state.total)) * 100}%`;
+    const pct = (totalPosition / Math.max(1, state.total)) * 100;
+    fill.style.width = `${pct}%`;
+    // Keep aria-valuenow on the progressbar parent in sync with the
+    // visual fill so SR users can poll the percentage on demand.
+    const progressBar = fill.parentElement;
+    if (progressBar !== null) {
+      progressBar.setAttribute('aria-valuenow', String(Math.round(pct)));
+    }
 
     $('pair-cos').textContent = p.cos.toFixed(3);
     $('a-title').textContent = p.aTitle;
     $('b-title').textContent = p.bTitle;
     $('a-preview').textContent = p.aPreview;
     $('b-preview').textContent = p.bPreview;
+    // F13: announce the pair advance to SRs. The role="status" region
+    // is polite + atomic, so it re-reads on each textContent swap.
+    // Compact summary — full prose is in the visible pair already.
+    const announce = $('calibrate-announce');
+    announce.textContent =
+      `Pair ${totalPosition} of ${state.total}, cosine ${p.cos.toFixed(3)}. ` +
+      `Session A: ${p.aTitle.slice(0, 60)}. Session B: ${p.bTitle.slice(0, 60)}.`;
   }
 
   async function label(nearDup: boolean): Promise<void> {
@@ -529,14 +644,16 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     else if (key === 's') { ev.preventDefault(); skip(); }
     else if (key === 'b' || ev.key === 'ArrowLeft') { ev.preventDefault(); back(); }
     else if (key === '?') {
-      alert(
-        'Keyboard shortcuts:\n' +
-          '  y — near-duplicate\n' +
-          '  n — not a duplicate\n' +
-          '  s — skip (no label written)\n' +
-          '  b / ←  — back one pair\n' +
-          '  ? — this help'
-      );
+      ev.preventDefault();
+      const help = document.getElementById('calibrate-help') as HTMLDetailsElement | null;
+      if (help) {
+        help.open = !help.open;
+        if (help.open) {
+          // Focus the summary so SRs read the open state + dl content.
+          const summary = help.querySelector('summary') as HTMLElement | null;
+          summary?.focus();
+        }
+      }
     }
   });
 
