@@ -113,9 +113,22 @@ export async function startMineNarratives(
   }
   if (res.status === 400) {
     const text = await res.text().catch(() => '');
+    // Server returns JSON-shaped 400 body: { ok: false, error: <msg> }.
+    // Parse out the structured `error` field for a user-friendlier
+    // message; fall back to the raw text on parse failure (defensive
+    // against a future endpoint returning plain text).
+    let parsedError: string | null = null;
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown };
+      if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+        parsedError = parsed.error;
+      }
+    } catch {
+      // raw text fallback below
+    }
     return {
       ok: false,
-      error: `mine-narratives rejected request: ${text || 'projectId failed sanitization or membership check'}`,
+      error: `mine-narratives rejected request: ${parsedError ?? text ?? 'projectId failed sanitization or membership check'}`,
     };
   }
   if (!res.ok) {

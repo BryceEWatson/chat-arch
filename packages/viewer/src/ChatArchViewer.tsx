@@ -3024,7 +3024,6 @@ export function ChatArchViewer({
                           void startMineNarratives({ projectId }).then(
                             (result) => {
                               if (!result.ok && result.error !== undefined) {
-                                // eslint-disable-next-line no-console
                                 console.warn(
                                   `[REGEN NARRATIVES] ${projectId}: ${result.error}`,
                                 );
@@ -3035,7 +3034,6 @@ export function ChatArchViewer({
                               // catch should map all rejection paths
                               // to {ok:false, error}, but a future
                               // refactor could regress that contract.
-                              // eslint-disable-next-line no-console
                               console.warn(
                                 `[REGEN NARRATIVES] ${projectId}: unhandled rejection ${String(err)}`,
                               );
