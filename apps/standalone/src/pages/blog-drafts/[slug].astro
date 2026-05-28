@@ -60,40 +60,57 @@ const overallTotal = overallPass + overallFail + overallInc;
 const overallRate = overallTotal === 0 ? 0 : overallPass / overallTotal;
 ---
 <BaseLayout title={draft !== null ? `Draft — ${slug}` : 'Draft not found'} current="DRAFTS">
-  <main class="draft">
-    <p class="draft__crumb"><a href="/blog-drafts">← all drafts</a></p>
-    <h1>{slug || '(no slug)'}</h1>
+  <main id="main-content" class="draft" tabindex="-1">
+    <p class="draft__crumb">
+      <a href="/blog-drafts"><span aria-hidden="true">← </span>all drafts</a>
+    </p>
+    <h1>{slug || 'Untitled draft'}</h1>
 
     {draft === null ? (
       <p class="draft__empty">
-        No draft found at <code>analysis/blog-drafts/{slug}.md</code> (or
-        <code>{slug}.prompt.md</code>). Run a rescan first.
+        No blog draft was found for this slug. Drafts are generated
+        when the blog-candidate selector runs and the chat-answer
+        agent renders each candidate to markdown — run SCAN LOCAL
+        from the DATA panel to refresh.
       </p>
     ) : (
       <>
         {draft.isPrompt ? (
-          <p class="draft__notice">
-            ⚠ This is the prompt scaffold, not the final draft. Invoke the
-            chat-answer skill in draft mode against the member sessions
-            below, then drop the produced markdown alongside this file as
-            <code>{slug}.md</code>. A rescan will pick it up.
+          <p class="draft__notice" role="note">
+            <span aria-hidden="true">⚠ </span>
+            This page is the seed prompt for this draft, not the
+            final article. The chat-answer agent will produce the
+            written-out markdown on the next scan, drawing from the
+            cited member sessions below.
           </p>
         ) : (
-          <section class="draft__audit">
-            <h2>F-AUDIT VERDICT</h2>
+          <section class="draft__audit" aria-labelledby="draft-audit-h">
+            <h2 id="draft-audit-h">CLAIM-VERIFICATION VERDICT</h2>
             <p>
               <strong>{(overallRate * 100).toFixed(0)}%</strong> claim-pass
               rate ({overallPass}/{overallTotal} verified, {overallFail} failed,
               {overallInc} inconclusive across {auditRows.length} cited session(s)).
               {overallRate >= 0.8 ? (
-                <span class="draft__pass"> ✓ passes 80% bar</span>
+                <span class="draft__pass">
+                  <span aria-hidden="true"> ✓</span> passes 80% bar
+                </span>
               ) : (
-                <span class="draft__fail"> ✗ below 80% bar</span>
+                <span class="draft__fail">
+                  <span aria-hidden="true"> ✗</span> below 80% bar
+                </span>
               )}
             </p>
             {auditRows.length > 0 ? (
-              <table class="draft__audit-table">
-                <thead><tr><th>session</th><th>pass</th><th>fail</th><th>inconc</th><th>rate</th></tr></thead>
+              <table class="draft__audit-table" aria-labelledby="draft-audit-h">
+                <thead>
+                  <tr>
+                    <th scope="col">session</th>
+                    <th scope="col">pass</th>
+                    <th scope="col">fail</th>
+                    <th scope="col">inconclusive</th>
+                    <th scope="col">rate</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {auditRows.map((r) => (
                     <tr>
@@ -112,9 +129,9 @@ const overallRate = overallTotal === 0 ? 0 : overallPass / overallTotal;
           </section>
         )}
 
-        <section class="draft__body">
-          <h2>{draft.isPrompt ? 'DRAFT PROMPT' : 'DRAFT'}</h2>
-          <pre>{draft.markdown}</pre>
+        <section class="draft__body" aria-labelledby="draft-body-h">
+          <h2 id="draft-body-h">{draft.isPrompt ? 'DRAFT PROMPT' : 'DRAFT'}</h2>
+          <pre tabindex="0">{draft.markdown}</pre>
         </section>
       </>
     )}
@@ -122,28 +139,47 @@ const overallRate = overallTotal === 0 ? 0 : overallPass / overallTotal;
 </BaseLayout>
 
 <style>
-  main.draft { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: #FFCC99; font-family: 'IBM Plex Sans', sans-serif; }
+  main.draft { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: var(--lcars-sunflower); font-family: 'IBM Plex Sans', sans-serif; }
   main.draft h1 { font-family: 'Antonio', sans-serif; letter-spacing: 0.08em; font-size: 24px; margin: 0 0 16px; word-break: break-all; }
-  main.draft h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; font-size: 14px; color: #FFCC99; margin: 20px 0 8px; }
+  main.draft h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; font-size: 14px; color: var(--lcars-sunflower); margin: 20px 0 8px; }
   .draft__crumb a { color: #FFCC99cc; text-decoration: none; font-size: 12px; }
-  .draft__notice { background: #ffaa3322; border: 1px solid #ffaa3388; padding: 12px 16px; border-radius: 4px; color: #ffd680; }
+  .draft__crumb a:focus-visible {
+    outline: 2px solid var(--lcars-sunflower);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  .draft__notice {
+    background: rgba(221, 153, 68, 0.13);
+    border-left: 3px solid var(--lcars-butterscotch);
+    padding: 12px 16px;
+    border-radius: 0 4px 4px 0;
+    color: var(--lcars-warn);
+  }
   .draft__notice code { background: #00000044; padding: 1px 4px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; }
   .draft__audit { margin-top: 16px; }
-  .draft__pass { color: #88e088; }
-  .draft__fail { color: #f08080; }
+  .draft__pass { color: var(--lcars-pass); }
+  .draft__fail { color: var(--lcars-fail); }
   .draft__audit-table { border-collapse: collapse; margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-  .draft__audit-table th, .draft__audit-table td { padding: 4px 12px; text-align: left; border-bottom: 1px solid #FFCC9922; }
+  .draft__audit-table th, .draft__audit-table td { padding: 4px 12px; text-align: left; border-bottom: 1px solid #FFCC9988; }
+  .draft__audit-table tbody tr:hover {
+    background: rgba(255, 204, 153, 0.04);
+  }
   .draft__no-cites { color: #FFCC9999; font-style: italic; }
   .draft__body pre {
     background: #0a0a0a;
-    border: 1px solid #FFCC9922;
+    border: 1px solid #FFCC9988;
     padding: 16px 20px;
     border-radius: 4px;
-    color: #FFCC99;
+    color: var(--lcars-sunflower);
     font-family: 'JetBrains Mono', monospace;
     font-size: 13px;
     line-height: 1.7;
+    max-width: 78ch;
     overflow-x: auto;
     white-space: pre-wrap;
+  }
+  .draft__body pre:focus-visible {
+    outline: 2px solid var(--lcars-ice);
+    outline-offset: 2px;
   }
 </style>
