@@ -237,9 +237,17 @@ export function FilterBar({
 
   return (
     <section className="lcars-filter-bar" aria-label="filter controls">
+      {/*
+        Pill rows use role="group" rather than role="toolbar". Toolbars
+        contract for arrow-key roving-tabindex nav, but every pill here
+        is tabIndex=0 (Tab moves between them, no arrow-key handler is
+        wired). role="group" + aria-label gives the SR user the same
+        named-region announcement without falsely promising toolbar
+        keyboard semantics.
+      */}
       <div
         className="lcars-filter-bar__pills lcars-filter-bar__pills--source"
-        role="toolbar"
+        role="group"
         aria-label="source filter"
       >
         <div
@@ -290,7 +298,7 @@ export function FilterBar({
           (streaming ? ' lcars-filter-bar__pills--streaming' : '') +
           (focusedProjects ? ' lcars-filter-bar__pills--focused' : '')
         }
-        role="toolbar"
+        role="group"
         aria-label="project filter"
         aria-busy={streaming || undefined}
       >
@@ -308,8 +316,7 @@ export function FilterBar({
                 `lcars-project-pill` + (active ? ' lcars-project-pill--active' : '')
               }
               aria-pressed={active}
-              aria-label={`toggle project ${p.id} (${p.count} sessions)`}
-              title={p.id}
+              aria-label={`toggle project ${p.id} — ${p.count} sessions`}
               onClick={() => onToggleProject(p.id)}
               onKeyDown={(e) => onActivate(e, () => onToggleProject(p.id))}
             >
@@ -332,7 +339,14 @@ export function FilterBar({
             tabIndex={0}
             className={`lcars-project-pill lcars-project-pill--unknown${unknownProjectActive ? ' lcars-project-pill--active' : ''}`}
             aria-pressed={unknownProjectActive}
-            aria-label={`toggle UNKNOWN project filter (${filterPills.unknownCount} sessions)`}
+            aria-label={`toggle UNKNOWN project filter — ${filterPills.unknownCount} sessions with no detected project name`}
+            title={
+              `${filterPills.unknownCount} sessions had no detectable project name. ` +
+              'Causes: CLI session ran outside any tracked project dir; ' +
+              'Cowork session had no project field; or the transcript ' +
+              'sat in a flat scratch directory. The Discover-projects ' +
+              'kernel only assigns a project when it can match a basename.'
+            }
             onClick={onToggleUnknownProject}
             onKeyDown={(e) => onActivate(e, onToggleUnknownProject)}
           >
@@ -348,19 +362,20 @@ export function FilterBar({
             aria-label={
               projectsExpanded
                 ? `collapse ${filterPills.projects.rest.length} more projects`
-                : `show ${filterPills.projects.rest.length} more projects`
-            }
-            title={
-              projectsExpanded
-                ? 'click to collapse'
-                : filterPills.projects.rest.map((p) => `${p.id} (${p.count})`).join(', ')
+                : `show ${filterPills.projects.rest.length} more projects: ${filterPills.projects.rest.map((p) => `${p.id} (${p.count})`).join(', ')}`
             }
             onClick={() => setProjectsExpanded((v) => !v)}
             onKeyDown={(e) => onActivate(e, () => setProjectsExpanded((v) => !v))}
           >
-            {projectsExpanded
-              ? `COLLAPSE ▴`
-              : `SHOW ${filterPills.projects.rest.length} MORE ▾`}
+            {projectsExpanded ? (
+              <>
+                COLLAPSE <span aria-hidden="true">▴</span>
+              </>
+            ) : (
+              <>
+                SHOW {filterPills.projects.rest.length} MORE <span aria-hidden="true">▾</span>
+              </>
+            )}
           </span>
         )}
       </div>
@@ -377,7 +392,7 @@ export function FilterBar({
             (streaming ? ' lcars-filter-bar__pills--streaming' : '') +
             (focusedTopics ? ' lcars-filter-bar__pills--focused' : '')
           }
-          role="toolbar"
+          role="group"
           aria-label="topic filter"
           aria-busy={streaming || undefined}
         >
@@ -401,7 +416,7 @@ export function FilterBar({
                   (active ? ' lcars-project-pill--active' : '')
                 }
                 aria-pressed={active}
-                aria-label={`toggle emergent topic ${p.id} (${p.count} sessions discovered by clustering)`}
+                aria-label={`toggle topic ${display} — ${p.count} sessions`}
                 title={`${display} — emergent topic discovered from conversation content (${p.count} sessions).`}
                 onClick={() => onToggleProject(p.id)}
                 onKeyDown={(e) => onActivate(e, () => onToggleProject(p.id))}
@@ -420,19 +435,20 @@ export function FilterBar({
               aria-label={
                 topicsExpanded
                   ? `collapse ${filterPills.topics.rest.length} more topics`
-                  : `show ${filterPills.topics.rest.length} more topics`
-              }
-              title={
-                topicsExpanded
-                  ? 'click to collapse'
-                  : filterPills.topics.rest.map((p) => `${p.id.replace(/^~/, '')} (${p.count})`).join(', ')
+                  : `show ${filterPills.topics.rest.length} more topics: ${filterPills.topics.rest.map((p) => `${p.id.replace(/^~/, '')} (${p.count})`).join(', ')}`
               }
               onClick={() => setTopicsExpanded((v) => !v)}
               onKeyDown={(e) => onActivate(e, () => setTopicsExpanded((v) => !v))}
             >
-              {topicsExpanded
-                ? `COLLAPSE ▴`
-                : `SHOW ${filterPills.topics.rest.length} MORE ▾`}
+              {topicsExpanded ? (
+                <>
+                  COLLAPSE <span aria-hidden="true">▴</span>
+                </>
+              ) : (
+                <>
+                  SHOW {filterPills.topics.rest.length} MORE <span aria-hidden="true">▾</span>
+                </>
+              )}
             </span>
           )}
         </div>

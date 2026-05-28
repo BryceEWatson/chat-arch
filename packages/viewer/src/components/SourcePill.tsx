@@ -1,5 +1,5 @@
 import type { SessionSource } from '@chat-arch/schema';
-import { SOURCE_BADGE, SOURCE_COLOR, SOURCE_LABEL } from '../types.js';
+import { SOURCE_BADGE, SOURCE_COLOR, SOURCE_LABEL, SOURCE_TOOLTIP } from '../types.js';
 import { onActivate } from '../util/a11y.js';
 
 export interface SourcePillProps {
@@ -15,6 +15,7 @@ export function SourcePill({ source, count, active, onToggle, readonly }: Source
   const color = SOURCE_COLOR[source];
   const label = SOURCE_LABEL[source];
   const badge = SOURCE_BADGE[source];
+  const tooltip = SOURCE_TOOLTIP[source];
   const className = [
     'lcars-source-pill',
     active ? 'lcars-source-pill--active' : '',
@@ -30,8 +31,12 @@ export function SourcePill({ source, count, active, onToggle, readonly }: Source
   } as React.CSSProperties;
 
   if (readonly) {
+    // Drop the aria-label from the readonly span — the inner __label text
+    // already renders SOURCE_LABEL[source] visibly, so AT users get it via
+    // the regular text-content path. aria-label on a bare span without
+    // role is widely dropped by AT anyway.
     return (
-      <span className={className} style={style} aria-label={`source ${label}`}>
+      <span className={className} style={style} title={tooltip}>
         <span className="lcars-source-pill__badge" aria-hidden="true">
           {badge}
         </span>
@@ -41,13 +46,18 @@ export function SourcePill({ source, count, active, onToggle, readonly }: Source
   }
 
   return (
+    // aria-label is just `source ${label}` (no "toggle" verb) — aria-pressed
+    // already encodes the toggle state, and SR readers commonly stutter
+    // "toggle source CLOUD toggle button" when the verb collides with the
+    // pressed-state semantic. Matches the readonly name shape too.
     <div
       className={className}
       style={style}
       role="button"
       tabIndex={0}
       aria-pressed={active}
-      aria-label={`toggle source ${label}`}
+      aria-label={`source ${label} — ${tooltip}`}
+      title={tooltip}
       onClick={onToggle}
       onKeyDown={(e) => onActivate(e, () => onToggle?.())}
     >

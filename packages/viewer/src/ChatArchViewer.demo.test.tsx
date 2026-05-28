@@ -134,7 +134,7 @@ describe('ChatArchViewer — Phase 4 demo-path workshop loop', () => {
     // active sidebar item flips to CORRECTIONS.
     await waitFor(() => {
       const active = document.querySelector('[aria-current="page"]');
-      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
+      expect(active?.getAttribute('aria-label')).toMatch(/^mode CORRECTIONS\b/);
     });
 
     // And the corrections panel renders the demo patterns. Look for

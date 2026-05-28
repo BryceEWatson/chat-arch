@@ -95,7 +95,7 @@ Bumps `EXPORTER_VERSION`; requires rescan.
 
 ## FilterBar
 
-- [FilterBar.tsx:431](packages/viewer/src/components/FilterBar.tsx#L431) — Topic chip strips a leading `~` via `p.id.slice(1)`. If a topic id legitimately starts with `~` (or if id ≠ display-name), the display goes wrong. Should use `displayName` field.
+- [FilterBar.tsx:431](packages/viewer/src/components/FilterBar.tsx#L431) — Topic chip strips a leading `~` via `p.id.slice(1)`. If a topic id legitimately starts with `~` (or if id ≠ display-name), the display goes wrong. Should use `displayName` field. [?] Topic schema's `displayName` field today carries the same `~theme` shape as `id`, so the `.slice(1)` workaround is functionally equivalent. Threading `displayName` would be a defensive refactor for a hypothetical future state where topic id and display name diverge — flagging for user judgment rather than fixing now.
 
 ## CorrectionPatternCard
 
@@ -215,9 +215,9 @@ same PR.
 
 ### Gap #5: Sidebar / project chips on SESSIONS
 
-- [Sidebar.tsx:83–143](packages/viewer/src/components/Sidebar.tsx#L83-L143) — mode names "EFFECTIVENESS / INSIGHTS / TRENDS / DECISIONS" have no inline tooltips. Each requires the user to click in to learn what it shows. (Compare with the per-card chip tooltips that do exist.)
-- [FilterBar.tsx:125](packages/viewer/src/components/FilterBar.tsx#L125) — project label `"UNKNOWN"` for falsy `s.project`. In the user's current screenshot, 382 sessions land in `UNKNOWN` — that's a *huge* bucket. The label gives no affordance to learn why, or to assign a project. Almost certainly the highest-leverage individual fix on this list.
-- [SourcePill.tsx](packages/viewer/src/components/SourcePill.tsx) + [types.ts SOURCE_LABEL](packages/viewer/src/types.ts) — labels `COWORK / CLI-DIRECT / CLI-DESKTOP / CLOUD` are internal source-family slugs, not user-facing names. Cold visitor has no way to know what they mean. Tooltip would unlock that without restructuring.
+- [Sidebar.tsx:83–143](packages/viewer/src/components/Sidebar.tsx#L83-L143) — mode names "EFFECTIVENESS / INSIGHTS / TRENDS / DECISIONS" have no inline tooltips. Each requires the user to click in to learn what it shows. (Compare with the per-card chip tooltips that do exist.) [x] fixed: every NAV item now carries a `tooltip` field shown as `title=` on hover + woven into the long-form `aria-label` (e.g. `mode EFFECTIVENESS — Weekly composite-score trajectory — is your collaboration improving?`). Both sidebar variants (vertical full + horizontal mobile pill) read it. The HORIZONTAL_PILL_ORDER constant was collapsed into `NAV.flatMap(g => g.items)` so there's no second source of truth.
+- [FilterBar.tsx:125](packages/viewer/src/components/FilterBar.tsx#L125) — project label `"UNKNOWN"` for falsy `s.project`. In the user's current screenshot, 382 sessions land in `UNKNOWN` — that's a *huge* bucket. The label gives no affordance to learn why, or to assign a project. Almost certainly the highest-leverage individual fix on this list. [x] fixed: UNKNOWN chip now carries a `title=` tooltip ("N sessions had no detectable project name. Causes: …") + a richer aria-label, so first-time visitors can learn the bucket's semantics without clicking in. The bucket still exists as a filterable pill; the fix is informational.
+- [SourcePill.tsx](packages/viewer/src/components/SourcePill.tsx) + [types.ts SOURCE_LABEL](packages/viewer/src/types.ts) — labels `COWORK / CLI-DIRECT / CLI-DESKTOP / CLOUD` are internal source-family slugs, not user-facing names. Cold visitor has no way to know what they mean. Tooltip would unlock that without restructuring. [x] fixed: new `SOURCE_TOOLTIP` map in `types.ts` carries one-line descriptions per source. SourcePill renders `title={tooltip}` on both interactive + readonly variants; the interactive variant also folds the tooltip into its aria-label. The short LCARS-style labels stay unchanged.
 
 ### Gap #6: `/api/*` error responses + client error rendering
 
