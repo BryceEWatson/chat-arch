@@ -6,6 +6,7 @@
  */
 
 import type { ProposedUpgrade } from '@chat-arch/schema';
+import { errorToUserMessage } from '../util/errorMessage.js';
 
 const APPLY_PATH = '/api/apply-correction';
 const REQUIRED_HEADER_VALUE = 'chat-arch-apply-correction';
@@ -64,7 +65,7 @@ export async function applyCorrection(
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorToUserMessage(err, { context: 'apply the correction' }),
     };
   }
   let parsed: unknown = null;
@@ -83,10 +84,14 @@ export async function applyCorrection(
         error: 'Another apply is in flight. Try again in a moment.',
       };
     }
-    const errMsg =
+    const serverError =
       parsed && typeof parsed === 'object' && 'error' in parsed
         ? String((parsed as { error?: unknown }).error)
-        : `apply-correction failed (status ${res.status})`;
+        : null;
+    const errMsg = errorToUserMessage(
+      serverError ?? `HTTP ${res.status}`,
+      { context: 'apply the correction' },
+    );
     return { ok: false, error: errMsg };
   }
   if (parsed && typeof parsed === 'object') {

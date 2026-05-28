@@ -1,4 +1,5 @@
 import type { ChatAnswerRequest, ChatStreamEvent } from '@chat-arch/schema';
+import { errorToUserMessage } from '../util/errorMessage.js';
 
 /**
  * Network seam for the chat page. The viewer never calls `fetch()` for
@@ -53,20 +54,24 @@ export async function streamChatAnswer(
   } catch (err) {
     opts.onEvent({
       type: 'error',
-      message: `network error contacting ${ENDPOINT}: ${String(err)}`,
+      message: errorToUserMessage(err, { context: 'reach the local chat backend' }),
       retryable: true,
     });
     return { finalSeen: false, rejected: { status: 0, error: 'network' } };
   }
 
   if (!res.ok) {
-    let errText = `HTTP ${res.status}`;
+    let serverError: string | null = null;
     try {
       const j = (await res.json()) as { error?: unknown };
-      if (typeof j.error === 'string') errText = j.error;
+      if (typeof j.error === 'string') serverError = j.error;
     } catch {
-      // not JSON; keep status text
+      // not JSON; let errorToUserMessage handle the HTTP-N case below.
     }
+    const errText = errorToUserMessage(
+      serverError ?? `HTTP ${res.status}`,
+      { context: 'reach the local chat backend' },
+    );
     opts.onEvent({ type: 'error', message: errText, retryable: res.status >= 500 || res.status === 429 });
     return { finalSeen: false, rejected: { status: res.status, error: errText } };
   }

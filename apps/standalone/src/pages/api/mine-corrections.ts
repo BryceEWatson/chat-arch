@@ -144,14 +144,20 @@ export function classifyOutcome(
   probe: OutcomeProbe,
 ): MiningOutcomeVerdict {
   if (spawnError !== null) {
-    return { ok: false, reason: `spawn error: ${spawnError.message}` };
+    return {
+      ok: false,
+      reason: `couldn't launch the claude CLI — ${translateSpawnError(spawnError)}`,
+    };
   }
   if (exitCode !== 0) {
-    return { ok: false, reason: `claude CLI exited with code ${exitCode}` };
+    return {
+      ok: false,
+      reason: `the claude CLI exited with code ${exitCode}${exitCodeHint(exitCode)}`,
+    };
   }
   if (probe.statusFileStatus === 'error') {
-    const msg = probe.statusFileError ?? '(no message in status file)';
-    return { ok: false, reason: `skill reported error: ${msg}` };
+    const msg = probe.statusFileError ?? 'no further detail recorded';
+    return { ok: false, reason: `the mining skill reported an error: ${msg}` };
   }
   if (
     probe.correctionsGeneratedAt === null ||
@@ -159,16 +165,51 @@ export function classifyOutcome(
   ) {
     const detail =
       probe.statusFileStatus !== null
-        ? ` (last skill status: ${probe.statusFileStatus})`
-        : ' (no skill status file written — skill likely aborted in Stage 0 before initializing, e.g. hit a cap-and-ask branch in headless mode or failed to verify Ollama)';
+        ? ` (the skill's last progress update was: ${probe.statusFileStatus})`
+        : " — the skill probably aborted before writing any progress (commonly: hit a cap-and-ask branch in headless mode, or local Ollama wasn't reachable when embeddings were needed)";
     return {
       ok: false,
       reason:
-        `skill exited cleanly but did not write a fresh corrections.json${detail}. ` +
-        `This is the "silent abort" failure mode — the CLI returned exit 0 but no output was produced.`,
+        `the mining skill exited cleanly but didn't produce a fresh corrections file${detail}.`,
     };
   }
   return { ok: true, reason: null };
+}
+
+/**
+ * Map common Node child-process spawn errors to user-actionable text.
+ * Examples in the wild:
+ *   - `ENOENT: spawnfile pnpm.cmd` (Windows, claude CLI not on PATH)
+ *   - `EACCES` (permission)
+ *   - `EAGAIN` (resource temporarily unavailable)
+ */
+function translateSpawnError(err: Error): string {
+  const msg = err.message;
+  if (/ENOENT/.test(msg) && /claude/i.test(msg)) {
+    return 'the claude CLI was not found on PATH. Install Claude Code from https://docs.anthropic.com/claude/docs/claude-code or open a shell where `claude --version` works.';
+  }
+  if (/ENOENT/.test(msg)) {
+    return 'a required executable was not found on PATH.';
+  }
+  if (/EACCES/.test(msg)) {
+    return 'permission denied launching the subprocess.';
+  }
+  return msg;
+}
+
+/**
+ * Map known exit codes to remediation hints. 0xC0000142 is Windows'
+ * "DLL initialization failed" — common when the claude CLI is installed
+ * but a runtime dependency (e.g. Node) is missing.
+ */
+function exitCodeHint(code: number | null): string {
+  if (code === null) return '';
+  if (code === 0xc0000142 || code === -1073741502) {
+    return ' (Windows DLL initialization failure — usually means the Node runtime the CLI links against is broken or missing; reinstall Claude Code)';
+  }
+  if (code === 137) return ' (process was killed — likely out of memory)';
+  if (code === 139) return ' (segmentation fault — probably a CLI bug)';
+  return '';
 }
 
 async function probeOutcome(
