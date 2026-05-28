@@ -124,7 +124,8 @@ const NAV: readonly NavGroup[] = [
         mode: 'trust',
         label: 'TRUST',
         short: 'TRU',
-        tooltip: 'Claim-verification audit — how often does the assistant misrepresent?',
+        tooltip:
+          'Decision-acceptance vs. outcome 2×2 — does the assistant call decisions the way that lands?',
       },
     ],
   },

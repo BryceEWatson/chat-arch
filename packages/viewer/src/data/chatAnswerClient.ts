@@ -114,11 +114,21 @@ export async function streamChatAnswer(
       }
     }
   } catch (err) {
-    opts.onEvent({
-      type: 'error',
-      message: `stream interrupted: ${String(err)}`,
-      retryable: true,
-    });
+    // User-initiated cancel (clicking STOP on a chat answer) reaches
+    // us via opts.signal.abort(), which fetch surfaces as a DOMException
+    // with name 'AbortError'. Returning this as a visible error would
+    // pop a banner saying "stream interrupted: AbortError…" on every
+    // intentional cancel; treat it as a clean exit instead.
+    const isAbort =
+      (err instanceof Error && err.name === 'AbortError') ||
+      opts.signal?.aborted === true;
+    if (!isAbort) {
+      opts.onEvent({
+        type: 'error',
+        message: errorToUserMessage(err, { context: 'reach the local chat backend' }),
+        retryable: true,
+      });
+    }
   }
 
   return { finalSeen, rejected: null };

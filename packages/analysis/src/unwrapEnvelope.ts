@@ -26,9 +26,16 @@
  *   - Empty result → `null` (no display string; callers should use a
  *     fallback like `(no preview)` rather than render whitespace).
  *
- * The wrapper-prefix list mirrors the one duplicated in
- * `packages/exporter/src/analysis/personaCandidates.ts` (intentionally
- * duplicated there — those two builders shouldn't share internals).
+ * `packages/exporter/src/analysis/personaCandidates.ts` now imports
+ * this helper as the primary unwrap stage and keeps its own local
+ * `WRAPPER_PREFIXES` only as a defense-in-depth post-unwrap filter
+ * (catches any wrapper opener that survived the unwrap pass when the
+ * input was unbalanced). The two prefix lists are not parallel
+ * implementations — this module's structured `<command-...>` /
+ * `<scheduled-task>` handling is the single source of truth for
+ * unwrap semantics, and personaCandidates layers a startsWith() guard
+ * on top to skip whole-turn cases unwrapEnvelope intentionally lets
+ * through (e.g., legacy text that happens to begin with `<file>`).
  */
 
 const SCHEDULED_TASK_RE = /<scheduled-task\b[^>]*\bname="([^"]+)"[^>]*>[\s\S]*?(?:<\/scheduled-task>|$)/g;
