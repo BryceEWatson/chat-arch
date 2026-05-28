@@ -114,6 +114,45 @@ describe('inferProject — 6-step strict-first-match cascade', () => {
     expect(r!.confidence).toBe(0.4);
   });
 
+  it('VM-haiku guard is shape-based: a vm session with a REAL host-folder cwd uses the basename', () => {
+    // Verified against the corpus: 23 cwdKind==='vm' sessions carry a genuine
+    // host cwd (mostly chat-arch). The basename is a real signal — use it
+    // (and unify cross-source with host + VM-USF chat-arch sessions).
+    const r = inferProject(mk({ cwdKind: 'vm', cwd: 'C:\\Users\\Bryce\\Projects\\chat-arch' }));
+    expect(r!.id).toBe('chat-arch');
+    expect(r!.resolvedVia).toBe('cwd_basename');
+    const dotted = inferProject(mk({ cwdKind: 'vm', cwd: 'C:\\Users\\Bryce\\Projects\\brycewatson.com' }));
+    expect(dotted!.id).toBe('brycewatson.com');
+    expect(dotted!.resolvedVia).toBe('cwd_basename');
+  });
+
+  it('VM guard rejects the synthetic `local_<uuid>/outputs` scheduled-output dir (no proj_outputs)', () => {
+    const r = inferProject(mk({ cwdKind: 'vm', cwd: 'C:\\x\\local_abc123\\outputs', title: 'no keyword match' }));
+    expect(r).toBeNull();
+  });
+
+  it('VM guard rejects a `.claude/worktrees/<haiku>` cwd (§14 walk-up deferred)', () => {
+    const r = inferProject(
+      mk({ cwdKind: 'vm', cwd: 'C:\\Users\\b\\Projects\\chat-arch\\.claude\\worktrees\\clever-dirac-4b629f', title: 'x' }),
+    );
+    expect(r).toBeNull();
+  });
+
+  it('VM guard is path-based, NOT shape-based: a real 3-word-kebab host folder is USED, not rejected', () => {
+    // Regression guard: a basename-shape regex would wrongly reject
+    // `data-pipeline-svc` as a docker-haiku; the path-structure guard does not.
+    const r = inferProject(mk({ cwdKind: 'vm', cwd: 'C:\\Users\\b\\Projects\\data-pipeline-svc' }));
+    expect(r!.id).toBe('data-pipeline-svc');
+    expect(r!.resolvedVia).toBe('cwd_basename');
+  });
+
+  it('host cwd basename is never haiku-guarded (only vm is)', () => {
+    // A host session whose folder happens to look haiku-shaped still resolves.
+    const r = inferProject(mk({ cwdKind: 'host', cwd: '/x/strange-bardeen-ff8efb' }));
+    expect(r!.id).toBe('strange-bardeen-ff8efb');
+    expect(r!.resolvedVia).toBe('cwd_basename');
+  });
+
   it('(5) title-keyword fallback (cloud sessions, no cwd)', () => {
     const r = inferProject(mk({ title: 'Profitability Outlook for my-project-c' }));
     expect(r!.id).toBe('my-project-c');

@@ -11,10 +11,11 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { SessionManifest } from '@chat-arch/schema';
+import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
 import { UNASSIGNED_PROJECT_ID } from '@chat-arch/schema';
 import {
   discoverProjects,
+  isSyntheticVmCwd,
   type InferenceSource,
   type ProjectOverride,
 } from '@chat-arch/analysis';
@@ -105,6 +106,14 @@ export interface ProjectIdentityPreview {
     vanishedProjectIds: string[];
   };
   resolvedViaCounts: Record<string, number>;
+  /**
+   * Reason-distribution over the UNASSIGNED residue so it is enumerated, not
+   * mysterious (plan §12). `vm-no-resolvable-basename` is the benign,
+   * signal-less residue (VM, no userSelectedFolders, no scheduledTaskId,
+   * synthetic basename); the other buckets are sessions unassigned DESPITE a
+   * usable signal and should stay near zero.
+   */
+  unassignedReasons: Record<string, number>;
   /** Top new projects by session count (capped for file size). */
   newProjects: ProjectSummaryRow[];
   /** Sample of moved sessions (capped); `movedSessionCount` is the true total. */
@@ -115,6 +124,25 @@ export interface ProjectIdentityPreview {
 
 const MOVED_SAMPLE_CAP = 200;
 const NEW_PROJECTS_CAP = 60;
+
+/**
+ * Classify an unassigned session by SIGNAL availability (mirrors the audit
+ * script). Benign iff it's a VM session with no userSelectedFolders, no
+ * scheduledTaskId, and a SYNTHETIC cwd (shared `isSyntheticVmCwd` predicate) —
+ * i.e. genuinely signal-less under the in-scope cascade. Anything unassigned
+ * DESPITE a real signal surfaces (`no-cwd-no-title-match` / `other`).
+ */
+function classifyUnassignedReason(entry: UnifiedSessionEntry | undefined): string {
+  if (entry === undefined) return 'other';
+  const cwd = typeof entry.cwd === 'string' ? entry.cwd.trim() : '';
+  const hasUsf = Array.isArray(entry.userSelectedFolders) && entry.userSelectedFolders.length > 0;
+  const hasSched = typeof entry.scheduledTaskId === 'string' && entry.scheduledTaskId.trim() !== '';
+  if (entry.cwdKind === 'vm' && !hasUsf && !hasSched && cwd !== '' && isSyntheticVmCwd(cwd)) {
+    return 'vm-no-resolvable-basename';
+  }
+  if (cwd === '') return 'no-cwd-no-title-match';
+  return 'other';
+}
 
 /**
  * Compute the v2 bucketing over `manifest` and diff it against the live
@@ -174,6 +202,16 @@ export async function buildProjectIdentityPreview(opts: {
     resolvedViaCounts[k] = (resolvedViaCounts[k] ?? 0) + 1;
   }
 
+  // Enumerate the UNASSIGNED residue by reason (plan §12).
+  const entryById = new Map<string, UnifiedSessionEntry>();
+  for (const e of manifest.sessions) entryById.set(e.id, e);
+  const unassignedReasons: Record<string, number> = {};
+  for (const [sid, a] of result.attribution) {
+    if (a.resolvedVia !== 'unassigned') continue;
+    const reason = classifyUnassignedReason(entryById.get(sid));
+    unassignedReasons[reason] = (unassignedReasons[reason] ?? 0) + 1;
+  }
+
   // ---- moved sessions (only meaningful when a baseline exists) ----
   const movedSessionsSample: Array<{ sessionId: string; from: string; to: string }> = [];
   let movedSessionCount = 0;
@@ -206,6 +244,7 @@ export async function buildProjectIdentityPreview(opts: {
       vanishedProjectIds: [...oldProjectIds].filter((id) => !newProjectIds.has(id)).sort(),
     },
     resolvedViaCounts,
+    unassignedReasons,
     newProjects: newProjectRows.slice(0, NEW_PROJECTS_CAP),
     movedSessionsSample,
     noBaseline,

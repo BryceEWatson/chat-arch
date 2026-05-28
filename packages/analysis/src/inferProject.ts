@@ -10,7 +10,7 @@
  * 1. explicit session.project                                                  1.00
  * 2. scheduledTaskId   → routine_<scheduledTaskId>                             0.90
  * 3. cwdKind==='vm' && userSelectedFolders[0] non-empty → basename(USF[0])     0.80
- * 4. cwd basename (host only — VM-haiku guard below)                           0.50
+ * 4. cwd basename (host, or VM with a real host-folder basename)              0.50
  * 5. title-keyword regex                                                       0.40
  * 6. __unassigned__ (returns null)                                             0.00
  * ```
@@ -167,18 +167,29 @@ export function inferProject(
     }
   }
 
-  // Rule 4 — cwd basename, HOST ONLY. VM-haiku guard: a `cwdKind==='vm'`
-  // session that reached here (rule 3 did not fire → no userSelectedFolders)
-  // must NOT adopt its haiku VM basename as a project; fall through to rule 5.
-  if (nonEmpty(entry.cwd) && entry.cwdKind !== 'vm') {
+  // Rule 4 — cwd basename. VM-haiku guard: a `cwdKind==='vm'` session that
+  // reached here (rule 3 did not fire → no userSelectedFolders) must NOT adopt
+  // a *synthetic* VM basename — a docker-style haiku (`strange-bardeen-ff8efb`,
+  // matched by SYNTHETIC_VM_BASENAME_RE) or the scheduled-output `outputs` dir.
+  // It MAY, however, adopt a REAL host-folder basename: verified against the
+  // corpus, 23 cwdKind==='vm' sessions carry a genuine host cwd
+  // (`C:\…\Projects\chat-arch`, `…\brycewatson.com`, `…\dropKnowledge`) rather
+  // than a synthetic path, and those collapse correctly into their real
+  // projects (and unify cross-source with host + VM-USF sessions). So the
+  // guard keys on the basename SHAPE, not a blanket `cwdKind==='vm'` reject —
+  // the latter (the first draft) silently dropped those 23 to UNASSIGNED.
+  if (nonEmpty(entry.cwd)) {
     const base = extractBasename(entry.cwd);
     if (base !== null && base !== '') {
-      return {
-        id: base,
-        displayName: base,
-        resolvedVia: 'cwd_basename',
-        confidence: RESOLVED_VIA_CONFIDENCE.cwd_basename,
-      };
+      const syntheticVm = entry.cwdKind === 'vm' && isSyntheticVmCwd(entry.cwd);
+      if (!syntheticVm) {
+        return {
+          id: base,
+          displayName: base,
+          resolvedVia: 'cwd_basename',
+          confidence: RESOLVED_VIA_CONFIDENCE.cwd_basename,
+        };
+      }
     }
   }
 
@@ -203,6 +214,30 @@ export function inferProject(
 /** Leading date prefix Cowork auto-titles use, e.g. "Mar 28 – ". The class
  * covers hyphen, en-dash (U+2013) and em-dash (U+2014). */
 const DATE_PREFIX_RE = /^\w{3,}\s+\d{1,2}\s+[–—-]\s+/;
+
+/**
+ * Rule 4's VM guard keys on the cwd PATH STRUCTURE, not the basename shape.
+ * A `cwdKind==='vm'` session reaching rule 4 (no userSelectedFolders) carries
+ * a *synthetic* cwd in exactly three forms (verified against the corpus); only
+ * these are rejected, so a VM session whose cwd is a REAL host folder still
+ * resolves by basename:
+ *   - `/sessions/<processName>` — the synthetic Cowork VM path (docker-haiku);
+ *   - `…/.claude/worktrees/<haiku>` — a git worktree (really its parent
+ *     project, but recovering that needs the §14-deferred path walk-up);
+ *   - `…/local_<uuid>/outputs` — a scheduled-task output dir that carries no
+ *     scheduledTaskId (so rule 2 didn't fire) and whose basename is the
+ *     meaningless `outputs`.
+ * Path-structure keying (vs. a basename-shape regex) avoids wrongly rejecting
+ * a real 3-word-kebab host folder like `data-pipeline-svc`. Plan §4.
+ */
+export function isSyntheticVmCwd(cwd: string): boolean {
+  const p = cwd.replace(/\\/g, '/');
+  return (
+    /^\/sessions\//.test(p) ||
+    /\/\.claude\/worktrees\//.test(p) ||
+    /\/local_[^/]+\/outputs\/?$/.test(p)
+  );
+}
 
 /**
  * Per-session displayName candidate for a scheduled-task session: the title

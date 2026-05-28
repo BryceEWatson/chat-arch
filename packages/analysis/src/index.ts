@@ -51,6 +51,7 @@ export {
   extractBasename,
   globMatch,
   inferProject,
+  isSyntheticVmCwd,
   scheduledDisplayCandidate,
   titleCaseSlug,
   type InferenceSource,
