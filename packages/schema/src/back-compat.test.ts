@@ -153,6 +153,44 @@ describe('SessionManifest back-compat', () => {
     expect(round.analysisSidecars?.auditSummary).toBe('analysis/audit-summary.json');
   });
 
+  it('accepts the Project Identity v2 optional fields at schemaVersion 4 (no version bump)', () => {
+    const entry: UnifiedSessionEntry = {
+      id: 'f',
+      source: 'cowork',
+      rawSessionId: 'local_f',
+      startedAt: 0,
+      updatedAt: 0,
+      durationMs: 0,
+      title: 'Mar 28 – Shopforge daily metrics sync',
+      titleSource: 'manifest',
+      preview: null,
+      userTurns: 1,
+      model: 'claude-opus-4-7',
+      cwdKind: 'vm',
+      totalCostUsd: null,
+      // Project Identity v2 additive optional fields:
+      scheduledTaskId: 'shopforge-daily-metrics-sync',
+      sessionType: 'scheduled',
+      parentSessionId: 'parent-uuid',
+      projectAttribution: { resolvedVia: 'scheduled-task', confidence: 0.9 },
+    };
+    const v4: SessionManifest = {
+      schemaVersion: 4,
+      generatedAt: 1714521600000,
+      counts: { cloud: 0, cowork: 1, 'cli-direct': 0, 'cli-desktop': 0 },
+      sessions: [entry],
+    };
+    const round = JSON.parse(JSON.stringify(v4)) as SessionManifest;
+    expect(round.schemaVersion).toBe(4);
+    const s = round.sessions[0];
+    expect(s?.scheduledTaskId).toBe('shopforge-daily-metrics-sync');
+    expect(s?.sessionType).toBe('scheduled');
+    expect(s?.parentSessionId).toBe('parent-uuid');
+    expect(s?.projectAttribution).toEqual({ resolvedVia: 'scheduled-task', confidence: 0.9 });
+    // CURRENT_SCHEMA_VERSION stays 4 — the new fields are optional, no bump.
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
+  });
+
   it('UnifiedSessionEntry accepts v3 FK fields without losing v1 minimal shape', () => {
     const minimal: UnifiedSessionEntry = {
       id: 'd',

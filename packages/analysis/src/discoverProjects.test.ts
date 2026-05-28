@@ -88,4 +88,63 @@ describe('discoverProjects', () => {
     expect(p.lastActivityAt).toBe(new Date(2000).toISOString());
     expect(p.discoveredAt).toBe(new Date(5000).toISOString());
   });
+
+  // ---- Project Identity v2 ----
+
+  it('emits per-session attribution { projectId, resolvedVia, confidence }', () => {
+    const r = discoverProjects([
+      s('a', { project: 'chat-arch' }),
+      s('orphan', { title: 'nothing matches here' }),
+    ]);
+    const a = r.attribution.get('a');
+    expect(a?.resolvedVia).toBe('project_field');
+    expect(a?.confidence).toBe(1.0);
+    expect(a?.projectId).toBe(r.sessionToProject.get('a'));
+    const orphan = r.attribution.get('orphan');
+    expect(orphan?.resolvedVia).toBe('unassigned');
+    expect(orphan?.confidence).toBe(0);
+    expect(orphan?.projectId).toBe(UNASSIGNED_PROJECT_ID);
+  });
+
+  it('scheduled-task bucket: id is proj_routine-<taskId>, displayName is the modal date-stripped stem', () => {
+    const r = discoverProjects([
+      s('r1', { cwdKind: 'vm', cwd: '/sessions/x', scheduledTaskId: 'shopforge-sync', title: 'Mar 28 – Shopforge sync' }),
+      s('r2', { cwdKind: 'vm', cwd: '/sessions/y', scheduledTaskId: 'shopforge-sync', title: 'Mar 29 – Shopforge sync' }),
+      s('r3', { cwdKind: 'vm', cwd: '/sessions/z', scheduledTaskId: 'shopforge-sync', title: 'Apr 02 – Shopforge sync' }),
+    ]);
+    const routine = r.projects.find((p) => p.id === 'proj_routine-shopforge-sync');
+    expect(routine).toBeDefined();
+    expect(routine?.sessionIds).toHaveLength(3);
+    expect(routine?.displayName).toBe('Shopforge sync');
+    expect(r.attribution.get('r1')?.resolvedVia).toBe('scheduled-task');
+  });
+
+  it('cross-source unification: VM userSelectedFolders basename merges with host cwd basename', () => {
+    const r = discoverProjects([
+      s('host', { cwdKind: 'host', cwd: 'C:/Users/b/Projects/chat-arch' }),
+      s('vm', { cwdKind: 'vm', cwd: '/sessions/strange-bardeen', userSelectedFolders: ['/Users/b/chat-arch'] }),
+    ]);
+    expect(r.sessionToProject.get('host')).toBe('proj_chat-arch');
+    expect(r.sessionToProject.get('vm')).toBe('proj_chat-arch');
+    const p = r.projects.find((x) => x.id === 'proj_chat-arch');
+    expect(p?.sessionIds.slice().sort()).toEqual(['host', 'vm']);
+  });
+
+  it('disambiguates displayName collisions with a short id suffix', () => {
+    const r = discoverProjects([
+      s('a', { cwdKind: 'vm', cwd: '/sessions/a', scheduledTaskId: 'task-one', title: 'Daily pulse' }),
+      s('b', { cwdKind: 'vm', cwd: '/sessions/b', scheduledTaskId: 'task-two', title: 'Daily pulse' }),
+    ]);
+    const names = r.projects.map((p) => p.displayName);
+    expect(names.every((n) => n.startsWith('Daily pulse ·'))).toBe(true);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it('threads user overrides (rule 0) into the cascade', () => {
+    const r = discoverProjects([s('z', { project: 'chat-arch', cwd: '/x/chat-arch' })], {
+      overrides: [{ projectId: 'moved-elsewhere', match: { sessionIds: ['z'] } }],
+    });
+    expect(r.sessionToProject.get('z')).toBe('proj_moved-elsewhere');
+    expect(r.attribution.get('z')?.resolvedVia).toBe('override');
+  });
 });

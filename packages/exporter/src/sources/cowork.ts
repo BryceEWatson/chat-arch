@@ -26,6 +26,7 @@ import {
 } from '../lib/subagents.js';
 import {
   extractFirstUserText,
+  isZeroTurnSidecar,
   USER_TEXT_SAMPLES_CHAR_CAP,
   USER_TEXT_SAMPLES_MAX,
 } from './cli.js';
@@ -246,6 +247,14 @@ export async function runCoworkExport(opts: RunCoworkExportOptions): Promise<Cow
   await runWithConcurrency(coworkManifestPaths, CONCURRENCY, async (manifestPath) => {
     const res = await processCoworkManifest(manifestPath, outDir, prevEntries);
     if (res === null) {
+      sessionsSkipped += 1;
+      return;
+    }
+    // Project Identity v2 parse-boundary invariance (plan §2): apply the same
+    // 0-turn-sidecar gate as cli.ts. Structurally a no-op for Cowork (every
+    // entry carries `cwd: manifest.cwd`, so `!cwd` is always false), kept for
+    // symmetry so a future cwd-less Cowork shape can't reintroduce phantoms.
+    if (isZeroTurnSidecar(res.entry)) {
       sessionsSkipped += 1;
       return;
     }
@@ -646,6 +655,14 @@ async function processCoworkManifest(
     // Cowork manifest fields previously dropped — exposed for /chat answers.
     ...(manifest.userSelectedFolders
       ? { userSelectedFolders: manifest.userSelectedFolders }
+      : {}),
+    // Project Identity v2: surface the scheduled-task signals (known-but-
+    // previously-unread). `scheduledTaskId` drives cascade rule 2.
+    ...(typeof manifest.scheduledTaskId === 'string' && manifest.scheduledTaskId !== ''
+      ? { scheduledTaskId: manifest.scheduledTaskId }
+      : {}),
+    ...(typeof manifest.sessionType === 'string' && manifest.sessionType !== ''
+      ? { sessionType: manifest.sessionType }
       : {}),
     ...(manifest.slashCommands ? { slashCommands: manifest.slashCommands } : {}),
     ...(manifest.enabledMcpTools

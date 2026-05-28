@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, stat } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { spawn } from 'node:child_process';
 import type { UnifiedSessionEntry } from '@chat-arch/schema';
@@ -8,6 +8,7 @@ import { runCliExport } from '../sources/cli.js';
 import { runCloudExport } from '../sources/cloud.js';
 import { mergeSources } from '../merge.js';
 import { runAnalysis } from '../analysis/index.js';
+import { buildProjectIdentityPreview, loadProjectOverrides } from '../analysis/projectIdentity.js';
 import { runSemanticAnalysis } from '../analysis/semanticAnalysis.js';
 import { runEmbed } from '../embeddings/index.js';
 import { findRepoRoot } from '../lib/repo-root.js';
@@ -48,6 +49,12 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
       // endpoint flips this on when it detects `gh auth status` exit 0.
       // See `runAnalysis()`'s `enablePrJoin` option.
       'enable-pr-join': { type: 'boolean' },
+      // Project Identity v2 dry-run (plan §8): re-parse sources with the
+      // v2 cascade, diff the new bucketing against the live projects.json,
+      // write analysis/project-identity-preview.json, and exit WITHOUT
+      // overwriting manifest.json / projects.json or running the analysis
+      // pipeline. Adoption = the next normal (non-preview) rescan.
+      'project-identity-preview': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
     allowPositionals: false,
@@ -76,6 +83,12 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
         '                              and skips. Also disabled by CHAT_ARCH_AUTO_LABEL=0\n' +
         '                              (which the viewer\'s "RESCAN" inherits for free since it\n' +
         '                              passes process.env through).\n' +
+        '  --project-identity-preview  Dry-run: re-parse sources with the v2 project-identity\n' +
+        '                              cascade, diff the new bucketing against the live\n' +
+        '                              analysis/projects.json, write\n' +
+        '                              analysis/project-identity-preview.json, and exit WITHOUT\n' +
+        '                              overwriting manifest.json / projects.json. Review before\n' +
+        '                              adopting (adoption = the next normal rescan).\n' +
         '  --out, -o                   Output directory\n' +
         '                              (default: <repo-root>/apps/standalone/public/chat-arch-data).\n',
     );
@@ -143,7 +156,7 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   logger.info(
     `  [2/3] cli: cli-direct=${cliResult.counts['cli-direct']} (${cliDirectReused} reused, ${cliDirectRescanned} rescanned) ` +
       `cli-desktop=${cliResult.counts['cli-desktop']} (${cliDeskReused} reused, ${cliDeskRescanned} rescanned) ` +
-      `pruned=${cliResult.prunedCount} in ${cliMs} ms`,
+      `pruned=${cliResult.prunedCount} 0-turn-sidecars-dropped=${cliResult.parserSkips.count} in ${cliMs} ms`,
   );
 
   // ---- Phase 4: cloud ----
@@ -182,6 +195,36 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   const merged = mergeSources(coworkResult.entries, cliResult.entries, cloudEntries);
 
   const manifestAbs = path.join(outDir, 'manifest.json');
+
+  // Project Identity v2 dry-run: diff the new bucketing against the live
+  // projects.json and exit without touching any live artifact (plan §8).
+  if (values['project-identity-preview'] === true) {
+    let manifestMtimeMs: number | null = null;
+    try {
+      manifestMtimeMs = (await stat(manifestAbs)).mtimeMs;
+    } catch {
+      manifestMtimeMs = null; // no live manifest yet
+    }
+    const overrides = await loadProjectOverrides(outDir);
+    const preview = await buildProjectIdentityPreview({
+      outDir,
+      manifest: merged,
+      overrides,
+      manifestMtimeMs,
+      now: Date.now(),
+    });
+    const s = preview.summary;
+    logger.info(
+      `project-identity preview → analysis/project-identity-preview.json (no live artifacts changed)`,
+    );
+    logger.info(
+      `  projects ${s.oldProjectCount} → ${s.newProjectCount} · sessions ${s.oldSessionCount} → ${s.newSessionCount} · ` +
+        `UNASSIGNED ${s.oldUnassigned} → ${s.newUnassigned} · singletons ${s.oldSingletons} → ${s.newSingletons} · moved ${s.movedSessionCount}` +
+        (preview.noBaseline ? ' (no prior projects.json — counts are new-only)' : ''),
+    );
+    return 0;
+  }
+
   await writeFile(manifestAbs, JSON.stringify(merged, null, 2) + '\n', 'utf8');
 
   const totalMs = Date.now() - totalStarted;
@@ -207,7 +250,11 @@ export async function runAllSubcommand(argv: readonly string[]): Promise<number>
   const enablePrJoin = values['enable-pr-join'] === true;
   try {
     const analysisStart = Date.now();
-    const result = await runAnalysis(merged, { outDir, enablePrJoin });
+    const result = await runAnalysis(merged, {
+      outDir,
+      enablePrJoin,
+      parserSkips: { reason: cliResult.parserSkips.reason, count: cliResult.parserSkips.count },
+    });
     logger.info(
       `analysis complete in ${Date.now() - analysisStart} ms — dup_clusters=${result.counts.duplicatesClusters} dup_sessions=${result.counts.duplicatesSessions} active=${result.counts.active} dormant=${result.counts.dormant} zombie=${result.counts.zombie} → ${result.analysisDir}`,
     );

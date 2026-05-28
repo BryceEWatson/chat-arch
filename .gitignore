@@ -147,6 +147,12 @@ apps/standalone/public/chat-arch-data/analysis/personas/
 # fields — already covered by the wildcard above, no separate
 # `narratives.json` line needed because it predates V1).
 apps/standalone/public/chat-arch-data/analysis/narrative-candidates.json
+# Project Identity v2 (plan §10). Both are locally generated and PII-bearing
+# (preview carries session ids + moved-session lists; overrides carry cwd
+# globs / session ids). Covered by the chat-arch-data/* wildcard above; these
+# explicit lines are auditable documentation per the repo convention.
+apps/standalone/public/chat-arch-data/analysis/project-identity-preview.json
+apps/standalone/public/chat-arch-data/projectOverrides.json
 apps/standalone/public/chat-arch-data/exports/
 .claude/review-loop.disabled
 .claude/review-loop.disabled-roles

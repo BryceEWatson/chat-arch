@@ -163,6 +163,33 @@ describe('runCoworkExport (fixture)', () => {
     expect(scheduled!.preview!.length).toBeLessThanOrEqual(200);
   });
 
+  // Project Identity v2: cowork.ts spreads scheduledTaskId + sessionType onto
+  // the entry (conditional spread, only when non-empty). The eeeeeeee fixture
+  // manifest carries scheduledTaskId='task-123' + sessionType='scheduled'; the
+  // bbbbbbbb fixture carries neither (proves the conditional spread doesn't
+  // leak undefineds or stale values across entries).
+  it('propagates scheduledTaskId + sessionType from the manifest onto the entry', async () => {
+    const result = await runCoworkExport({
+      outDir,
+      appDataClaudeRoot: FIXTURE_APPDATA,
+    });
+    // Fixture eeeeeeee: cliSessionId 'eeeeeeee-ffff-ffff-ffff-eeeeeeeeeeee' →
+    // entry.id is the stripped cliSessionId.
+    const scheduled = result.entries.find((e) => e.id === 'eeeeeeee-ffff-ffff-ffff-eeeeeeeeeeee');
+    expect(scheduled).toBeDefined();
+    expect(scheduled?.scheduledTaskId).toBe('task-123');
+    expect(scheduled?.sessionType).toBe('scheduled');
+
+    // A different fixture entry WITHOUT those manifest fields must have them
+    // undefined — conditional spread, no leakage.
+    const plain = result.entries.find(
+      (e) => e.rawSessionId === 'local_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    );
+    expect(plain).toBeDefined();
+    expect(plain?.scheduledTaskId).toBeUndefined();
+    expect(plain?.sessionType).toBeUndefined();
+  });
+
   // Regression: "result line absent but assistant lines present" is a real
   // Cowork shape (~6% of observed live sessions). The gate must derive
   // assistantTurns from audit.assistantTurns, not from audit.resultLineCount.
