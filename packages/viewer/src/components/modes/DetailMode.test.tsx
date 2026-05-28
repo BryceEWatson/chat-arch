@@ -153,6 +153,46 @@ describe('DetailMode prev/next (AC9)', () => {
   });
 });
 
+describe('DetailMode RESOLVED VIA (Project Identity v2 PR2)', () => {
+  it('renders the resolvedVia value + confidence when attribution is present', () => {
+    render(
+      <DetailMode
+        session={entry('s1')}
+        dataRoot="/x"
+        cache={new Map()}
+        setCache={() => {}}
+        onBack={() => {}}
+        prevId={null}
+        nextId={null}
+        onPrev={() => {}}
+        onNext={() => {}}
+        attribution={{ resolvedVia: 'scheduled-task', confidence: 0.9 }}
+      />,
+    );
+    expect(screen.getByText('RESOLVED VIA')).toBeDefined();
+    expect(screen.getByText('scheduled-task · 0.90')).toBeDefined();
+  });
+
+  it('renders an em dash when attribution is absent', () => {
+    render(
+      <DetailMode
+        session={entry('s1')}
+        dataRoot="/x"
+        cache={new Map()}
+        setCache={() => {}}
+        onBack={() => {}}
+        prevId={null}
+        nextId={null}
+        onPrev={() => {}}
+        onNext={() => {}}
+      />,
+    );
+    const dt = screen.getByText('RESOLVED VIA');
+    const dd = dt.nextElementSibling;
+    expect(dd?.textContent).toBe('—');
+  });
+});
+
 describe('DetailMode copy-transcript (AC10)', () => {
   beforeEach(() => {
     // Stub navigator.clipboard before each test.
