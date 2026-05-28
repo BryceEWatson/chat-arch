@@ -342,10 +342,11 @@ export function FilterBar({
             aria-label={`toggle UNKNOWN project filter — ${filterPills.unknownCount} sessions with no detected project name`}
             title={
               `${filterPills.unknownCount} sessions had no detectable project name. ` +
-              'Causes: CLI session ran outside any tracked project dir; ' +
-              'Cowork session had no project field; or the transcript ' +
-              'sat in a flat scratch directory. The Discover-projects ' +
-              'kernel only assigns a project when it can match a basename.'
+              'Common patterns associated with this bucket: a CLI session ' +
+              'ran outside any tracked project dir; a Cowork session had no ' +
+              'project field; or the transcript sat in a flat scratch ' +
+              'directory. The Discover-projects kernel only assigns a ' +
+              'project when it can match a basename.'
             }
             onClick={onToggleUnknownProject}
             onKeyDown={(e) => onActivate(e, onToggleUnknownProject)}

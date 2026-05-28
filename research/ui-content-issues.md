@@ -292,11 +292,11 @@ the ~61 distinct sites with one change.
 - Define an `errorToUserMessage(err, context)` helper at the `/api/*` boundary that filters JS error text → user-actionable strings, maps known Windows error codes (`0xC0000142`, `ENOENT pnpm.cmd`) into remediation tips.
 - Wrap client `fetch` error catches with the same translator.
 
-**Tier 4 — polish:**
-- Standardize encoding (`'` vs `&rsquo;`) across all components.
-- Add tooltips to mode names in Sidebar (`EFFECTIVENESS / INSIGHTS / TRENDS / DECISIONS`).
-- Resolve abbreviation drift (`OPPS` vs `FIND OPPORTUNITIES`).
-- Improve relative-time tiering on `ActionItemsBanner` 7d boundary.
+**Tier 4 — polish:** [x] all four sub-items shipped in earlier commits in this branch.
+- Standardize encoding (`'` vs `&rsquo;`) across all components. [x] fixed: 10 viewer+Astro files normalized to raw Unicode `’ / “ / ” / —`.
+- Add tooltips to mode names in Sidebar (`EFFECTIVENESS / INSIGHTS / TRENDS / DECISIONS`). [x] fixed: every NAV item carries a `tooltip` field; both sidebar variants render it as `title=` + into aria-label.
+- Resolve abbreviation drift (`OPPS` vs `FIND OPPORTUNITIES`). [x] fixed: per-conversation pill is now `OPPORTUNITIES` (matches its radio button).
+- Improve relative-time tiering on `ActionItemsBanner` 7d boundary. [x] fixed: `Nw ago` tier added to `formatRelative` between 3d and 60d.
 
 ---
 
