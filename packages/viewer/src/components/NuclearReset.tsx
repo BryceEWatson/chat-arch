@@ -3,6 +3,7 @@ import { clearUploadedData } from '../data/uploadedDataStore.js';
 import { clearSemanticLabels } from '../data/semanticLabelsStore.js';
 import { clearBenchResults } from '../data/benchResultsStore.js';
 import { clearChatHistory } from '../data/chatHistoryStore.js';
+import { useFocusTrap } from '../util/a11y.js';
 
 /**
  * Selective-delete affordance. The button sits in the TopBar's left
@@ -124,7 +125,15 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const firstCheckboxRef = useRef<HTMLInputElement | null>(null);
+
+  // Trap focus inside the dialog while open, restore to the trigger on close.
+  // The dialog is role=dialog + aria-modal=true (set on the panel below) — without
+  // a trap, Tab leaks into TopBar siblings behind the modal-styled overlay.
+  // useFocusTrap captures the trigger via document.activeElement at open and
+  // restores focus to it on close (Esc, click-outside, or commit-then-reload).
+  useFocusTrap(open, panelRef, firstCheckboxRef);
 
   // Reset dropdown state every time it opens — stale "armed" or error
   // leftovers shouldn't persist across disclosures.
@@ -213,8 +222,27 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
           body: JSON.stringify({ sources }),
         });
         if (!res.ok) {
+          // Try to parse the body as a JSON error envelope ({ error: "..." })
+          // first — the /api/clear handler emits that shape on failure. If
+          // it's not JSON (e.g. an HTML 500 page from a crashed dev server),
+          // quote a short slice instead of pasting a half-JSON object that
+          // would otherwise read like a syntax error.
           const body = await res.text().catch(() => '');
-          throw new Error(`HTTP ${res.status}${body ? ': ' + body.slice(0, 200) : ''}`);
+          let detail = '';
+          if (body) {
+            try {
+              const parsed = JSON.parse(body) as { error?: unknown };
+              if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+                detail = `: ${parsed.error}`;
+              }
+            } catch {
+              // Non-JSON body — quote a slice so the partial isn't mistaken
+              // for valid JSON in the rendered error message.
+              const slice = body.slice(0, 200);
+              detail = `: "${slice}"${body.length > 200 ? ' (truncated)' : ''}`;
+            }
+          }
+          throw new Error(`HTTP ${res.status}${detail}`);
         }
       }
       // Wipe ALL cloud-derived IDBs when cloud is among the victims:
@@ -314,18 +342,19 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
         <button
           type="button"
           className="lcars-top-bar__source-btn lcars-top-bar__source-btn--destructive"
-          aria-haspopup="true"
+          aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Delete data — opens a panel to pick which sources to wipe"
-          title="Delete indexed data — pick which source(s) to wipe"
           onClick={() => setOpen((v) => !v)}
         >
           <span className="lcars-top-bar__source-btn-label">DELETE…</span>
         </button>
         {open && (
           <div
+            ref={panelRef}
             className="lcars-delete-dropdown__panel"
             role="dialog"
+            aria-modal="true"
             aria-label="Delete data — select sources"
           >
             <header className="lcars-delete-dropdown__header">
@@ -374,7 +403,13 @@ function NuclearResetInner({ available, onUnload, counts }: NuclearResetProps) {
               </button>
             </div>
             {phase === 'armed' && (
-              <p className="lcars-delete-dropdown__armed" role="status">
+              // The armed paragraph appears as part of the normal render when the
+              // user clicks the primary button — that click also relabels the
+              // primary to "YES — DELETE N" (a focus-tracked element), which is
+              // the natural live announcement. A role="status" here would re-fire
+              // on every selection edit while armed (toggleSource resets phase to
+              // 'idle' on edit anyway, but defensive). Drop the role.
+              <p className="lcars-delete-dropdown__armed">
                 <strong>Are you sure?</strong>{' '}
                 {allSelected
                   ? 'This wipes every indexed session, uploaded ZIP, derived analysis, chat history, and browser preference. It cannot be undone.'

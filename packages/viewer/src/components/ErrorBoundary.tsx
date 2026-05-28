@@ -30,7 +30,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div className="lcars-frame">
             <ErrorState
               title="TRANSMISSION ERROR"
-              detail={`The viewer hit an unrecoverable error: ${this.state.error.message}`}
+              detail={
+                `The viewer hit an unrecoverable error and needs a refresh. ` +
+                `Technical detail (paste into a bug report if filing one): ${this.state.error.message}`
+              }
+              assertive
             />
           </div>
         </div>

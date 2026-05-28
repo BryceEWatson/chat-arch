@@ -86,12 +86,12 @@ Bumps `EXPORTER_VERSION`; requires rescan.
 
 ## EmptyState / ErrorState
 
-- [EmptyState.tsx:30](packages/viewer/src/components/EmptyState.tsx#L30) — Default message is a literal CLI command (`pnpm --filter @chat-arch/exporter start`). Fine for local dev; surfaced on hosted/embedded contexts it's developer jargon with no actionable affordance.
-- [ErrorState.tsx:33](packages/viewer/src/components/ErrorState.tsx#L33) — Templates raw JS `error.message` into "The viewer hit an unrecoverable error: ${error.message}". When `error.message` is `Cannot read property 'x' of undefined`, the user gets jargon.
+- [EmptyState.tsx:30](packages/viewer/src/components/EmptyState.tsx#L30) — Default message is a literal CLI command (`pnpm --filter @chat-arch/exporter start`). Fine for local dev; surfaced on hosted/embedded contexts it's developer jargon with no actionable affordance. [x] fixed: copy reframed as "No sessions to display yet. Run SCAN LOCAL to ingest local transcripts, or upload an export ZIP below." — names two in-app affordances instead of a terminal command.
+- [ErrorState.tsx:33](packages/viewer/src/components/ErrorState.tsx#L33) — Templates raw JS `error.message` into "The viewer hit an unrecoverable error: ${error.message}". When `error.message` is `Cannot read property 'x' of undefined`, the user gets jargon. [x] fixed: ErrorBoundary copy now leads with a user-facing summary ("The viewer hit an unrecoverable error and needs a refresh") and labels the JS message as "Technical detail (paste into a bug report if filing one)" so it reads as filable evidence rather than the user-facing message.
 
 ## NuclearReset
 
-- [NuclearReset.tsx:226](packages/viewer/src/components/NuclearReset.tsx#L226) — HTTP error body sliced to 200 chars before appending to error message. Common case — a JSON error body — gets cut mid-object: `bad request: { error: 'invalid manif…`. Either parse `.error` field or quote the slice.
+- [NuclearReset.tsx:226](packages/viewer/src/components/NuclearReset.tsx#L226) — HTTP error body sliced to 200 chars before appending to error message. Common case — a JSON error body — gets cut mid-object: `bad request: { error: 'invalid manif…`. Either parse `.error` field or quote the slice. [x] fixed: try-parse the body as `{ error: string }` first; on success surface only the `error` field; on parse failure quote the truncated slice + add `(truncated)` so a half-object can't be mistaken for valid JSON.
 
 ## FilterBar
 
