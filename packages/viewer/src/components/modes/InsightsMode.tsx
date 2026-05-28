@@ -566,7 +566,7 @@ export function InsightsMode({
           <h3 id="insights-debt-h" className="lcars-insights__section-title">KNOWLEDGE DEBT</h3>
           <p className="lcars-insights__section-blurb">
             First-user-turn questions that recur across sessions — a
-            signal the answer isn&rsquo;t sticking in your notes or
+            signal the answer isn’t sticking in your notes or
             CLAUDE.md. Each cluster is a candidate for a single
             artifact that pays the debt down.
           </p>

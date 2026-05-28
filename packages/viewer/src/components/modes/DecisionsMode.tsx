@@ -190,7 +190,7 @@ export function DecisionsMode({
         <h2 className="lcars-decisions__title">DECISIONS</h2>
         <p className="lcars-decisions__lead">
           Decisions detected in your archive, grouped by kind. Landed-rate is the share
-          of decisions whose joined outcome was &lsquo;good&rsquo; — hidden when n &lt;{' '}
+          of decisions whose joined outcome was &lsquo;good’ — hidden when n &lt;{' '}
           {minN} (the Wilson 95% CI is too wide to be informative).
         </p>
       </header>
@@ -214,7 +214,7 @@ export function DecisionsMode({
           >
             <strong>STUB:</strong> the LLM pipeline is not wired yet —
             clicking <code>MINE</code> shells the skill but it returns
-            &ldquo;not yet implemented&rdquo;. Lands in Phase Rev3-F
+            “not yet implemented”. Lands in Phase Rev3-F
             (curator + falsifier). (R5)
           </p>
           <div

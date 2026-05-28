@@ -6,6 +6,7 @@ import type {
   UpgradeTarget,
 } from '@chat-arch/schema';
 import { formatRelative } from '../util/time.js';
+import { stripMarkdown } from '../util/stripMarkdown.js';
 
 export interface CorrectionPatternCardProps {
   pattern: CorrectionPattern;
@@ -183,10 +184,12 @@ export function CorrectionPatternCard({
     Math.min(1, Math.max(0, pattern.confidence)) * 100,
   );
 
+  const headingId = `lcars-correction-pattern-h-${pattern.id}`;
+  const confidenceLabelId = `lcars-correction-pattern-conf-${pattern.id}`;
   return (
     <article
       className={`lcars-correction-pattern lcars-correction-pattern--${category}`}
-      aria-label={`correction pattern ${pattern.canonicalRule}`}
+      aria-labelledby={headingId}
     >
       <header className="lcars-correction-pattern__header">
         <div className="lcars-correction-pattern__title-row">
@@ -202,12 +205,18 @@ export function CorrectionPatternCard({
             ×{pattern.occurrenceCount}
           </span>
         </div>
-        <h3 className="lcars-correction-pattern__rule">{pattern.canonicalRule}</h3>
-        <div className="lcars-correction-pattern__confidence" aria-label="confidence">
-          <span className="lcars-correction-pattern__confidence-label">CONFIDENCE</span>
+        <h3 id={headingId} className="lcars-correction-pattern__rule">{pattern.canonicalRule}</h3>
+        <div className="lcars-correction-pattern__confidence">
+          <span
+            id={confidenceLabelId}
+            className="lcars-correction-pattern__confidence-label"
+          >
+            CONFIDENCE
+          </span>
           <div
             className="lcars-correction-pattern__confidence-track"
             role="progressbar"
+            aria-labelledby={confidenceLabelId}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={confidenceWidth}
@@ -217,7 +226,12 @@ export function CorrectionPatternCard({
               style={{ width: `${confidenceWidth}%` }}
             />
           </div>
-          <span className="lcars-correction-pattern__confidence-pct">{confidencePct}</span>
+          <span
+            className="lcars-correction-pattern__confidence-pct"
+            aria-hidden="true"
+          >
+            {confidencePct}
+          </span>
         </div>
       </header>
 
@@ -271,6 +285,11 @@ export function CorrectionPatternCard({
           </section>
 
           <section className="lcars-correction-pattern__section">
+            {/* Real <h4> so heading-list navigation lands on EVIDENCE
+                at the same level as PROPOSED UPGRADES above — without
+                the prior `<span role="heading">`-inside-button confused
+                semantics that AT flattens inconsistently. */}
+            <h4 className="lcars-correction-pattern__section-title">EVIDENCE</h4>
             <button
               type="button"
               className="lcars-correction-pattern__evidence-toggle"
@@ -278,27 +297,12 @@ export function CorrectionPatternCard({
               aria-controls={evidenceRegionId}
               onClick={() => setEvidenceOpen((v) => !v)}
             >
-              {/*
-                role="heading" + aria-level on the visible label so a
-                screen-reader's heading-list navigation sees EVIDENCE at
-                the same level as the <h4>PROPOSED UPGRADES</h4> above.
-                Without this, the headings list would skip from h4 to
-                whatever sits below EVIDENCE — confusing for keyboard /
-                AT users walking the card by heading.
-              */}
-              <span
-                className="lcars-correction-pattern__section-title"
-                role="heading"
-                aria-level={4}
-              >
-                EVIDENCE
-              </span>
               <span className="lcars-correction-pattern__evidence-toggle-hint">
                 {evidenceOpen ? '▾ hide' : `▸ show ${instances.length} ${instances.length === 1 ? 'instance' : 'instances'}`}
               </span>
             </button>
             {evidenceOpen && (
-              <div id={evidenceRegionId} role="region" aria-label="EVIDENCE">
+              <div id={evidenceRegionId}>
                 {visibleInstances.length === 0 ? (
                   <p className="lcars-correction-pattern__empty">
                     No instance bodies available — the corrections file may be partial.
@@ -466,8 +470,8 @@ function UpgradeRow({
         </span>
         <code className="lcars-correction-pattern__target-path">{upgrade.targetPath}</code>
       </header>
-      <p className="lcars-correction-pattern__rationale">{upgrade.rationale}</p>
-      <pre className="lcars-correction-pattern__patch">{upgrade.patch}</pre>
+      <p className="lcars-correction-pattern__rationale">{stripMarkdown(upgrade.rationale)}</p>
+      <pre className="lcars-correction-pattern__patch" tabIndex={0}>{upgrade.patch}</pre>
       <div className="lcars-correction-pattern__upgrade-actions">
         <button
           type="button"
@@ -491,7 +495,6 @@ function UpgradeRow({
           <span
             className="lcars-correction-pattern__applied"
             aria-label={`applied ${formatAppliedAt(state.appliedAt)} (${formatAppliedAtIso(state.appliedAt)})`}
-            title={formatAppliedAtIso(state.appliedAt)}
           >
             APPLIED ✓
             {formatAppliedAt(state.appliedAt) && (
@@ -536,7 +539,7 @@ function UpgradeRow({
       {onApply && state.kind === 'confirming' && (
         <div
           className="lcars-correction-pattern__confirm"
-          role="dialog"
+          role="group"
           aria-label="confirm apply correction"
           onKeyDown={(e) => {
             if (e.key === 'Escape') {

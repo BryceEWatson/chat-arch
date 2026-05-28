@@ -203,7 +203,7 @@ export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
         <h2 id="trust-h" className="lcars-trust__title">TRUST</h2>
         <p className="lcars-trust__lead">
           Your accept-vs-override behavior on detected decisions, joined to the
-          composite-outcome &lsquo;landed&rsquo; signal. Cells with n &lt; {minN} are
+          composite-outcome &lsquo;landed’ signal. Cells with n &lt; {minN} are
           greyed — the per-cell counts are too low to read a rate off. Calibration
           here refers to your decision behavior, not a causal claim about model output.
         </p>
@@ -219,7 +219,7 @@ export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
               (iter-6) */}
           <span role="columnheader" />
           <span role="columnheader">LANDED</span>
-          <span role="columnheader">DIDN&rsquo;T LAND</span>
+          <span role="columnheader">DIDN’T LAND</span>
           <span role="columnheader">LANDED-RATE (95% CI)</span>
         </div>
         <div className="lcars-trust__row" role="row" data-row="accept">

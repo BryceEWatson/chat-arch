@@ -99,25 +99,25 @@ Bumps `EXPORTER_VERSION`; requires rescan.
 
 ## CorrectionPatternCard
 
-- [CorrectionPatternCard.tsx:472](packages/viewer/src/components/CorrectionPatternCard.tsx#L472) — `rationale` field rendered as plain text. If rationale contains markdown (the mining LLM is free to write `**bold**`), it renders as raw asterisks.
+- [CorrectionPatternCard.tsx:472](packages/viewer/src/components/CorrectionPatternCard.tsx#L472) — `rationale` field rendered as plain text. If rationale contains markdown (the mining LLM is free to write `**bold**`), it renders as raw asterisks. [x] fixed: rationale now flows through the shared `stripMarkdown` util (new file at `packages/viewer/src/util/stripMarkdown.ts`).
 
 ## CorrectionsPanel
 
-- [CorrectionsPanel.tsx:611](packages/viewer/src/components/CorrectionsPanel.tsx#L611) — Mining `load.message` rendered directly (same JS-error-jargon risk as ErrorState).
-- [CorrectionsPanel.tsx:1099](packages/viewer/src/components/CorrectionsPanel.tsx#L1099) — Uses `&ldquo;` / `&rdquo;` HTML entities. Encoding inconsistency — see AnalysisLauncher row.
+- [CorrectionsPanel.tsx:611](packages/viewer/src/components/CorrectionsPanel.tsx#L611) — Mining `load.message` rendered directly (same JS-error-jargon risk as ErrorState). [?] Treating as part of Tier 3 (error-translator) — surfaces a server-side error to the user; the right move is the same `errorToUserMessage` helper, not a copy edit at this site.
+- [CorrectionsPanel.tsx:1099](packages/viewer/src/components/CorrectionsPanel.tsx#L1099) — Uses `&ldquo;` / `&rdquo;` HTML entities. Encoding inconsistency — see AnalysisLauncher row. [x] fixed: all six viewer components carrying `&rsquo; / &ldquo; / &rdquo; / &mdash;` HTML entities or `’ / —` JS escapes (AnalysisLauncher / CorrectionsPanel / DataPanel / MethodologyDisclosure / DecisionsMode / InsightsMode / PracticeMode / TrustMode) normalized to raw Unicode `’ / “ / ” / —` so the source-level encoding is consistent.
 
 ## CuratorFeed
 
-- (Covered by ⭐ cross-cutting row above.)
+- (Covered by ⭐ cross-cutting row above.) [x] fixed: CuratorFeed title + reasoning render through the same shared `stripMarkdown` util now wired into CorrectionPatternCard, so any `**bold**` / `[link](url)` the LLM emits in those fields collapses to plain prose before render.
 
 ## OutcomeSparkline
 
-- [OutcomeSparkline.tsx:239](packages/viewer/src/components/OutcomeSparkline.tsx#L239) — Tooltip shows raw `hovered.n` with no unit. Is it count of sessions? Count of contributing turns? Sample size? Label it.
+- [OutcomeSparkline.tsx:239](packages/viewer/src/components/OutcomeSparkline.tsx#L239) — Tooltip shows raw `hovered.n` with no unit. Is it count of sessions? Count of contributing turns? Sample size? Label it. [x] fixed: tooltip header now reads `{date} · N session(s)` (pluralized) instead of `n=N`.
 
 ## AnalysisLauncher
 
-- [AnalysisLauncher.tsx:242 vs :322](packages/viewer/src/components/AnalysisLauncher.tsx#L242) — Mixed quote encoding in same file: line 242 uses `’` (JS escape), line 322 uses `&rsquo;` (HTML entity). Both render as `'` but the inconsistency screams "two authors didn't talk". Standardize on raw Unicode `'`.
-- [AnalysisLauncher.tsx:408](packages/viewer/src/components/AnalysisLauncher.tsx#L408) — `bundle.device.toUpperCase()` rendered as subtitle on stale state. Shows e.g. `WEBGPU` with no label — what is this? Device the bundle was embedded on? Add a label.
+- [AnalysisLauncher.tsx:242 vs :322](packages/viewer/src/components/AnalysisLauncher.tsx#L242) — Mixed quote encoding in same file: line 242 uses `’` (JS escape), line 322 uses `&rsquo;` (HTML entity). Both render as `'` but the inconsistency screams "two authors didn't talk". Standardize on raw Unicode `'`. [x] fixed: both forms normalized to raw Unicode (single sweep above also covered this file).
+- [AnalysisLauncher.tsx:408](packages/viewer/src/components/AnalysisLauncher.tsx#L408) — `bundle.device.toUpperCase()` rendered as subtitle on stale state. Shows e.g. `WEBGPU` with no label — what is this? Device the bundle was embedded on? Add a label. [x] fixed: now reads `labeled on device WEBGPU` (added the `device` token).
 
 ## ActionItemsBanner
 

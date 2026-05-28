@@ -120,11 +120,10 @@ export function OutcomeSparkline({
   }, [series, width]);
 
   if (series.length === 0 || layout === null) {
+    // Dropped aria-label (duplicated visible text; on bare div without
+    // role it's also AT-ignored). Same pattern as Sparkline iter-14.
     return (
-      <div
-        className="lcars-outcome-sparkline lcars-outcome-sparkline--empty"
-        aria-label="no trajectory data"
-      >
+      <div className="lcars-outcome-sparkline lcars-outcome-sparkline--empty">
         NO TRAJECTORY DATA
       </div>
     );
@@ -230,13 +229,15 @@ export function OutcomeSparkline({
           })}
         </svg>
         {hovered !== null && (
-          <div
-            className="lcars-outcome-sparkline__tooltip"
-            role="status"
-            aria-live="polite"
-          >
+          // Dropped role="status" + aria-live="polite" — pointer-only
+          // tooltip re-rendering per mouse-move floods the polite queue
+          // (iter-14 Sparkline pattern). The chart's svg aria-label
+          // carries the trajectory summary for SR users; per-week
+          // detail is mouse-only by design.
+          <div className="lcars-outcome-sparkline__tooltip">
             <div className="lcars-outcome-sparkline__tooltip-head">
-              {formatShortDate(hovered.start)} · n={hovered.n}
+              {formatShortDate(hovered.start)} · {hovered.n} session
+              {hovered.n === 1 ? '' : 's'}
             </div>
             <div className="lcars-outcome-sparkline__tooltip-row">
               <span className="lcars-outcome-sparkline__tooltip-label">

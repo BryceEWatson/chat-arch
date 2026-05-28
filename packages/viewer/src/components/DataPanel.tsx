@@ -196,7 +196,7 @@ export function DataPanel({
           </button>
         </header>
         <p className="lcars-data-panel__lead">
-          Add chat data, refresh existing sources, or delete what&rsquo;s indexed. Nothing
+          Add chat data, refresh existing sources, or delete what’s indexed. Nothing
           here leaves your machine.
         </p>
         {/*
@@ -260,14 +260,14 @@ export function DataPanel({
                   <strong>Upload / Update Cloud</strong>
                   <p>Add or refresh conversations from a Claude.ai cloud export.</p>
                   <p>
-                    The word &ldquo;upload&rdquo; means loading the file into the viewer, not
+                    The word “upload” means loading the file into the viewer, not
                     sending it anywhere. The ZIP is parsed in this tab and kept in IndexedDB so a
-                    refresh doesn&rsquo;t lose it.
+                    refresh doesn’t lose it.
                   </p>
                   <p>
                     <strong>How to get the ZIP:</strong> open claude.ai →{' '}
-                    <em>Settings → Privacy → &ldquo;Export data&rdquo;</em>. Claude emails you a
-                    ZIP when it&rsquo;s ready; download it and pick it here.
+                    <em>Settings → Privacy → “Export data”</em>. Claude emails you a
+                    ZIP when it’s ready; download it and pick it here.
                   </p>
                 </InfoPopover>
               </div>

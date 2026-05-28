@@ -22,6 +22,7 @@ import {
   type CuratorItemKind,
   type CuratorFalsifierStatus,
 } from '../data/curatorFeedClient.js';
+import { stripMarkdown } from '../util/stripMarkdown.js';
 
 const KIND_LABEL: Record<CuratorItemKind, string> = {
   narrative: 'NARRATIVE',
@@ -66,10 +67,10 @@ export function CuratorFeed({
   return (
     <section
       className="lcars-curator-feed"
-      aria-label="curator feed — what to look at now"
+      aria-labelledby="lcars-curator-feed-h"
     >
       <header className="lcars-curator-feed__header">
-        <h3 className="lcars-curator-feed__title">WHAT TO LOOK AT NOW</h3>
+        <h3 id="lcars-curator-feed-h" className="lcars-curator-feed__title">WHAT TO LOOK AT NOW</h3>
         <p className="lcars-curator-feed__lead">
           Top items the curator surfaced this run. Ranking is deterministic
           (tier &gt; confidence &gt; recency &gt; correlation tie-break) —
@@ -84,10 +85,9 @@ export function CuratorFeed({
       {feed?.metaAccuracy?.inDrift === true && (
         <p
           className="lcars-curator-feed__drift-banner"
-          role="alert"
-          aria-label="falsifier accuracy drift detected"
+          role="status"
         >
-          ⚠ FALSIFIER DRIFT — accuracy lower bound{' '}
+          <span aria-hidden="true">⚠ </span>FALSIFIER DRIFT — accuracy lower bound{' '}
           {(feed.metaAccuracy.lowerBound * 100).toFixed(1)}% &lt; floor{' '}
           {(feed.metaAccuracy.floor * 100).toFixed(0)}% (n={feed.metaAccuracy.n}
           ). Re-calibrate before trusting verdicts.
@@ -97,13 +97,13 @@ export function CuratorFeed({
         <p className="lcars-curator-feed__loading">Loading feed…</p>
       )}
       {loaded && feed === null && (
-        <p className="lcars-curator-feed__empty" role="status">
+        <p className="lcars-curator-feed__empty">
           No curator feed yet. The <code>/curate</code> skill will populate
           this section on its next run.
         </p>
       )}
       {loaded && feed !== null && feed.items.length === 0 && (
-        <p className="lcars-curator-feed__empty" role="status">
+        <p className="lcars-curator-feed__empty">
           Curator ran but had no items to surface. Wait for more evidence
           to accumulate, or run <code>/curate</code> again after the next
           scan.
@@ -123,10 +123,11 @@ export function CuratorFeed({
 }
 
 function CuratorFeedRow({ item }: { item: CuratorFeedItem }): JSX.Element {
+  const titleId = `lcars-curator-feed-item-${item.kind}-${item.entityId}`;
   return (
     <article
       className="lcars-curator-feed__row"
-      aria-label={`${KIND_LABEL[item.kind]} — rank ${item.rank}`}
+      aria-labelledby={titleId}
     >
       <span className="lcars-curator-feed__rank">#{item.rank}</span>
       <span
@@ -134,7 +135,7 @@ function CuratorFeedRow({ item }: { item: CuratorFeedItem }): JSX.Element {
       >
         {KIND_LABEL[item.kind]}
       </span>
-      <span className="lcars-curator-feed__title-text">{item.title}</span>
+      <span id={titleId} className="lcars-curator-feed__title-text">{stripMarkdown(item.title)}</span>
       <span
         className="lcars-curator-feed__composite"
         aria-label={`composite score ${item.compositeScore.toFixed(2)}`}
@@ -158,7 +159,7 @@ function CuratorFeedRow({ item }: { item: CuratorFeedItem }): JSX.Element {
         </span>
       )}
       {item.reasoning !== undefined && item.reasoning.length > 0 && (
-        <p className="lcars-curator-feed__reasoning">{item.reasoning}</p>
+        <p className="lcars-curator-feed__reasoning">{stripMarkdown(item.reasoning)}</p>
       )}
     </article>
   );
