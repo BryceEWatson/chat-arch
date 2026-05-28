@@ -3,9 +3,8 @@
  * contexts where the LLM (or a copy-paste from another doc) may have
  * embedded markdown but we want to render the text inline. This is NOT
  * a markdown renderer — it produces plain text. Use a parser if you
- * need actual formatted output. Mirrors the rule set previously inlined
- * inside `SessionCard.tsx` and now reused across CorrectionPatternCard
- * and CuratorFeed.
+ * need actual formatted output. Consumed by SessionCard,
+ * CorrectionPatternCard, CuratorFeed, and AppliedImprovementsSummary.
  *
  * Handles bold (`**x**` / `__x__`), italic (`*x*` / `_x_`),
  * inline code (`` `x` ``), inline links (`[text](url)` → `text`),

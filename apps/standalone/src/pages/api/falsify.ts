@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import { translateSpawnError } from '../../lib/spawnDiagnostics.js';
 import {
   AUTH_ENV_VARS,
   computeAllowApiKeyFallback,
@@ -343,7 +344,7 @@ async function streamFalsify(
     allowApiKeyFallback,
   );
   const extraStderr = outcome.spawnError
-    ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
+    ? '\nspawn error: ' + translateSpawnError(outcome.spawnError)
     : '';
 
   send({

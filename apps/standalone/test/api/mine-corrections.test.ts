@@ -159,8 +159,19 @@ describe('mine-corrections — classifyOutcome', () => {
     expect(verdict.reason).toMatch(/^the claude CLI exited with code 1\b/);
   });
 
-  it('annotates Windows DLL-init exit codes with a remediation hint', () => {
+  it('annotates Windows DLL-init exit codes with a remediation hint (positive form)', () => {
     const verdict = classifyOutcome(started, 0xc0000142, null, emptyProbe);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/Windows DLL initialization/);
+  });
+
+  it('annotates Windows DLL-init exit codes with a remediation hint (negative form)', () => {
+    // Node's child_process delivers Windows abnormal-termination codes
+    // as the signed-int32 cast of the OS-level status. The positive form
+    // 0xC0000142 and the negative form -1073741502 represent the same
+    // failure; the helper must annotate both. Caught by the review-loop
+    // iter-0 adversarial reviewer.
+    const verdict = classifyOutcome(started, -1073741502, null, emptyProbe);
     expect(verdict.ok).toBe(false);
     expect(verdict.reason).toMatch(/Windows DLL initialization/);
   });

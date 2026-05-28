@@ -2,6 +2,10 @@ import type { APIRoute } from 'astro';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import {
+  isWindowsDllInitFailure,
+  translateSpawnError,
+} from '../../lib/spawnDiagnostics.js';
 
 /**
  * Opt this route into server rendering. The rest of the site is static
@@ -262,8 +266,13 @@ function streamExporter(
         const hexCode =
           typeof exitCode === 'number' ? `0x${(exitCode >>> 0).toString(16).toUpperCase()}` : null;
         const codeStr = hexCode !== null ? `${exitCode} (${hexCode})` : 'unknown';
+        // Use the shared helper so the negative-int form of
+        // 0xC0000142 (-1073741502, which is what Node's
+        // child_process actually delivers on Windows) is also
+        // matched. Review-loop iter-1 caught this mismatch in
+        // mine-corrections.test; lifting kept both sites in sync.
         const winHint =
-          process.platform === 'win32' && exitCode === 0xc0000142
+          process.platform === 'win32' && isWindowsDllInitFailure(exitCode)
             ? ' Windows STATUS_DLL_INIT_FAILED — try restarting the dev server; if that fails, run the exporter manually in a terminal: `pnpm exporter run start all --no-cloud`.'
             : '';
         synthesizedStderr =
@@ -287,7 +296,11 @@ function streamExporter(
     };
 
     child.on('error', (err) => {
-      finish(false, null, '\nspawn error: ' + (err.message ?? String(err)));
+      finish(
+        false,
+        null,
+        '\nspawn error: ' + translateSpawnError(err instanceof Error ? err : new Error(String(err))),
+      );
     });
     child.on('close', (code) => {
       finish(code === 0, code);

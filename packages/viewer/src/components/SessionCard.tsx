@@ -2,6 +2,7 @@ import type { UnifiedSessionEntry, Narrative } from '@chat-arch/schema';
 import { SOURCE_COLOR } from '../types.js';
 import { formatRelative } from '../util/time.js';
 import { onActivate } from '../util/a11y.js';
+import { stripMarkdown } from '../util/stripMarkdown.js';
 import { SourcePill } from './SourcePill.js';
 import { SourceAttribution } from './SourceAttribution.js';
 import type { SessionDuplicateInfo } from '../data/mergeDuplicates.js';
@@ -128,42 +129,9 @@ function modelTooltip(model: string | null): string {
   return 'No model recorded';
 }
 
-/**
- * Strip common markdown syntax from a preview blurb so card previews
- * render as readable prose instead of `**bold sentence` (asterisks
- * gone, bold word orphaned mid-sentence) or `[click here](https://…)`
- * (link target spelled out). This is a SHALLOW pass — pathological
- * inputs can still leak — but it covers bold, italic, inline links,
- * inline code, headings, blockquotes, table pipes, and hr lines,
- * which together account for nearly every preview that has visible
- * markdown leakage today.
- */
-function stripMarkdown(s: string): string {
-  return (
-    s
-      // [link text](https://url) → link text  (handles reference-style
-      // [text][ref] by leaving the second bracket pair untouched, which
-      // the trailing `[]` rule below cleans up)
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
-      // **bold** / __bold__ → bold
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/__([^_]+)__/g, '$1')
-      // *italic* / _italic_ → italic  (avoid eating already-stripped
-      // characters by requiring at least one non-space inside)
-      .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '$1')
-      .replace(/(?<!_)_([^_\n]+)_(?!_)/g, '$1')
-      // `inline code` → inline code
-      .replace(/`([^`]+)`/g, '$1')
-      // Reference-style link residue: [text][ref] → text
-      .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
-      // Horizontal rules: three or more dashes/asterisks/underscores
-      // on their own line → empty
-      .replace(/^[ \t]*[-*_]{3,}[ \t]*$/gm, '')
-      // Headings, leftover asterisks/backticks/blockquote markers,
-      // table pipes — strip the chars themselves
-      .replace(/[#*`>|]/g, '')
-  );
-}
+// stripMarkdown is the shared util at packages/viewer/src/util/stripMarkdown.ts —
+// importing here keeps the rule set in lockstep with CorrectionPatternCard /
+// CuratorFeed / AppliedImprovementsSummary, which already consume it.
 
 export function SessionCard({
   session,

@@ -21,6 +21,7 @@ import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
 import { assertDataDirContained, handleDataDirGuardError } from '../../lib/dataDirGuard.js';
+import { translateSpawnError } from '../../lib/spawnDiagnostics.js';
 
 export const prerender = false;
 
@@ -202,7 +203,7 @@ async function streamMineDecisions(
 
   const outcome = await runClaudeOnce(prompt, controller, encoder);
   const extraStderr = outcome.spawnError
-    ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
+    ? '\nspawn error: ' + translateSpawnError(outcome.spawnError)
     : '';
 
   send({

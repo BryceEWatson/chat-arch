@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import { exitCodeHint, translateSpawnError } from '../../lib/spawnDiagnostics.js';
 import {
   assertDataDirContained,
   handleDataDirGuardError,
@@ -176,41 +177,8 @@ export function classifyOutcome(
   return { ok: true, reason: null };
 }
 
-/**
- * Map common Node child-process spawn errors to user-actionable text.
- * Examples in the wild:
- *   - `ENOENT: spawnfile pnpm.cmd` (Windows, claude CLI not on PATH)
- *   - `EACCES` (permission)
- *   - `EAGAIN` (resource temporarily unavailable)
- */
-function translateSpawnError(err: Error): string {
-  const msg = err.message;
-  if (/ENOENT/.test(msg) && /claude/i.test(msg)) {
-    return 'the claude CLI was not found on PATH. Install Claude Code from https://docs.anthropic.com/claude/docs/claude-code or open a shell where `claude --version` works.';
-  }
-  if (/ENOENT/.test(msg)) {
-    return 'a required executable was not found on PATH.';
-  }
-  if (/EACCES/.test(msg)) {
-    return 'permission denied launching the subprocess.';
-  }
-  return msg;
-}
-
-/**
- * Map known exit codes to remediation hints. 0xC0000142 is Windows'
- * "DLL initialization failed" — common when the claude CLI is installed
- * but a runtime dependency (e.g. Node) is missing.
- */
-function exitCodeHint(code: number | null): string {
-  if (code === null) return '';
-  if (code === 0xc0000142 || code === -1073741502) {
-    return ' (Windows DLL initialization failure — usually means the Node runtime the CLI links against is broken or missing; reinstall Claude Code)';
-  }
-  if (code === 137) return ' (process was killed — likely out of memory)';
-  if (code === 139) return ' (segmentation fault — probably a CLI bug)';
-  return '';
-}
+// translateSpawnError + exitCodeHint moved to `../../lib/spawnDiagnostics.ts`
+// (review-loop iter-1 — see commit message). Imported below.
 
 async function probeOutcome(
   rootAbs: string,
@@ -818,7 +786,7 @@ async function streamMineCorrections(
   }
 
   const extraStderr = outcome.spawnError
-    ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
+    ? '\nspawn error: ' + translateSpawnError(outcome.spawnError)
     : '';
 
   // Validate the on-disk outcome. The CLI's exit code alone isn't a
