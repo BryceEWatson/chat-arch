@@ -66,38 +66,75 @@ function renderInline(raw: string): string {
  * Render a text block as LCARS prose. Lines starting with `**...**` become
  * sunflower-caps section headings; `- ` starts a ▸-bulleted list item;
  * blank lines produce a small spacer. Everything else is a paragraph.
+ *
+ * Runs of consecutive `- ` lines get grouped into a single <ul> so list
+ * semantics survive (orphan <li>s lose the "list of N" announcement on
+ * NVDA and are invalid HTML content model per spec).
  */
+type ProseNode =
+  | { kind: 'sp' }
+  | { kind: 'h'; text: string }
+  | { kind: 'li-run'; items: readonly string[] }
+  | { kind: 'p'; text: string };
+
+function classifyLine(line: string): ProseNode {
+  const trimmed = line.trim();
+  if (!trimmed) return { kind: 'sp' };
+  if (/^\*\*[^*].*\*\*$/.test(trimmed)) {
+    return { kind: 'h', text: trimmed.replace(/^\*\*|\*\*$/g, '') };
+  }
+  if (/^-\s+/.test(line)) {
+    return { kind: 'li-run', items: [line.replace(/^-\s+/, '')] };
+  }
+  return { kind: 'p', text: line };
+}
+
+function groupProse(lines: readonly string[]): ProseNode[] {
+  const out: ProseNode[] = [];
+  for (const line of lines) {
+    const node = classifyLine(line);
+    const prev = out[out.length - 1];
+    if (node.kind === 'li-run' && prev && prev.kind === 'li-run') {
+      out[out.length - 1] = { kind: 'li-run', items: [...prev.items, ...node.items] };
+    } else {
+      out.push(node);
+    }
+  }
+  return out;
+}
+
 function ProseText({ text }: { text: string }) {
-  const lines = text.split('\n');
+  const nodes = groupProse(text.split('\n'));
   return (
     <div className="lcars-cb lcars-cb--text lcars-prose">
-      {lines.map((line, i) => {
+      {nodes.map((node, i) => {
         const key = `${i}`;
-        const trimmed = line.trim();
-        if (!trimmed) return <div key={key} className="lcars-prose__sp" />;
-        // "**Heading text**" on its own line — a section heading.
-        if (/^\*\*[^*].*\*\*$/.test(trimmed)) {
+        if (node.kind === 'sp') return <div key={key} className="lcars-prose__sp" />;
+        if (node.kind === 'h') {
           return (
             <h4 key={key} className="lcars-prose__h">
-              {trimmed.replace(/^\*\*|\*\*$/g, '')}
+              {node.text}
             </h4>
           );
         }
-        // "- item" bullet. CSS renders ▸ via ::before.
-        if (/^-\s+/.test(line)) {
+        if (node.kind === 'li-run') {
           return (
-            <li
-              key={key}
-              className="lcars-prose__li"
-              dangerouslySetInnerHTML={{ __html: renderInline(line.replace(/^-\s+/, '')) }}
-            />
+            <ul key={key} className="lcars-prose__list">
+              {node.items.map((item, j) => (
+                <li
+                  key={`${key}-${j}`}
+                  className="lcars-prose__li"
+                  dangerouslySetInnerHTML={{ __html: renderInline(item) }}
+                />
+              ))}
+            </ul>
           );
         }
         return (
           <p
             key={key}
             className="lcars-prose__p"
-            dangerouslySetInnerHTML={{ __html: renderInline(line) }}
+            dangerouslySetInnerHTML={{ __html: renderInline(node.text) }}
           />
         );
       })}
@@ -112,7 +149,10 @@ export function ContentBlock({ block }: ContentBlockProps) {
   if (isThinking(block)) {
     return (
       <details className="lcars-cb lcars-cb--thinking">
-        <summary>▸ THINKING</summary>
+        <summary>
+          <span aria-hidden="true" className="lcars-cb--thinking__glyph" />
+          THINKING
+        </summary>
         <p>{block.thinking}</p>
       </details>
     );
@@ -125,9 +165,15 @@ export function ContentBlock({ block }: ContentBlockProps) {
           ? block.input
           : JSON.stringify(block.input, null, 2);
     return (
-      <div className="lcars-cb lcars-cb--tool-use">
-        <div className="lcars-cb__label">TOOL · {block.name}</div>
-        {input && <pre className="lcars-cb__pre">{input}</pre>}
+      <div
+        className="lcars-cb lcars-cb--tool-use"
+        role="group"
+        aria-label={`tool use: ${block.name}`}
+      >
+        <div className="lcars-cb__label" aria-hidden="true">
+          TOOL <span aria-hidden="true">·</span> {block.name}
+        </div>
+        {input && <pre className="lcars-cb__pre" tabIndex={0}>{input}</pre>}
       </div>
     );
   }
@@ -144,12 +190,23 @@ export function ContentBlock({ block }: ContentBlockProps) {
       }
     }
     return (
-      <div className="lcars-cb lcars-cb--tool-result">
-        <div className="lcars-cb__label">RESULT{block.is_error ? ' · ERROR' : ''}</div>
+      <div
+        className={`lcars-cb lcars-cb--tool-result${block.is_error ? ' lcars-cb--tool-result-error' : ''}`}
+        role="group"
+        aria-label={block.is_error ? 'tool result (error)' : 'tool result'}
+      >
+        <div className="lcars-cb__label" aria-hidden="true">
+          {block.is_error && (
+            <span className="lcars-cb__label-glyph" aria-hidden="true">✗ </span>
+          )}
+          RESULT{block.is_error ? ' · ERROR' : ''}
+        </div>
         {textParts.length > 0 ? (
-          <pre className="lcars-cb__pre">{textParts.join('\n')}</pre>
+          <pre className="lcars-cb__pre" tabIndex={0}>{textParts.join('\n')}</pre>
         ) : (
-          <span className="lcars-cb__dim">(non-text result)</span>
+          <span className="lcars-cb__dim">
+            (tool returned structured data only — no text payload)
+          </span>
         )}
       </div>
     );

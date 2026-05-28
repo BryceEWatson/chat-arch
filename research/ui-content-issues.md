@@ -81,8 +81,8 @@ Bumps `EXPORTER_VERSION`; requires rescan.
 
 ## MessageList / ContentBlock (transcript detail)
 
-- [MessageList.tsx:57](packages/viewer/src/components/MessageList.tsx#L57) — Fallback `empty message` is identical for "no content blocks at all" vs. "tool_result with no text payload". Two different states, one string.
-- [ContentBlock.tsx:207](packages/viewer/src/components/ContentBlock.tsx#L207) — `non-text result` is shown when a tool returns only non-text blocks; users can't tell whether the tool succeeded with structured data, or whether something upstream dropped the text.
+- [MessageList.tsx:57](packages/viewer/src/components/MessageList.tsx#L57) — Fallback `empty message` is identical for "no content blocks at all" vs. "tool_result with no text payload". Two different states, one string. [x] fixed: copy reframed as `(message has no body)` — names the actual condition (content array empty AND no fallback text). Verified by pnpm test render path; no test asserted the old string.
+- [ContentBlock.tsx:207](packages/viewer/src/components/ContentBlock.tsx#L207) — `non-text result` is shown when a tool returns only non-text blocks; users can't tell whether the tool succeeded with structured data, or whether something upstream dropped the text. [x] fixed: copy reframed as `(tool returned structured data only — no text payload)` so the success/structured-data case reads as intentional rather than missing.
 
 ## EmptyState / ErrorState
 
@@ -129,7 +129,7 @@ Bumps `EXPORTER_VERSION`; requires rescan.
 
 ## TranscriptList
 
-- [TranscriptList.tsx:35](packages/viewer/src/components/TranscriptList.tsx#L35) — Fallback `empty transcript`; same dual-state ambiguity as MessageList.
+- [TranscriptList.tsx:35](packages/viewer/src/components/TranscriptList.tsx#L35) — Fallback `empty transcript`; same dual-state ambiguity as MessageList. [x] fixed: copy reframed as `(transcript has no parsed lines)` — distinguishes empty input from parse-failure.
 
 ---
 
