@@ -14,6 +14,62 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-05-28
+
+Project Identity v2 — replaces the single-rule `inferProject` classifier
+(`session.project` → `cwd` basename → title-keyword) with a 6-step
+**strict first-match** attribution cascade, drops the phantom `ai-title`
+sidecars at the parse boundary, and adds a non-destructive preview + an
+audit-script gate. On the developer corpus this collapses 302 projects
+→ ~34, 1,199 sessions → ~638 (563 phantoms dropped), 293 singletons →
+9, and UNASSIGNED 563 → ~12 (all benign, enumerated by reason).
+
+> Skips 1.8.0 deliberately: that label belongs to the in-flight
+> UI-content / `unwrapEnvelope` work on a separate branch. The two
+> reconcile at merge time; functionally any bump invalidates the caches.
+
+Cascade (confidence monotonic with order): `override` (1.00,
+`projectOverrides.json` — `cwdGlob` | `sessionIds`) › `project_field`
+(1.00) › `scheduled-task` (0.90, `routine_<scheduledTaskId>` →
+`proj_routine-<slug>`, deterministic date-stripped displayName) ›
+`vm-folder` (0.80, `basename(userSelectedFolders[0])`) › `cwd_basename`
+(0.50, host or a VM session with a real host-folder cwd — synthetic VM
+paths `/sessions/<haiku>`, `.claude/worktrees/<haiku>`,
+`local_<uuid>/outputs` are guarded out) › `title_keyword` (0.40) ›
+unassigned.
+
+- **New optional `UnifiedSessionEntry` fields** (round-trip at
+  schemaVersion 4, **no `schemaVersion` bump**): `scheduledTaskId`,
+  `sessionType`, `parentSessionId` (captured for the §14-deferred
+  subagent-attribution feature; no live signal in the current corpus),
+  `projectAttribution`.
+- **Parse-boundary filter**: 0-turn `ai-title` sidecars dropped when
+  `userTurns===0 && assistantTurns===0 && !cwd && !project` — the
+  `&& !cwd && !project` clause preserves the 36 cwd-bearing 0-turn
+  sessions (24 chat-arch). `parserSkips` count surfaced in the rescan
+  summary and `analysis/meta.json`.
+- **New sidecars** (both gitignored, PII-bearing): `projectOverrides.json`
+  (manual rule-0 overrides; written by the viewer "Move to project"
+  affordance via `/api/move-to-project`) and
+  `project-identity-preview.json` (the `--project-identity-preview`
+  dry-run diff vs the live `projects.json`).
+- **`analysis/projects.json`** gains a top-level `attribution` map
+  (`{ [sessionId]: { projectId, resolvedVia, confidence } }`) — the
+  authoritative per-session provenance the viewer + audit read.
+- **Viewer**: session detail shows `resolvedVia` + confidence and a
+  local-only "Move to project" affordance.
+- **`scripts/audit-project-identity.mjs`** validates the post-rescan
+  targets (UNASSIGNED ≤ 15 with an enumerated signal-availability reason
+  breakdown; gated-drop == prior UNASSIGNED; no scheduledTaskId session
+  falls below the routine bucket; ~15 routine projects; projects 25-35;
+  singletons < 10; `proj_outputs` absent; chat-arch retained).
+- **Adoption** is the next normal rescan (rebuild-in-place; no
+  alias/re-key pass). One-time sweep of skill-written sidecars
+  documented in `research/project-identity-v2-sweep.md`.
+- The bump invalidates the `cowork-sessions.json` / `cli-sessions.json`
+  caches so the new entry fields repopulate. `HEURISTIC_RECALL_VERSION`
+  untouched.
+
 ## [1.7.0] — 2026-05-26
 
 Narrative-mining V1 — per-project LLM-driven thematic narratives,

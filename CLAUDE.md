@@ -489,6 +489,69 @@ path. NB the input file `narrative-candidates.json` is NEVER
 touched by `/api/clear-narratives` (regenerating it requires
 re-running the exporter).
 
+### Project Identity v2 (EXPORTER_VERSION 1.9.0)
+
+`inferProject` (`packages/analysis/src/inferProject.ts`) is a 6-step
+**strict first-match** cascade (replacing the old
+`project → cwd-basename → title` single-rule classifier). Confidences are
+monotonic with order:
+
+```
+0. override        1.00  projectOverrides.json (cwdGlob | sessionIds)
+1. project_field   1.00  explicit session.project
+2. scheduled-task  0.90  routine_<scheduledTaskId> → proj_routine-<slug>
+3. vm-folder       0.80  cwdKind==='vm' && basename(userSelectedFolders[0])
+4. cwd_basename    0.50  host cwd, OR a vm session with a REAL host-folder cwd
+                         (synthetic VM paths are guarded out: /sessions/<haiku>,
+                         .claude/worktrees/<haiku>, local_<uuid>/outputs —
+                         see isSyntheticVmCwd)
+5. title_keyword   0.40  projects.json title-keyword regex
+6. unassigned      0.00  __unassigned__
+```
+
+`inferProject` has TWO callers — keep both in sync on any return-shape
+change: `discoverProjects.ts` and `zombiesHeuristic.ts`.
+
+**New optional `UnifiedSessionEntry` fields** (`packages/schema/src/unified.ts`,
+round-trip at schemaVersion 4 — NO `schemaVersion` bump): `scheduledTaskId`
++ `sessionType` (read from the raw Cowork manifest), `parentSessionId`
+(spawn-linkage capture; no live signal in the current corpus — lands for the
+§14-deferred subagent-attribution feature), `projectAttribution`
+(`{ resolvedVia, confidence }`).
+
+**Parse-boundary filter** (`cli.ts` / `cowork.ts`, `isZeroTurnSidecar`): drops
+0-turn `ai-title` sidecars when `userTurns===0 && assistantTurns===0 && !cwd
+&& !project`. The `&& !cwd && !project` clause is load-bearing — it preserves
+the 36 cwd-bearing 0-turn sessions (24 chat-arch). The drop count surfaces as
+`parserSkips` in the rescan summary + `analysis/meta.json`.
+
+**Two new gitignored sidecars** under `chat-arch-data/` (PII-bearing;
+covered by the `chat-arch-data/*` wildcard, enumerated in `.gitignore`):
+
+- `projectOverrides.json` — manual rule-0 overrides (`{ projectId,
+  displayName?, match: { cwdGlob? | sessionIds? } }[]`). `projectId` is a
+  RAW key (NOT `proj_`-prefixed — `stableProjectId` re-slugs it). Written by
+  the viewer "Move to project" affordance via `/api/move-to-project`
+  (local-only, CSRF-gated). Read by `loadProjectOverrides` every rescan; NEVER
+  wiped by `/api/clear` (it's user intent, not derived data — sits at the data-
+  dir root, not under `analysis/`).
+- `analysis/project-identity-preview.json` — the `chat-arch all
+  --project-identity-preview` dry-run diff vs the live `projects.json`
+  (counts, moved sessions, new/vanished ids, `resolvedViaCounts`,
+  `unassignedReasons`). Non-destructive: the preview writes ONLY this file,
+  never `manifest.json` / `projects.json`. Adoption = the next normal rescan.
+
+`analysis/projects.json` also gains a top-level `attribution` map
+(`{ [sessionId]: { projectId, resolvedVia, confidence } }`) — the
+authoritative per-session provenance (the rescan writes the manifest BEFORE
+the analysis pass, so projects.json, not the entry, is the source of truth).
+
+**Validation**: `scripts/audit-project-identity.mjs` asserts the post-rescan
+targets. **One-time sweep** after the first v2 rescan (skill-written sidecars
+keyed to vanished ids): `research/project-identity-v2-sweep.md` — preview →
+adopt → `clear-personas` + `clear-narratives` + delete `curator-feed.json` +
+`falsifier-verdicts.json` → re-mine → audit.
+
 The pre-launch `thrash-fires.json` audit log (Phase 4 #8 thrash hook)
 and the `chat-arch-data/exports/` Obsidian-target directory (Phase 4
 #12 post-mortems + knowledge-debt) are also gitignored. The wildcard
@@ -576,4 +639,13 @@ out of date and needs an update:
      (`narrative-candidates.json` new sidecar + two additive optional
      top-level fields on existing `narratives.json` + new LLM-derived
      row family with `attributedTo: 'llm-derived'`); see CHANGELOG.md
-     `[1.7.0]`.
+     `[1.7.0]`. Bumped 1.7.0 → 1.9.0 in the Project Identity v2 land
+     (skips 1.8.0 — that label is the in-flight UI-content/`unwrapEnvelope`
+     branch; reconcile at merge). New optional entry fields
+     (`scheduledTaskId` / `sessionType` / `parentSessionId` /
+     `projectAttribution`, no `schemaVersion` bump), the `projects.json`
+     `attribution` map, `meta.json` `parserSkips`, and two new gitignored
+     sidecars (`projectOverrides.json`, `project-identity-preview.json`).
+     The bump invalidates the cowork/cli caches so the new entry fields
+     repopulate (cascade rule 2 needs `scheduledTaskId`). See CHANGELOG.md
+     `[1.9.0]` + the "Project Identity v2" section above.
