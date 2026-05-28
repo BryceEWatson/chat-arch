@@ -121,11 +121,11 @@ Bumps `EXPORTER_VERSION`; requires rescan.
 
 ## ActionItemsBanner
 
-- [ActionItemsBanner.tsx:255](packages/viewer/src/components/ActionItemsBanner.tsx#L255) — Relative-time tier transitions are unclear: "just now" → "N min ago" → weekday name → ISO date. On the 7-day boundary, "Sunday" suddenly becomes a date string, no graceful intermediate ("last week", "2 weeks ago").
+- [ActionItemsBanner.tsx:255](packages/viewer/src/components/ActionItemsBanner.tsx#L255) — Relative-time tier transitions are unclear: "just now" → "N min ago" → weekday name → ISO date. On the 7-day boundary, "Sunday" suddenly becomes a date string, no graceful intermediate ("last week", "2 weeks ago"). [x] fixed: added a `Nw ago` tier between 3d and 60d in the shared `formatRelative` helper. The banner consumes `formatRelative` directly, so the smoother tier applies everywhere it's used. New tests pin `1w ago` / `3w ago` / `Jan 5` (past 60d).
 
 ## DetailMissing
 
-- [DetailMissing.tsx:10–11](packages/viewer/src/components/DetailMissing.tsx#L10) — Parenthesized `reason` (e.g., "(404)" or "(timeout)") with no context for what the reason means in this app.
+- [DetailMissing.tsx:10–11](packages/viewer/src/components/DetailMissing.tsx#L10) — Parenthesized `reason` (e.g., "(404)" or "(timeout)") with no context for what the reason means in this app. [x] fixed: copy now names the situation (transcript file couldn't be loaded) before the reason; reason itself is prefixed with `Reason:` so it reads as a label rather than a parenthetical.
 
 ## TranscriptList
 

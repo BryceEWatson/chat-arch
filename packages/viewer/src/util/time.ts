@@ -2,10 +2,12 @@
  * Relative-time formatter and weekly-bucket helpers.
  *
  * No date-fns, no dayjs (plan decision 17). Thresholds per plan §17:
- *   <2h       -> "Nm ago" / "Nh ago"
- *   <3d       -> "Nd ago"
- *   same year -> "Mmm D"   (e.g. "Apr 2")
- *   else      -> "YYYY-MM-DD"
+ *   <2h        -> "Nm ago" / "Nh ago"
+ *   <3d        -> "Nd ago"
+ *   <14d       -> "Nw ago"  (1w / 2w — covers the otherwise-jarring 3d → absolute jump)
+ *   <60d       -> "Nw ago"
+ *   same year  -> "Mmm D"   (e.g. "Apr 2")
+ *   else       -> "YYYY-MM-DD"
  */
 
 const MS_MIN = 60_000;
@@ -45,6 +47,14 @@ export function formatRelative(timestamp: number, now: number = Date.now()): str
   if (diff < 3 * MS_DAY) {
     const days = Math.max(1, Math.floor(diff / MS_DAY));
     return `${days}d ago`;
+  }
+  // Bridge the 3d → absolute-date gap with a "Nw ago" tier so the
+  // copy doesn't jump from "2d ago" to "Apr 2" (or worse, "Sunday"
+  // depending on weekday under the prior thresholds). Caps at 8w
+  // (~60d) — beyond that an absolute month-day is more legible.
+  if (diff < 60 * MS_DAY) {
+    const weeks = Math.max(1, Math.floor(diff / (7 * MS_DAY)));
+    return `${weeks}w ago`;
   }
   return formatAbsolute(timestamp, now);
 }

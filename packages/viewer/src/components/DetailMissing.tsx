@@ -7,8 +7,9 @@ export function DetailMissing({ reason }: DetailMissingProps) {
     <section className="lcars-detail-missing" role="status">
       <h2 className="lcars-detail-missing__title">NO TRANSCRIPT</h2>
       <p className="lcars-detail-missing__reason">
-        This session has no drill-in body available.
-        {reason ? ` (${reason})` : ''}
+        This session has no drill-in body available — the underlying
+        transcript file couldn&rsquo;t be loaded.
+        {reason ? ` Reason: ${reason}.` : ''}
       </p>
     </section>
   );
