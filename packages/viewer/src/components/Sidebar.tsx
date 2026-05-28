@@ -125,7 +125,7 @@ const NAV: readonly NavGroup[] = [
         label: 'TRUST',
         short: 'TRU',
         tooltip:
-          'Decision-acceptance vs. outcome 2×2 — does the assistant call decisions the way that lands?',
+          'Decision-acceptance vs. outcome 2×2 — does your accept-vs-override behavior track which decisions land?',
       },
     ],
   },

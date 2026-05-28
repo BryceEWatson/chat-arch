@@ -72,11 +72,14 @@ import '@fontsource/jetbrains-mono/600.css';
         --lcars-peach: #ff9933;
         /* views.astro + blog-drafts/[slug].astro reference
            var(--lcars-butterscotch) for their section bars + left
-           rules but don't import the viewer stylesheet (which
-           defines the token under .lcars-root scope only). Mirror
-           the canonical viewer hex value so the same chrome color
-           renders consistently across both surfaces. */
+           rules; blog-drafts/[slug].astro + playbook.astro also
+           reference var(--lcars-ice) for focus outlines. None of
+           those four pages imports the viewer stylesheet (which
+           defines both tokens under .lcars-root scope only). Mirror
+           the canonical viewer hex values so the chrome renders
+           consistently across every BaseLayout-wrapped surface. */
         --lcars-butterscotch: #dd9944;
+        --lcars-ice: #99ccff;
         /* Semantic status palette — used by audit verdicts, calibrate
            Y/N buttons, and index.astro inline JS status colors. These
            were independently re-authored across three pages until
