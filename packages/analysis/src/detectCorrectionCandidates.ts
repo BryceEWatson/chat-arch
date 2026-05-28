@@ -46,6 +46,7 @@ import type {
   CorrectionSignal,
   CorrectionSignalKind,
 } from '@chat-arch/schema';
+import { unwrapEnvelope } from './unwrapEnvelope.js';
 
 /**
  * Bumped whenever the heuristic ruleset changes (new pattern family,
@@ -61,6 +62,13 @@ import type {
  *   2 — broadened explicit-no negation, added soft-redirect and
  *       want-prefer families, added `just|please` to imperative-override
  *       (2026-05 audit, see scripts/audit-correction-recall.mjs)
+ *   3 — `excerpt` and `precedingAssistantExcerpt` are now passed through
+ *       `unwrapEnvelope` before truncation, so harness wrappers
+ *       (slash-command triples / scheduled-task / system-reminder) no
+ *       longer leak into the LLM classifier and the CorrectionPatternCard
+ *       evidence rows. Same per-turn match set as v2 — only the stored
+ *       excerpt text changes — but bumped because cached rows must be
+ *       re-emitted to pick up the new excerpt shape.
  *
  * Note: the 2026-05 LF refactor (extracted pattern families into
  * CORRECTION_LFS + added diagnostics) did NOT bump the version because
@@ -69,7 +77,7 @@ import type {
  * costly full-corpus rescan with no payoff. Bump only when the actual
  * recall set changes.
  */
-export const HEURISTIC_RECALL_VERSION = 2;
+export const HEURISTIC_RECALL_VERSION = 3;
 
 /** Minimal turn shape — extracted from any source's transcript. */
 export interface TurnPair {
@@ -306,13 +314,26 @@ export function detectCorrectionCandidates(
       phrase: h.phrase,
     }));
 
+    // Strip harness envelopes before truncating so the LLM
+    // classification stage (and the CorrectionPatternCard viewer)
+    // never sees `<command-message>…</command-args>` in the
+    // excerpt. unwrapEnvelope returns the user's actual text or
+    // a synthesized `/slash-cmd args` form when the wrapper was the
+    // user's input. `?? t.userText` keeps the original truncate
+    // contract when the unwrap yields null on whitespace-only
+    // payloads — better to render something than drop the row.
+    const unwrappedUser = unwrapEnvelope(t.userText) ?? t.userText;
+    const unwrappedAssistant =
+      t.precedingAssistantText === null
+        ? null
+        : unwrapEnvelope(t.precedingAssistantText) ?? t.precedingAssistantText;
     out.push({
       id: makeCorrectionId(t.sessionId, t.userTurnIndex),
       sessionId: t.sessionId,
       userTurnIndex: t.userTurnIndex,
-      excerpt: truncate(t.userText, 500),
+      excerpt: truncate(unwrappedUser, 500),
       precedingAssistantExcerpt:
-        t.precedingAssistantText === null ? null : truncate(t.precedingAssistantText, 500),
+        unwrappedAssistant === null ? null : truncate(unwrappedAssistant, 500),
       signals,
       classification: null,
     });

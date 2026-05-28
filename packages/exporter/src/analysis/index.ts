@@ -228,7 +228,7 @@ export interface RunAnalysisResult {
  * `attributedTo: 'deterministic'`; existing on-disk legacy rows still
  * read via `normalizeNarrativeRow`'s reader-side defaults.
  */
-export const EXPORTER_VERSION = '1.7.0';
+export const EXPORTER_VERSION = '1.8.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

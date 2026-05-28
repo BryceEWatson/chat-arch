@@ -14,6 +14,53 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-05-27
+
+UI content-display pass — strip harness envelopes (`<command-message>`,
+`<command-name>`, `<command-args>`, `<scheduled-task>`, `<system-reminder>`,
+`<task-notification>`, etc.) from summary-context user-text before
+display, instead of letting them fill the first 240 chars of every
+SESSIONS card preview / title-fallback / corrections-evidence excerpt.
+Root cause + affected-surfaces audit in `research/ui-content-issues.md`.
+
+### Added
+
+- **`unwrapEnvelope` helper** in `@chat-arch/analysis` — single source
+  of truth for envelope-stripping logic. Recognizes the slash-command
+  triple (`<command-message>…<command-name>X</command-name>…<command-args>Y</command-args>`
+  → `/X Y`), the scheduled-task wrapper (`<scheduled-task name="X">…</scheduled-task>`
+  → `↻ scheduled-task: X`), and 14 other wrapper prefixes that get
+  dropped wholesale. 18 unit tests cover null/empty/wrapper-only/
+  mixed inputs plus regression cases. Wired into:
+  - `buildPreview` (`packages/exporter/src/lib/preview.ts`) —
+    fixes SESSIONS card previews + all derived sidecars that consume
+    `s.preview`.
+  - `resolveTitle` levels 2 + 3 (`packages/exporter/src/sources/cli.ts`)
+    — fixes title-derivation cascade for sessions where `aiTitle`
+    is missing.
+  - `detectCorrectionCandidates` (`packages/analysis/src/detectCorrectionCandidates.ts`)
+    — strips wrappers from `excerpt` + `precedingAssistantExcerpt`
+    before truncation, so the LLM classifier and the
+    CorrectionPatternCard evidence rows no longer see harness noise.
+  - `personaCandidates` (`packages/exporter/src/analysis/personaCandidates.ts`)
+    — replaces the legacy `startsWith(WRAPPER_PREFIXES)` skip-guard
+    with an unwrap-then-check pipeline so user prose embedded after
+    a wrapper block contributes to the persona corpus.
+
+### Changed
+
+- **`HEURISTIC_RECALL_VERSION` bumped 2 → 3** — the heuristic kernel's
+  per-turn match set is unchanged, but the stored `excerpt` /
+  `precedingAssistantExcerpt` strings now flow through
+  `unwrapEnvelope` before truncation. The version bump invalidates
+  cached `correction-candidates.json` files so existing bundles
+  pick up the new excerpt shape on next rescan.
+- **`EXPORTER_VERSION` bumped 1.7.0 → 1.8.0** — the file shapes
+  haven't changed, but the on-disk content of `correction-candidates.json`
+  + `manifest.json` (preview field) + `personas/` (titles, candidate
+  excerpts) materially changes on rescan, so the auditable version
+  label moves to match.
+
 ## [1.7.0] — 2026-05-26
 
 Narrative-mining V1 — per-project LLM-driven thematic narratives,
