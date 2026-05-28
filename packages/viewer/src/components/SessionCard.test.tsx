@@ -37,8 +37,22 @@ function findMetaCell(label: string): HTMLElement | null {
 }
 
 function metaValue(label: string): string {
+  // The dd renders two siblings: a visible `<span aria-hidden="true">` with
+  // the terse value (e.g. "4→9") and a `<span class="sr-only">` with the
+  // long form (e.g. " 4 user turns, 9 assistant turns") so AT users get the
+  // expansion without needing a mouse tooltip. The visible-value contract
+  // here only checks the aria-hidden span — sr-only content is verified by
+  // the dd.title attribute assertions in the cloud-fallback test below.
   const cell = findMetaCell(label);
-  return cell?.querySelector('dd')?.textContent ?? '';
+  const dd = cell?.querySelector('dd');
+  if (!dd) return '';
+  const visible = dd.querySelector('[aria-hidden="true"]');
+  // SourceAttribution renders an em-space-prefixed sibling (` · estimate`)
+  // that legitimately belongs to the displayed value — concatenate it onto
+  // the visible span's text so cost-with-attribution assertions still match.
+  const attr = dd.querySelector('.lcars-attribution');
+  const visibleText = visible?.textContent ?? dd.textContent ?? '';
+  return attr ? `${visibleText}${attr.textContent ?? ''}` : visibleText;
 }
 
 describe('SessionCard', () => {
@@ -130,9 +144,42 @@ describe('SessionCard', () => {
     expect(costCell.getAttribute('title')).toMatch(/No cost signal/);
   });
 
-  it('renders (no preview) when preview is null', () => {
+  it('renders specific fallback copy when preview is null', () => {
     render(<SessionCard session={base({ preview: null })} onSelect={() => {}} />);
-    expect(screen.getByText('(no preview)')).toBeDefined();
+    // The fallback names the actual state ("transcript had no user-turn
+    // text") rather than the older generic "(no preview)" which was
+    // ambiguous between "no content" and "we failed to derive content".
+    expect(screen.getByText('(transcript had no user-turn text)')).toBeDefined();
+  });
+
+  it('renders a single em-dash for TURNS when both halves are null', () => {
+    // `—→—` reads as "no data → no data". A bare em-dash is the right
+    // copy for "no turn data at all" (vs. e.g. "4→—" which legitimately
+    // means "we have user-turn data, but assistant-turns are missing").
+    render(
+      <SessionCard
+        session={base({ userTurns: null, assistantTurns: null })}
+        onSelect={() => {}}
+      />,
+    );
+    expect(metaValue('TURNS')).toBe('—');
+  });
+
+  it('strips multi-character markdown (bold, italic, links) from preview', () => {
+    // The legacy `stripMarkdown` only removed single `#*\`>` characters,
+    // so `**bold**` rendered as `bold` (asterisks gone, no bold) and
+    // `[click here](https://example.com)` rendered with the URL inline.
+    render(
+      <SessionCard
+        session={base({
+          preview: 'See **bold text** and [click here](https://example.com) — `code` too',
+        })}
+        onSelect={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText('See bold text and click here — code too'),
+    ).toBeDefined();
   });
 
   it('renders $0.00 for meaningful zero cost', () => {
@@ -158,27 +205,43 @@ describe('SessionCard', () => {
   it('calls onSelect on click', () => {
     const onSelect = vi.fn();
     render(<SessionCard session={base()} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole('button', { name: /open Sample title/ }));
+    fireEvent.click(screen.getByRole('button', { name: /open .* session: Sample title/ }));
     expect(onSelect).toHaveBeenCalledWith('id-1');
   });
 
   it('calls onSelect on Enter key', () => {
     const onSelect = vi.fn();
     render(<SessionCard session={base()} onSelect={onSelect} />);
-    fireEvent.keyDown(screen.getByRole('button', { name: /open Sample title/ }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: /open .* session: Sample title/ }), { key: 'Enter' });
     expect(onSelect).toHaveBeenCalledWith('id-1');
   });
 
   it('calls onSelect on Space key', () => {
     const onSelect = vi.fn();
     render(<SessionCard session={base()} onSelect={onSelect} />);
-    fireEvent.keyDown(screen.getByRole('button', { name: /open Sample title/ }), { key: ' ' });
+    fireEvent.keyDown(screen.getByRole('button', { name: /open .* session: Sample title/ }), { key: ' ' });
     expect(onSelect).toHaveBeenCalledWith('id-1');
   });
 
   it('does not crash on empty-title entries (fallback to Untitled session)', () => {
+    // titleSource !== 'fallback' here — the title is empty for some
+    // other reason (e.g. a cloud session whose name strip yielded an
+    // empty string). Generic "Untitled session" is correct.
     render(<SessionCard session={base({ title: '' })} onSelect={() => {}} />);
     expect(screen.getByText('Untitled session')).toBeDefined();
+  });
+
+  it('uses specific fallback copy when titleSource === "fallback"', () => {
+    // The exporter sets titleSource='fallback' specifically when the
+    // title cascade exhausted (no aiTitle, no firstUserText, no
+    // lastPrompt). Name the actual state.
+    render(
+      <SessionCard
+        session={base({ title: '', titleSource: 'fallback' })}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByText('(no user-turn to title)')).toBeDefined();
   });
 
   it('renders project label with ↳ prefix when session.project is set', () => {

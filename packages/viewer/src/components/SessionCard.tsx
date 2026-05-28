@@ -70,6 +70,9 @@ function formatTurns(
 ): string {
   const u = userTurns ?? undefined;
   const a = assistantTurns ?? undefined;
+  // Both halves missing → a bare em-dash reads cleaner than `—→—`,
+  // which scans as "no data → no data" rather than "no turn data".
+  if (u === undefined && a === undefined) return NA;
   return `${u === undefined ? NA : u}→${a === undefined ? NA : a}`;
 }
 
@@ -125,9 +128,41 @@ function modelTooltip(model: string | null): string {
   return 'No model recorded';
 }
 
-/** Strip the most common markdown syntax from a preview blurb. */
+/**
+ * Strip common markdown syntax from a preview blurb so card previews
+ * render as readable prose instead of `**bold sentence` (asterisks
+ * gone, bold word orphaned mid-sentence) or `[click here](https://…)`
+ * (link target spelled out). This is a SHALLOW pass — pathological
+ * inputs can still leak — but it covers bold, italic, inline links,
+ * inline code, headings, blockquotes, table pipes, and hr lines,
+ * which together account for nearly every preview that has visible
+ * markdown leakage today.
+ */
 function stripMarkdown(s: string): string {
-  return s.replace(/[#*`>]/g, '');
+  return (
+    s
+      // [link text](https://url) → link text  (handles reference-style
+      // [text][ref] by leaving the second bracket pair untouched, which
+      // the trailing `[]` rule below cleans up)
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+      // **bold** / __bold__ → bold
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      // *italic* / _italic_ → italic  (avoid eating already-stripped
+      // characters by requiring at least one non-space inside)
+      .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '$1')
+      .replace(/(?<!_)_([^_\n]+)_(?!_)/g, '$1')
+      // `inline code` → inline code
+      .replace(/`([^`]+)`/g, '$1')
+      // Reference-style link residue: [text][ref] → text
+      .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
+      // Horizontal rules: three or more dashes/asterisks/underscores
+      // on their own line → empty
+      .replace(/^[ \t]*[-*_]{3,}[ \t]*$/gm, '')
+      // Headings, leftover asterisks/backticks/blockquote markers,
+      // table pipes — strip the chars themselves
+      .replace(/[#*`>|]/g, '')
+  );
 }
 
 export function SessionCard({
@@ -144,11 +179,38 @@ export function SessionCard({
   onNarrativeChipClick,
 }: SessionCardProps) {
   const borderColor = SOURCE_COLOR[session.source];
-  const preview = session.preview ?? '(no preview)';
-  const title = session.title || 'Untitled session';
+  // `preview` is null when the transcript had no extractable user-turn
+  // text. After Tier 1 envelope-unwrap this is a real null — not
+  // "preview failed to derive" disguised as null — so name the actual
+  // state instead of the older catch-all "(no preview)".
+  const preview = session.preview ?? '(transcript had no user-turn text)';
+  // `titleSource === 'fallback'` means the title cascade exhausted
+  // (no aiTitle, no firstUserText, no lastPrompt) — i.e. nothing in
+  // the transcript could become a title. Lean into the specificity so
+  // the user can tell "we couldn't title this" from "this is an
+  // arbitrary unnamed session".
+  const fallbackTitle =
+    session.titleSource === 'fallback'
+      ? '(no user-turn to title)'
+      : 'Untitled session';
+  const title = session.title || fallbackTitle;
   const model = session.model ?? NA;
   const tools = topToolsList(session.topTools);
   const relTime = formatRelative(session.updatedAt, now);
+
+  // Composed accessible name — bundles the source, title, project, and time so
+  // a screen-reader user gets the full card-at-a-glance without having to enter
+  // the card and navigate inner chips. The card's aria-label previously read
+  // only "open Untitled session"; now: "open <Source> session <title>, project
+  // <project>, <relTime>". Chips (NARR/DUP/ZOMBIE) keep their own button names —
+  // SR users can step in to activate them via the card's inner tab stops.
+  const cardAriaLabel = (() => {
+    const sourceWord = session.source.toUpperCase();
+    const projectClause = session.project
+      ? `, project ${isSemanticProject ? 'inferred as ' : ''}${session.project}`
+      : '';
+    return `open ${sourceWord} session: ${title}${projectClause}, ${relTime}`;
+  })();
 
   // Cost attribution — when the session has no exact cost but has an
   // estimate, we label the COST value with `· estimate` per Decision 18.
@@ -207,7 +269,7 @@ export function SessionCard({
       style={{ ['--source-color' as string]: borderColor } as React.CSSProperties}
       role="button"
       tabIndex={0}
-      aria-label={`open ${title}`}
+      aria-label={cardAriaLabel}
       onClick={() => onSelect(session.id)}
       onKeyDown={(e) => onActivate(e, () => onSelect(session.id))}
     >
@@ -217,16 +279,20 @@ export function SessionCard({
           (isSemanticProject ? (
             // Semantic-inferred label: `~` prefix + italic styling so
             // users can distinguish a model-inferred match from the
-            // string-match ground truth without a tooltip hover.
+            // string-match ground truth without a tooltip hover. The ↳
+            // glyph is decorative — wrap aria-hidden so SR users don't
+            // hear "right-arrow-corner ~ <project>". Card aria-label
+            // already carries "project inferred as <X>", so this span
+            // can stay aria-hidden too (decorative duplicate).
             <span
               className="lcars-session-card__project lcars-session-card__project--semantic"
-              title={`project (inferred by topic similarity): ${session.project}`}
+              aria-hidden="true"
             >
-              ↳ ~{session.project}
+              <span aria-hidden="true">↳ </span>~{session.project}
             </span>
           ) : (
-            <span className="lcars-session-card__project" title={`project: ${session.project}`}>
-              ↳ {session.project}
+            <span className="lcars-session-card__project" aria-hidden="true">
+              <span aria-hidden="true">↳ </span>{session.project}
             </span>
           ))}
         <time className="lcars-session-card__time">{relTime}</time>
@@ -238,7 +304,7 @@ export function SessionCard({
                   role="button"
                   tabIndex={0}
                   className={`lcars-chip lcars-chip--narrative lcars-chip--narrative-${narrativeChip.sentiment}`}
-                  aria-label={`${narrativeChip.count} narrative${narrativeChip.count === 1 ? '' : 's'} attached (${narrativeChip.sentiment}), click to open project view`}
+                  aria-label={`${narrativeChip.count} ${narrativeChip.count === 1 ? 'narrative' : 'narratives'} attached — ${narrativeChip.sentiment}, opens project view`}
                   onClick={(e) => {
                     stop(e);
                     onNarrativeChipClick(narrativeChip.first.id, narrativeChip.first.projectId);
@@ -254,7 +320,7 @@ export function SessionCard({
               ) : (
                 <span
                   className={`lcars-chip lcars-chip--narrative lcars-chip--narrative-${narrativeChip.sentiment}`}
-                  aria-label={`${narrativeChip.count} narrative${narrativeChip.count === 1 ? '' : 's'} attached (${narrativeChip.sentiment})`}
+                  aria-label={`${narrativeChip.count} ${narrativeChip.count === 1 ? 'narrative' : 'narratives'} attached — ${narrativeChip.sentiment}`}
                   title={narrativeChip.first.title}
                 >
                   NARR ({narrativeChip.count})
@@ -319,19 +385,17 @@ export function SessionCard({
         )}
       </div>
       {topics && topics.length > 0 && (
-        <div
-          className="lcars-session-card__topics"
-          role="list"
-          aria-label="session topics"
-        >
+        // `role="list"` inside a `role="button"` is structurally invalid
+        // and ARIA flattens the descendant roles unpredictably. The
+        // visible "#" prefix communicates "tag" affordance for sighted
+        // users; the topics already appear in the card aria-label
+        // implicitly via the card's accessible-name composition (B-4).
+        // Drop list semantics; keep visible chrome.
+        <div className="lcars-session-card__topics" aria-hidden="true">
           {topics.map((t) => (
-            <span
-              key={t}
-              role="listitem"
-              className="lcars-chip lcars-chip--topic"
-              title={`topic: ${t}`}
-            >
-              # {t}
+            <span key={t} className="lcars-chip lcars-chip--topic" title={`topic: ${t}`}>
+              <span aria-hidden="true"># </span>
+              {t}
             </span>
           ))}
         </div>
@@ -349,16 +413,34 @@ export function SessionCard({
       >
         {session.preview === null ? preview : stripMarkdown(preview).slice(0, 240)}
       </div>
+      {/*
+        The meta cells previously hid their expanded form behind mouse-only
+        `title=` tooltips ("4→7" → "4 user → 7 assistant"). Keyboard and
+        touch users couldn't reach the expansion. Each cell now pairs the
+        terse visible string with a `.sr-only` span containing the long
+        form — title= stays for mouse-hover discoverability but is no
+        longer the sole escape. The card itself is role="button" so its
+        descendants don't count as separate tab stops; the sr-only spans
+        are read as part of the card's full DOM content in browse mode.
+      */}
       <dl className="lcars-session-card__meta">
         <div className="lcars-session-card__meta-cell">
           <dt>TURNS</dt>
           <dd title={`${session.userTurns ?? NA} user → ${session.assistantTurns ?? NA} assistant`}>
-            {formatTurns(session.userTurns, session.assistantTurns)}
+            <span aria-hidden="true">{formatTurns(session.userTurns, session.assistantTurns)}</span>
+            <span className="sr-only">
+              {' '}
+              {session.userTurns ?? 'unknown'} user turn{session.userTurns === 1 ? '' : 's'},{' '}
+              {session.assistantTurns ?? 'unknown'} assistant turn{session.assistantTurns === 1 ? '' : 's'}
+            </span>
           </dd>
         </div>
         <div className="lcars-session-card__meta-cell">
           <dt>TOOLS</dt>
-          <dd title={toolsTooltip(session.topTools)}>{tools}</dd>
+          <dd title={toolsTooltip(session.topTools)}>
+            <span aria-hidden="true">{tools}</span>
+            <span className="sr-only"> {toolsTooltip(session.topTools) ?? 'no tools'}</span>
+          </dd>
         </div>
         {!isCloud && (
           <>
@@ -368,13 +450,20 @@ export function SessionCard({
                 className="lcars-session-card__meta--model"
                 title={modelTooltip(session.model)}
               >
-                {model}
+                <span aria-hidden="true">{model}</span>
+                <span className="sr-only"> {modelTooltip(session.model)}</span>
               </dd>
             </div>
             <div className="lcars-session-card__meta-cell">
               <dt>COST</dt>
               <dd title={costTooltip(session.totalCostUsd, session.costEstimatedUsd)}>
-                {hasExact ? formatCost(session.totalCostUsd) : displayCost}
+                <span aria-hidden="true">
+                  {hasExact ? formatCost(session.totalCostUsd) : displayCost}
+                </span>
+                <span className="sr-only">
+                  {' '}
+                  {costTooltip(session.totalCostUsd, session.costEstimatedUsd)}
+                </span>
                 {hasExact ? (
                   <SourceAttribution kind="exact" />
                 ) : hasEstimate ? (
