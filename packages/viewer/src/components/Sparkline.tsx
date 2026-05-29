@@ -141,8 +141,11 @@ export function Sparkline({ allSessions, visibleSessions, width = 480 }: Sparkli
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   if (buckets.length === 0 || max === 0) {
+    // Drop the aria-label (it duplicated visible text "NO ACTIVITY" verbatim
+    // — accessible-name override added zero info; on a bare div without role
+    // the label is widely ignored anyway).
     return (
-      <div className="lcars-sparkline lcars-sparkline--empty" aria-label="no activity">
+      <div className="lcars-sparkline lcars-sparkline--empty">
         NO ACTIVITY
       </div>
     );
@@ -353,10 +356,15 @@ export function Sparkline({ allSessions, visibleSessions, width = 480 }: Sparkli
           })}
         </svg>
         {hoverIdx !== null && hoveredBucket && (
+          // Drop role="status" + aria-live="polite". The tooltip re-renders
+          // on every mouse-move across slots (~28 buckets × N segments) and
+          // a polite live-region would queue every transition. The chart is
+          // a pointer-only visualization; the textual readout strip above
+          // (`__readout`) carries the corresponding TOTAL/VISIBLE/PEAK/
+          // AVG-WK summary for SR users without per-bucket spam. iter-10
+          // ChatMode + iter-13 AnalysisLauncher live-region reform pattern.
           <div
             className="lcars-sparkline__tooltip"
-            role="status"
-            aria-live="polite"
             style={{
               left: `${tooltipLeftPct}%`,
             }}
