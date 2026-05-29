@@ -93,14 +93,20 @@ const groups: readonly NavGroup[] = [
 const isActive = (item: NavItem): boolean =>
   item.label === current && item.label !== 'DATA';
 ---
-<aside class="app-sidebar" data-collapsed="false" aria-label="Primary">
+<nav class="app-sidebar" data-collapsed="false" aria-label="Primary">
   <div class="app-sidebar__header">
     <span class="app-sidebar__brand-dot" aria-hidden="true"></span>
     <span class="app-sidebar__brand-title">CHAT&nbsp;ARCH</span>
+    {/*
+      aria-expanded is set by the boot script (attachCollapse) in
+      sync with data-collapsed so the announced state never disagrees
+      with the visual state. Pre-script the attribute is absent —
+      better than a hardcoded "true" that lies on mobile / when the
+      stored preference is collapsed.
+    */}
     <button
       type="button"
       class="app-sidebar__toggle"
-      aria-expanded="true"
       aria-controls="app-sidebar-body"
       aria-label="Toggle sidebar"
     >
@@ -113,6 +119,7 @@ const isActive = (item: NavItem): boolean =>
       <a
         class={`app-sidebar__item app-sidebar__today${isActive(TODAY) ? ' app-sidebar__item--active' : ''}`}
         href={TODAY.href}
+        aria-label={TODAY.label}
         aria-current={isActive(TODAY) ? 'page' : undefined}
       >
         <span class="app-sidebar__item-short">{TODAY.short}</span>
@@ -121,29 +128,33 @@ const isActive = (item: NavItem): boolean =>
     </div>
     <div class="app-sidebar__divider" aria-hidden="true"></div>
 
-    {groups.map((g) => (
-      <div class="app-sidebar__group">
-        <div class="app-sidebar__group-label" aria-hidden="true">{g.label}</div>
-        <ul class="app-sidebar__list">
-          {g.items.map((item) => {
-            const active = isActive(item);
-            const isData = item.label === 'DATA';
-            return (
-              <li>
-                <a
-                  class={`app-sidebar__item${active ? ' app-sidebar__item--active' : ''}${isData ? ' app-sidebar__item--data' : ''}`}
-                  href={item.href}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <span class="app-sidebar__item-short">{item.short}</span>
-                  <span class="app-sidebar__item-label">{item.label}</span>
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    ))}
+    {groups.map((g) => {
+      const groupId = `app-sidebar-group-${g.label.toLowerCase()}`;
+      return (
+        <div class="app-sidebar__group" role="group" aria-labelledby={groupId}>
+          <div class="app-sidebar__group-label" id={groupId}>{g.label}</div>
+          <ul class="app-sidebar__list">
+            {g.items.map((item) => {
+              const active = isActive(item);
+              const isData = item.label === 'DATA';
+              return (
+                <li>
+                  <a
+                    class={`app-sidebar__item${active ? ' app-sidebar__item--active' : ''}${isData ? ' app-sidebar__item--data' : ''}`}
+                    href={item.href}
+                    aria-label={item.label}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span class="app-sidebar__item-short">{item.short}</span>
+                    <span class="app-sidebar__item-label">{item.label}</span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    })}
   </div>
   {/*
     Footer slot — VIEW SOURCE chip. The viewer's prior `Sidebar.tsx`
@@ -159,12 +170,13 @@ const isActive = (item: NavItem): boolean =>
       href="https://github.com/BryceEWatson/chat-arch"
       target="_blank"
       rel="noopener noreferrer"
+      aria-label="View source on GitHub"
     >
       <span class="app-sidebar__source-short" aria-hidden="true">SRC</span>
       <span class="app-sidebar__source-label">VIEW SOURCE ↗</span>
     </a>
   </div>
-</aside>
+</nav>
 
 <script>
   import {
@@ -414,7 +426,6 @@ const isActive = (item: NavItem): boolean =>
     font-weight: 700;
     font-size: 10px;
     letter-spacing: 0.06em;
-    opacity: 0.7;
     flex: 0 0 auto;
   }
   .app-sidebar__item-label {
@@ -438,7 +449,6 @@ const isActive = (item: NavItem): boolean =>
     padding: 11px 4px !important;
   }
   .app-sidebar[data-collapsed='true'] .app-sidebar__item-short {
-    opacity: 1;
     font-size: 11px;
   }
   .app-sidebar[data-collapsed='true'] .app-sidebar__header {
@@ -480,7 +490,6 @@ const isActive = (item: NavItem): boolean =>
     font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
     font-size: 9.5px;
     letter-spacing: 0.06em;
-    opacity: 0.85;
   }
   /* In collapsed mode, the chip narrows to just the SRC mono badge —
      stays visible (Priya/David's trust real-estate intent) but takes

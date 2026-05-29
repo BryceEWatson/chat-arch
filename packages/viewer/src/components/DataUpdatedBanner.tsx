@@ -69,7 +69,18 @@ export function DataUpdatedBanner({
         {change.detail !== undefined && (
           <>
             {' '}
-            <code>{change.detail}</code>
+            {/*
+              Previously wrapped in <code>, which made SR users hear
+              "code v1 right-arrow v2 end code". The detail is short
+              status copy, not source code. Render as a plain span;
+              also replace the arrow glyph with a sr-only " to " so
+              the affordance still reads visually as "v1 → v2" while
+              SR users hear "v1 to v2".
+            */}
+            <span className="lcars-data-updated-banner__detail">
+              <span aria-hidden="true">{change.detail}</span>
+              <span className="sr-only">{change.detail.replace(/→/g, ' to ')}</span>
+            </span>
           </>
         )}{' '}
         Refresh to see the new values.
@@ -90,7 +101,7 @@ export function DataUpdatedBanner({
           onClick={onDismiss}
           aria-label="dismiss data-updated banner"
         >
-          ✕
+          <span aria-hidden="true">✕</span>
         </button>
       )}
     </div>

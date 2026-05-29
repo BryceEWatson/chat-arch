@@ -82,10 +82,11 @@ describe('TODAY page (index.astro) — empty-state show-don\'t-describe contract
     it('renders the 5 Phase-β section bars (BRIEF / NEW / ACT / BROKEN / STORIES)', () => {
       // Each section opens with a today__bar-key carrying the section
       // name. Pin the structure so a future drive-by rename can't
-      // silently drop a section.
+      // silently drop a section. (a11y iter-2 F12: keys promoted from
+      // <span> to <h2> for SR heading-outline reachability.)
       for (const key of ['BRIEF', 'NEW', 'ACT', 'BROKEN', 'STORIES']) {
         expect(src).toMatch(
-          new RegExp(`<span class="today__bar-key"[^>]*>\\{SECTIONS\\[\\d+\\]\\.key\\}|>${key}<`),
+          new RegExp(`<h2 class="today__bar-key"[^>]*>\\{SECTIONS\\[\\d+\\]\\.key\\}|>${key}<`),
         );
       }
     });

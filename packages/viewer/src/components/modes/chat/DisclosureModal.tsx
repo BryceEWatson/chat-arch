@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useFocusTrap } from '../../../util/a11y.js';
 
 export interface DisclosureModalProps {
   open: boolean;
@@ -42,6 +43,7 @@ export function markChatDisclosureAcknowledged(): void {
  */
 export function DisclosureModal({ open, onAcknowledge, onCancel }: DisclosureModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -49,9 +51,12 @@ export function DisclosureModal({ open, onAcknowledge, onCancel }: DisclosureMod
       if (e.key === 'Escape') onCancel();
     };
     window.addEventListener('keydown', handler);
-    dialogRef.current?.focus();
     return () => window.removeEventListener('keydown', handler);
   }, [open, onCancel]);
+
+  // Initial focus on CANCEL — for a consent gate, pressing Enter should
+  // NOT grant consent by default. Tab cycles within the dialog.
+  useFocusTrap(open, dialogRef, cancelRef);
 
   if (!open) return null;
 
@@ -62,7 +67,11 @@ export function DisclosureModal({ open, onAcknowledge, onCancel }: DisclosureMod
       aria-modal="true"
       aria-labelledby="lcars-chat-disclosure-title"
     >
-      <div className="lcars-chat-disclosure__backdrop" onClick={onCancel} />
+      <div
+        className="lcars-chat-disclosure__backdrop"
+        onClick={onCancel}
+        aria-hidden="true"
+      />
       <div className="lcars-chat-disclosure__panel" ref={dialogRef} tabIndex={-1}>
         <h2 id="lcars-chat-disclosure-title" className="lcars-chat-disclosure__title">
           BEFORE YOU CHAT
@@ -94,6 +103,7 @@ export function DisclosureModal({ open, onAcknowledge, onCancel }: DisclosureMod
         </div>
         <div className="lcars-chat-disclosure__actions">
           <button
+            ref={cancelRef}
             type="button"
             className="lcars-chat-disclosure__cancel"
             onClick={onCancel}

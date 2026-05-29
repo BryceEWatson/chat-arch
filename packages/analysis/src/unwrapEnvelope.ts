@@ -26,15 +26,16 @@
  *   - Empty result → `null` (no display string; callers should use a
  *     fallback like `(no preview)` rather than render whitespace).
  *
- * NOTE: this file was ported byte-for-byte from the concurrent
- * UI-content / `unwrapEnvelope` branch (1.8.0) so the decisions UI can
- * unwrap excerpts while based off `main`. Whichever PR merges second
- * hits a trivial add/add conflict here and on the `export` line in
- * `index.ts` — resolve by keeping either (identical) copy. On THAT
- * branch this helper is also wired into
- * `packages/exporter/src/analysis/personaCandidates.ts` as the primary
- * unwrap stage (with a local `WRAPPER_PREFIXES` defense-in-depth
- * filter); that wiring is NOT part of this branch.
+ * `packages/exporter/src/analysis/personaCandidates.ts` now imports
+ * this helper as the primary unwrap stage and keeps its own local
+ * `WRAPPER_PREFIXES` only as a defense-in-depth post-unwrap filter
+ * (catches any wrapper opener that survived the unwrap pass when the
+ * input was unbalanced). The two prefix lists are not parallel
+ * implementations — this module's structured `<command-...>` /
+ * `<scheduled-task>` handling is the single source of truth for
+ * unwrap semantics, and personaCandidates layers a startsWith() guard
+ * on top to skip whole-turn cases unwrapEnvelope intentionally lets
+ * through (e.g., legacy text that happens to begin with `<file>`).
  */
 
 const SCHEDULED_TASK_RE = /<scheduled-task\b[^>]*\bname="([^"]+)"[^>]*>[\s\S]*?(?:<\/scheduled-task>|$)/g;

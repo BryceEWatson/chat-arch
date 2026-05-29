@@ -258,29 +258,29 @@ function ProjectsIndex({ projects, onSelectProject, now }: ProjectsIndexProps) {
                 role="button"
                 tabIndex={0}
                 className={`lcars-projects-index__row${isUnassigned ? ' lcars-projects-index__row--unassigned' : ''}`}
-                aria-label={`open project ${p.displayName}`}
                 onClick={() => onSelectProject(p.id)}
                 onKeyDown={(e) => onActivate(e, () => onSelectProject(p.id))}
               >
                 <div className="lcars-projects-index__row-main">
+                  <span className="lcars-sr-only">open project </span>
                   <span className="lcars-projects-index__row-name">{p.displayName}</span>
                   <span
                     className={`lcars-projects-index__sentiment ${SENTIMENT_CLASS[p.sentiment]}`}
-                    aria-label={`sentiment ${SENTIMENT_LABEL[p.sentiment]}`}
                   >
+                    <span className="lcars-sr-only">sentiment: </span>
                     {SENTIMENT_LABEL[p.sentiment]}
                   </span>
                 </div>
                 <div className="lcars-projects-index__row-meta">
-                  <span title="sessions in this project">
+                  <span>
                     {sessionCount} session{sessionCount === 1 ? '' : 's'}
                   </span>
                   {!isUnassigned && (
-                    <span title="narratives discovered for this project">
+                    <span>
                       {narrativeCount} narrative{narrativeCount === 1 ? '' : 's'}
                     </span>
                   )}
-                  <span title="last activity in this project">
+                  <span>
                     last {lastActivityRelative(p.lastActivityAt, now)}
                   </span>
                 </div>
@@ -488,8 +488,15 @@ function ProjectDetail({
 
   const showSkipHint = llmNarratives.length === 0 && narrativeSkip !== null;
 
+  const projectTitleId = `lcars-project-detail-title-${project.id}`;
+  const narrativesHId = `lcars-project-detail-narratives-${project.id}-h`;
+  const sessionsHId = `lcars-project-detail-sessions-${project.id}-h`;
   return (
-    <div className="lcars-project-detail" id={`project-${project.id}`}>
+    <section
+      className="lcars-project-detail"
+      id={`project-${project.id}`}
+      aria-labelledby={projectTitleId}
+    >
       {/*
         Sticky single-scroll layout (spec §5.1): narratives at top,
         sessions below. The back chip + heading hold position with a
@@ -503,13 +510,13 @@ function ProjectDetail({
           aria-label="back to projects index"
           onClick={onBack}
         >
-          ← PROJECTS
+          <span aria-hidden="true">← </span>PROJECTS
         </button>
-        <h2 className="lcars-project-detail__title">{project.displayName}</h2>
+        <h2 id={projectTitleId} className="lcars-project-detail__title">{project.displayName}</h2>
         <span
           className={`lcars-projects-index__sentiment ${SENTIMENT_CLASS[project.sentiment]}`}
-          aria-label={`sentiment ${SENTIMENT_LABEL[project.sentiment]}`}
         >
+          <span className="lcars-sr-only">sentiment: </span>
           {SENTIMENT_LABEL[project.sentiment]}
         </span>
       </header>
@@ -530,10 +537,10 @@ function ProjectDetail({
 
       <section
         className="lcars-project-detail__narratives"
-        aria-label="discovered narratives"
+        aria-labelledby={narrativesHId}
       >
         <div className="lcars-project-detail__narratives-header">
-          <h3 className="lcars-project-detail__section-title">
+          <h3 id={narrativesHId} className="lcars-project-detail__section-title">
             NARRATIVES{llmNarratives.length > 0 ? ` (${llmNarratives.length})` : ''}
           </h3>
           {onRegenNarratives !== undefined && (
@@ -578,7 +585,6 @@ function ProjectDetail({
         {showSkipHint && narrativeSkip !== null && (
           <p
             className="lcars-project-detail__llm-skip-hint"
-            role="status"
             data-skip-status={narrativeSkip.status}
           >
             {narrativeSkip.status === 'synthesis-failed'
@@ -649,9 +655,9 @@ function ProjectDetail({
 
       <section
         className="lcars-project-detail__sessions"
-        aria-label="sessions in this project"
+        aria-labelledby={sessionsHId}
       >
-        <h3 className="lcars-project-detail__section-title">
+        <h3 id={sessionsHId} className="lcars-project-detail__section-title">
           SESSIONS ({projectSessions.length})
         </h3>
         <div className="lcars-project-detail__session-grid" role="list">
@@ -662,7 +668,7 @@ function ProjectDetail({
           ))}
         </div>
       </section>
-    </div>
+    </section>
   );
 }
 
@@ -772,15 +778,17 @@ function NarrativeCard({
       ? 'Available when running locally — install chat-arch (see README quickstart) and reload.'
       : undefined;
 
+  const titleId = `lcars-narrative-card-h-${narrative.id}`;
   return (
     <article
       className={`lcars-narrative-card lcars-narrative-card--${accent}`}
-      aria-label={`${narrative.sentiment} narrative: ${narrative.title}`}
+      aria-labelledby={titleId}
     >
       <header className="lcars-narrative-card__header">
         <span
           className={`lcars-narrative-card__sentiment lcars-narrative-card__sentiment--${accent}`}
         >
+          <span className="lcars-sr-only">sentiment: </span>
           {narrative.sentiment.toUpperCase()}
         </span>
         {(() => {
@@ -810,7 +818,7 @@ function NarrativeCard({
             </span>
           );
         })()}
-        <h4 className="lcars-narrative-card__title">{narrative.title}</h4>
+        <h4 id={titleId} className="lcars-narrative-card__title">{narrative.title}</h4>
       </header>
       {narrative.body && (
         <p className="lcars-narrative-card__body">{narrative.body}</p>
@@ -842,14 +850,18 @@ function NarrativeCard({
           {narrative.evidence.map((e, ix) => {
             const s = sessionById.get(e.sessionId);
             const label = s?.title || e.sessionId;
+            const isFallbackSid = !s?.title;
             return (
               <li key={`${e.sessionId}-${ix}`}>
                 <a
                   className="lcars-narrative-card__evidence-pill"
                   href={`#session/${e.sessionId}`}
-                  title={label}
+                  {...(isFallbackSid
+                    ? { 'aria-label': `open session ${e.sessionId}` }
+                    : {})}
                 >
-                  ▸ {label}
+                  <span aria-hidden="true">▸ </span>
+                  {isFallbackSid ? label.slice(0, 8) : label}
                 </a>
               </li>
             );
@@ -990,7 +1002,7 @@ function NarrativeAudit({
         <button
           type="button"
           className="lcars-narrative-card__audit-dismiss"
-          aria-label={`dismiss this narrative (dismissal ${saturation.dismissalsConsumed + 1} of ${saturation.cap})`}
+          aria-label="dismiss this narrative"
           onClick={handleDismiss}
         >
           DISMISS

@@ -14,7 +14,7 @@ interface Props {
    */
   hideSidebar?: boolean;
 }
-const { title, current, hideSidebar = false } = Astro.props;
+const { title = 'Chat Archaeologist', current, hideSidebar = false } = Astro.props;
 import AppSidebar from '../components/AppSidebar.astro';
 
 // Self-hosted fonts via @fontsource. Replaces the Google Fonts <link>
@@ -61,12 +61,70 @@ import '@fontsource/jetbrains-mono/600.css';
     */}
     <title>{title}</title>
     <style is:global>
-      html, body { margin: 0; padding: 0; background: #000; color: #FFCC99; }
+      /* LCARS tokens inlined here so BaseLayout doesn't have to pull
+         in the viewer's styles.css. Mirror of the values declared on
+         .lcars-root + .app-sidebar so the page shell + brand
+         elements + demo badges + skip-link share one source of
+         truth in this file. */
+      :root {
+        --lcars-bg: #000000;
+        --lcars-sunflower: #ffcc99;
+        --lcars-peach: #ff9933;
+        /* views.astro + blog-drafts/[slug].astro reference
+           var(--lcars-butterscotch) for their section bars + left
+           rules; blog-drafts/[slug].astro + playbook.astro also
+           reference var(--lcars-ice) for focus outlines. None of
+           those four pages imports the viewer stylesheet (which
+           defines both tokens under .lcars-root scope only). Mirror
+           the canonical viewer hex values so the chrome renders
+           consistently across every BaseLayout-wrapped surface. */
+        --lcars-butterscotch: #dd9944;
+        --lcars-ice: #99ccff;
+        /* Semantic status palette — used by audit verdicts, calibrate
+           Y/N buttons, and index.astro inline JS status colors. These
+           were independently re-authored across three pages until
+           iter-3 token-promoted them. Match the historical hex values
+           so the visual baseline doesn't shift. */
+        --lcars-pass: #88e088;
+        --lcars-fail: #f08080;
+        --lcars-warn: #ffd680;
+      }
+      html, body { margin: 0; padding: 0; background: var(--lcars-bg); color: var(--lcars-sunflower); }
       body {
         font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         text-rendering: optimizeLegibility;
+      }
+      /* WCAG 2.4.1 Bypass Blocks. First focusable element on every
+         route, hidden offscreen until focused; on focus, slides into
+         the top-left corner with high-contrast styling. Targets
+         #main-content — pages with the AppSidebar provide that id on
+         their own <main> or wrapping element (see sessions.astro /
+         index.astro). Pages in the hideSidebar branch get it from
+         the layout's own <main> below. */
+      .skip-link {
+        position: absolute;
+        top: 0;
+        left: 0;
+        padding: 8px 14px;
+        background: var(--lcars-sunflower);
+        color: var(--lcars-bg);
+        font-family: 'Antonio', 'Oswald', 'Impact', sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-decoration: none;
+        border-radius: 0 0 6px 0;
+        transform: translateY(-100%);
+        transition: transform 80ms linear;
+        z-index: 1000;
+      }
+      .skip-link:focus,
+      .skip-link:focus-visible {
+        transform: translateY(0);
+        outline: 2px solid var(--lcars-peach);
+        outline-offset: -4px;
       }
       /* app-shell: CSS grid hosting the AppSidebar in column 1 and the
          page content in column 2. The sidebar's own `data-collapsed`
@@ -101,8 +159,8 @@ import '@fontsource/jetbrains-mono/600.css';
         display: inline-flex;
         align-items: center;
         padding: 2px 8px;
-        background: #FF9933;
-        color: #000000;
+        background: var(--lcars-peach);
+        color: var(--lcars-bg);
         border-radius: 0 8px 8px 0;
         font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
         font-size: 10px;
@@ -146,9 +204,10 @@ import '@fontsource/jetbrains-mono/600.css';
     </style>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     {hideSidebar ? (
       <div class="app-shell app-shell--no-sidebar">
-        <main class="app-shell__main">
+        <main id="main-content" class="app-shell__main" tabindex="-1">
           <slot />
         </main>
       </div>

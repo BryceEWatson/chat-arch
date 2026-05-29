@@ -177,15 +177,17 @@ describe('CorrectionPatternCard', () => {
           defaultExpanded
         />,
       );
-      fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
+      fireEvent.click(screen.getByRole('button', { name: /show.*instance/i }));
       expect(screen.getByText(/please c1 stop using docstrings/)).toBeDefined();
     });
 
-    // a11y: PROPOSED UPGRADES is an <h4>, so EVIDENCE must announce as
-    // a heading at the same level — otherwise screen-reader heading-
-    // list navigation walks past it. The toggle button uses
-    // aria-expanded + aria-controls to pair with the disclosure region.
-    it('exposes EVIDENCE label as a level-4 heading paired to its region', () => {
+    // a11y: PROPOSED UPGRADES is an <h4>, so EVIDENCE must announce at
+    // the same level for screen-reader heading-list navigation. Iter-7
+    // extracted EVIDENCE out of the toggle button into a real sibling
+    // <h4>; the toggle button's accessible name is now the disclosure
+    // hint ("show N instances" / "hide"), pairing with the region via
+    // aria-controls.
+    it('exposes EVIDENCE label as a level-4 heading paired to its disclosure region', () => {
       const p = pattern();
       const { container } = render(
         <CorrectionPatternCard
@@ -194,22 +196,19 @@ describe('CorrectionPatternCard', () => {
           defaultExpanded
         />,
       );
-      const toggle = screen.getByRole('button', { name: /EVIDENCE/ });
+      const toggle = screen.getByRole('button', { name: /show.*instance/i });
       const controlsId = toggle.getAttribute('aria-controls');
       expect(controlsId).toBeTruthy();
       // PROPOSED UPGRADES is a real <h4> — pin heading-level parity.
       const proposalsHeading = screen.getByText('PROPOSED UPGRADES');
       expect(proposalsHeading.tagName).toBe('H4');
-      // EVIDENCE span needs role=heading aria-level=4 to match in the
-      // SR heading list.
+      // EVIDENCE is now a real <h4> sibling of the toggle.
       const evidenceLabel = screen.getByText('EVIDENCE');
-      expect(evidenceLabel.getAttribute('role')).toBe('heading');
-      expect(evidenceLabel.getAttribute('aria-level')).toBe('4');
+      expect(evidenceLabel.tagName).toBe('H4');
       // Region is mounted only after open — click and verify pairing.
       fireEvent.click(toggle);
       const region = container.querySelector(`#${controlsId}`);
       expect(region).not.toBeNull();
-      expect(region?.getAttribute('role')).toBe('region');
     });
   });
 
@@ -480,7 +479,7 @@ describe('CorrectionPatternCard', () => {
       fireEvent.click(screen.getByRole('button', { name: /SHOW DETAILS/i }));
       // Evidence is collapsed by default after the proposals-first
       // reordering; open it before asserting on the instance pills.
-      fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
+      fireEvent.click(screen.getByRole('button', { name: /show.*instance/i }));
       // 3 instances × 1 pill each.
       const pills = screen.getAllByRole('button', { name: /open session s-c/ });
       expect(pills).toHaveLength(3);
@@ -494,7 +493,7 @@ describe('CorrectionPatternCard', () => {
         <CorrectionPatternCard pattern={p} instancesById={buildInstancesById(p.instanceIds)} />,
       );
       fireEvent.click(screen.getByRole('button', { name: /SHOW DETAILS/i }));
-      fireEvent.click(screen.getByRole('button', { name: /EVIDENCE/ }));
+      fireEvent.click(screen.getByRole('button', { name: /show.*instance/i }));
       // Only the SHOW/HIDE-DETAILS toggle, EVIDENCE toggle, and
       // (disabled) APPLY remain as buttons in this branch — no
       // per-instance pill buttons.

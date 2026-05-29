@@ -469,3 +469,5 @@ export {
   type PermutationTestOptions,
   type PermutationTestResult,
 } from './correlationPermutation.js';
+
+export { unwrapEnvelope } from './unwrapEnvelope.js';

@@ -228,7 +228,7 @@ describe('ChatArchViewer', () => {
   it('toggles source filter pills to narrow results', () => {
     render(<ChatArchViewer manifest={sampleManifest} />);
     // Click COWORK pill — only the cowork session should remain.
-    fireEvent.click(screen.getByRole('button', { name: /toggle source COWORK/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^source COWORK\b/i }));
     expect(screen.queryByText('Apple pie recipe')).toBeNull();
     expect(screen.queryByText('Banana bread debugging')).toBeNull();
     expect(screen.getByText('Coconut cream cookbook')).toBeDefined();
@@ -270,7 +270,7 @@ describe('ChatArchViewer', () => {
   it('drill-in sets hash and Esc clears it (R11 F11.3)', async () => {
     window.location.hash = '';
     render(<ChatArchViewer manifest={sampleManifest} />);
-    fireEvent.click(screen.getByRole('button', { name: /open Apple pie recipe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open .* session: Apple pie recipe/i }));
     await waitFor(() => expect(window.location.hash.startsWith('#session/')).toBe(true));
 
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -285,7 +285,7 @@ describe('ChatArchViewer', () => {
     const input = screen.getByLabelText('search sessions') as HTMLInputElement;
     expect(input.disabled).toBe(false);
 
-    fireEvent.click(screen.getByRole('button', { name: /open Apple pie recipe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open .* session: Apple pie recipe/i }));
     await waitFor(() =>
       expect((screen.getByLabelText('search sessions') as HTMLInputElement).disabled).toBe(true),
     );
@@ -299,7 +299,7 @@ describe('ChatArchViewer', () => {
   it('list stays mounted under the detail overlay (R11 F11.1)', async () => {
     window.location.hash = '';
     const { container } = render(<ChatArchViewer manifest={sampleManifest} />);
-    fireEvent.click(screen.getByRole('button', { name: /open Apple pie recipe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open .* session: Apple pie recipe/i }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /back to list/i })).toBeDefined(),
     );
@@ -315,7 +315,7 @@ describe('ChatArchViewer', () => {
     // Apple pie has no transcriptPath, so Detail will render DetailMissing
     // without fetching. This keeps the test hermetic.
     render(<ChatArchViewer manifest={sampleManifest} />);
-    fireEvent.click(screen.getByRole('button', { name: /open Apple pie recipe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open .* session: Apple pie recipe/i }));
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /back to list/i })).toBeDefined(),
@@ -608,7 +608,7 @@ describe('ChatArchViewer', () => {
       window.location.hash = '#data';
       render(<ChatArchViewer manifest={sampleManifest} />);
       await waitFor(() =>
-        expect(screen.getByRole('dialog', { name: /data sources panel/i })).toBeDefined(),
+        expect(screen.getByRole('dialog', { name: /^DATA$/ })).toBeDefined(),
       );
       // Action hash — the viewer strips it so a back-nav / reload doesn't
       // re-fire the open.

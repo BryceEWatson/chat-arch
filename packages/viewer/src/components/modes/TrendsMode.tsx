@@ -78,7 +78,7 @@ function TinySpark({
     return (
       <span
         className={'lcars-trends__spark lcars-trends__spark--empty' + (className ? ' ' + className : '')}
-        aria-label={ariaLabel ?? 'no data'}
+        aria-label="no series data available"
       >
         —
       </span>
@@ -86,6 +86,9 @@ function TinySpark({
   }
   if (values.length === 1) {
     // Render a centered dot rather than a polyline for the n=1 case.
+    // stroke/fill set to currentColor so the dot inherits the parent
+    // foreground; the missing .lcars-trends__* CSS block (iter-5 F71)
+    // makes this the only color hook the SVG has until styles land.
     return (
       <svg
         className={'lcars-trends__spark' + (className ? ' ' + className : '')}
@@ -93,9 +96,9 @@ function TinySpark({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={ariaLabel ?? 'single point'}
+        aria-label={ariaLabel ? `${ariaLabel}: single point, value ${values[0]?.toFixed(2)}` : 'single point'}
       >
-        <circle cx={width / 2} cy={height / 2} r="2" />
+        <circle cx={width / 2} cy={height / 2} r="2" fill="currentColor" />
       </svg>
     );
   }
@@ -110,6 +113,14 @@ function TinySpark({
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(' ');
+  // Enriched aria-label: data-bearing summary so SR users hear the
+  // shape of the series, not just the caller's name. (iter-4 F68)
+  const first = values[0]!;
+  const last = values[values.length - 1]!;
+  const enrichedLabel =
+    ariaLabel !== undefined
+      ? `${ariaLabel}: ${values.length} points, ${first.toFixed(2)} to ${last.toFixed(2)}, range ${min.toFixed(2)}-${max.toFixed(2)}`
+      : 'trend';
   return (
     <svg
       className={'lcars-trends__spark' + (className ? ' ' + className : '')}
@@ -117,9 +128,9 @@ function TinySpark({
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label={ariaLabel ?? 'trend'}
+      aria-label={enrichedLabel}
     >
-      <polyline fill="none" strokeWidth="1.5" points={points} />
+      <polyline fill="none" stroke="currentColor" strokeWidth="1.5" points={points} />
     </svg>
   );
 }
@@ -186,16 +197,16 @@ function ProjectTrajectorySection({
     return (
       <section
         className="lcars-trends__section"
-        aria-label="project trajectory"
+        aria-labelledby="trends-trajectory-h"
       >
-        <h3 className="lcars-trends__section-title">PROJECT TRAJECTORY</h3>
+        <h3 id="trends-trajectory-h" className="lcars-trends__section-title">PROJECT TRAJECTORY</h3>
         <p className="lcars-trends__empty">No project trajectories available.</p>
       </section>
     );
   }
   return (
-    <section className="lcars-trends__section" aria-label="project trajectory">
-      <h3 className="lcars-trends__section-title">PROJECT TRAJECTORY</h3>
+    <section className="lcars-trends__section" aria-labelledby="trends-trajectory-h">
+      <h3 id="trends-trajectory-h" className="lcars-trends__section-title">PROJECT TRAJECTORY</h3>
       <ul className="lcars-trends__project-list" role="list">
         {trajectories.projects.map((p) => (
           <ProjectTrajectoryRow key={p.projectId} project={p} />
@@ -271,8 +282,8 @@ function ArchetypesSection({
 
   if (archetypes === null || archetypes.centroids.length === 0) {
     return (
-      <section className="lcars-trends__section" aria-label="workflow archetypes">
-        <h3 className="lcars-trends__section-title">WORKFLOW ARCHETYPES</h3>
+      <section className="lcars-trends__section" aria-labelledby="trends-archetypes-h">
+        <h3 id="trends-archetypes-h" className="lcars-trends__section-title">WORKFLOW ARCHETYPES</h3>
         <p className="lcars-trends__empty">
           No archetypes available — run the archetypes builder.
         </p>
@@ -339,11 +350,12 @@ function ArchetypesSection({
                     className="lcars-trends__session-link"
                     onClick={() => onSelectSession(sid)}
                     title={sid}
+                    aria-label={`open session ${sid}`}
                   >
                     ▸ {sid.slice(0, 16)}
                   </button>
                 ) : (
-                  <span title={sid}>{sid.slice(0, 16)}</span>
+                  <span title={sid} aria-label={`session ${sid}`}>{sid.slice(0, 16)}</span>
                 )}
               </li>
             ))}
@@ -374,9 +386,9 @@ function SurfaceComparisonSection({
     return (
       <section
         className="lcars-trends__section"
-        aria-label="cross-surface comparison"
+        aria-labelledby="trends-surface-h"
       >
-        <h3 className="lcars-trends__section-title">CROSS-SURFACE COMPARISON</h3>
+        <h3 id="trends-surface-h" className="lcars-trends__section-title">CROSS-SURFACE COMPARISON</h3>
         <p className="lcars-trends__empty">
           No cross-surface comparison available.
         </p>
@@ -421,8 +433,13 @@ function SurfaceComparisonSection({
       <table
         className="lcars-trends__matrix"
         role="table"
-        aria-label="source × archetype heatmap"
       >
+        <caption className="lcars-sr-only">
+          Source × archetype heatmap. Rows: source. Columns: archetype.
+          Cell percentages are good-share with Wilson confidence intervals.
+          Cells marked with an asterisk are significant after Holm-Bonferroni
+          adjustment at α={surfaceComparison.familyAlpha}.
+        </caption>
         <thead>
           <tr>
             <th scope="col" />
@@ -460,6 +477,21 @@ function SurfaceComparisonSection({
                 const bg = greyed
                   ? 'var(--lcars-cell-grey, #555)'
                   : `rgba(127, 219, 127, ${0.15 + shade * 0.6})`;
+                // Bar-glyph secondary encoding so the magnitude-by-shade
+                // signal survives grayscale + protanopia. (iter-4 F70)
+                const BAR_GLYPHS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+                const barGlyph = BAR_GLYPHS[Math.min(7, Math.floor(shade * 8))]!;
+                // Bright-cell text-color flip — at shade > 0.5 the cell
+                // bg composites to ~rgb(95,164,95); sunflower text on
+                // that is ~2.04:1 (fails AA). Black text on the same
+                // bg is ~11:1. (iter-4 F63)
+                const textColor = !greyed && shade > 0.5 ? '#0a0a0a' : undefined;
+                // Cell aria-label carries full good/n/CI breakdown so
+                // SR + keyboard users get parity with the mouse-hover
+                // title attribute. (iter-4 F69)
+                const cellAriaLabel = greyed
+                  ? `${src} ${a}: n=${cell.n}, below display threshold of ${minN}`
+                  : `${src} ${a}: ${cell.good} of ${cell.n} good (${Math.round(cell.pHat * 100)}%), Wilson CI ${cell.ci.low.toFixed(2)} to ${cell.ci.high.toFixed(2)}${isSig ? ', significant after Holm-Bonferroni' : ''}`;
                 return (
                   <td
                     key={a}
@@ -475,22 +507,25 @@ function SurfaceComparisonSection({
                         : `heatmap-cell-${key}`
                     }
                     data-significant={isSig ? 'true' : undefined}
-                    style={{ backgroundColor: bg }}
+                    style={textColor ? { backgroundColor: bg, color: textColor } : { backgroundColor: bg }}
                     title={
                       greyed
                         ? `n=${cell.n} < ${minN}`
                         : `${cell.good}/${cell.n} good · CI [${cell.ci.low.toFixed(2)}, ${cell.ci.high.toFixed(2)}]`
                     }
+                    aria-label={cellAriaLabel}
                   >
                     {greyed ? (
-                      <span aria-label="insufficient n">n={cell.n}</span>
+                      <span>n={cell.n}</span>
                     ) : (
                       <>
+                        <span aria-hidden="true" className="lcars-trends__bar-glyph">{barGlyph}</span>
+                        {' '}
                         {Math.round(cell.pHat * 100)}%
                         {isSig && (
                           <sup
                             className="lcars-trends__sig-mark"
-                            aria-label="significant after Holm-Bonferroni"
+                            aria-hidden="true"
                           >
                             *
                           </sup>
@@ -547,8 +582,8 @@ const SKILL_GROUPS: ReadonlyArray<{
 function SkillCurvesSection({ skillCurves }: SkillCurvesSectionProps) {
   if (skillCurves === null || skillCurves.results.length === 0) {
     return (
-      <section className="lcars-trends__section" aria-label="skill curves">
-        <h3 className="lcars-trends__section-title">SKILL CURVES</h3>
+      <section className="lcars-trends__section" aria-labelledby="trends-skills-h">
+        <h3 id="trends-skills-h" className="lcars-trends__section-title">SKILL CURVES</h3>
         <p className="lcars-trends__empty">
           No skill curves available — run the skill-curves builder.
         </p>
@@ -599,10 +634,14 @@ function SkillCurvesSection({ skillCurves }: SkillCurvesSectionProps) {
                     >
                       {r.label ?? r.topicId}
                     </span>
-                    <TinySpark
-                      values={series}
-                      ariaLabel={`${r.label ?? r.topicId} skill curve`}
-                    />
+                    {/*
+                      No ariaLabel — TinySpark with empty values
+                      announces "no series data available". The caller
+                      previously passed `${name} skill curve` here,
+                      which falsely promised a chart since builder
+                      doesn't ship the points array. (iter-4 F67)
+                    */}
+                    <TinySpark values={series} />
                     <span className="lcars-trends__skill-meta">
                       askPerActive={r.askPerActiveSession.toFixed(2)} · weeks=
                       {r.weeksPresent} · q={r.pValueAdjusted.toFixed(3)}

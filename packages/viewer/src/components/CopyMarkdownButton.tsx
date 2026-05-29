@@ -76,18 +76,29 @@ export function CopyMarkdownButton({
     }
   };
 
+  // Dynamic aria-label so the state change ("copied" / "copy failed")
+  // reaches AT when the button itself isn't refocused. Paired with the
+  // sr-only live region below — together they ensure the SR user gets
+  // confirmation even when the user shifts focus away after Ctrl+Enter.
+  const stateLabel =
+    state === 'copied' ? 'copied to clipboard' : state === 'failed' ? 'copy failed' : label;
   return (
-    <button
-      type="button"
-      className="lcars-copy-md-btn"
-      onClick={() => void onCopy()}
-      aria-label={label}
-      title={label}
-      data-state={state}
-      {...(testId ? { 'data-testid': testId } : {})}
-    >
-      {state === 'copied' ? '[copied]' : state === 'failed' ? '[copy x]' : '[copy]'}
-    </button>
+    <>
+      <button
+        type="button"
+        className="lcars-copy-md-btn"
+        onClick={() => void onCopy()}
+        aria-label={stateLabel}
+        title={label}
+        data-state={state}
+        {...(testId ? { 'data-testid': testId } : {})}
+      >
+        {state === 'copied' ? '[copied]' : state === 'failed' ? '[copy x]' : '[copy]'}
+      </button>
+      <span className="sr-only" role="status" aria-live="polite">
+        {state === 'copied' ? 'Copied to clipboard' : state === 'failed' ? 'Copy failed' : ''}
+      </span>
+    </>
   );
 }
 

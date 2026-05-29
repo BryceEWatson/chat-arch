@@ -96,12 +96,13 @@ describe('TierIndicator', () => {
     }
   });
 
-  it('advertises aria-haspopup and aria-expanded correctly', () => {
+  it('advertises aria-haspopup="dialog" (not aria-expanded — the popup is a dialog, not a disclosure)', () => {
+    // iter-14 dropped aria-expanded: aria-expanded is for collapse/expand
+    // disclosures, not dialog openers. aria-haspopup="dialog" + the
+    // dialog's own focus management is the correct ARIA contract here.
     render(<TierIndicator tierStatus="browser" tierPresentCount={0} tierFiles={files('none')} />);
     const pill = screen.getByRole('button', { name: /analysis tier/i });
     expect(pill.getAttribute('aria-haspopup')).toBe('dialog');
-    expect(pill.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(pill);
-    expect(pill.getAttribute('aria-expanded')).toBe('true');
+    expect(pill.getAttribute('aria-expanded')).toBeNull();
   });
 });

@@ -170,7 +170,7 @@ function fmtSid(sid: string): string {
 }
 ---
 <BaseLayout title="Chat Archaeologist — Results" current="RESULTS">
-  <main class="results">
+  <main id="main-content" class="results" tabindex="-1">
     <header class="results__header">
       <h1>RESULTS</h1>
       <p class="results__lede">
@@ -192,8 +192,8 @@ function fmtSid(sid: string): string {
       </section>
     ) : (
       <>
-        <section class="results__overall">
-          <h2 class="results__section-h">OVERALL</h2>
+        <section class="results__overall" aria-labelledby="results-overall-h">
+          <h2 id="results-overall-h" class="results__section-h">OVERALL</h2>
           <div class="results__overall-grid">
             <div class="results__kpi">
               <span class="results__kpi-label">claim-pass rate</span>
@@ -213,12 +213,12 @@ function fmtSid(sid: string): string {
               </span>
               <span class="results__kpi-sub">
                 {totalWithSignal === 0 ? (
-                  <span>no observed windows yet · run more sessions after applies</span>
+                  <span>no post-apply sessions yet · run more sessions after applying a pattern to start measuring</span>
                 ) : (
                   <span>
                     <code>{closed}</code> patches stuck ·{' '}
-                    <code>{recurredCount}</code> recurred (of{' '}
-                    <code>{totalWithSignal}</code> with signal)
+                    <code>{recurredCount}</code> recurred (out of{' '}
+                    <code>{totalWithSignal}</code> applied patterns with at least one post-apply session)
                   </span>
                 )}
               </span>
@@ -228,8 +228,8 @@ function fmtSid(sid: string): string {
               <span class="results__kpi-value">{appliedOutcomes}</span>
               <span class="results__kpi-sub">
                 {appliedOutcomes === 0
-                  ? <span>none yet · mine + APPLY a pattern to start the loop</span>
-                  : <span>tracked in upgrade-outcomes.json</span>
+                  ? <span>none yet — mine corrections and APPLY a pattern to start the loop</span>
+                  : <span>tracked across applied patterns</span>
                 }
               </span>
             </div>
@@ -238,11 +238,14 @@ function fmtSid(sid: string): string {
 
         <div class="results__columns">
           {/* ============ WORKING column ============ */}
-          <section class="results__column results__column--working">
-            <h2 class="results__section-h">WORKING</h2>
+          <section
+            class="results__column results__column--working"
+            aria-labelledby="results-working-h"
+          >
+            <h2 id="results-working-h" class="results__section-h">WORKING</h2>
 
             <section class="results__block">
-              <h3>By claim type ↑</h3>
+              <h3>By claim type <span aria-hidden="true">↑</span></h3>
               {workingClaimTypes.length === 0 ? (
                 <p class="results__nope">None above 50% pass rate yet.</p>
               ) : (
@@ -250,7 +253,7 @@ function fmtSid(sid: string): string {
                   {workingClaimTypes.map((r) => (
                     <li>
                       <code class="results__rate-key">{r.claimType}</code>
-                      <span class="results__rate-bar">
+                      <span class="results__rate-bar" aria-hidden="true">
                         <span class="results__rate-bar-fill" style={`width:${r.passRate * 100}%`}></span>
                       </span>
                       <span class="results__rate-pct">{fmtPct(r.passRate)}</span>
@@ -262,7 +265,7 @@ function fmtSid(sid: string): string {
             </section>
 
             <section class="results__block">
-              <h3>By project ↑</h3>
+              <h3>By project <span aria-hidden="true">↑</span></h3>
               {workingProjects.length === 0 ? (
                 <p class="results__nope">No project above 30% pass rate yet.</p>
               ) : (
@@ -270,7 +273,7 @@ function fmtSid(sid: string): string {
                   {workingProjects.map((r) => (
                     <li>
                       <code class="results__rate-key">{r.project}</code>
-                      <span class="results__rate-bar">
+                      <span class="results__rate-bar" aria-hidden="true">
                         <span class="results__rate-bar-fill" style={`width:${r.passRate * 100}%`}></span>
                       </span>
                       <span class="results__rate-pct">{fmtPct(r.passRate)}</span>
@@ -282,14 +285,21 @@ function fmtSid(sid: string): string {
             </section>
 
             <section class="results__block">
-              <h3>Top sessions ↑ <small>(≥{MIN_CLAIMS_FOR_LEADERBOARD} claims)</small></h3>
+              <h3>
+                Top sessions <span aria-hidden="true">↑</span>{' '}
+                <small title={`Sessions with at least ${MIN_CLAIMS_FOR_LEADERBOARD} verified claims qualify — below that the per-session pass-rate is too noisy to rank.`}>
+                  (≥{MIN_CLAIMS_FOR_LEADERBOARD} verified claims required)
+                </small>
+              </h3>
               {topWorkingSessions.length === 0 ? (
                 <p class="results__nope">Not enough sessions with verified claims yet.</p>
               ) : (
                 <ul class="results__session-list">
                   {topWorkingSessions.map((r) => (
                     <li>
-                      <code class="results__sid">[SID:{fmtSid(r.sessionId)}…]</code>
+                      <code class="results__sid" aria-label={`session ${r.sessionId}`}>
+                        <span aria-hidden="true">[SID:{fmtSid(r.sessionId)}…]</span>
+                      </code>
                       <span class="results__sess-counts">
                         <span class="results__sess-pass">{r.pass} pass</span>
                         {r.fail > 0 ? <span class="results__sess-fail"> · {r.fail} fail</span> : null}
@@ -304,11 +314,14 @@ function fmtSid(sid: string): string {
           </section>
 
           {/* ============ NOT WORKING column ============ */}
-          <section class="results__column results__column--broken">
-            <h2 class="results__section-h">NOT WORKING</h2>
+          <section
+            class="results__column results__column--broken"
+            aria-labelledby="results-broken-h"
+          >
+            <h2 id="results-broken-h" class="results__section-h">NOT WORKING</h2>
 
             <section class="results__block">
-              <h3>By claim type ↓</h3>
+              <h3>By claim type <span aria-hidden="true">↓</span></h3>
               {brokenClaimTypes.length === 0 ? (
                 <p class="results__nope">Every claim type passes ≥50% — nice.</p>
               ) : (
@@ -316,7 +329,7 @@ function fmtSid(sid: string): string {
                   {brokenClaimTypes.map((r) => (
                     <li>
                       <code class="results__rate-key">{r.claimType}</code>
-                      <span class="results__rate-bar results__rate-bar--broken">
+                      <span class="results__rate-bar results__rate-bar--broken" aria-hidden="true">
                         <span class="results__rate-bar-fill results__rate-bar-fill--broken" style={`width:${(1 - r.passRate) * 100}%`}></span>
                       </span>
                       <span class="results__rate-pct results__rate-pct--broken">{fmtPct(r.passRate)}</span>
@@ -328,7 +341,7 @@ function fmtSid(sid: string): string {
             </section>
 
             <section class="results__block">
-              <h3>By project ↓</h3>
+              <h3>By project <span aria-hidden="true">↓</span></h3>
               {brokenProjects.length === 0 ? (
                 <p class="results__nope">No project below 30% pass rate.</p>
               ) : (
@@ -336,7 +349,7 @@ function fmtSid(sid: string): string {
                   {brokenProjects.map((r) => (
                     <li>
                       <code class="results__rate-key">{r.project}</code>
-                      <span class="results__rate-bar results__rate-bar--broken">
+                      <span class="results__rate-bar results__rate-bar--broken" aria-hidden="true">
                         <span class="results__rate-bar-fill results__rate-bar-fill--broken" style={`width:${(1 - r.passRate) * 100}%`}></span>
                       </span>
                       <span class="results__rate-pct results__rate-pct--broken">{fmtPct(r.passRate)}</span>
@@ -348,14 +361,19 @@ function fmtSid(sid: string): string {
             </section>
 
             <section class="results__block">
-              <h3>Top sessions ↓ <small>(≥{MIN_CLAIMS_FOR_LEADERBOARD} claims)</small></h3>
+              <h3>
+                Top sessions <span aria-hidden="true">↓</span>{' '}
+                <small>(≥{MIN_CLAIMS_FOR_LEADERBOARD} claims)</small>
+              </h3>
               {topBrokenSessions.length === 0 ? (
                 <p class="results__nope">No broken sessions yet.</p>
               ) : (
                 <ul class="results__session-list">
                   {topBrokenSessions.map((r) => (
                     <li>
-                      <code class="results__sid">[SID:{fmtSid(r.sessionId)}…]</code>
+                      <code class="results__sid" aria-label={`session ${r.sessionId}`}>
+                        <span aria-hidden="true">[SID:{fmtSid(r.sessionId)}…]</span>
+                      </code>
                       <span class="results__sess-counts">
                         {r.fail > 0 ? <span class="results__sess-fail">{r.fail} fail</span> : null}
                         {r.pass > 0 ? <span class="results__sess-pass">{r.fail > 0 ? ' · ' : ''}{r.pass} pass</span> : null}
@@ -440,7 +458,8 @@ function fmtSid(sid: string): string {
     flex-direction: column;
   }
   .results__kpi-label {
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 1.45;
     color: #FFCC9999;
     letter-spacing: 0.08em;
   }
@@ -449,10 +468,11 @@ function fmtSid(sid: string): string {
     font-size: 36px;
     line-height: 1.1;
     margin: 6px 0;
-    color: #FFCC99;
+    color: var(--lcars-sunflower);
   }
   .results__kpi-sub {
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 1.45;
     color: #FFCC9999;
   }
   .results__kpi-sub code {
@@ -480,10 +500,10 @@ function fmtSid(sid: string): string {
     padding: 20px;
   }
   .results__column--working {
-    border-left: 3px solid rgba(136, 224, 136, 0.45);
+    border-left: 3px solid color-mix(in srgb, var(--lcars-pass) 53%, transparent);
   }
   .results__column--broken {
-    border-left: 3px solid rgba(240, 128, 128, 0.45);
+    border-left: 3px solid color-mix(in srgb, var(--lcars-fail) 53%, transparent);
   }
 
   .results__block {
@@ -502,8 +522,8 @@ function fmtSid(sid: string): string {
   }
   .results__block h3 small {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: #FFCC9966;
+    font-size: 11px;
+    color: #FFCC9999;
     letter-spacing: 0.06em;
     margin-left: 6px;
   }
@@ -528,8 +548,8 @@ function fmtSid(sid: string): string {
     border-bottom: none;
   }
   .results__rate-key {
-    color: #FFCC99;
-    font-size: 11px;
+    color: var(--lcars-sunflower);
+    font-size: 12px;
   }
   .results__rate-bar {
     height: 6px;
@@ -541,23 +561,24 @@ function fmtSid(sid: string): string {
   .results__rate-bar-fill {
     display: block;
     height: 100%;
-    background: rgba(136, 224, 136, 0.5);
+    min-width: 2px;
+    background: color-mix(in srgb, var(--lcars-pass) 50%, transparent);
   }
   .results__rate-bar-fill--broken {
-    background: rgba(240, 128, 128, 0.5);
+    background: color-mix(in srgb, var(--lcars-fail) 50%, transparent);
   }
   .results__rate-pct {
-    color: #88e088;
+    color: var(--lcars-pass);
     font-weight: 600;
-    font-size: 11px;
+    font-size: 12px;
     text-align: right;
   }
   .results__rate-pct--broken {
-    color: #f08080;
+    color: var(--lcars-fail);
   }
   .results__rate-n {
-    color: #FFCC9966;
-    font-size: 10px;
+    color: #FFCC9999;
+    font-size: 12px;
     text-align: right;
   }
 
@@ -575,20 +596,20 @@ function fmtSid(sid: string): string {
   }
   .results__sid {
     color: #FFCC99cc;
-    font-size: 11px;
+    font-size: 12px;
   }
   .results__sess-counts {
     flex: 1;
-    font-size: 11px;
+    font-size: 12px;
     color: #FFCC9999;
   }
-  .results__sess-pass { color: #88e088; }
-  .results__sess-fail { color: #f08080; }
-  .results__sess-inc { color: #ffd680; }
+  .results__sess-pass { color: var(--lcars-pass); }
+  .results__sess-fail { color: var(--lcars-fail); }
+  .results__sess-inc { color: var(--lcars-warn); }
 
   .results__nope {
     font-size: 12px;
-    color: #FFCC9966;
+    color: #FFCC9999;
     font-style: italic;
     margin: 0;
   }
@@ -598,8 +619,13 @@ function fmtSid(sid: string): string {
     font-size: 13px;
   }
   .results__footer a {
-    color: #FFCC99;
+    color: var(--lcars-sunflower);
     text-decoration: none;
-    border-bottom: 1px dashed #FFCC9955;
+    border-bottom: 1px dashed #FFCC9988;
+  }
+  .results__footer a:focus-visible {
+    outline: 2px solid var(--lcars-sunflower);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 </style>

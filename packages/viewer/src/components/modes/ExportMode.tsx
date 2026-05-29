@@ -218,17 +218,26 @@ export function ExportMode({
   const anySelected = Object.values(selection).some((v) => v);
   const generateAvailable = endpointAvailable !== false;
 
+  // Outer aria-label dropped — divs without role don't expose
+  // aria-label to AT. The <h2>EXPORT</h2> below is the accessible
+  // name for region/heading nav. (iter-6)
   return (
-    <div className="lcars-export" aria-label="export">
+    <div className="lcars-export">
       <header className="lcars-export__header">
-        <h2 className="lcars-export__title">EXPORT</h2>
+        <h2 id="export-h" className="lcars-export__title">EXPORT</h2>
         <p className="lcars-export__lead">
           Generate filtered markdown / Obsidian exports from your archive. Each
           checked kind writes a folder under <code>analysis/exports/</code>.
         </p>
       </header>
 
-      <fieldset className="lcars-export__checklist" aria-label="export kinds">
+      {/*
+        aria-label removed iter-6 — on a <fieldset>, aria-label
+        REPLACES the <legend> in the accessibility tree (HTML AAM).
+        The legend is already the right primitive for the group name;
+        keeping aria-label shadowed it without adding any information.
+      */}
+      <fieldset className="lcars-export__checklist">
         <legend>EXPORT KINDS</legend>
         {KINDS.map((k) => {
           const count =
@@ -260,7 +269,7 @@ export function ExportMode({
         })}
       </fieldset>
 
-      <fieldset className="lcars-export__filters" aria-label="filters">
+      <fieldset className="lcars-export__filters">
         <legend>FILTERS</legend>
         <label className="lcars-export__filter">
           <span>DATE FROM</span>
@@ -336,16 +345,36 @@ export function ExportMode({
           onClick={() => void onGenerate()}
           data-testid="generate-btn"
         >
-          {genState.status === 'running' ? 'GENERATING…' : '▶ GENERATE'}
+          {genState.status === 'running' ? (
+            'GENERATING…'
+          ) : (
+            <>
+              <span aria-hidden="true">▶ </span>GENERATE
+            </>
+          )}
         </button>
+        {/*
+          Hint text now inlined into the visible <span> (was mouse-
+          only via title=). Keyboard + SR users now see the full
+          "install chat-arch locally" guidance. (iter-6)
+        */}
         {!generateAvailable && (
-          <span
-            className="lcars-export__hint"
-            title="Local-only — install chat-arch on your machine to run exports."
-          >
-            generation endpoint unavailable (local-only)
+          <span className="lcars-export__hint">
+            generation endpoint unavailable — install chat-arch
+            locally to run exports
           </span>
         )}
+        {/*
+          sr-only live region for the in-flight running state. The
+          button text changes from "▶ GENERATE" to "GENERATING…" but
+          SRs don't re-announce a button's name on visible-text
+          change while it keeps focus. The polite region carries
+          the transition. Mirrors iter-4 Bundle B (DataPanel UPLOAD)
+          and iter-1 F29 pattern.
+        */}
+        <span className="lcars-sr-only" role="status">
+          {genState.status === 'running' ? 'Generating exports, please wait.' : ''}
+        </span>
       </div>
 
       {genState.status === 'done' && (
@@ -376,7 +405,10 @@ export function ExportMode({
       {genState.status === 'error' && (
         <div className="lcars-export__error" role="alert">
           <p>Generation failed:</p>
-          <pre>{genState.message}</pre>
+          {/* tabindex=0 so keyboard-only users can scroll the
+              overflow when error text is long. Mirrors iter-2
+              Bundle 10 (today__brief-md). (iter-6) */}
+          <pre tabIndex={0}>{genState.message}</pre>
           <button
             type="button"
             className="lcars-export__btn lcars-export__btn--secondary"
@@ -388,8 +420,8 @@ export function ExportMode({
       )}
 
       {manifest !== null && manifest.entries.length > 0 && (
-        <section className="lcars-export__existing" aria-label="existing exports">
-          <h3 className="lcars-export__section-title">EXISTING EXPORTS</h3>
+        <section className="lcars-export__existing" aria-labelledby="export-existing-h">
+          <h3 id="export-existing-h" className="lcars-export__section-title">EXISTING EXPORTS</h3>
           <ul className="lcars-export__entry-list" role="list">
             {manifest.entries.map((e) => (
               <li

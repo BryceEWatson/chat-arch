@@ -275,7 +275,10 @@ describe('InsightsMode', () => {
         }}
       />,
     );
-    const pill = screen.getAllByRole('button', { name: /session: k1-sess-/ })[0];
+    // iter-5: evidence pill now exposes the FULL session id via
+    // `aria-label="open session ${sid}"`. Visible text still shows
+    // "session: <8-char-prefix>" — accessible name carries the full sid.
+    const pill = screen.getAllByRole('button', { name: /open session k1-sess-/ })[0];
     if (pill === undefined) throw new Error('no evidence pill rendered');
     fireEvent.click(pill);
     expect(clicked).not.toBeNull();

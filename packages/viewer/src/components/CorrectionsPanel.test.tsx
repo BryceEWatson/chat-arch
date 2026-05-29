@@ -201,9 +201,11 @@ describe('CorrectionsPanel', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('RECURRING TOPIC')).toBeDefined();
     });
+    // Iter-7 a11y: bucket sections now use aria-labelledby pointing at
+    // their h3 instead of aria-label; read the order off the h3 text.
     const sections = Array.from(
-      container.querySelectorAll('.lcars-corrections__buckets > section'),
-    ).map((s) => s.getAttribute('aria-label'));
+      container.querySelectorAll('.lcars-corrections__buckets > section .lcars-corrections__bucket-title'),
+    ).map((h) => h.textContent);
     expect(sections).toEqual(['RECURRING TOPIC', 'HEAVY', 'MEDIUM']);
   });
 
@@ -374,7 +376,7 @@ describe('CorrectionsPanel', () => {
       await waitFor(() => {
         expect(screen.getByLabelText(/^UNTAGGED/)).toBeDefined();
       });
-      expect(screen.queryByLabelText('since you patched')).toBeNull();
+      expect(screen.queryByLabelText(/^SINCE YOU PATCHED/)).toBeNull();
     });
 
     it('mounts the summary above the buckets when applied entries exist', async () => {
@@ -408,7 +410,7 @@ describe('CorrectionsPanel', () => {
       });
       render(<CorrectionsPanel dataDirBaseUrl="/x" rescanAvailable />);
       await waitFor(() => {
-        expect(screen.getByLabelText('since you patched')).toBeDefined();
+        expect(screen.getByLabelText(/^SINCE YOU PATCHED/)).toBeDefined();
       });
       // Stats row renders all three labels.
       expect(screen.getByText('APPLIED')).toBeDefined();
@@ -447,12 +449,17 @@ describe('CorrectionsPanel', () => {
       });
       const { container } = render(<CorrectionsPanel dataDirBaseUrl="/x" />);
       await waitFor(() => {
-        expect(screen.getByLabelText('since you patched')).toBeDefined();
+        expect(screen.getByLabelText(/^SINCE YOU PATCHED/)).toBeDefined();
       });
       // Expand the timeline, click the row, assert data-highlighted lights up.
       const expand = screen.getByRole('button', { name: /VIEW PATCH LEDGER/i });
       fireEvent.click(expand);
-      const rowBtn = await screen.findByTitle("Jump to this pattern's card");
+      // Iter-7 a11y: the mouse-only `title=` was dropped in favor of
+      // a comprehensive aria-label that includes rule + bucket +
+      // target + when. Find the row button by its accessible name.
+      const rowBtn = await screen.findByRole('button', {
+        name: /open pattern: rule-to-highlight/i,
+      });
       fireEvent.click(rowBtn);
       await waitFor(() => {
         const highlighted = container.querySelector(

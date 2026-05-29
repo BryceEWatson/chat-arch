@@ -1,32 +1,39 @@
 /**
  * Wave 6 #4 — post-scan action-items banner.
- * Wave 7 P1 #5 — delta-since-last-visit + Top-3 prioritization +
- * jargon translation. Major rewrite.
+ * Wave 7 P1 #5 — delta-since-last-visit + jargon translation.
+ * Redesign (2026-05) — de-conflated layout: "counts lead, examples
+ * support".
  *
- * The banner answers "what's new since last time I looked, and which
- * three things should I act on this week?" — it no longer dumps a
- * raw 69-item count on the user.
+ * The banner used to fuse three jobs into one line — a global
+ * "N new since {date}" headline, a "Top 3 this week" curated band,
+ * and a backlog list — and the wiring crossed wires: the headline
+ * count came from one bucket while its "since {date}" anchor came
+ * from another, "Top 3" promised three items but the source could
+ * only ever yield two, and the same total appeared twice. The
+ * redesign separates the two regions cleanly:
+ *
+ *   1. Action rows (lead). One row per non-zero / non-suppressed
+ *      bucket: "<count> <friendly label>" + an HONEST per-row delta
+ *      ("N new since {date}" / "no new since {date}") where the count
+ *      and the date describe the SAME bucket + a destination cue.
+ *      No global headline number — the count and its date never
+ *      come from different buckets again.
+ *   2. "Worth a look" examples (support). Concrete representatives
+ *      (knowledge-debt cluster, ITS contrast) the parent pre-computes.
+ *      Renders however many exist (0-2); no "Top 3" over-promise.
  *
  * Persistence: per-key cursors in `localStorage` under
  * `chat-arch.action-items-cursor`. Each cursor records the
- * `lastSeenAt` timestamp the user last engaged with (banner X
- * dismiss, or click-through to the target mode). On render we
- * compare the current count against the count at lastSeenAt to
- * decide what's new.
- *
- * Top 3 band: when sidecar data is present, the banner ranks one
- * representative from each of three buckets:
- *   - highest-confidence knowledge-debt cluster
- *   - biggest absolute-delta disjoint-CI ITS contrast
- *   - the active mis-calibration trust cell (binary; either it's
- *     fired or it isn't)
- * Deep links route to the relevant mode + (optionally) a hash anchor.
+ * `lastSeenAt` timestamp + the count seen at that time; on render we
+ * compare the current count against the count at lastSeenAt to decide
+ * what's new for THAT bucket.
  *
  * Suppression rules:
  *   - When viewing DECISIONS, hide the "decisions awaiting classification" item.
  *   - When viewing INSIGHTS, hide the knowledge-debt + ITS items.
  *   - When viewing TRUST, hide the trust item.
- *   - When every item is zero or suppressed, the whole banner hides.
+ *   - When every item is zero or suppressed and there are no examples,
+ *     the whole banner hides.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -96,7 +103,7 @@ function formatRelative(ms: number, now: number): string {
   return new Date(ms).toLocaleDateString();
 }
 
-/** Top-3 representative item — drives the priority band. */
+/** "Worth a look" representative item — drives the examples strip. */
 export interface TopItem {
   kind: ActionItemKind;
   /** Short readable headline rendered as the link text. */
@@ -125,9 +132,9 @@ export interface ActionItemsBannerProps {
   /** Called when the user clicks a banner item. */
   onNavigate: (mode: Mode) => void;
   /**
-   * Wave 7 P1 #5 — Top-3 representatives. Pre-computed by the parent
-   * since it already has access to the sidecar data. Optional; when
-   * absent the priority band is omitted.
+   * "Worth a look" representatives. Pre-computed by the parent since it
+   * already has access to the sidecar data. Optional; when absent the
+   * examples strip is omitted.
    */
   topItems?: readonly TopItem[];
   /** Now-ms; defaults to `Date.now()` (tests override for determinism). */
@@ -137,34 +144,43 @@ export interface ActionItemsBannerProps {
 interface ListItem {
   kind: ActionItemKind;
   count: number;
-  /** "N new since {relative}" — the headline. */
+  /** "{count} {friendly}" — always the real total for this bucket. */
   primaryLabel: string;
-  /** "show all M (incl. backlog)" subline label. */
-  showAllLabel: string;
-  /** True when the count is entirely new — UI accent. */
-  allNew: boolean;
-  /** Backlog (count - new). */
-  backlog: number;
+  /**
+   * Honest per-row delta. "" when the bucket has never been seen (the
+   * count itself is the news); else "N new since {rel}" or
+   * "no new since {rel}". Count and date always describe THIS bucket.
+   */
+  deltaLabel: string;
+  /** Short uppercase destination cue ("Review" / "Insights" / "Trust"). */
+  destLabel: string;
   mode: Mode;
 }
+
+const FRIENDLY: Record<ActionItemKind, string> = {
+  decisions: 'decisions awaiting classification',
+  'knowledge-debt': 'recurring questions worth turning into rules',
+  its: 'config changes worth reviewing',
+  'trust-miscalibration': 'mis-calibration flag fired on the 2×2',
+};
+const NAV_MODE: Record<ActionItemKind, Mode> = {
+  decisions: 'decisions',
+  'knowledge-debt': 'insights',
+  its: 'insights',
+  'trust-miscalibration': 'trust',
+};
+const DEST_LABEL: Record<ActionItemKind, string> = {
+  decisions: 'Review',
+  'knowledge-debt': 'Insights',
+  its: 'Insights',
+  'trust-miscalibration': 'Trust',
+};
 
 function buildItems(
   counts: Record<ActionItemKind, number>,
   cursor: CursorState,
   now: number,
 ): ListItem[] {
-  const friendly: Record<ActionItemKind, string> = {
-    decisions: 'decisions awaiting classification',
-    'knowledge-debt': 'recurring questions worth turning into rules',
-    its: 'config changes worth reviewing',
-    'trust-miscalibration': 'mis-calibration flag fired on the 2×2',
-  };
-  const navMode: Record<ActionItemKind, Mode> = {
-    decisions: 'decisions',
-    'knowledge-debt': 'insights',
-    its: 'insights',
-    'trust-miscalibration': 'trust',
-  };
   const out: ListItem[] = [];
   for (const kindStr of Object.keys(counts)) {
     const kind = kindStr as ActionItemKind;
@@ -173,29 +189,21 @@ function buildItems(
     const seen = cursor[kind];
     const seenCount = seen?.countAtSeen ?? 0;
     const newCount = Math.max(0, count - seenCount);
-    const allNew = seenCount === 0;
-    let primary: string;
-    if (newCount === 0) {
-      // Nothing new since last visit — surface as backlog only.
-      primary = `${count} ${friendly[kind]} (no new)`;
-    } else if (allNew) {
-      primary = `${newCount} ${friendly[kind]}`;
-    } else {
-      const rel = seen ? formatRelative(seen.lastSeenAt, now) : 'last visit';
-      primary = `${newCount} new since ${rel}`;
+    // Delta only when we have a prior cursor to anchor "since {date}"
+    // against — otherwise the count itself is the news.
+    let deltaLabel = '';
+    if (seen) {
+      const rel = formatRelative(seen.lastSeenAt, now);
+      deltaLabel =
+        newCount > 0 ? `${newCount} new since ${rel}` : `no new since ${rel}`;
     }
-    const showAllLabel =
-      newCount < count
-        ? `show all ${count} (incl. backlog)`
-        : `show all ${count}`;
     out.push({
       kind,
       count,
-      primaryLabel: primary,
-      showAllLabel,
-      allNew,
-      backlog: Math.max(0, count - newCount),
-      mode: navMode[kind],
+      primaryLabel: `${count} ${FRIENDLY[kind]}`,
+      deltaLabel,
+      destLabel: DEST_LABEL[kind],
+      mode: NAV_MODE[kind],
     });
   }
   return out;
@@ -236,27 +244,6 @@ export function ActionItemsBanner({
   if (dismissed) return null;
   if (items.length === 0 && topItems.length === 0) return null;
 
-  // Headline new total — drives the lead line.
-  const newTotal = items.reduce((sum, it) => {
-    const seen = cursor[it.kind];
-    const seenCount = seen?.countAtSeen ?? 0;
-    return sum + Math.max(0, it.count - seenCount);
-  }, 0);
-  // Most-recent cursor across the visible kinds — drives "since X" copy.
-  const mostRecentCursor = items
-    .map((it) => cursor[it.kind]?.lastSeenAt ?? null)
-    .filter((v): v is number => v !== null)
-    .reduce<number | null>((max, v) => (max === null || v > max ? v : max), null);
-
-  const headline =
-    newTotal > 0
-      ? mostRecentCursor !== null
-        ? `${newTotal} new since ${formatRelative(mostRecentCursor, now)}`
-        : `${newTotal} item${newTotal === 1 ? '' : 's'} need${newTotal === 1 ? 's' : ''} your attention`
-      : items.length > 0
-        ? 'No new items since last visit'
-        : 'Top 3 this week';
-
   const updateCursorFor = (kind: ActionItemKind, count: number) => {
     setCursor((prev) => {
       const next: CursorState = {
@@ -273,7 +260,7 @@ export function ActionItemsBanner({
     onNavigate(item.mode);
   };
   const onTopClick = (top: TopItem) => {
-    // Top-3 click maps to the same kind as the list item — update the
+    // Examples click maps to the same kind as the list item — update the
     // matching cursor with whatever current count we know.
     const known = items.find((it) => it.kind === top.kind);
     if (known) updateCursorFor(top.kind, known.count);
@@ -293,7 +280,7 @@ export function ActionItemsBanner({
     >
       <div className="lcars-action-items__head">
         <span className="lcars-action-items__label" data-testid="action-items-headline">
-          <strong>{headline}</strong>
+          <strong>Needs attention</strong>
         </span>
         <button
           type="button"
@@ -302,35 +289,9 @@ export function ActionItemsBanner({
           data-testid="action-items-dismiss"
           onClick={onDismiss}
         >
-          ✕
+          <span aria-hidden="true">✕</span>
         </button>
       </div>
-      {topItems.length > 0 && (
-        <div
-          className="lcars-action-items__top3"
-          aria-label="top 3 this week"
-          data-testid="action-items-top3"
-        >
-          <span className="lcars-action-items__top3-label">
-            Top 3 this week:
-          </span>
-          <ul className="lcars-action-items__top3-list" role="list">
-            {topItems.slice(0, 3).map((t, i) => (
-              <li key={`${t.kind}-${i}`} className="lcars-action-items__top3-item">
-                <button
-                  type="button"
-                  className="lcars-action-items__top3-link"
-                  onClick={() => onTopClick(t)}
-                  title={t.detail ?? t.headline}
-                  data-testid={`action-items-top3-link-${i}`}
-                >
-                  {t.headline}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       {items.length > 0 && (
         <ul className="lcars-action-items__list" role="list">
           {items.map((item) => (
@@ -343,17 +304,46 @@ export function ActionItemsBanner({
               >
                 {item.primaryLabel}
               </button>
-              {item.backlog > 0 && item.count !== item.backlog && (
+              {item.deltaLabel && (
                 <span
-                  className="lcars-action-items__backlog"
-                  data-testid={`action-items-backlog-${item.kind}`}
+                  className="lcars-action-items__delta"
+                  data-testid={`action-items-delta-${item.kind}`}
                 >
-                  · {item.showAllLabel}
+                  {item.deltaLabel}
                 </span>
               )}
+              <span className="lcars-action-items__dest" aria-hidden="true">
+                {item.destLabel} →
+              </span>
             </li>
           ))}
         </ul>
+      )}
+      {topItems.length > 0 && (
+        <div
+          className="lcars-action-items__examples"
+          aria-label="worth a look"
+          data-testid="action-items-examples"
+        >
+          <span className="lcars-action-items__examples-label">
+            Worth a look
+          </span>
+          <ul className="lcars-action-items__examples-list" role="list">
+            {topItems.map((t, i) => (
+              <li key={`${t.kind}-${i}`} className="lcars-action-items__examples-item">
+                <button
+                  type="button"
+                  className="lcars-action-items__examples-link"
+                  onClick={() => onTopClick(t)}
+                  title={t.detail ?? t.headline}
+                  data-testid={`action-items-examples-link-${i}`}
+                >
+                  {t.headline}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </aside>
   );

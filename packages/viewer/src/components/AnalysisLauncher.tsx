@@ -177,10 +177,21 @@ export function AnalysisLauncher({
         <div className="lcars-analysis-launcher__heading">
           <span className="lcars-analysis-launcher__spinner" aria-hidden="true" />
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">RUNNING</span>
-            <span className="lcars-analysis-launcher__subtitle" role="status" aria-live="polite">
+            <h2 className="lcars-analysis-launcher__title">RUNNING</h2>
+            {/*
+              Per-phase announcer (sr-only): mirrors `phaseLabel` only, so the
+              polite live region fires once per phase transition (~6 over a
+              1-5min run) instead of on every progress tick. The visible
+              subtitle below carries the percent for sighted users without
+              also pumping it through the live region (iter-10 ChatMode aria-
+              live reform pattern; iter-13 applied to AnalysisLauncher).
+            */}
+            <span className="sr-only" role="status" aria-live="polite">
               {phaseLabel}
-              {pct !== null && <span aria-hidden="true"> · {pct}%</span>}
+            </span>
+            <span className="lcars-analysis-launcher__subtitle" aria-hidden="true">
+              {phaseLabel}
+              {pct !== null && <> · {pct}%</>}
             </span>
           </div>
         </div>
@@ -202,9 +213,9 @@ export function AnalysisLauncher({
       <section className="lcars-analysis-launcher lcars-analysis-launcher--error" aria-label="analysis failed">
         <div className="lcars-analysis-launcher__heading">
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">ANALYSIS FAILED</span>
+            <h2 className="lcars-analysis-launcher__title">ANALYSIS FAILED</h2>
             {errorMessage && (
-              <span className="lcars-analysis-launcher__subtitle" title={errorMessage}>
+              <span className="lcars-analysis-launcher__subtitle">
                 {errorMessage}
               </span>
             )}
@@ -228,7 +239,7 @@ export function AnalysisLauncher({
     const ctaCount = totalEligibleSessions.toLocaleString();
     const ctaNoun = pluralize(totalEligibleSessions, 'conversation');
     const modeDescription = projectsAvailable
-      ? `Classify mode — projects.json was found in the upload, so each conversation is matched to its nearest claude.ai project centroid by cosine similarity. Conversations that don\u2019t clear τ=${DEFAULT_THRESHOLD} are pooled into emergent clusters afterward.`
+      ? `Classify mode — projects.json was found in the upload, so each conversation is matched to its nearest claude.ai project centroid by cosine similarity. Conversations that don’t clear τ=${DEFAULT_THRESHOLD} are pooled into emergent clusters afterward.`
       : `Discover mode — no projects.json in the upload, so topics are clustered unsupervised from conversation similarity alone (no pre-existing labels are used).`;
     const rerunContext = isStale
       ? `${newSessionCount.toLocaleString()} new ${pluralize(newSessionCount, 'session')} since the last run. The full ${ctaCount}-conversation set will be re-embedded and re-labeled; prior labels are replaced.`
@@ -271,7 +282,7 @@ export function AnalysisLauncher({
       steps.push({
         title: 'Cluster emergent topics',
         detail:
-          'Group sub-threshold conversations by similarity, then label each cluster from its centroid text \u2014 surfaces topics your projects.json doesn\u2019t cover.',
+          'Group sub-threshold conversations by similarity, then label each cluster from its centroid text — surfaces topics your projects.json doesn’t cover.',
       });
     } else {
       steps.push({
@@ -293,7 +304,7 @@ export function AnalysisLauncher({
       >
         <div className="lcars-analysis-launcher__heading">
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">READY TO RUN</span>
+            <h2 className="lcars-analysis-launcher__title">READY TO RUN</h2>
             {rerunContext && (
               <span className="lcars-analysis-launcher__subtitle">{rerunContext}</span>
             )}
@@ -308,10 +319,10 @@ export function AnalysisLauncher({
               </strong>{' '}
               from your Claude.ai privacy export.
               <div className="lcars-analysis-launcher__preview-note">
-                This in-browser pass only covers cloud conversations. If you&rsquo;re running
+                This in-browser pass only covers cloud conversations. If you’re running
                 Chat Archaeologist locally (not web-only), the richer local-analysis pipeline
                 produces more detailed results from your CLI / Desktop / Cowork transcripts
-                too &mdash; it runs via the same interface when available.
+                too — it runs via the same interface when available.
               </div>
             </dd>
           </div>
@@ -363,7 +374,8 @@ export function AnalysisLauncher({
             }}
             autoFocus
           >
-            ▶ {runLabel}
+            <span aria-hidden="true">▶ </span>
+            {runLabel}
           </button>
           <button
             type="button"
@@ -389,11 +401,11 @@ export function AnalysisLauncher({
             STALE
           </span>
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">LOCAL FINDINGS</span>
+            <h2 className="lcars-analysis-launcher__title">LOCAL FINDINGS</h2>
             <span className="lcars-analysis-launcher__subtitle">
               {newSessionCount.toLocaleString()} new {pluralize(newSessionCount, 'session')} since the last run{' '}
               {newSessionCount === 1 ? 'is' : 'are'} unanalyzed · {analyzedCount.toLocaleString()} /{' '}
-              {totalEligibleSessions.toLocaleString()} labeled on {bundle.device.toUpperCase()}
+              {totalEligibleSessions.toLocaleString()} labeled on device {bundle.device.toUpperCase()}
             </span>
           </div>
         </div>
@@ -403,7 +415,8 @@ export function AnalysisLauncher({
             className="lcars-analysis-launcher__btn lcars-analysis-launcher__btn--primary"
             onClick={() => setArmed(true)}
           >
-            ▶ RE-ANALYZE
+            <span aria-hidden="true">▶ </span>
+            RE-ANALYZE
           </button>
         </div>
       </section>
@@ -422,7 +435,7 @@ export function AnalysisLauncher({
             DONE
           </span>
           <div className="lcars-analysis-launcher__title-group">
-            <span className="lcars-analysis-launcher__title">LOCAL FINDINGS</span>
+            <h2 className="lcars-analysis-launcher__title">LOCAL FINDINGS</h2>
             <span className="lcars-analysis-launcher__subtitle">
               {analyzedCount.toLocaleString()} / {totalEligibleSessions.toLocaleString()} analyzed
               {' '}
@@ -454,7 +467,7 @@ export function AnalysisLauncher({
     <section className="lcars-analysis-launcher lcars-analysis-launcher--cta" aria-label="run analysis">
       <div className="lcars-analysis-launcher__heading">
         <div className="lcars-analysis-launcher__title-group">
-          <span className="lcars-analysis-launcher__title">LOCAL FINDINGS</span>
+          <h2 className="lcars-analysis-launcher__title">LOCAL FINDINGS</h2>
           <span className="lcars-analysis-launcher__subtitle">
             Discover re-asked prompts, zombie projects, and emergent topic clusters across your
             conversations. Runs entirely in-browser — your data never leaves the page.
@@ -467,6 +480,7 @@ export function AnalysisLauncher({
           className="lcars-analysis-launcher__btn lcars-analysis-launcher__btn--primary lcars-analysis-launcher__btn--hero"
           onClick={() => setArmed(true)}
           disabled={totalEligibleSessions === 0}
+          aria-label={ctaLabel.replace(/^▶ /, '')}
         >
           {ctaLabel}
         </button>
