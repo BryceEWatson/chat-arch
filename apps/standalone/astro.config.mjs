@@ -96,6 +96,18 @@ export default defineConfig({
     },
   },
   vite: {
+    // `@chat-arch/viewer` is a linked workspace package consumed from its
+    // built `dist/` (no source alias). Vite does not pre-bundle linked
+    // workspace deps, so the viewer's bare `react` / `react/jsx-runtime`
+    // imports would resolve to a SECOND React instance separate from the
+    // app's optimized copy — and a split React makes hooks read off a null
+    // dispatcher ("Cannot read properties of null (reading 'useState')").
+    // `dedupe` forces every `react`/`react-dom` import — the viewer's
+    // included — onto a single instance. (A previously-warm dep cache
+    // masked the absence of this; a cold re-optimize exposed it.)
+    resolve: {
+      dedupe: ['react', 'react-dom'],
+    },
     server: {
       headers: crossOriginIsolationHeaders,
       // The v2 analysis sidecars (embeddings.bin ~1.6 MB, audit-claims.json
