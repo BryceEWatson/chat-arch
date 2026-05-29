@@ -174,6 +174,8 @@ export {
 
 export { clusterByThreshold } from './clusterRules.js';
 
+export { unwrapEnvelope } from './unwrapEnvelope.js';
+
 export {
   buildContinuumHealth,
   type BuildContinuumHealthOptions,

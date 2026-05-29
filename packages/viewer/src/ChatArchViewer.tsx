@@ -54,7 +54,7 @@ import {
   loadInsightsBundle,
   type InsightsBundle,
 } from './data/insightsLoader.js';
-import { loadDecisionsFile } from './data/decisionsLoader.js';
+import { loadDecisionsFile, loadDecisionClustersFile } from './data/decisionsLoader.js';
 import {
   loadTrendsBundle,
   type TrendsBundle,
@@ -72,6 +72,7 @@ import type {
   CompositeOutcomesFile,
   CorrectionsFile,
   DecisionsFile,
+  DecisionClustersFile,
 } from '@chat-arch/schema';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
@@ -513,6 +514,8 @@ export function ChatArchViewer({
   const [decisionsFile, setDecisionsFile] = useState<DecisionsFile | null>(
     null,
   );
+  const [decisionClusters, setDecisionClusters] =
+    useState<DecisionClustersFile | null>(null);
   const [trendsBundle, setTrendsBundle] = useState<TrendsBundle>({
     trajectories: null,
     archetypes: null,
@@ -919,6 +922,10 @@ export function ChatArchViewer({
     loadDecisionsFile(dataRoot).then((f) => {
       if (cancelled) return;
       setDecisionsFile(f);
+    });
+    loadDecisionClustersFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setDecisionClusters(f);
     });
     loadTrendsBundle(dataRoot).then((bundle) => {
       if (cancelled) return;
@@ -3095,6 +3102,8 @@ export function ChatArchViewer({
                     ) : baseMode === 'decisions' ? (
                       <DecisionsMode
                         file={decisionsFile}
+                        clustersFile={decisionClusters}
+                        dataRoot={dataRoot}
                         onSelectSession={(id) => {
                           setPriorModeBeforeDetail('decisions');
                           onSelect(id);

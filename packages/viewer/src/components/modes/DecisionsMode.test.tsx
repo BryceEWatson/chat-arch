@@ -1,35 +1,37 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import type {
   Decision,
   DecisionCandidate,
   DecisionClassification,
   DecisionOutcomeRef,
   DecisionsFile,
+  DecisionClustersFile,
 } from '@chat-arch/schema';
 import { THRESHOLDS } from '@chat-arch/analysis';
 import { DecisionsMode } from './DecisionsMode.js';
 
 /**
- * DecisionsMode tests (Stream J #1):
+ * DecisionsMode tests — PR2 redesign contract:
  *   - Empty / null inputs render an EmptyState.
- *   - Table renders one row per Decision in each bucket.
- *   - Bucket landed-rate + Wilson CI render when n ≥ minNForRate.
- *   - Landed-rate is hidden when n is below the floor.
+ *   - CLASSIFIED rows group by classification.kind; each renders the
+ *     distilled decision + chose/over + rationale + outcome chip.
+ *   - Per-kind landed-rate + Wilson CI gate on minNForRate.
+ *   - UNCLASSIFIED rows render in a browsable section (unwrapped
+ *     context, no cryptic PHRASE column), collapsed past the preview.
+ *   - MINE is a real action (no "not yet implemented" stub note).
+ *   - Recurring clusters render from the clusters sidecar.
  */
 
-function candidate(
-  overrides: Partial<DecisionCandidate> & { id: string },
-): DecisionCandidate {
+function candidate(overrides: Partial<DecisionCandidate> & { id: string }): DecisionCandidate {
   return {
     id: overrides.id,
     sessionId: overrides.sessionId ?? 'sess-' + overrides.id,
     userTurnIndex: overrides.userTurnIndex ?? 0,
     kind: overrides.kind ?? 'explicit-go-with',
     span: overrides.span ?? { phrase: "let's go with X", startOffset: 0 },
-    surroundingContext:
-      overrides.surroundingContext ??
-      'Some pre-context.  ' + (overrides.id ?? '') + ' was selected.',
+    surroundingContext: overrides.surroundingContext ?? "let's go with X over Y here",
+    precedingAssistantExcerpt: overrides.precedingAssistantExcerpt ?? 'I recommend X',
   };
 }
 
@@ -41,35 +43,27 @@ function classification(
     distilledDecision: 'use X',
     chosen: ['X'],
     rejected: ['Y'],
+    rationale: 'X is faster on large trees',
     confidence: 0.8,
     actionable: true,
   };
 }
 
-function outcomeRef(
-  binary: 'good' | 'bad' | 'neutral',
-  score: number,
-): DecisionOutcomeRef {
-  return {
-    sessionId: 'sess',
-    compositeScore: score,
-    binaryClass: binary,
-  };
+function outcomeRef(binary: 'good' | 'bad' | 'neutral', score: number): DecisionOutcomeRef {
+  return { sessionId: 'sess', compositeScore: score, binaryClass: binary };
 }
 
 function decision(
   id: string,
   kind: DecisionClassification['kind'],
   binary: 'good' | 'bad' | 'neutral' | null,
-  opts: { sessionId?: string; classified?: boolean } = {},
+  opts: { sessionId?: string; classified?: boolean; context?: string } = {},
 ): Decision {
   return {
     candidate: candidate({
       id,
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
-      kind: kind === 'tool-pivot' || kind === 'scope-cut' || kind === 'other'
-        ? 'explicit-go-with'
-        : kind,
+      ...(opts.context !== undefined ? { surroundingContext: opts.context } : {}),
     }),
     classification: opts.classified === false ? null : classification(kind),
     outcomeRef: binary === null ? null : outcomeRef(binary, 0.75),
@@ -79,7 +73,7 @@ function decision(
 function buildFile(decisions: readonly Decision[]): DecisionsFile {
   return {
     generatedAt: 1_700_000_000_000,
-    decisionHeuristicVersion: 1,
+    decisionHeuristicVersion: 2,
     decisions,
     scannedSessionIds: [],
   };
@@ -98,81 +92,117 @@ describe('DecisionsMode', () => {
     expect(screen.getByText('NO DECISIONS FOUND')).toBeDefined();
   });
 
-  it('renders a row per decision in the bucket table', () => {
+  it('groups classified rows by kind and renders distilled/chose/rationale', () => {
     const decisions: Decision[] = [
       decision('d1', 'explicit-go-with', 'good'),
-      decision('d2', 'explicit-go-with', 'bad'),
-      decision('d3', 'instead-of', 'good'),
+      decision('d2', 'instead-of', 'bad'),
     ];
     render(<DecisionsMode file={buildFile(decisions)} />);
-    // Two buckets surface: GO-WITH + INSTEAD-OF
     expect(screen.getByRole('heading', { name: /GO-WITH/ })).toBeDefined();
     expect(screen.getByRole('heading', { name: /INSTEAD-OF/ })).toBeDefined();
-    // Three table rows in total across the buckets.
-    const rows = document.querySelectorAll('[data-decision-key]');
-    expect(rows.length).toBe(3);
+    // Distilled decision is the row headline; rationale + chose surface.
+    expect(screen.getAllByText('use X').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/X is faster on large trees/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/chose: X/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/over: Y/).length).toBeGreaterThan(0);
+    // Two classified rows total.
+    expect(document.querySelectorAll('[data-decision-key]').length).toBe(2);
   });
 
-  it('hides the landed-rate when denom < minNForRate (Wilson CI too wide)', () => {
+  it('reclassifies into extended kinds (tool-pivot) via classification.kind', () => {
+    render(<DecisionsMode file={buildFile([decision('d1', 'tool-pivot', 'good')])} />);
+    expect(screen.getByRole('heading', { name: /TOOL PIVOT/ })).toBeDefined();
+  });
+
+  it('hides the landed-rate when denom < minNForRate', () => {
     const min = THRESHOLDS.display.minNForRate;
-    // 3 joined good outcomes — well below the floor.
     const decisions: Decision[] = Array.from({ length: 3 }).map((_, i) =>
-      decision(`d${i}`, 'explicit-go-with', 'good'),
+      decision(`d${i}`, 'explicit-go-with', 'good', { sessionId: `s${i}` }),
     );
     render(<DecisionsMode file={buildFile(decisions)} />);
-    expect(
-      screen.getByTestId('rate-hidden-explicit-go-with').textContent,
-    ).toContain(`n < ${min}`);
-    // The CI text isn't present.
+    expect(screen.getByTestId('rate-hidden-explicit-go-with').textContent).toContain(
+      `of ${min}`,
+    );
     expect(screen.queryByTestId('rate-explicit-go-with')).toBeNull();
   });
 
   it('shows the Wilson CI when denom ≥ minNForRate', () => {
     const min = THRESHOLDS.display.minNForRate;
     const decisions: Decision[] = Array.from({ length: min + 4 }).map((_, i) =>
-      decision(`d${i}`, 'explicit-go-with', i % 2 === 0 ? 'good' : 'bad'),
+      decision(`d${i}`, 'explicit-go-with', i % 2 === 0 ? 'good' : 'bad', { sessionId: `s${i}` }),
     );
     render(<DecisionsMode file={buildFile(decisions)} />);
     const rate = screen.getByTestId('rate-explicit-go-with');
     expect(rate.textContent).toMatch(/landed/);
-    // Wilson 95% CI brackets are rendered.
     expect(rate.textContent).toMatch(/\[\d+%–\d+%\]/);
   });
 
-  it('groups unclassified decisions into an Untagged bucket pinned to the bottom', () => {
-    const decisions: Decision[] = [
-      decision('u1', 'explicit-go-with', 'good', { classified: false }),
-      decision('d1', 'explicit-go-with', 'good'),
-    ];
-    render(<DecisionsMode file={buildFile(decisions)} />);
-    const buckets = document.querySelectorAll('[data-kind]');
-    expect(buckets.length).toBe(2);
-    expect(buckets[buckets.length - 1]!.getAttribute('data-kind')).toBe(
-      'unclassified',
-    );
+  it('renders the OUTCOME chip with the binary class label and score', () => {
+    render(<DecisionsMode file={buildFile([decision('d1', 'explicit-go-with', 'bad')])} />);
+    const chip = screen.getByTitle(/composite 0\.75 · bad/);
+    expect(chip.textContent).toContain('BAD');
   });
 
-  it('renders the OUTCOME chip with the binary class label and score', () => {
+  it('renders a real MINE action (no stub note) when there are unclassified decisions', () => {
     render(
       <DecisionsMode
-        file={buildFile([decision('d1', 'explicit-go-with', 'bad')])}
+        file={buildFile([decision('u1', 'explicit-go-with', null, { classified: false })])}
       />,
     );
-    const table = screen.getByRole('table');
-    const cell = within(table).getByTitle(/composite 0\.75 · bad/);
-    expect(cell.textContent).toContain('BAD');
+    expect(screen.getByTestId('mine-batch-selector')).toBeDefined();
+    expect(screen.getByTestId('mine-decisions-btn').textContent).toMatch(/MINE 5/);
+    expect(screen.queryByText(/not yet implemented/i)).toBeNull();
+    expect(screen.queryByText(/STUB/)).toBeNull();
   });
 
-  it('renders the MINE batch-size selector when there are unclassified decisions (Wave 7 P2 #7)', () => {
-    const decisions: Decision[] = [
-      decision('u1', 'explicit-go-with', null, { classified: false }),
-    ];
-    render(<DecisionsMode file={buildFile(decisions)} />);
-    const selector = screen.getByTestId('mine-batch-selector');
-    expect(selector).toBeDefined();
-    // Default batch is 5 — the button label reflects it.
-    expect(screen.getByTestId('mine-decisions-btn').textContent).toMatch(
-      /MINE 5/,
+  it('renders unclassified decisions in a browsable section with unwrapped context', () => {
+    const wrapped =
+      '<command-message>shopsmith</command-message>\n<command-name>/menu</command-name> pick the second option';
+    render(
+      <DecisionsMode
+        file={buildFile([
+          decision('u1', 'explicit-go-with', null, { classified: false, context: wrapped }),
+        ])}
+      />,
     );
+    const section = screen.getByTestId('decisions-unclassified');
+    expect(section).toBeDefined();
+    // The raw harness wrapper must not leak into the rendered text.
+    expect(section.textContent).not.toContain('<command-message>');
+    expect(section.textContent).toMatch(/pick the second option/);
+  });
+
+  it('collapses the unclassified list past the preview window', () => {
+    const decisions = Array.from({ length: 16 }).map((_, i) =>
+      decision(`u${i}`, 'explicit-go-with', null, { classified: false, sessionId: `s${i}` }),
+    );
+    render(<DecisionsMode file={buildFile(decisions)} />);
+    expect(screen.getByTestId('decisions-show-all').textContent).toMatch(/show all 16/);
+  });
+
+  it('renders the recurring-decisions section from the clusters sidecar', () => {
+    const clustersFile: DecisionClustersFile = {
+      generatedAt: 1,
+      clusters: [
+        {
+          id: 'dpat_abc',
+          canonicalDecision: 'use ripgrep instead of grep',
+          instanceIds: ['d1', 'd2'],
+          occurrenceCount: 2,
+          firstSeen: 0,
+          lastSeen: 0,
+          landedRate: 0.5,
+        },
+      ],
+    };
+    render(
+      <DecisionsMode
+        file={buildFile([decision('d1', 'explicit-go-with', 'good')])}
+        clustersFile={clustersFile}
+      />,
+    );
+    const recurring = screen.getByTestId('decisions-recurring');
+    expect(recurring.textContent).toMatch(/use ripgrep instead of grep/);
+    expect(recurring.textContent).toMatch(/2 sessions/);
   });
 });

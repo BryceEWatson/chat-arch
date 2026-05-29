@@ -1,52 +1,50 @@
-import { useMemo, useState } from 'react';
-import type { Decision, DecisionsFile } from '@chat-arch/schema';
-import { THRESHOLDS, wilsonCI } from '@chat-arch/analysis';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  Decision,
+  DecisionsFile,
+  DecisionClustersFile,
+} from '@chat-arch/schema';
+import { THRESHOLDS, wilsonCI, unwrapEnvelope } from '@chat-arch/analysis';
 import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import {
   startMineDecisions,
+  fetchDecisionRunStatus,
   type MineDecisionsBatch,
+  type DecisionRunStatus,
 } from '../../data/mineDecisionsClient.js';
 
 /**
- * Stream J #1 — DECISIONS surface.
+ * DECISIONS surface — redesigned (PR2) around two honest states:
  *
- * Renders a table of LLM-classified decisions grouped by topic.
- * Each row carries the underlying user-turn phrase, surrounding
- * context, decision kind, and (when joined) a composite-score chip
- * sourced from `outcomeRef.compositeScore`. Per-topic landed-rate
- * is shown with a Wilson 95% CI, but only when n ≥
- * `THRESHOLDS.display.minNForRate` (below that the rate column
- * is suppressed — the CI is too wide to be informative).
+ *   1. UNCLASSIFIED (pre-mine): a clean, collapsible, BROWSABLE list of
+ *      "moments you weighed one path against another." No cryptic
+ *      detector PHRASE column; the surrounding context is unwrapped of
+ *      harness envelopes and shown as the row's primary text. The MINE
+ *      action is real (it runs the `/mine-decisions` skill) with live
+ *      status-file progress.
+ *   2. CLASSIFIED (post-mine): grouped by decision kind, each row a
+ *      narrative — distilled decision (headline) · chose-vs-over ·
+ *      rationale (the why) · confidence · outcome — with a per-kind
+ *      landed-rate (Wilson 95% CI, shown only when n ≥ the display
+ *      floor). Recurring decisions surface from the clusters sidecar.
  *
- * No causal copy: the panel says "landed-rate" / "correlates with",
- * not "decisions that worked because…".
+ * No causal copy: "landed-rate" / "correlates with", never "worked
+ * because".
  */
 
 export interface DecisionsModeProps {
   file: DecisionsFile | null;
+  /** Recurring-decision clusters (analysis/decision-clusters.json). */
+  clustersFile?: DecisionClustersFile | null;
+  /** Data-root base URL — used to poll the run-status sidecar. */
+  dataRoot?: string;
   onSelectSession?: (sessionId: string) => void;
-  /** Wave 7 P1 #4 — wire empty-state CTA to the data panel. */
   onOpenDataPanel?: () => void;
 }
 
-/** Wave 7 P2 #7 — selectable batch sizes for MINE DECISIONS. */
 const MINE_BATCH_OPTIONS: ReadonlyArray<MineDecisionsBatch> = [5, 20, 'all'];
-
-/** Group decisions by topic-ish bucket. Falls back to "Untagged" when the
- *  LLM-classification pass hasn't tagged the row yet. The Phase 2 #1
- *  builder does not yet emit a topic field on the classification, so for
- *  now we bucket by `classification.kind` (or 'unclassified'). When the
- *  Phase 2 #1 follow-up adds `classification.topic`, swap that in here. */
-interface TopicBucket {
-  key: string;
-  label: string;
-  rows: readonly Decision[];
-  /** Subset where outcomeRef joined AND binaryClass !== 'neutral' — denominator
-   *  for the landed-rate. */
-  denom: number;
-  /** Subset where outcomeRef.binaryClass === 'good'. */
-  landed: number;
-}
+const STATUS_POLL_MS = 1500;
+const UNCLASSIFIED_PREVIEW = 15;
 
 const KIND_LABEL: Record<string, string> = {
   'explicit-marker': 'EXPLICIT MARKER',
@@ -57,24 +55,39 @@ const KIND_LABEL: Record<string, string> = {
   'tool-pivot': 'TOOL PIVOT',
   'scope-cut': 'SCOPE CUT',
   other: 'OTHER',
-  unclassified: 'UNCLASSIFIED',
 };
 
-function topicKeyOf(d: Decision): string {
-  const cls = d.classification;
-  if (cls === null) return 'unclassified';
-  return cls.kind;
+interface KindGroup {
+  key: string;
+  label: string;
+  rows: Decision[];
+  /** outcomeRef present AND non-neutral — landed-rate denominator. */
+  denom: number;
+  landed: number;
 }
 
-function buildBuckets(decisions: readonly Decision[]): TopicBucket[] {
+function formatScore(s: number): string {
+  return Number.isFinite(s) ? s.toFixed(2) : '—';
+}
+function formatRate(p: number): string {
+  return Number.isFinite(p) ? `${Math.round(p * 100)}%` : '—';
+}
+function cleanContext(raw: string): string {
+  return unwrapEnvelope(raw) ?? '(no preview)';
+}
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+function buildKindGroups(classified: readonly Decision[]): KindGroup[] {
   const m = new Map<string, Decision[]>();
-  for (const d of decisions) {
-    const k = topicKeyOf(d);
+  for (const d of classified) {
+    const k = d.classification?.kind ?? 'other';
     const arr = m.get(k);
     if (arr) arr.push(d);
     else m.set(k, [d]);
   }
-  const out: TopicBucket[] = [];
+  const out: KindGroup[] = [];
   for (const [key, rows] of m) {
     let denom = 0;
     let landed = 0;
@@ -84,81 +97,61 @@ function buildBuckets(decisions: readonly Decision[]): TopicBucket[] {
       denom += 1;
       if (ref.binaryClass === 'good') landed += 1;
     }
-    out.push({
-      key,
-      label: KIND_LABEL[key] ?? key.toUpperCase(),
-      rows,
-      denom,
-      landed,
-    });
+    out.push({ key, label: KIND_LABEL[key] ?? key.toUpperCase(), rows, denom, landed });
   }
-  // Largest buckets first; unclassified pinned to the bottom.
-  out.sort((a, b) => {
-    if ((a.key === 'unclassified') !== (b.key === 'unclassified')) {
-      return a.key === 'unclassified' ? 1 : -1;
-    }
-    if (b.rows.length !== a.rows.length) return b.rows.length - a.rows.length;
-    return a.label.localeCompare(b.label);
-  });
+  out.sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label));
   return out;
 }
 
-function formatScore(s: number): string {
-  if (!Number.isFinite(s)) return '—';
-  return s.toFixed(2);
-}
-
-function formatRate(p: number): string {
-  if (!Number.isFinite(p)) return '—';
-  return `${Math.round(p * 100)}%`;
-}
-
-function scoreClass(binary: 'good' | 'bad' | 'neutral'): string {
-  return `lcars-decisions__score lcars-decisions__score--${binary}`;
-}
+type MineState =
+  | { status: 'idle' }
+  | {
+      status: 'running';
+      requestId: string | null;
+      runStatus: DecisionRunStatus | null;
+      count: number;
+    }
+  | { status: 'done'; ok: boolean; message: string };
 
 export function DecisionsMode({
   file,
+  clustersFile = null,
+  dataRoot,
   onSelectSession,
   onOpenDataPanel,
 }: DecisionsModeProps) {
-  const buckets = useMemo(
-    () => (file === null ? [] : buildBuckets(file.decisions)),
+  const [mineState, setMineState] = useState<MineState>({ status: 'idle' });
+  const [mineBatch, setMineBatch] = useState<MineDecisionsBatch>(5);
+  const [showAllUnclassified, setShowAllUnclassified] = useState(false);
+
+  const classified = useMemo(
+    () => (file === null ? [] : file.decisions.filter((d) => d.classification !== null)),
     [file],
   );
+  const unclassified = useMemo(
+    () => (file === null ? [] : file.decisions.filter((d) => d.classification === null)),
+    [file],
+  );
+  const kindGroups = useMemo(() => buildKindGroups(classified), [classified]);
 
-  // Wave 6 #3a — surface the unclassified-decisions queue at the top
-  // of the mode so the user knows there's an LLM-pass available. Count
-  // is observational: classification === null on the on-disk row.
-  const unclassifiedCount = useMemo(() => {
-    if (file === null) return 0;
-    let n = 0;
-    for (const d of file.decisions) if (d.classification === null) n += 1;
-    return n;
-  }, [file]);
-  const [mineState, setMineState] = useState<
-    | { status: 'idle' }
-    | { status: 'running'; progress: number }
-    | { status: 'done'; ok: boolean; stderr: string | null }
-  >({ status: 'idle' });
-  const [mineBatch, setMineBatch] = useState<MineDecisionsBatch>(5);
-
-  const onMine = async () => {
-    setMineState({ status: 'running', progress: 0 });
-    const result = await startMineDecisions({
-      batch: mineBatch,
-      onProgress: (progress) => {
-        setMineState((prev) =>
-          prev.status === 'running' ? { status: 'running', progress } : prev,
-        );
-      },
-    });
-    setMineState({
-      status: 'done',
-      ok: result.ok,
-      stderr: result.stderrTail ?? null,
-    });
-  };
+  // Poll the run-status sidecar while a mine is in flight.
+  const mineStatus = mineState.status;
+  const mineRequestId = mineState.status === 'running' ? mineState.requestId : null;
+  useEffect(() => {
+    if (mineStatus !== 'running' || mineRequestId === null || !dataRoot) return;
+    let cancelled = false;
+    const tick = async () => {
+      const s = await fetchDecisionRunStatus(dataRoot, mineRequestId);
+      if (cancelled || s === null) return;
+      setMineState((prev) => (prev.status === 'running' ? { ...prev, runStatus: s } : prev));
+    };
+    const handle = setInterval(() => void tick(), STATUS_POLL_MS);
+    void tick();
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [mineStatus, mineRequestId, dataRoot]);
 
   if (file === null) {
     return (
@@ -170,7 +163,6 @@ export function DecisionsMode({
       />
     );
   }
-
   if (file.decisions.length === 0) {
     return (
       <SidecarEmptyState
@@ -183,49 +175,99 @@ export function DecisionsMode({
   }
 
   const minN = THRESHOLDS.display.minNForRate;
+  const clusters = clustersFile?.clusters ?? [];
+
+  const onMine = async () => {
+    setMineState({ status: 'running', requestId: null, runStatus: null, count: 0 });
+    const result = await startMineDecisions({
+      batch: mineBatch,
+      onStart: (requestId) =>
+        setMineState((prev) => (prev.status === 'running' ? { ...prev, requestId } : prev)),
+      onProgress: (count) =>
+        setMineState((prev) => (prev.status === 'running' ? { ...prev, count } : prev)),
+    });
+    setMineState({
+      status: 'done',
+      ok: result.ok,
+      message: result.ok
+        ? 'Mining complete — reload to see the classified decisions.'
+        : result.stderrTail || result.error || 'Mining run did not complete.',
+    });
+  };
+
+  const renderOutcome = (d: Decision) => {
+    const ref = d.outcomeRef;
+    if (ref === null) {
+      return (
+        <span className="lcars-decisions__score lcars-decisions__score--none">no outcome</span>
+      );
+    }
+    return (
+      <span
+        className={`lcars-decisions__score lcars-decisions__score--${ref.binaryClass}`}
+        title={`composite ${formatScore(ref.compositeScore)} · ${ref.binaryClass}`}
+      >
+        {ref.binaryClass.toUpperCase()} · {formatScore(ref.compositeScore)}
+      </span>
+    );
+  };
+
+  const renderSessionLink = (sessionId: string) =>
+    onSelectSession ? (
+      <button
+        type="button"
+        className="lcars-decisions__session-link"
+        onClick={() => onSelectSession(sessionId)}
+        title={`open session ${sessionId}`}
+        aria-label={`open session ${sessionId}`}
+      >
+        ▸ {sessionId.slice(0, 12)}
+      </button>
+    ) : (
+      <span title={sessionId}>{sessionId.slice(0, 12)}</span>
+    );
 
   return (
-    <div className="lcars-decisions" aria-label="decisions">
+    <div className="lcars-decisions" aria-label="decisions" data-testid="decisions">
       <header className="lcars-decisions__header">
         <h2 className="lcars-decisions__title">DECISIONS</h2>
         <p className="lcars-decisions__lead">
-          Decisions detected in your archive, grouped by kind. Landed-rate is the share
-          of decisions whose joined outcome was &lsquo;good&rsquo; — hidden when n &lt;{' '}
-          {minN} (the Wilson 95% CI is too wide to be informative).
+          Moments you weighed one path against another — the forks in the road across
+          your sessions. Mining classifies each into what you chose, what you turned
+          down, and why, then joins it to how the session turned out.
         </p>
+        <details className="lcars-decisions__method">
+          <summary>How outcomes &amp; landed-rate work</summary>
+          <p>
+            Each decision is joined to its session&rsquo;s composite outcome —{' '}
+            <strong>good</strong> / <strong>bad</strong> / <strong>neutral</strong> with
+            a 0–1 score. <em>Landed-rate</em> is the share of a group&rsquo;s decisions
+            whose joined outcome was &lsquo;good&rsquo;, over those with a non-neutral
+            outcome. It&rsquo;s a correlation, shown only when n &ge; {minN} (below that
+            the Wilson 95% CI is too wide to be informative).
+          </p>
+        </details>
       </header>
-      {unclassifiedCount > 0 && (
+
+      {/* MINE — real action over the unclassified queue. */}
+      {unclassified.length > 0 && (
         <aside
           className="lcars-decisions__cta"
           aria-label="mine decisions"
           data-testid="mine-decisions-cta"
         >
           <p className="lcars-decisions__cta-text">
-            <strong>{unclassifiedCount}</strong>{' '}
-            {unclassifiedCount === 1 ? 'decision awaits' : 'decisions await'}{' '}
-            classification. Mining will use an LLM to extract{' '}
-            {`{question, alternatives, chosen, rationale}`} for each — same
-            shape as <code>/mine-corrections</code> does for corrections.
-          </p>
-          <p
-            className="lcars-decisions__cta-stub"
-            role="note"
-            data-testid="mine-decisions-stub-cue"
-          >
-            <strong>STUB:</strong> the LLM pipeline is not wired yet —
-            clicking <code>MINE</code> shells the skill but it returns
-            &ldquo;not yet implemented&rdquo;. Lands in Phase Rev3-F
-            (curator + falsifier). (R5)
+            <strong>{unclassified.length}</strong>{' '}
+            {unclassified.length === 1 ? 'decision is' : 'decisions are'} detected but not
+            yet classified. Mining runs an LLM over them to extract the choice, the
+            alternatives, and the rationale.
           </p>
           <div
             className="lcars-decisions__cta-controls"
             role="group"
             aria-label="mine decisions controls"
           >
-            <label
-              className="lcars-decisions__cta-batch"
-              data-testid="mine-batch-selector"
-            >
+            <label className="lcars-decisions__cta-batch" data-testid="mine-batch-selector">
               <span className="lcars-decisions__cta-batch-label">Mine</span>
               <select
                 value={String(mineBatch)}
@@ -251,52 +293,72 @@ export function DecisionsMode({
               data-testid="mine-decisions-btn"
             >
               {mineState.status === 'running'
-                ? `MINING… (${mineState.progress})`
+                ? `MINING… (${mineState.runStatus?.progress?.current ?? mineState.count})`
                 : `▶ MINE ${mineBatch === 'all' ? 'ALL' : mineBatch}`}
             </button>
           </div>
-          {mineState.status === 'done' && !mineState.ok && (
-            <p
-              className="lcars-decisions__cta-error"
-              role="status"
-              aria-live="polite"
-            >
-              {mineState.stderr ?? 'Mining run did not complete.'}
+          {mineState.status === 'running' && mineState.runStatus && (
+            <p className="lcars-decisions__cta-status" role="status" aria-live="polite">
+              {mineState.runStatus.status}
+              {mineState.runStatus.progress?.total
+                ? ` — ${mineState.runStatus.progress.current ?? 0}/${mineState.runStatus.progress.total}`
+                : ''}
             </p>
           )}
-          {mineState.status === 'done' && mineState.ok && (
+          {mineState.status === 'done' && (
             <p
-              className="lcars-decisions__cta-status"
+              className={
+                mineState.ok ? 'lcars-decisions__cta-status' : 'lcars-decisions__cta-error'
+              }
               role="status"
               aria-live="polite"
+              data-testid="mine-decisions-result"
             >
-              Mining complete — refresh the page to pick up new classifications.
+              {mineState.message}
+              {mineState.ok && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="lcars-decisions__reload"
+                    onClick={() => window.location.reload()}
+                  >
+                    reload
+                  </button>
+                </>
+              )}
             </p>
           )}
         </aside>
       )}
-      {buckets.map((bucket) => {
-        const showRate = bucket.denom >= minN;
-        const pHat = bucket.denom > 0 ? bucket.landed / bucket.denom : 0;
-        const ci = showRate ? wilsonCI(pHat, bucket.denom) : null;
+
+      {/* CLASSIFIED — grouped by kind, each row a narrative. */}
+      {kindGroups.map((group) => {
+        const showRate = group.denom >= minN;
+        const pHat = group.denom > 0 ? group.landed / group.denom : 0;
+        const ci = showRate ? wilsonCI(pHat, group.denom) : null;
         return (
           <section
-            key={bucket.key}
+            key={group.key}
             className="lcars-decisions__bucket"
-            aria-label={bucket.label}
-            data-kind={bucket.key}
+            aria-labelledby={`decisions-bucket-${group.key}-h`}
+            data-kind={group.key}
           >
             <header className="lcars-decisions__bucket-header">
-              <h3 className="lcars-decisions__bucket-title">{bucket.label}</h3>
+              <h3
+                id={`decisions-bucket-${group.key}-h`}
+                className="lcars-decisions__bucket-title"
+              >
+                {group.label}
+              </h3>
               <span className="lcars-decisions__bucket-count">
-                {bucket.rows.length}{' '}
-                {bucket.rows.length === 1 ? 'decision' : 'decisions'}
+                {group.rows.length} {group.rows.length === 1 ? 'decision' : 'decisions'}
               </span>
               {showRate && ci !== null ? (
                 <span
                   className="lcars-decisions__rate"
                   title={`Wilson 95% CI: ${formatRate(ci.low)} – ${formatRate(ci.high)}`}
-                  data-testid={`rate-${bucket.key}`}
+                  data-testid={`rate-${group.key}`}
                 >
                   landed {formatRate(pHat)}{' '}
                   <span className="lcars-decisions__ci">
@@ -306,81 +368,141 @@ export function DecisionsMode({
               ) : (
                 <span
                   className="lcars-decisions__rate lcars-decisions__rate--hidden"
-                  data-testid={`rate-hidden-${bucket.key}`}
-                  title={`n=${bucket.denom} below display floor (${minN})`}
+                  data-testid={`rate-hidden-${group.key}`}
                 >
-                  rate hidden — n &lt; {minN}
+                  landed-rate hidden — n={group.denom} of {minN}
                 </span>
               )}
             </header>
-            <table className="lcars-decisions__table" role="table">
-              <thead>
-                <tr>
-                  <th scope="col">PHRASE</th>
-                  <th scope="col">CONTEXT</th>
-                  <th scope="col">SESSION</th>
-                  <th scope="col">OUTCOME</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bucket.rows.map((d) => {
-                  const cand = d.candidate;
-                  const ref = d.outcomeRef;
-                  const ctx = cand.surroundingContext.trim();
-                  const ctxShort =
-                    ctx.length > 200 ? `${ctx.slice(0, 197)}…` : ctx;
-                  return (
-                    <tr
-                      key={`${cand.sessionId}-${cand.userTurnIndex}-${cand.kind}-${cand.span.startOffset}`}
-                      data-decision-key={`${cand.sessionId}:${cand.userTurnIndex}`}
-                    >
-                      <td className="lcars-decisions__phrase">
-                        <code title={cand.span.phrase}>
-                          {cand.span.phrase}
-                        </code>
-                      </td>
-                      <td className="lcars-decisions__context">
-                        <span title={ctx}>{ctxShort}</span>
-                      </td>
-                      <td className="lcars-decisions__session">
-                        {onSelectSession ? (
-                          <button
-                            type="button"
-                            className="lcars-decisions__session-link"
-                            onClick={() => onSelectSession(cand.sessionId)}
-                            title={`open session ${cand.sessionId}`}
-                          >
-                            ▸ {cand.sessionId.slice(0, 12)}
-                          </button>
-                        ) : (
-                          <span title={cand.sessionId}>
-                            {cand.sessionId.slice(0, 12)}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {ref === null ? (
-                          <span className="lcars-decisions__score lcars-decisions__score--none">
-                            no outcome
-                          </span>
-                        ) : (
-                          <span
-                            className={scoreClass(ref.binaryClass)}
-                            title={`composite ${formatScore(ref.compositeScore)} · ${ref.binaryClass}`}
-                          >
-                            {ref.binaryClass.toUpperCase()} ·{' '}
-                            {formatScore(ref.compositeScore)}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <ul className="lcars-decisions__rows" role="list">
+              {group.rows.map((d) => {
+                const c = d.classification!;
+                return (
+                  <li
+                    key={`${d.candidate.sessionId}-${d.candidate.userTurnIndex}-${d.candidate.span.startOffset}`}
+                    className="lcars-decisions__row"
+                    data-decision-key={`${d.candidate.sessionId}:${d.candidate.userTurnIndex}`}
+                  >
+                    <div className="lcars-decisions__row-head">
+                      <span className="lcars-decisions__distilled">{c.distilledDecision}</span>
+                      {renderOutcome(d)}
+                    </div>
+                    <div className="lcars-decisions__choice">
+                      <span className="lcars-decisions__chose">
+                        chose: {c.chosen.join(', ') || '—'}
+                      </span>
+                      {c.rejected.length > 0 && (
+                        <span className="lcars-decisions__over">
+                          over: {c.rejected.join(', ')}
+                        </span>
+                      )}
+                    </div>
+                    {c.rationale && <p className="lcars-decisions__rationale">{c.rationale}</p>}
+                    <div className="lcars-decisions__row-foot">
+                      {renderSessionLink(d.candidate.sessionId)}
+                      <span
+                        className="lcars-decisions__confidence"
+                        title="classifier-reported confidence"
+                      >
+                        conf {formatScore(c.confidence)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         );
       })}
+
+      {/* RECURRING — clusters of the same call made across sessions. */}
+      {clusters.length > 0 && (
+        <section
+          className="lcars-decisions__recurring"
+          aria-label="recurring decisions"
+          data-testid="decisions-recurring"
+        >
+          <h3 className="lcars-decisions__bucket-title">RECURRING DECISIONS</h3>
+          <p className="lcars-decisions__recurring-lead">
+            The same call, made across multiple sessions.
+          </p>
+          <ul className="lcars-decisions__rows" role="list">
+            {clusters.map((cl) => (
+              <li key={cl.id} className="lcars-decisions__row">
+                <div className="lcars-decisions__row-head">
+                  <span className="lcars-decisions__distilled">{cl.canonicalDecision}</span>
+                  <span className="lcars-decisions__bucket-count">
+                    {cl.occurrenceCount} sessions
+                  </span>
+                </div>
+                {cl.landedRate !== null && (
+                  <div className="lcars-decisions__choice">
+                    <span className="lcars-decisions__chose">
+                      landed {formatRate(cl.landedRate)} of the time
+                    </span>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* UNCLASSIFIED — clean browsable list, collapsed. */}
+      {unclassified.length > 0 && (
+        <section
+          className="lcars-decisions__unclassified"
+          aria-label="unclassified decisions"
+          data-testid="decisions-unclassified"
+        >
+          <h3 className="lcars-decisions__bucket-title">
+            NOT YET CLASSIFIED ({unclassified.length})
+          </h3>
+          <ul className="lcars-decisions__rows" role="list">
+            {(showAllUnclassified
+              ? unclassified
+              : unclassified.slice(0, UNCLASSIFIED_PREVIEW)
+            ).map((d) => {
+              const ctx = cleanContext(d.candidate.surroundingContext);
+              return (
+                <li
+                  key={`${d.candidate.sessionId}-${d.candidate.userTurnIndex}-${d.candidate.span.startOffset}`}
+                  className="lcars-decisions__row lcars-decisions__row--pending"
+                  data-decision-key={`${d.candidate.sessionId}:${d.candidate.userTurnIndex}`}
+                >
+                  <div className="lcars-decisions__row-head">
+                    <span className="lcars-decisions__context" title={ctx}>
+                      {truncate(ctx, 240)}
+                    </span>
+                    {renderOutcome(d)}
+                  </div>
+                  <div className="lcars-decisions__row-foot">
+                    {renderSessionLink(d.candidate.sessionId)}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {unclassified.length > UNCLASSIFIED_PREVIEW && (
+            <button
+              type="button"
+              className="lcars-decisions__show-all"
+              onClick={() => setShowAllUnclassified((v) => !v)}
+              data-testid="decisions-show-all"
+            >
+              {showAllUnclassified ? 'show fewer' : `show all ${unclassified.length}`}
+            </button>
+          )}
+        </section>
+      )}
+
+      <footer className="lcars-decisions__legend" aria-label="outcome legend">
+        <span className="lcars-decisions__score lcars-decisions__score--good">GOOD</span> /{' '}
+        <span className="lcars-decisions__score lcars-decisions__score--bad">BAD</span> /{' '}
+        <span className="lcars-decisions__score lcars-decisions__score--neutral">NEUTRAL</span>{' '}
+        is the joined composite outcome; the number is its 0–1 score. &lsquo;no
+        outcome&rsquo; means the session wasn&rsquo;t scored.
+      </footer>
     </div>
   );
 }

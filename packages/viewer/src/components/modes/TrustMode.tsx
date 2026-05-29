@@ -61,10 +61,11 @@ interface TrustTally {
 
 /**
  * Pull (accepted, landed) signal out of a Decision. Prefers the explicit
- * `trustCalibration` field (set by the future Phase 2 #1 builder), then
- * falls back to deriving from the classification + outcomeRef when the
- * field is absent. Returns null when neither path resolves — the row
- * is excluded from the 2x2 entirely.
+ * `trustCalibration` field (populated by the `/mine-decisions` skill's
+ * trust-calibration stage), then falls back to deriving from the
+ * classification + outcomeRef when the field is absent (older
+ * decisions.json files predating the skill). Returns null when neither
+ * path resolves — the row is excluded from the 2x2 entirely.
  */
 function derive(d: Decision): { accepted: boolean; landed: boolean } | null {
   const tc = d.trustCalibration;
