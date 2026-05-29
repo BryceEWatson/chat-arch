@@ -228,7 +228,14 @@ export interface RunAnalysisResult {
  * `attributedTo: 'deterministic'`; existing on-disk legacy rows still
  * read via `normalizeNarrativeRow`'s reader-side defaults.
  */
-export const EXPORTER_VERSION = '1.7.0';
+// 1.9.0 — decisions LLM pipeline goes live: the `/mine-decisions` skill
+// merges `classification` (now incl. `rationale`) + `trustCalibration`
+// into `decisions.json`, the candidate gains `precedingAssistantExcerpt`
+// (DECISION_HEURISTIC_VERSION 1→2, forces a rescan), and a new
+// `analysis/decision-clusters.json` sidecar holds recurring-decision
+// clusters. (1.8.0 is the concurrent UI-content / unwrapEnvelope release
+// on its own branch — this number is kept distinct to avoid a collision.)
+export const EXPORTER_VERSION = '1.9.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

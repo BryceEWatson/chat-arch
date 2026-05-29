@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type {
   CompositeOutcomesFile,
+  DecisionsFile,
   SessionManifest,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
@@ -162,6 +163,67 @@ describe('buildDecisionsFile', () => {
     expect(second.scannedSessions).toBe(0);
     expect(second.reusedSessions).toBe(1);
     expect(second.totalCandidates).toBe(first.totalCandidates);
+  });
+
+  it('cache reuse: preserves skill-written classification + trustCalibration', async () => {
+    const outDir = path.join(tmpRoot, 'reuse-classified');
+    await mkdir(path.join(outDir, 'analysis'), { recursive: true });
+    await mkdir(path.join(outDir, 'transcripts'), { recursive: true });
+
+    const transcript = [
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: "We've decided to use ripgrep." },
+      }),
+    ].join('\n');
+    const transcriptPath = path.join('transcripts', 'sess-c.jsonl');
+    await writeFile(path.join(outDir, transcriptPath), transcript, 'utf8');
+
+    const entry = makeEntry({ id: 'sess-c', transcriptPath, updatedAt: 50 });
+    const manifest: SessionManifest = {
+      schemaVersion: 4,
+      generatedAt: 0,
+      counts: { 'cli-direct': 1, 'cli-desktop': 0, cowork: 0, cloud: 0 },
+      sessions: [entry],
+    } as SessionManifest;
+
+    // First build emits the candidate with classification: null.
+    await buildDecisionsFile(manifest, { outDir, now: 100 });
+
+    // Simulate the /mine-decisions skill merging its results in.
+    const decPath = path.join(outDir, 'analysis', 'decisions.json');
+    const file = JSON.parse(await readFile(decPath, 'utf8')) as DecisionsFile;
+    const patched = {
+      ...file,
+      decisions: file.decisions.map((d, i) =>
+        i === 0
+          ? {
+              ...d,
+              classification: {
+                kind: 'explicit-go-with',
+                distilledDecision: 'use ripgrep',
+                chosen: ['ripgrep'],
+                rejected: ['grep'],
+                rationale: 'faster on large trees',
+                confidence: 0.9,
+                actionable: true,
+              },
+              trustCalibration: { acceptedAssistant: true, landed: true },
+            }
+          : d,
+      ),
+    };
+    await writeFile(decPath, JSON.stringify(patched), 'utf8');
+
+    // Rescan (unchanged session → reuse path).
+    const second = await buildDecisionsFile(manifest, { outDir, now: 200 });
+    expect(second.reusedSessions).toBe(1);
+
+    const after = JSON.parse(await readFile(decPath, 'utf8')) as DecisionsFile;
+    const row = after.decisions[0];
+    expect(row?.classification?.distilledDecision).toBe('use ripgrep');
+    expect(row?.classification?.rationale).toBe('faster on large trees');
+    expect(row?.trustCalibration).toEqual({ acceptedAssistant: true, landed: true });
   });
 
   it('missing-input-graceful: counts missing transcripts, still writes file', async () => {

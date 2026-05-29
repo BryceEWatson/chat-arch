@@ -293,3 +293,30 @@ describe('runLabelingFunction', () => {
     expect(hits).toEqual([]);
   });
 });
+
+describe('precedingAssistantExcerpt (v2 — trust-calibration input)', () => {
+  it('carries the prior assistant turn, trimmed', () => {
+    const out = detectDecisions([
+      turn(1, 'Decision: ship it', '  go with the SDK, it is simpler  '),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.precedingAssistantExcerpt).toBe('go with the SDK, it is simpler');
+  });
+
+  it('is null when there is no preceding assistant turn', () => {
+    const out = detectDecisions([turn(0, 'Decision: ship it', null)]);
+    expect(out[0]?.precedingAssistantExcerpt).toBeNull();
+  });
+
+  it('truncates a long preceding assistant turn to the window', () => {
+    const long = 'y'.repeat(900);
+    const out = detectDecisions([turn(1, 'Decision: ship it', long)]);
+    const got = out[0]?.precedingAssistantExcerpt ?? '';
+    expect(got.length).toBeLessThanOrEqual(500);
+    expect(got.endsWith('…')).toBe(true);
+  });
+
+  it('v2 bump: DECISION_HEURISTIC_VERSION is at least 2', () => {
+    expect(DECISION_HEURISTIC_VERSION).toBeGreaterThanOrEqual(2);
+  });
+});

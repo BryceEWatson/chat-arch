@@ -51,8 +51,14 @@ import type { DecisionCandidate, DecisionKind } from '@chat-arch/schema';
  * History:
  *   1 — initial release (explicit-marker, explicit-go-with, instead-of,
  *       alternative-block, imperative-choice)
+ *   2 — candidate gains `precedingAssistantExcerpt` (≤500-char excerpt
+ *       of the prior assistant turn) so the classifier can judge the
+ *       accept-vs-override axis of trust calibration. No LF ruleset
+ *       change, but the emitted candidate shape changed — bumping
+ *       forces a rescan so existing cache entries re-emit with the
+ *       new field populated.
  */
-export const DECISION_HEURISTIC_VERSION = 1;
+export const DECISION_HEURISTIC_VERSION = 2;
 
 /** Minimal turn shape — extracted from any source's transcript. */
 export interface DecisionTurnPair {
@@ -246,6 +252,13 @@ export function detectDecisions(
     if (hits.length === 0) continue;
 
     const surrounding = truncate(t.userText.trim(), CONTEXT_WINDOW);
+    // Prior assistant turn, truncated to the same window. Stored raw
+    // (assistant prose carries no harness envelope — wrappers live in
+    // user turns); the viewer unwraps user-side excerpts at display.
+    const precedingAssistantExcerpt =
+      t.precedingAssistantText === null
+        ? null
+        : truncate(t.precedingAssistantText.trim(), CONTEXT_WINDOW);
 
     for (const h of hits) {
       out.push({
@@ -258,6 +271,7 @@ export function detectDecisions(
           startOffset: h.startOffset,
         },
         surroundingContext: surrounding,
+        precedingAssistantExcerpt,
       });
     }
   }

@@ -87,7 +87,8 @@ Per-package alternatives:
 ```
 apps/standalone/     Astro shell + /api/rescan + /api/clear endpoints
                      + /api/mine-corrections + /api/clear-corrections
-                     + /api/mine-decisions + /api/generate-exports
+                     + /api/mine-decisions + /api/clear-decisions
+                     + /api/generate-exports
                      + /api/insights-ack + /api/entity-states
                      + /api/apply-correction + /api/regen-brief
 packages/schema/     UnifiedSessionEntry + manifest + correction types
@@ -132,8 +133,18 @@ scripts/             One-off audits (audit-correction-recall.mjs) +
                      lint-thresholds-imports.mjs, lint-fixture-pii.mjs)
 .claude/skills/
   mine-corrections/  Skill driving the corrections LLM stages
-  mine-decisions/    Skill driving the decisions LLM stages (stub UI
-                     until LLM pipeline lands; see Phase Rev3-F)
+  mine-decisions/    Skill driving the decisions LLM stages (LIVE as of
+                     EXPORTER_VERSION 1.9.0). Reads heuristic candidates
+                     from analysis/decisions.json, classifies each via
+                     Haiku sub-agents (kind / distilledDecision / chosen /
+                     rejected / rationale / confidence / actionable +
+                     acceptedAssistant), computes the trustCalibration
+                     cell, clusters recurring decisions into
+                     analysis/decision-clusters.json (via
+                     cluster-decisions-cli, Ollama-gated + skippable), and
+                     CAS-merges classification + trustCalibration back into
+                     decisions.json (two writers: exporter cache-reuse +
+                     this skill). Ollama optional (clustering only).
   curate/            Phase Rev3-F F1 curator skill — ranks tier-2 +
                      tier-3 narratives + knowledge-debt + applied-
                      pattern watcher items into analysis/curator-feed.json
@@ -300,7 +311,17 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `reflexive.json` — matched-pair contrast for "touched chat-arch"
   sessions. PII: session IDs + composite scores.
 - `decisions.json` — extracted decisions (LF candidates) joined to
-  composite outcome. PII: decision prose.
+  composite outcome. As of EXPORTER_VERSION 1.9.0 the `/mine-decisions`
+  skill merges `classification` (kind / distilledDecision / chosen /
+  rejected / rationale / confidence / actionable) + `trustCalibration`
+  into the rows the exporter emits — TWO writers on one file, the skill's
+  write is CAS-guarded on `generatedAt`. The candidate now also carries
+  `precedingAssistantExcerpt`. PII: decision prose + the prior assistant
+  excerpt.
+- `decision-clusters.json` — recurring-decision clusters
+  (`DecisionPattern[]`) produced by the `/mine-decisions` clustering
+  stage. Skill-only writer (the exporter never touches it). PII: decision
+  prose. Reset by `/api/clear-decisions`.
 - `archetypes.json` — k-means workflow-archetype centroids + per-
   session assignments. PII: session-archetype mapping.
 - `project-trajectories.json` — Theil-Sen slope per project +

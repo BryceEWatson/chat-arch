@@ -65,6 +65,17 @@ export interface DecisionCandidate {
    * LLM classification stage and the audit script for hand-labeling.
    */
   surroundingContext: string;
+  /**
+   * ≤500-char excerpt of the assistant turn immediately preceding this
+   * user turn, harness-envelope-stripped. `null` when this is the first
+   * user turn (no prior assistant text). The classifier reads it to
+   * judge whether the user TOOK the assistant's recommendation
+   * (accept) or went a different way (override) — the
+   * `acceptedAssistant` axis of the trust-calibration 2×2. Older
+   * `decisions.json` files written before this field may omit it; the
+   * builder treats a missing value as `null`.
+   */
+  precedingAssistantExcerpt: string | null;
 }
 
 /**
@@ -118,6 +129,14 @@ export interface DecisionClassification {
    * it" with no enumerated alternatives).
    */
   rejected: readonly string[];
+  /**
+   * Short prose (≤200 chars) on WHY the user made this choice, in the
+   * user's framing — surfaced in the UI so the decision reads as a
+   * narrative ("chose X because Y"), not just a labeled span. Empty
+   * string when the rationale isn't evident from the surrounding
+   * context.
+   */
+  rationale: string;
   /** 0..1, classifier-reported. */
   confidence: number;
   /**
@@ -186,4 +205,51 @@ export interface DecisionsFile {
    * (cache hit) from "newly added session" (scan needed).
    */
   scannedSessionIds: readonly string[];
+}
+
+/**
+ * A cluster of recurring decisions — the same kind of choice made
+ * across multiple sessions, grouped by semantic similarity of the
+ * `classification.distilledDecision` text. Produced by the
+ * `/mine-decisions` skill's clustering stage (Ollama embeddings +
+ * the shared analysis clustering kernel), NOT the exporter. Lets the
+ * viewer surface "you keep making this call" patterns the way the
+ * corrections pipeline surfaces recurring correction patterns.
+ */
+export interface DecisionPattern {
+  /** Stable hash-derived id (`dpat_<12 hex>` from the canonical text). */
+  id: string;
+  /**
+   * Cluster-representative decision statement, imperative voice. The
+   * medoid `distilledDecision` of the member decisions.
+   */
+  canonicalDecision: string;
+  /**
+   * Member decision ids — `DecisionCandidate.id` values of every
+   * decision in this cluster. ≥2 (a cluster of one isn't recurring).
+   */
+  instanceIds: readonly string[];
+  /** Distinct sessions the members span. */
+  occurrenceCount: number;
+  /** Earliest / latest member `outcomeRef`-bearing session timestamp (ms). */
+  firstSeen: number;
+  lastSeen: number;
+  /**
+   * Share of members whose joined outcome was 'good', over members
+   * with a non-neutral joined outcome. `null` when too few members
+   * have a joined outcome to be informative (mirrors the per-kind
+   * landed-rate display floor). Aggregate, not per-session.
+   */
+  landedRate: number | null;
+}
+
+/**
+ * The persisted file shape under `analysis/decision-clusters.json`.
+ * Skill-only writer (the exporter never touches it), so it survives
+ * the exporter's full rewrite of `decisions.json`. The viewer reads
+ * it to render the "recurring decisions" section.
+ */
+export interface DecisionClustersFile {
+  generatedAt: number;
+  clusters: readonly DecisionPattern[];
 }

@@ -14,6 +14,47 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-05-29
+
+Decisions LLM pipeline — the DECISIONS surface goes from a raw
+heuristic-candidate dump fronted by a stubbed MINE button to a real
+classify → trust-calibrate → cluster pipeline. The exporter still emits
+heuristic candidates into `analysis/decisions.json`; the now-implemented
+`/mine-decisions` skill classifies them and merges the results back in.
+
+> **Version note:** `1.8.0` is the concurrent UI-content /
+> `unwrapEnvelope` release shipped on its own branch. This entry is
+> `1.9.0` to keep the two artifact-contract bumps from colliding; the
+> `1.8.0 → 1.9.0` ordering is nominal, not a dependency.
+
+### Added
+
+- **`analysis/decision-clusters.json`** sidecar (`DecisionClustersFile`)
+  — recurring-decision clusters (`DecisionPattern[]`) produced by the
+  `/mine-decisions` clustering stage via the new
+  `packages/exporter/dist/cli/cluster-decisions-cli.js` (reuses the
+  shared `clusterByThreshold` kernel + `embed` over `distilledDecision`).
+  Skill-only writer; carries PII (decision prose). Gitignored under the
+  existing `chat-arch-data/*` wildcard.
+- **`/api/clear-decisions`** endpoint — resets `classification` +
+  `trustCalibration` to null in `decisions.json` (preserving candidates),
+  deletes `decision-clusters.json` + `decision-status-*.json`. Lets the
+  user re-mine without re-running the exporter.
+- `DecisionClassification.rationale` (the "why" behind each choice) and
+  `DecisionCandidate.precedingAssistantExcerpt` (≤500-char prior
+  assistant turn) — the latter feeds the accept-vs-override axis of the
+  trust 2×2.
+
+### Changed
+
+- `DECISION_HEURISTIC_VERSION` 1 → 2 (candidate shape gained
+  `precedingAssistantExcerpt`) — the exporter's decisions cache
+  self-invalidates and re-scans on next run.
+- `/api/mine-decisions` now validates run success via a status-file /
+  `generatedAt` probe (mirrors `/api/mine-corrections`) instead of the
+  bare exit code; `decisionsBuilder` preserves `trustCalibration` across
+  cache reuse alongside `classification`.
+
 ## [1.7.0] — 2026-05-26
 
 Narrative-mining V1 — per-project LLM-driven thematic narratives,

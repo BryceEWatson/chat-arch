@@ -16,8 +16,9 @@
 
 import type { APIRoute } from 'astro';
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
 import { assertDataDirContained, handleDataDirGuardError } from '../../lib/dataDirGuard.js';
@@ -174,6 +175,47 @@ function runClaudeOnce(
   });
 }
 
+/**
+ * Decide whether a mine run actually succeeded, rather than trusting the
+ * exit code alone (a `claude -p` wrapper can exit 0 having done nothing,
+ * or exit non-zero on a benign teardown). Mirrors mine-corrections'
+ * outcome probe: the skill's `decision-status-${requestId}.json` is
+ * authoritative when present; otherwise fall back to "decisions.json was
+ * rewritten after we started" + a clean exit.
+ */
+async function probeOutcome(
+  dataDir: string,
+  requestId: string,
+  startedAt: number,
+  exitCode: number | null,
+  spawnError: Error | null,
+): Promise<boolean> {
+  if (spawnError !== null) return false;
+  const analysisDir = join(resolve(repoRoot(), dataDir), 'analysis');
+  // 1. Status file is authoritative when the skill wrote it.
+  try {
+    const raw = await readFile(join(analysisDir, `decision-status-${requestId}.json`), 'utf8');
+    const status = (JSON.parse(raw) as { status?: unknown }).status;
+    if (status === 'complete') return true;
+    if (status === 'error') return false;
+  } catch {
+    // no status file — fall through
+  }
+  // 2. Fallback: decisions.json bumped its generatedAt past our start AND
+  //    the process exited cleanly (the skill rewrites the file on a
+  //    non-empty classification run).
+  try {
+    const raw = await readFile(join(analysisDir, 'decisions.json'), 'utf8');
+    const gen = (JSON.parse(raw) as { generatedAt?: unknown }).generatedAt;
+    if (exitCode === 0 && typeof gen === 'number' && gen >= startedAt) return true;
+  } catch {
+    // no decisions file — fall through
+  }
+  // 3. Last resort: trust a clean exit (e.g. a legitimate no-op run with
+  //    an empty work set that exited 0 without a status file).
+  return exitCode === 0;
+}
+
 async function streamMineDecisions(
   params: MineParams,
   controller: ReadableStreamDefaultController<Uint8Array>,
@@ -205,9 +247,17 @@ async function streamMineDecisions(
     ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
     : '';
 
+  const ok = await probeOutcome(
+    dataDir,
+    requestId,
+    started,
+    outcome.exitCode,
+    outcome.spawnError,
+  );
+
   send({
     type: 'done',
-    ok: outcome.exitCode === 0 && outcome.spawnError === null,
+    ok,
     exitCode: outcome.exitCode,
     durationMs: Date.now() - started,
     requestId,

@@ -41,7 +41,7 @@ import type {
   CorrectionsFile,
   SessionManifest,
 } from '@chat-arch/schema';
-import { runAnalysis } from '../../src/analysis/index.js';
+import { runAnalysis, EXPORTER_VERSION } from '../../src/analysis/index.js';
 import { runSemanticAnalysis } from '../../src/analysis/semanticAnalysis.js';
 import { logger } from '../../src/lib/logger.js';
 
@@ -159,7 +159,10 @@ describe('migration v1.1.0 → 1.2.0', () => {
       tiers: { browser: { files: readonly string[] } };
       counts: Record<string, unknown>;
     }>(path.join(tmpDataDir, 'analysis', 'meta.json'));
-    expect(meta.exporterVersion).toBe('1.7.0');
+    // Assert against the constant, not a literal — the migration writes
+    // whatever EXPORTER_VERSION currently says, so a version bump should
+    // not break this test.
+    expect(meta.exporterVersion).toBe(EXPORTER_VERSION);
 
     // The Wave-5 sidecars (+ feed-redesign Phase A surprises.json)
     // must all be registered in the browser tier.
