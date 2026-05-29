@@ -1,8 +1,10 @@
 import type { APIRoute } from 'astro';
-import { readdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { readdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Decision, DecisionsFile } from '@chat-arch/schema';
+import { isMineDecisionsInFlight } from './mine-decisions.js';
 
 /**
  * Reset the decision-mining pipeline's OUTPUT so the user can re-mine
@@ -97,12 +99,28 @@ export const POST: APIRoute = async ({ request }) => {
   if (request.headers.get('x-requested-with') !== REQUIRED_HEADER) {
     return csrfReject('missing X-Requested-With token');
   }
+  // In-flight guard: decisions.json has two writers (the exporter and the
+  // /mine-decisions skill). Refuse to rewrite it while a mine is streaming,
+  // or we'd clobber the skill's CAS-guarded write. Mirrors the
+  // mine-narratives ↔ clear-narratives handshake.
+  if (isMineDecisionsInFlight()) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'A decision-mining run is in progress. Wait for it to finish before clearing.',
+      }),
+      { status: 409, headers: { 'content-type': 'application/json' } },
+    );
+  }
 
   const dir = analysisDir();
   const removed: string[] = [];
   let reset = 0;
+  let warning: string | undefined;
 
-  // 1. Reset decisions.json in place (preserve candidates).
+  // 1. Reset decisions.json in place (preserve candidates). Atomic
+  //    tmp+rename so a concurrent reader never sees a torn file — matching
+  //    the skill's own write discipline.
   const decisionsPath = join(dir, 'decisions.json');
   try {
     const raw = await readFile(decisionsPath, 'utf8');
@@ -110,13 +128,16 @@ export const POST: APIRoute = async ({ request }) => {
     if (Array.isArray(parsed.decisions)) {
       reset = parsed.decisions.filter((d) => d.classification !== null).length;
       const next = resetDecisionsFile(parsed, Date.now());
-      await writeFile(decisionsPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+      const tmp = `${decisionsPath}.tmp.${randomUUID()}`;
+      await writeFile(tmp, JSON.stringify(next, null, 2) + '\n', 'utf8');
+      await rename(tmp, decisionsPath);
     }
   } catch (err) {
-    // Missing file → nothing to reset; malformed → skip the reset but
-    // still sweep sidecars below.
+    // Missing file → nothing to reset (fine). Malformed JSON or a read
+    // error → surface a warning rather than silently reporting a clean
+    // reset, so the user knows the file wasn't touched.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      // leave `reset` at 0; not fatal
+      warning = `decisions.json not reset: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
@@ -126,7 +147,7 @@ export const POST: APIRoute = async ({ request }) => {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return new Response(JSON.stringify({ ok: true, removed: [], reset }), {
+      return new Response(JSON.stringify({ ok: true, removed: [], reset, ...(warning ? { warning } : {}) }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -151,7 +172,7 @@ export const POST: APIRoute = async ({ request }) => {
     }),
   );
 
-  return new Response(JSON.stringify({ ok: true, removed, reset }), {
+  return new Response(JSON.stringify({ ok: true, removed, reset, ...(warning ? { warning } : {}) }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });

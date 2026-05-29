@@ -9,6 +9,8 @@ import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import {
   startMineDecisions,
   fetchDecisionRunStatus,
+  clearDecisions,
+  probeClearDecisions,
   type MineDecisionsBatch,
   type DecisionRunStatus,
 } from '../../data/mineDecisionsClient.js';
@@ -123,6 +125,22 @@ export function DecisionsMode({
   const [mineState, setMineState] = useState<MineState>({ status: 'idle' });
   const [mineBatch, setMineBatch] = useState<MineDecisionsBatch>(5);
   const [showAllUnclassified, setShowAllUnclassified] = useState(false);
+  const [clearAvail, setClearAvail] = useState(false);
+  const [clearState, setClearState] = useState<
+    { status: 'idle' } | { status: 'armed' } | { status: 'busy' } | { status: 'done'; message: string }
+  >({ status: 'idle' });
+
+  // Probe whether the clear endpoint exists (dev server only; hidden on
+  // the static hosted build).
+  useEffect(() => {
+    let cancelled = false;
+    void probeClearDecisions().then((ok) => {
+      if (!cancelled) setClearAvail(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const classified = useMemo(
     () => (file === null ? [] : file.decisions.filter((d) => d.classification !== null)),
@@ -226,6 +244,22 @@ export function DecisionsMode({
     ) : (
       <span title={sessionId}>{sessionId.slice(0, 12)}</span>
     );
+
+  const onClear = async () => {
+    setClearState({ status: 'busy' });
+    try {
+      const { reset } = await clearDecisions();
+      setClearState({
+        status: 'done',
+        message: `Cleared ${reset} classification${reset === 1 ? '' : 's'} — reload to re-mine.`,
+      });
+    } catch (err) {
+      setClearState({
+        status: 'done',
+        message: err instanceof Error ? err.message : 'Clear failed.',
+      });
+    }
+  };
 
   return (
     <div className="lcars-decisions" aria-label="decisions" data-testid="decisions">
@@ -415,6 +449,61 @@ export function DecisionsMode({
         );
       })}
 
+      {/* Clear classifications — reset to candidates so the user can re-mine.
+          Only when there's something to clear and the endpoint exists. */}
+      {classified.length > 0 && clearAvail && (
+        <div className="lcars-decisions__clear" data-testid="decisions-clear">
+          {clearState.status === 'idle' && (
+            <button
+              type="button"
+              className="lcars-decisions__clear-btn"
+              onClick={() => setClearState({ status: 'armed' })}
+              data-testid="decisions-clear-arm"
+            >
+              clear classifications &amp; re-mine
+            </button>
+          )}
+          {clearState.status === 'armed' && (
+            <span className="lcars-decisions__clear-confirm">
+              Reset all {classified.length} classifications back to candidates? Decision
+              candidates are preserved.{' '}
+              <button
+                type="button"
+                className="lcars-decisions__clear-btn"
+                onClick={() => void onClear()}
+                data-testid="decisions-clear-confirm"
+              >
+                confirm
+              </button>{' '}
+              <button
+                type="button"
+                className="lcars-decisions__clear-btn"
+                onClick={() => setClearState({ status: 'idle' })}
+              >
+                cancel
+              </button>
+            </span>
+          )}
+          {clearState.status === 'busy' && (
+            <span className="lcars-decisions__clear-confirm" role="status">
+              Clearing…
+            </span>
+          )}
+          {clearState.status === 'done' && (
+            <span className="lcars-decisions__clear-confirm" role="status" aria-live="polite">
+              {clearState.message}{' '}
+              <button
+                type="button"
+                className="lcars-decisions__reload"
+                onClick={() => window.location.reload()}
+              >
+                reload
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
       {/* RECURRING — clusters of the same call made across sessions. */}
       {clusters.length > 0 && (
         <section
@@ -438,7 +527,7 @@ export function DecisionsMode({
                 {cl.landedRate !== null && (
                   <div className="lcars-decisions__choice">
                     <span className="lcars-decisions__chose">
-                      landed {formatRate(cl.landedRate)} of the time
+                      landed {formatRate(cl.landedRate)} of {cl.landedDenom} decided
                     </span>
                   </div>
                 )}

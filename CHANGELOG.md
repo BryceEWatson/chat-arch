@@ -25,7 +25,11 @@ heuristic candidates into `analysis/decisions.json`; the now-implemented
 > **Version note:** `1.8.0` is the concurrent UI-content /
 > `unwrapEnvelope` release shipped on its own branch. This entry is
 > `1.9.0` to keep the two artifact-contract bumps from colliding; the
-> `1.8.0 → 1.9.0` ordering is nominal, not a dependency.
+> `1.8.0 → 1.9.0` ordering is nominal, not a dependency. This PR also
+> **ports `packages/analysis/src/unwrapEnvelope.ts`** (byte-identical)
+> from that branch, so whichever of the two merges second will hit a
+> trivial add/add conflict on that file and on its `export` line in
+> `packages/analysis/src/index.ts` — resolve by keeping either copy.
 
 ### Added
 

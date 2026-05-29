@@ -1,6 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import type { Decision, DecisionsFile } from '@chat-arch/schema';
-import { isDecisionSidecar, resetDecisionsFile } from '../../src/pages/api/clear-decisions.js';
+import {
+  isDecisionSidecar,
+  resetDecisionsFile,
+  POST,
+} from '../../src/pages/api/clear-decisions.js';
+
+type PostCtx = Parameters<typeof POST>[0];
+
+function postWith(headers: Record<string, string>): Promise<Response> {
+  const request = new Request('http://localhost:4321/api/clear-decisions', {
+    method: 'POST',
+    headers,
+  });
+  return Promise.resolve(POST({ request } as unknown as PostCtx) as Response | Promise<Response>);
+}
 
 function candidate(id: string, sessionId = 'sessA') {
   return {
@@ -30,6 +44,26 @@ function classifiedRow(id: string): Decision {
     trustCalibration: { acceptedAssistant: true, landed: true },
   };
 }
+
+describe('clear-decisions POST handler — CSRF gate', () => {
+  it('rejects a request with no/cross Origin (403)', async () => {
+    const res = await postWith({ 'x-requested-with': 'chat-arch-clear-decisions' });
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects a local Origin missing the X-Requested-With token (403)', async () => {
+    const res = await postWith({ origin: 'http://localhost:4321' });
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects a non-local Origin even with the token (403)', async () => {
+    const res = await postWith({
+      origin: 'https://evil.example.com',
+      'x-requested-with': 'chat-arch-clear-decisions',
+    });
+    expect(res.status).toBe(403);
+  });
+});
 
 describe('resetDecisionsFile', () => {
   it('strips classification + trustCalibration but preserves candidate + outcomeRef', () => {

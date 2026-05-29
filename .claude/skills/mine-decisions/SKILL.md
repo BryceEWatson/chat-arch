@@ -144,10 +144,14 @@ results + any pre-existing classified rows in `decisions.json`).
    classification still written") and continue. Clustering is an
    enhancement, not a gate — unlike mine-corrections, classification
    here doesn't need embeddings.
-2. Collect `{ id, distilledDecision, sessionId, binaryClass }` for every
-   classified decision (this run + already-classified rows; `binaryClass`
-   from each row's `outcomeRef`, or `null` when unjoined). Write them to
-   `_decisions-classified.json` as `{ decisions: [...] }`.
+2. Collect `{ id, distilledDecision, sessionId, binaryClass, updatedAt }`
+   for every classified decision (this run + already-classified rows).
+   `binaryClass` is each row's `outcomeRef.binaryClass`, or `null` when
+   unjoined. `updatedAt` is the session's `updatedAt` looked up from
+   `${dataDir}/manifest.json` by `sessionId` (omit if not found) — the
+   clusterer uses it for the cluster `firstSeen`/`lastSeen`; without it
+   those fall back to `0`. Write them to `_decisions-classified.json` as
+   `{ decisions: [...] }`.
 3. Cluster (the CLI embeds `distilledDecision` internally via Ollama, so
    no separate embed-cli call is needed):
    ```bash
@@ -162,21 +166,27 @@ results + any pre-existing classified rows in `decisions.json`).
 
 ### Stage 4 — Merge + write (compare-and-swap)
 
-1. **Re-read** `${dataDir}/analysis/decisions.json` fresh.
-2. If its `generatedAt !== baseGeneratedAt`, a rescan landed mid-run.
-   The candidate `id`s are stable across rescans, so re-applying by id
-   is safe — proceed, but if the re-read fails or the file is gone,
-   retry once; on a second failure write `status: error` with
-   `"concurrent-rescan-aborted"` and exit 1.
-3. Build a map `id → { classification, trustCalibration? }` from this
-   run. Map over `decisions[]`: for a row whose `candidate.id` is in the
-   map, set `classification` (and `trustCalibration` when present),
-   preserving `candidate` + `outcomeRef`. Leave every other row
-   untouched (their `classification` stays as-is — `null` or a prior
-   run's value). Drop map entries whose id is no longer present.
-4. Bump `generatedAt` to now; keep `decisionHeuristicVersion` and
-   `scannedSessionIds` as read. Write atomically: write to
-   `decisions.json.tmp.<requestId>` then rename over `decisions.json`.
+1. **Re-read** `${dataDir}/analysis/decisions.json` fresh; call its
+   `generatedAt` value `mergeGeneratedAt`.
+2. Build a map `id → { classification, trustCalibration? }` from this
+   run. Map over the FRESH `decisions[]`: for a row whose `candidate.id`
+   is in the map, set `classification` (and `trustCalibration` when
+   present), preserving `candidate` + `outcomeRef`. Leave every other row
+   untouched — including any rows a concurrent rescan ADDED (mapping over
+   the fresh read, not your Stage-0 snapshot, is what keeps them). Drop
+   map entries whose id is no longer present.
+3. Compose the new file (bump `generatedAt` to now; keep
+   `decisionHeuristicVersion` + `scannedSessionIds` from the fresh read)
+   and write it to `decisions.json.tmp.<requestId>`.
+4. **CAS immediately before the rename:** re-stat/re-read
+   `decisions.json` and compare its `generatedAt` to `mergeGeneratedAt`.
+   If it changed, an exporter rescan landed inside the read-modify-write
+   window — DISCARD the tmp file, and retry the whole Stage-4 sequence
+   once from step 1. If it changed again on the retry, write
+   `status: error` (`"concurrent-rescan-aborted"`), delete the tmp file,
+   and exit 1 (do NOT rename — renaming would clobber the rescan). Match
+   the mine-narratives CAS-on-`generatedAt` discipline. Otherwise
+   `rename` the tmp over `decisions.json`.
 5. Delete the `_*.json` intermediates.
 
 ### Stage 5 — Status finalization

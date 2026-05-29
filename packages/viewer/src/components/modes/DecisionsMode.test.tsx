@@ -1,5 +1,17 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import type * as MineDecisionsClient from '../../data/mineDecisionsClient.js';
+
+// The clear control is gated on a probe to /api/clear-decisions; stub the
+// client so probeClearDecisions resolves true in jsdom (no dev server).
+vi.mock('../../data/mineDecisionsClient.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof MineDecisionsClient>();
+  return {
+    ...actual,
+    probeClearDecisions: () => Promise.resolve(true),
+    clearDecisions: () => Promise.resolve({ removed: [], reset: 2 }),
+  };
+});
 import type {
   Decision,
   DecisionCandidate,
@@ -192,6 +204,7 @@ describe('DecisionsMode', () => {
           firstSeen: 0,
           lastSeen: 0,
           landedRate: 0.5,
+          landedDenom: 2,
         },
       ],
     };
@@ -204,5 +217,25 @@ describe('DecisionsMode', () => {
     const recurring = screen.getByTestId('decisions-recurring');
     expect(recurring.textContent).toMatch(/use ripgrep instead of grep/);
     expect(recurring.textContent).toMatch(/2 sessions/);
+  });
+
+  it('shows the clear-classifications control when classified rows exist (probe ok)', async () => {
+    render(<DecisionsMode file={buildFile([decision('d1', 'explicit-go-with', 'good')])} />);
+    // Probe resolves in an effect → control appears asynchronously.
+    const arm = await screen.findByTestId('decisions-clear-arm');
+    expect(arm).toBeDefined();
+    fireEvent.click(arm);
+    expect(screen.getByTestId('decisions-clear-confirm')).toBeDefined();
+  });
+
+  it('hides the clear control when there are no classified rows', async () => {
+    render(
+      <DecisionsMode
+        file={buildFile([decision('u1', 'explicit-go-with', null, { classified: false })])}
+      />,
+    );
+    // Give the probe effect a tick to resolve, then assert absence.
+    await waitFor(() => expect(screen.getByTestId('mine-decisions-cta')).toBeDefined());
+    expect(screen.queryByTestId('decisions-clear')).toBeNull();
   });
 });

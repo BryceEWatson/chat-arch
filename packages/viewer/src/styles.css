@@ -8571,3 +8571,27 @@ button.lcars-applied-summary__stale--button:focus-visible {
   line-height: 1.5;
   color: color-mix(in srgb, var(--lcars-text) 65%, var(--lcars-bg-1));
 }
+.lcars-decisions__clear {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg-1));
+}
+.lcars-decisions__clear-btn {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-peach) 45%, transparent);
+  color: var(--lcars-peach);
+  border-radius: 10px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.lcars-decisions__clear-btn:hover {
+  background: color-mix(in srgb, var(--lcars-peach) 12%, transparent);
+}
+.lcars-decisions__clear-confirm {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 80%, var(--lcars-bg-1));
+}

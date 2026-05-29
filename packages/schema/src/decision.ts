@@ -221,7 +221,9 @@ export interface DecisionPattern {
   id: string;
   /**
    * Cluster-representative decision statement, imperative voice. The
-   * medoid `distilledDecision` of the member decisions.
+   * alphabetically-first member `distilledDecision` (deterministic and
+   * stable across runs — the clusterer has no per-member confidence to
+   * rank a medoid by).
    */
   canonicalDecision: string;
   /**
@@ -231,7 +233,11 @@ export interface DecisionPattern {
   instanceIds: readonly string[];
   /** Distinct sessions the members span. */
   occurrenceCount: number;
-  /** Earliest / latest member `outcomeRef`-bearing session timestamp (ms). */
+  /**
+   * Earliest / latest member session `updatedAt` (ms) when the clusterer
+   * was given per-member timestamps; `0` otherwise (the skill supplies
+   * them from the manifest — older runs that didn't fall back to `0`).
+   */
   firstSeen: number;
   lastSeen: number;
   /**
@@ -241,6 +247,13 @@ export interface DecisionPattern {
    * landed-rate display floor). Aggregate, not per-session.
    */
   landedRate: number | null;
+  /**
+   * The denominator behind `landedRate` — count of members with a
+   * non-neutral joined outcome. Surfaced next to the rate so the reader
+   * can judge its precision (a rate over few samples is wide). 0 when no
+   * member has a joined outcome.
+   */
+  landedDenom: number;
 }
 
 /**

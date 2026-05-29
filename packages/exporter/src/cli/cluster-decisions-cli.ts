@@ -20,7 +20,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { clusterByThreshold, sha256Hex } from '@chat-arch/analysis';
+import { clusterByThreshold, sha256Hex, THRESHOLDS } from '@chat-arch/analysis';
 import type { DecisionClustersFile, DecisionPattern } from '@chat-arch/schema';
 import { embed, DEFAULT_EMBEDDING_MODEL } from '../embeddings/index.js';
 
@@ -52,7 +52,7 @@ cluster-decisions-cli
   --output <path>                     DecisionClustersFile JSON
   [--cluster-threshold <0..1>=0.65]
   [--min-occurrences <N>=2]           distinct sessions for a cluster to count
-  [--landed-rate-min-n <N>=2]
+  [--landed-rate-min-n <N>]           default = THRESHOLDS.display.minNForRate
   [--base-url <url>=http://localhost:11434]
   [--model <name>=mxbai-embed-large]
 `;
@@ -61,14 +61,21 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let classified: string | undefined;
   let output: string | undefined;
   // 0.65 mirrors the corrections clusterer — calibrated against
-  // mxbai-embed-large rule-similarity (same-rule paraphrases cluster,
-  // distinct rules don't). Tune via flag for other models.
+  // mxbai-embed-large on *rule* similarity. Decision `distilledDecision`
+  // text is a different distribution; this is a deliberate extrapolation
+  // pending decision-specific calibration. Tune via flag.
   let clusterThreshold = 0.65;
   // A recurring decision needs >=2 distinct sessions — a one-session
   // cluster isn't "recurring". (Corrections uses 3; decisions are rarer
-  // per session, so 2 is the floor.)
+  // per session, so 2 is the floor for cluster EXISTENCE.)
   let minOccurrences = 2;
-  let landedRateMinN = 2;
+  // Floor for reporting a landed-RATE — distinct from cluster existence.
+  // Pinned to the same display floor the viewer uses for per-kind rates
+  // (THRESHOLDS.display.minNForRate, derived so the Wilson 95% CI is
+  // narrow enough to be informative). A bare "landed 100%" over 2 samples
+  // is exactly the misleading-precision this floor prevents, so the rate
+  // is null below it and the UI shows nothing.
+  let landedRateMinN: number = THRESHOLDS.display.minNForRate;
   let baseUrl: string | undefined;
   let model = DEFAULT_EMBEDDING_MODEL;
 
@@ -179,6 +186,7 @@ export function buildDecisionClusters(
     const landed = decided.filter((m) => m.binaryClass === 'good').length;
     const landedRate =
       decided.length >= opts.landedRateMinN ? landed / decided.length : null;
+    const landedDenom = decided.length;
 
     // firstSeen/lastSeen from updatedAt where known, else 0 (placeholder,
     // same convention as the corrections clusterer).
@@ -196,6 +204,7 @@ export function buildDecisionClusters(
       firstSeen,
       lastSeen,
       landedRate,
+      landedDenom,
     });
   }
 

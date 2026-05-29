@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { THRESHOLDS } from '@chat-arch/analysis';
 import {
   buildDecisionClusters,
   normalizeDecision,
@@ -85,6 +86,7 @@ describe('buildDecisionClusters', () => {
     const vectors = [unitVec([1, 0, 0]), unitVec([1, 0, 0])];
     const out = buildDecisionClusters(decisions, vectors, OPTS);
     expect(out[0]?.landedRate).toBeCloseTo(0.5, 5);
+    expect(out[0]?.landedDenom).toBe(2);
   });
 
   it('returns null landedRate when too few members have a joined outcome', () => {
@@ -114,10 +116,13 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--output', 'o.json'])).toThrow();
   });
 
-  it('applies decision-tuned defaults (min-occurrences 2)', () => {
+  it('applies decision-tuned defaults (min-occurrences 2, rate floor = display floor)', () => {
     const a = parseArgs(['--classified', 'a.json', '--output', 'o.json']);
     expect(a.minOccurrences).toBe(2);
     expect(a.clusterThreshold).toBeCloseTo(0.65, 5);
+    // landed-rate floor is pinned to the viewer's display floor so a
+    // small-n cluster never reports a misleadingly-precise rate.
+    expect(a.landedRateMinN).toBe(THRESHOLDS.display.minNForRate);
   });
 
   it('rejects an out-of-range cluster threshold', () => {

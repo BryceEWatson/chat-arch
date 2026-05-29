@@ -49,6 +49,16 @@ function csrfReject(reason: string): Response {
 let inFlight: Promise<void> | null = null;
 let inFlightRequestId: string | null = null;
 
+/**
+ * True while a `/mine-decisions` run is streaming. Exported so
+ * `/api/clear-decisions` can refuse to rewrite `decisions.json` out from
+ * under a mid-flight skill write (mirrors the mine-narratives /
+ * clear-narratives in-flight handshake).
+ */
+export function isMineDecisionsInFlight(): boolean {
+  return inFlight !== null;
+}
+
 const MAX_LINE_CHARS = 2_000;
 const MAX_TAIL_BYTES = 8 * 1024;
 const DEFAULT_DATA_DIR = 'apps/standalone/public/chat-arch-data';
