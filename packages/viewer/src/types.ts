@@ -184,6 +184,24 @@ export const SOURCE_LABEL: Record<SessionSource, string> = {
   'cli-desktop': 'CLI-DESKTOP',
 };
 
+/**
+ * One-line tooltip per source so a cold visitor seeing the
+ * `CLOUD / COWORK / CLI-DIRECT / CLI-DESKTOP` chips can learn what
+ * each means without leaving the page. Names the upstream surface
+ * the transcript came from. The LCARS-style short labels stay as-is
+ * (visual identity); the tooltip carries the discoverable long form.
+ */
+export const SOURCE_TOOLTIP: Record<SessionSource, string> = {
+  cloud:
+    'Cloud conversations from claude.ai (uploaded as a Privacy-Export ZIP)',
+  cowork:
+    'Claude Desktop local-agent-mode sessions (a.k.a. Cowork) — JSONL transcripts under AppData',
+  'cli-direct':
+    'Claude Code CLI sessions launched in a terminal — JSONL transcripts under ~/.claude/projects',
+  'cli-desktop':
+    'Claude Code sessions launched from the Claude Desktop app — same JSONL family as CLI-DIRECT, enriched with Desktop manifest data',
+};
+
 /** Per-mode accent color key (plan decision 3). */
 export const MODE_COLOR: Record<Mode, string> = {
   command: 'var(--lcars-butterscotch)',

@@ -237,19 +237,32 @@ export interface RunAnalysisResult {
  * `attributedTo: 'deterministic'`; existing on-disk legacy rows still
  * read via `normalizeNarrativeRow`'s reader-side defaults.
  *
- * Bumped 1.7.0 → 1.9.0 in the Project Identity v2 land (skips 1.8.0, which
- * is the in-flight UI-content/unwrapEnvelope work on a separate branch — the
- * two reconcile at merge time). The bump invalidates the
- * `cowork-sessions.json` / `cli-sessions.json` caches so the new optional
- * entry fields (`scheduledTaskId` / `sessionType` / `parentSessionId`)
- * repopulate on the next rescan — load-bearing, since cascade rule 2
- * (scheduled-task → routine project) can't fire on cached cowork entries
- * that predate the field. `analysis/projects.json` gains a per-session
- * `attribution` map (`{ projectId, resolvedVia, confidence }`) and
- * `analysis/meta.json` gains `parserSkips` (0-turn-sidecar drop count). Two
- * new gitignored sidecars: `project-identity-preview.json` (dry-run diff) and
- * `projectOverrides.json` (manual rule-0 overrides). NO `schemaVersion` bump
- * (the new entry fields are optional and round-trip at schemaVersion 4).
+ * Bumped 1.7.0 -> 1.8.0 in the UI content-display pass (research/
+ * ui-content-issues.md) when `unwrapEnvelope` landed in
+ * `@chat-arch/analysis` and started stripping harness wrappers
+ * (slash-command triples, scheduled-task envelopes, system-reminder
+ * blocks, etc.) from preview / title-fallback / correction-evidence /
+ * persona-candidate excerpts BEFORE truncation. No new on-disk
+ * sidecar — but `correction-candidates.json` excerpts +
+ * `manifest.json` preview field + `persona-candidates.json` +
+ * `personas/<id>.md` evidence rows all change content on next
+ * rescan. `HEURISTIC_RECALL_VERSION` 2 -> 3 (see
+ * `detectCorrectionCandidates.ts`) invalidates cached
+ * `correction-candidates.json` files so they re-emit under the new
+ * excerpt shape.
+ *
+ * Bumped 1.8.0 → 1.9.0 in the Project Identity v2 land. The bump
+ * invalidates the `cowork-sessions.json` / `cli-sessions.json` caches so
+ * the new optional entry fields (`scheduledTaskId` / `sessionType` /
+ * `parentSessionId`) repopulate on the next rescan — load-bearing, since
+ * cascade rule 2 (scheduled-task → routine project) can't fire on cached
+ * cowork entries that predate the field. `analysis/projects.json` gains a
+ * per-session `attribution` map (`{ projectId, resolvedVia, confidence }`)
+ * and `analysis/meta.json` gains `parserSkips` (0-turn-sidecar drop count).
+ * Two new gitignored sidecars: `project-identity-preview.json` (dry-run
+ * diff) and `projectOverrides.json` (manual rule-0 overrides). NO
+ * `schemaVersion` bump (the new entry fields are optional and round-trip at
+ * schemaVersion 4).
  */
 export const EXPORTER_VERSION = '1.9.0';
 

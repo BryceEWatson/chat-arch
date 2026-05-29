@@ -113,20 +113,21 @@ export function PracticeMode({
       <CuratorFeed dataDirBaseUrl={dataDirBaseUrl} />
       {LENSES.map((lens) => {
         const findings = byLens.get(lens) ?? [];
+        const lensHId = `lcars-practice-lens-${lens}-h`;
         return (
           <section
             key={lens}
             className={`lcars-practice__lens lcars-practice__lens--${lens}`}
-            aria-label={LENS_LABEL[lens]}
+            aria-labelledby={lensHId}
           >
             <header className="lcars-practice__lens-header">
-              <h3 className="lcars-practice__lens-title">{LENS_LABEL[lens]}</h3>
+              <h3 id={lensHId} className="lcars-practice__lens-title">{LENS_LABEL[lens]}</h3>
               <span className="lcars-practice__lens-blurb">{LENS_BLURB[lens]}</span>
             </header>
             {findings.length === 0 ? (
               <p className="lcars-practice__empty">
                 No findings under this lens — either the audit ran clean, or there
-                isn&rsquo;t enough data yet to surface a pattern.
+                isn’t enough data yet to surface a pattern.
               </p>
             ) : (
               <ul className="lcars-practice__finding-list" role="list">
@@ -136,8 +137,8 @@ export function PracticeMode({
                       <header className="lcars-practice__finding-header">
                         <span
                           className={`lcars-practice__severity ${SEVERITY_CLASS[f.severity]}`}
-                          aria-label={`severity ${SEVERITY_LABEL[f.severity]}`}
                         >
+                          <span className="lcars-sr-only">severity </span>
                           {SEVERITY_LABEL[f.severity]}
                         </span>
                         <h4 className="lcars-practice__finding-title">{f.title}</h4>
@@ -156,23 +157,22 @@ export function PracticeMode({
                                   type="button"
                                   className="lcars-practice__evidence-pill"
                                   onClick={() => onSelectSession(e.id)}
-                                  title={e.label ?? e.id}
                                 >
-                                  ▸ session: {e.label ?? e.id}
+                                  <span aria-hidden="true">▸ </span>
+                                  session: {e.label ?? e.id}
                                 </button>
                               ) : e.kind === 'project' ? (
                                 <button
                                   type="button"
                                   className="lcars-practice__evidence-pill"
                                   onClick={() => onSelectProject(e.id)}
-                                  title={e.label ?? e.id}
                                 >
-                                  ↳ project: {e.label ?? e.id}
+                                  <span aria-hidden="true">↳ </span>
+                                  project: {e.label ?? e.id}
                                 </button>
                               ) : (
                                 <span
                                   className="lcars-practice__evidence-pill lcars-practice__evidence-pill--static"
-                                  title={e.label ?? e.id}
                                 >
                                   {e.kind}: {e.label ?? e.id}
                                 </span>

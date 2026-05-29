@@ -258,8 +258,13 @@ describe('DetailMode copy-transcript (AC10)', () => {
     expect(md).toContain('## Assistant');
     expect(md).toContain('hello');
     expect(md).toContain('world');
+    // Iter-9 a11y: the ✓ glyph is now wrapped in aria-hidden and is a
+    // separate text node from "COPIED" so testing-library's getByText
+    // would match the substring across nodes only with a function
+    // matcher. Match against the textContent of the toast container.
     await waitFor(() => {
-      expect(screen.getByText('COPIED ✓')).toBeDefined();
+      const toast = document.querySelector('.lcars-detail-mode__copy-toast--ok');
+      expect(toast?.textContent).toContain('COPIED');
     });
   });
 });

@@ -42,11 +42,20 @@ export function AgentTrace({ events, mode }: AgentTraceProps) {
       open={expanded}
       onToggle={(e) => setExpanded((e.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary className="lcars-chat-trace__summary">
+      <summary
+        className="lcars-chat-trace__summary"
+        aria-label={`Agent trace: ${summary.replace(/ · /g, ', ')}`}
+      >
         <span className="lcars-chat-trace__label">AGENT TRACE</span>
-        <span className="lcars-chat-trace__counts">{summary}</span>
+        <span className="lcars-chat-trace__counts" aria-hidden="true">{summary}</span>
       </summary>
-      <ol className="lcars-chat-trace__list" aria-live={mode === 'live' ? 'polite' : 'off'}>
+      {/* Iter-10 a11y: aria-live dropped from trace list. Each trace
+          event would otherwise polite-announce on stream-in,
+          competing with the assistant answer's own status announcer
+          (ChatMode iter-10 Bundle A). Summary count update on the
+          <summary> aria-label is the SR signal; the visible list is
+          retained for sighted users. */}
+      <ol className="lcars-chat-trace__list">
         {events.map((ev, ix) => (
           <li key={ix} className={`lcars-chat-trace__item lcars-chat-trace__item--${ev.kind}`}>
             {renderEvent(ev)}
@@ -99,7 +108,7 @@ function renderEvent(ev: ChatTraceEvent): React.ReactNode {
   if (ev.kind === 'error') {
     return (
       <>
-        <span className="lcars-chat-trace__glyph" aria-hidden="true">⚠</span>
+        <span className="lcars-chat-trace__glyph" role="img" aria-label="error">⚠</span>
         <code className="lcars-chat-trace__code">{ev.message}</code>
       </>
     );

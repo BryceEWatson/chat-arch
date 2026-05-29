@@ -23,8 +23,17 @@ describe('formatRelative', () => {
   it('days ago within <3d window', () => {
     expect(formatRelative(NOW - 2 * 86_400_000, NOW)).toBe('2d ago');
   });
-  it('same-year absolute (Mmm D) past 3d', () => {
-    const ts = Date.UTC(2026, 0, 5); // Jan 5 2026
+  it('weeks ago for the 3d–60d window', () => {
+    // 7 days back → "1w ago" (smooths the previous 3d → absolute-date
+    // jump that surfaced as "2d ago" → "Apr 8" / weekday name
+    // depending on prior tiering).
+    expect(formatRelative(NOW - 7 * 86_400_000, NOW)).toBe('1w ago');
+    // 21 days back → "3w ago"
+    expect(formatRelative(NOW - 21 * 86_400_000, NOW)).toBe('3w ago');
+  });
+  it('same-year absolute (Mmm D) past 60d', () => {
+    // 100 days back — well past the 60d weekly-tier cap.
+    const ts = Date.UTC(2026, 0, 5); // Jan 5 2026 (~100d before NOW)
     expect(formatRelative(ts, NOW)).toBe('Jan 5');
   });
   it('different-year absolute ISO', () => {

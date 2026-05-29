@@ -27,13 +27,19 @@ export interface EmptyStateProps {
 
 export function EmptyState({
   title = 'NO SESSIONS',
-  message = 'Run pnpm --filter @chat-arch/exporter start to produce a manifest.',
+  message = 'No sessions to display yet. Run SCAN LOCAL to ingest local transcripts, or upload an export ZIP below.',
   onUpload,
   onLoadDemo,
   showInstallLocally = false,
 }: EmptyStateProps) {
   return (
-    <section className="lcars-empty-state" role="status" aria-live="polite">
+    // Dropped role="status" + aria-live="polite": this section wraps a
+    // <h2> + UploadPanel (which has its own live region) + button group —
+    // far larger than a "status message". Polite live re-announcement on
+    // every mount forced SR to re-read the whole interactive panel. The
+    // <h2> already serves as a heading-nav landmark; no live broadcast
+    // needed.
+    <section className="lcars-empty-state">
       <h2 className="lcars-empty-state__title">{title}</h2>
       <p className="lcars-empty-state__message">{message}</p>
       {onUpload && (

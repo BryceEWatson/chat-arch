@@ -89,7 +89,7 @@ const claimTypes = [
 ];
 ---
 <BaseLayout title="Chat Archaeologist — Audit" current="AUDIT">
-  <main class="audit">
+  <main id="main-content" class="audit" tabindex="-1">
     <h1>AUDIT</h1>
     {results === null ? (
       <p class="audit__empty">
@@ -131,7 +131,7 @@ const claimTypes = [
                     <ul class="audit__concerns-sessions">
                       {c.topSessions.map((s) => (
                         <li>
-                          <code>[SID:{s.sessionId.slice(0, 8)}…]</code>
+                          <code aria-label={`session ${s.sessionId}`}>[SID:{s.sessionId.slice(0, 8)}…]</code>
                           <span class="audit__concerns-x">{s.failsInSession}× </span>
                           <span class="audit__concerns-span">"{s.sampleSpan.slice(0, 60)}"</span>
                           <span class="audit__concerns-reason">— {s.sampleReason.slice(0, 80)}</span>
@@ -169,23 +169,31 @@ const claimTypes = [
 
         <p class="audit__count">{displayed.length} result(s) · page {page} / {totalPages}</p>
 
-        <table class="audit__table">
+        <table class="audit__table" aria-label="Audit results">
           <thead>
             <tr>
-              <th>outcome</th>
-              <th>claim type</th>
-              <th>session</th>
-              <th>line</th>
-              <th>span</th>
-              <th>reason</th>
+              <th scope="col">outcome</th>
+              <th scope="col">claim type</th>
+              <th scope="col">session</th>
+              <th scope="col">line</th>
+              <th scope="col">span</th>
+              <th scope="col">reason</th>
             </tr>
           </thead>
           <tbody>
             {slice.map((r) => (
               <tr>
-                <td><span class={badgeClass(r.outcome)}>{r.outcome}</span></td>
+                <td>
+                  <span class={badgeClass(r.outcome)}>
+                    {/* Defensive glyph prefix (iter-5 F30): magnitude
+                        of state survives grayscale + protanopia. The
+                        verdict text remains the primary signal. */}
+                    <span aria-hidden="true">{r.outcome === 'pass' ? '✓ ' : r.outcome === 'fail' ? '✗ ' : '? '}</span>
+                    {r.outcome}
+                  </span>
+                </td>
                 <td><code>{r.claimType}</code></td>
-                <td><code>{r.sessionId}</code></td>
+                <td><code aria-label={`session ${r.sessionId}`}>{r.sessionId}</code></td>
                 <td>{r.lineNumber}</td>
                 <td class="audit__span">{r.span}</td>
                 <td class="audit__reason">{r.reason}</td>
@@ -234,8 +242,11 @@ const claimTypes = [
   .audit__top-fail { color: #FFCC9999; }
   .audit__filters { display: flex; gap: 16px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
   .audit__filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #FFCC9999; }
+  /* Border bumped from #FFCC9933 (~1.55:1) to #FFCC9988 (~4.4:1) so
+     the input boundary clears WCAG 1.4.11's 3:1 floor for UI control
+     edges — without that, the inputs read as floating text. */
   .audit__filters select, .audit__filters input {
-    background: #0a0a0a; color: #FFCC99; border: 1px solid #FFCC9933; padding: 4px 8px; font-family: inherit;
+    background: #0a0a0a; color: #FFCC99; border: 1px solid #FFCC9988; padding: 4px 8px; font-family: inherit;
   }
   .audit__filters button {
     background: #FFCC99; color: #0a0a0a; border: none; padding: 6px 16px; font-family: 'Antonio', sans-serif;
@@ -252,12 +263,16 @@ const claimTypes = [
   .audit__span { color: #FFCC99; max-width: 240px; }
   .audit__reason { color: #FFCC99cc; max-width: 360px; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
-  .badge--pass { background: #4caf5044; color: #88e088; }
-  .badge--fail { background: #c0393944; color: #f08080; }
-  .badge--inconc { background: #ffaa3344; color: #ffd680; }
+  .badge--pass { background: #4caf5044; color: var(--lcars-pass); }
+  .badge--fail { background: #c0393944; color: var(--lcars-fail); }
+  .badge--inconc { background: #ffaa3344; color: var(--lcars-warn); }
   .audit__pager { margin-top: 16px; display: flex; gap: 24px; font-size: 13px; color: #FFCC99cc; }
-  .audit__pager a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9955; }
-  .audit__pager--disabled { color: #FFCC9944; }
+  .audit__pager a { color: #FFCC99; text-decoration: none; border-bottom: 1px dashed #FFCC9988; }
+  /* `.audit__pager--disabled` is a styled <span> (not a real :disabled
+     control), so WCAG 1.4.3's disabled-control exemption doesn't
+     apply. #FFCC9999 keeps the visual de-emphasis while clearing the
+     4.5:1 normal-text floor. */
+  .audit__pager--disabled { color: #FFCC9999; }
   .audit__concerns { margin: 20px 0; padding: 16px 20px; background: #0a0a0a; border: 1px solid #FFCC9944; border-radius: 4px; }
   .audit__concerns h2 { font-family: 'Antonio', sans-serif; letter-spacing: 0.12em; font-size: 14px; margin: 0 0 8px; color: #FFCC99; }
   .audit__concerns-hint { font-size: 12px; color: #FFCC9999; margin: 0 0 12px; line-height: 1.5; }

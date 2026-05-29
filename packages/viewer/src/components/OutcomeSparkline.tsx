@@ -120,11 +120,10 @@ export function OutcomeSparkline({
   }, [series, width]);
 
   if (series.length === 0 || layout === null) {
+    // Dropped aria-label (duplicated visible text; on bare div without
+    // role it's also AT-ignored). Same pattern as Sparkline iter-14.
     return (
-      <div
-        className="lcars-outcome-sparkline lcars-outcome-sparkline--empty"
-        aria-label="no trajectory data"
-      >
+      <div className="lcars-outcome-sparkline lcars-outcome-sparkline--empty">
         NO TRAJECTORY DATA
       </div>
     );
@@ -137,11 +136,29 @@ export function OutcomeSparkline({
       ? (series[hoverIdx] as OutcomeWeek)
       : null;
 
+  // Build a data-bearing aria-label for the chart so SR users hear
+  // the trajectory shape instead of the bare "weekly trajectory"
+  // string. The label captures: n weeks, first→last raw value, EWMA
+  // endpoint, and Wilson CI width at the latest point. (iter-5 F2)
+  const enrichedAriaLabel = (() => {
+    const baseLabel = label ?? 'weekly trajectory';
+    if (series.length === 0) return baseLabel;
+    const first = series[0]!;
+    const last = series[series.length - 1]!;
+    const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+    const ciFragment =
+      last.ciLow !== undefined && last.ciHigh !== undefined
+        ? `, Wilson CI ${pct(last.ciLow)} to ${pct(last.ciHigh)}`
+        : '';
+    return (
+      `${baseLabel}: ${series.length} weeks, ` +
+      `${pct(first.value)} to ${pct(last.value)}, ` +
+      `EWMA latest ${pct(last.ewma)}${ciFragment}`
+    );
+  })();
+
   return (
-    <div
-      className="lcars-outcome-sparkline"
-      aria-label={label ?? 'weekly trajectory'}
-    >
+    <div className="lcars-outcome-sparkline">
       {label !== undefined && (
         <div className="lcars-outcome-sparkline__label">{label}</div>
       )}
@@ -149,13 +166,19 @@ export function OutcomeSparkline({
         className="lcars-outcome-sparkline__chart"
         onMouseLeave={() => setHoverIdx(null)}
       >
+        {/* aria-hidden="true" was removed iter-5 — it cancelled
+            role="img" and dropped the chart from the accessibility
+            tree entirely. The enrichedAriaLabel carries the data so
+            SR users hear the trajectory shape. The wrapping <div>'s
+            aria-label moved here to attach to the <svg>'s real
+            role="img". */}
         <svg
           width="100%"
           height={HEIGHT}
           viewBox={`0 0 ${layout.innerW} ${HEIGHT}`}
           preserveAspectRatio="none"
           role="img"
-          aria-hidden="true"
+          aria-label={enrichedAriaLabel}
         >
           {/* Baseline at the midpoint (binary-good threshold = 0.5). */}
           <line
@@ -206,13 +229,15 @@ export function OutcomeSparkline({
           })}
         </svg>
         {hovered !== null && (
-          <div
-            className="lcars-outcome-sparkline__tooltip"
-            role="status"
-            aria-live="polite"
-          >
+          // Dropped role="status" + aria-live="polite" — pointer-only
+          // tooltip re-rendering per mouse-move floods the polite queue
+          // (iter-14 Sparkline pattern). The chart's svg aria-label
+          // carries the trajectory summary for SR users; per-week
+          // detail is mouse-only by design.
+          <div className="lcars-outcome-sparkline__tooltip">
             <div className="lcars-outcome-sparkline__tooltip-head">
-              {formatShortDate(hovered.start)} · n={hovered.n}
+              {formatShortDate(hovered.start)} · {hovered.n} session
+              {hovered.n === 1 ? '' : 's'}
             </div>
             <div className="lcars-outcome-sparkline__tooltip-row">
               <span className="lcars-outcome-sparkline__tooltip-label">

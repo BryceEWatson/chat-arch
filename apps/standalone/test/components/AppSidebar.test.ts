@@ -177,7 +177,11 @@ describe('AppSidebar — render contract', () => {
     expect(html).toMatch(/class="[^"]*app-sidebar__toggle/);
     // Either a real <button> or role=button + tabindex=0.
     expect(html).toMatch(/(<button[^>]*app-sidebar__toggle)|(role="button"[^>]*tabindex="0"[^>]*app-sidebar__toggle)|(app-sidebar__toggle[^>]*role="button"[^>]*tabindex="0")|(app-sidebar__toggle[^>]*tabindex="0")/);
-    // aria-expanded mirrors the collapsed state — expanded by default.
-    expect(html).toMatch(/aria-expanded="true"/);
+    // aria-controls links the toggle to the body region.
+    // (a11y iter-2 F8: aria-expanded is set by attachCollapse() at boot
+    // so the announced state matches the actual collapsed state on
+    // mobile / when localStorage has a stored preference; the literal
+    // markup attribute was removed to avoid an SSR/boot mismatch.)
+    expect(html).toMatch(/aria-controls="app-sidebar-body"/);
   });
 });

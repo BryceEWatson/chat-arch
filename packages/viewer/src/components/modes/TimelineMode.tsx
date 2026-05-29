@@ -38,8 +38,8 @@ export function TimelineMode({ sessions, onSelect }: TimelineModeProps) {
   return (
     <div className="lcars-timeline-mode">
       <div className="lcars-timeline-mode__axis">
-        <span>{formatShortDate(minTs)}</span>
-        <span>{formatShortDate(maxTs)}</span>
+        <time dateTime={new Date(minTs).toISOString()}>{formatShortDate(minTs)}</time>
+        <time dateTime={new Date(maxTs).toISOString()}>{formatShortDate(maxTs)}</time>
       </div>
       <div
         className="lcars-timeline-mode__lanes"
@@ -62,7 +62,7 @@ export function TimelineMode({ sessions, onSelect }: TimelineModeProps) {
                 } as React.CSSProperties
               }
             >
-              <div className="lcars-timeline-mode__lane-label" aria-label={SOURCE_LABEL[src]}>
+              <div className="lcars-timeline-mode__lane-label">
                 {SOURCE_LABEL[src]}
               </div>
               <div className="lcars-timeline-mode__lane-track">

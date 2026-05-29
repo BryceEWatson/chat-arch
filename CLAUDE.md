@@ -620,15 +620,17 @@ out of date and needs an update:
    - Local: full pipeline (SCAN LOCAL, /api/* endpoints, SQLite
      substrate, curator + falsifier skills, MCP server).
 6. **When should I bump `EXPORTER_VERSION`?**
-   - When the on-disk artifact set EXPANDS (new sidecar) or the
-     shape of an existing artifact changes. The version label
-     appears in `analysis/meta.json` so operators can correlate a
-     bundle with the CHANGELOG. Bumped 1.2.0 → 1.3.0 in Phase
-     Rev3-I I5 for the Rev3 substrate cutover; see CHANGELOG.md
-     `[1.3.0]` for the full ledger of what landed. Bumped 1.3.0
-     → 1.4.0 in the feed-redesign Phase A plumbing when
-     `analysis/surprises.json` landed; see CHANGELOG.md `[1.4.0]`.
-     Bumped 1.4.0 → 1.4.1 in feed-redesign Phase γ when
+   - When the on-disk artifact set EXPANDS (new sidecar), the
+     shape of an existing artifact changes, OR a semantic-content
+     cutover invalidates cached bundles such that operators need
+     to know which set of rules a bundle was emitted under. The
+     version label appears in `analysis/meta.json` so operators
+     can correlate a bundle with the CHANGELOG. Bumped 1.2.0 → 1.3.0
+     in Phase Rev3-I I5 for the Rev3 substrate cutover; see
+     CHANGELOG.md `[1.3.0]` for the full ledger of what landed.
+     Bumped 1.3.0 → 1.4.0 in the feed-redesign Phase A plumbing
+     when `analysis/surprises.json` landed; see CHANGELOG.md
+     `[1.4.0]`. Bumped 1.4.0 → 1.4.1 in feed-redesign Phase γ when
      `buildDailyBrief` gained shipped-this-week / surprises /
      trajectories / applied-pattern-closures sections (no new on-
      disk sidecar; brief markdown shape grew); see CHANGELOG.md
@@ -639,13 +641,22 @@ out of date and needs an update:
      (`narrative-candidates.json` new sidecar + two additive optional
      top-level fields on existing `narratives.json` + new LLM-derived
      row family with `attributedTo: 'llm-derived'`); see CHANGELOG.md
-     `[1.7.0]`. Bumped 1.7.0 → 1.9.0 in the Project Identity v2 land
-     (skips 1.8.0 — that label is the in-flight UI-content/`unwrapEnvelope`
-     branch; reconcile at merge). New optional entry fields
-     (`scheduledTaskId` / `sessionType` / `parentSessionId` /
-     `projectAttribution`, no `schemaVersion` bump), the `projects.json`
-     `attribution` map, `meta.json` `parserSkips`, and two new gitignored
-     sidecars (`projectOverrides.json`, `project-identity-preview.json`).
-     The bump invalidates the cowork/cli caches so the new entry fields
-     repopulate (cascade rule 2 needs `scheduledTaskId`). See CHANGELOG.md
-     `[1.9.0]` + the "Project Identity v2" section above.
+     `[1.7.0]`. Bumped 1.7.0 → 1.8.0 in the UI content-display pass
+     when `unwrapEnvelope` landed and started stripping harness
+     wrappers from preview / title-fallback / correction-evidence /
+     persona-candidate excerpts before truncation;
+     `HEURISTIC_RECALL_VERSION` 2 → 3 invalidates cached
+     `correction-candidates.json` files so they re-emit under the
+     new excerpt shape. No new sidecar — but the textual content of
+     `correction-candidates.json`, `manifest.json` previews,
+     `persona-candidates.json` excerpts, and `personas/<id>.md`
+     evidence rows all change on next rescan. See CHANGELOG.md
+     `[1.8.0]`. Bumped 1.8.0 → 1.9.0 in the Project Identity v2 land:
+     new optional entry fields (`scheduledTaskId` / `sessionType` /
+     `parentSessionId` / `projectAttribution`, no `schemaVersion` bump),
+     the `projects.json` `attribution` map, `meta.json` `parserSkips`,
+     and two new gitignored sidecars (`projectOverrides.json`,
+     `project-identity-preview.json`). The bump invalidates the cowork/cli
+     caches so the new entry fields repopulate (cascade rule 2 needs
+     `scheduledTaskId`). See CHANGELOG.md `[1.9.0]` + the "Project
+     Identity v2" section above.

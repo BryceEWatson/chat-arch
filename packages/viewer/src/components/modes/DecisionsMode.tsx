@@ -190,7 +190,7 @@ export function DecisionsMode({
         <h2 className="lcars-decisions__title">DECISIONS</h2>
         <p className="lcars-decisions__lead">
           Decisions detected in your archive, grouped by kind. Landed-rate is the share
-          of decisions whose joined outcome was &lsquo;good&rsquo; — hidden when n &lt;{' '}
+          of decisions whose joined outcome was &lsquo;good’ — hidden when n &lt;{' '}
           {minN} (the Wilson 95% CI is too wide to be informative).
         </p>
       </header>
@@ -214,7 +214,7 @@ export function DecisionsMode({
           >
             <strong>STUB:</strong> the LLM pipeline is not wired yet —
             clicking <code>MINE</code> shells the skill but it returns
-            &ldquo;not yet implemented&rdquo;. Lands in Phase Rev3-F
+            “not yet implemented”. Lands in Phase Rev3-F
             (curator + falsifier). (R5)
           </p>
           <div
@@ -283,11 +283,11 @@ export function DecisionsMode({
           <section
             key={bucket.key}
             className="lcars-decisions__bucket"
-            aria-label={bucket.label}
+            aria-labelledby={`decisions-bucket-${bucket.key}-h`}
             data-kind={bucket.key}
           >
             <header className="lcars-decisions__bucket-header">
-              <h3 className="lcars-decisions__bucket-title">{bucket.label}</h3>
+              <h3 id={`decisions-bucket-${bucket.key}-h`} className="lcars-decisions__bucket-title">{bucket.label}</h3>
               <span className="lcars-decisions__bucket-count">
                 {bucket.rows.length}{' '}
                 {bucket.rows.length === 1 ? 'decision' : 'decisions'}
@@ -307,13 +307,20 @@ export function DecisionsMode({
                 <span
                   className="lcars-decisions__rate lcars-decisions__rate--hidden"
                   data-testid={`rate-hidden-${bucket.key}`}
-                  title={`n=${bucket.denom} below display floor (${minN})`}
+                  aria-label={`rate hidden, n=${bucket.denom} below display floor of ${minN}`}
                 >
-                  rate hidden — n &lt; {minN}
+                  rate hidden — n={bucket.denom} of {minN} required
                 </span>
               )}
             </header>
-            <table className="lcars-decisions__table" role="table">
+            <table className="lcars-decisions__table">
+              <caption className="lcars-sr-only">
+                {bucket.label} decisions — {bucket.rows.length}{' '}
+                {bucket.rows.length === 1 ? 'row' : 'rows'}
+                {showRate && ci !== null
+                  ? `, landed-rate ${formatRate(pHat)} with Wilson 95% CI ${formatRate(ci.low)} to ${formatRate(ci.high)}`
+                  : ''}
+              </caption>
               <thead>
                 <tr>
                   <th scope="col">PHRASE</th>
@@ -349,11 +356,12 @@ export function DecisionsMode({
                             className="lcars-decisions__session-link"
                             onClick={() => onSelectSession(cand.sessionId)}
                             title={`open session ${cand.sessionId}`}
+                            aria-label={`open session ${cand.sessionId}`}
                           >
                             ▸ {cand.sessionId.slice(0, 12)}
                           </button>
                         ) : (
-                          <span title={cand.sessionId}>
+                          <span title={cand.sessionId} aria-label={`session ${cand.sessionId}`}>
                             {cand.sessionId.slice(0, 12)}
                           </span>
                         )}

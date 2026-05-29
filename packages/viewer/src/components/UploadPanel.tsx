@@ -175,13 +175,17 @@ export function UploadPanel({
           form so the eye lands on the single recommended action.
         */}
         {showInstallLocally && (
+          // Anchor without role="button": activation behavior is navigation
+          // (Enter follows href; Space does nothing on a real link), so
+          // declaring "button" mis-telegraphs the affordance to SR users.
+          // The visible "(opens README quickstart on GitHub)" intent is
+          // preserved in the aria-label.
           <a
             className="lcars-upload-panel__button"
             href={installLocallyHref}
             target="_blank"
             rel="noreferrer noopener"
-            role="button"
-            aria-label="install chat-arch locally — opens the README quickstart on GitHub"
+            aria-label="install chat-arch locally (opens README quickstart on GitHub)"
           >
             INSTALL LOCALLY
           </a>
@@ -192,9 +196,8 @@ export function UploadPanel({
             className="lcars-upload-panel__button"
             onClick={onScanLocal}
             disabled={scanRunning}
-            aria-label="scan local chat sources: ~/.claude and %APPDATA%\Claude"
+            aria-label="scan local chat sources at ~/.claude and %APPDATA%\Claude — cloud data only refreshes when you upload a new ZIP"
             aria-busy={scanRunning || undefined}
-            title="Scan local chat sources: ~/.claude and %APPDATA%\Claude. Cloud data only refreshes when you upload a new ZIP."
           >
             {scanLabel}
           </button>
@@ -218,18 +221,12 @@ export function UploadPanel({
             className="lcars-upload-panel__button lcars-upload-panel__button--secondary"
             onClick={onLoadDemo}
             disabled={state.status === 'parsing'}
-            aria-label="load demo data — populate the viewer with generated fake conversations"
-            title="Populate the viewer with generated fake conversations so you can explore the UI."
+            aria-label="load demo data — populate the viewer with generated fake conversations so you can explore the UI"
           >
             LOAD DEMO DATA
           </button>
         )}
       </div>
-      {!showInstallLocally && scanShown && scanCaption && (
-        <div className="lcars-upload-panel__status" role="status" aria-live="polite">
-          {scanCaption}
-        </div>
-      )}
       {onLoadDemo && variant === 'prominent' && (
         <p className="lcars-upload-panel__hint lcars-upload-panel__hint--demo">
           No export handy? Load the bundled fixture — about 120 hand-written fake conversations
@@ -247,23 +244,38 @@ export function UploadPanel({
         tabIndex={-1}
       />
 
-      {state.status === 'parsing' && (
-        <div className="lcars-upload-panel__status" role="status" aria-live="polite">
-          PARSING {state.label}…
-        </div>
-      )}
+      {/*
+        Single persistent polite live region. Three separate role="status"
+        regions used to mount/unmount as state transitioned (scan-caption,
+        parsing, success). Polite live-region announcements only fire on
+        text-content mutations inside a *persistent* region — unmount/
+        remount is a brand-new region the SR may treat as initial content
+        (no announcement). Consolidating into one container with content
+        swapped by state keeps announcements reliable.
+        Error is structurally separate (role="alert", assertive) — the
+        loop-brief exception is correct: failures merit interruption.
+      */}
+      <div
+        className={
+          'lcars-upload-panel__status' +
+          (state.status === 'success' ? ' lcars-upload-panel__status--ok' : '')
+        }
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {state.status === 'parsing' && `PARSING ${state.label}…`}
+        {state.status === 'success' &&
+          `LOADED ${state.count} CONVERSATIONS FROM ${state.label}`}
+        {state.status !== 'parsing' &&
+          state.status !== 'success' &&
+          !showInstallLocally &&
+          scanShown &&
+          scanCaption}
+      </div>
       {state.status === 'error' && (
         <div className="lcars-upload-panel__status lcars-upload-panel__status--error" role="alert">
           {state.message}
-        </div>
-      )}
-      {state.status === 'success' && (
-        <div
-          className="lcars-upload-panel__status lcars-upload-panel__status--ok"
-          role="status"
-          aria-live="polite"
-        >
-          LOADED {state.count} CONVERSATIONS FROM {state.label}
         </div>
       )}
     </section>

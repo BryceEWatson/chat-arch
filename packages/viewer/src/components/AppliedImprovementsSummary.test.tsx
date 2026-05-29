@@ -255,7 +255,12 @@ describe('AppliedImprovementsSummary', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /VIEW PATCH LEDGER/i }));
     // Most-recent first: rule second is at the top.
-    const buttons = screen.getAllByTitle("Jump to this pattern's card");
+    // Iter-7 a11y: per-row buttons now expose the full row context
+    // (rule + bucket + target + when) via aria-label; the prior
+    // mouse-only `title=` redundancy was dropped.
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.lcars-applied-summary__row-btn'),
+    );
     expect(buttons).toHaveLength(2);
     fireEvent.click(buttons[0]!);
     expect(onSelect).toHaveBeenCalledWith('second');
@@ -310,8 +315,11 @@ describe('AppliedImprovementsSummary', () => {
         );
         // Phase 4 P0.5: with no `onRefreshIndex` callback wired here,
         // the chip falls back to the install-locally hosted copy.
+        // Iter-7 a11y: copy shortened to fit within stale-chip header
+        // real estate; "INSTALL LOCALLY" is the shortened form of the
+        // prior "INSTALL CHAT-ARCH LOCALLY TO REFRESH".
         expect(
-          screen.getByText(/INDEX IS STALE — INSTALL CHAT-ARCH LOCALLY/i),
+          screen.getByText(/INDEX IS STALE — INSTALL LOCALLY/i),
         ).toBeDefined();
       } finally {
         vi.useRealTimers();
@@ -401,8 +409,11 @@ describe('AppliedImprovementsSummary', () => {
             onRefreshIndex={onRefresh}
           />,
         );
+        // Iter-7 a11y: aria-label dropped in favor of letting visible
+        // text drive the accessible name; visible label shortened
+        // from the prior "RUN UPDATE LOCAL TO CHECK FOR NEW VIOLATIONS".
         const chip = screen.getByRole('button', {
-          name: /index is stale — click to refresh/i,
+          name: /INDEX IS STALE — REFRESH/i,
         });
         expect(chip.tagName).toBe('BUTTON');
         fireEvent.click(chip);
@@ -430,7 +441,9 @@ describe('AppliedImprovementsSummary', () => {
             onSelectPattern={() => {}}
           />,
         );
-        const chip = screen.getByText(/INDEX IS STALE — INSTALL CHAT-ARCH LOCALLY/i);
+        // Iter-7 a11y: visible copy shortened to fit chip header real
+        // estate. Drops "CHAT-ARCH" + "TO REFRESH" tail.
+        const chip = screen.getByText(/INDEX IS STALE — INSTALL LOCALLY TO REFRESH/i);
         expect(chip.tagName).toBe('SPAN');
         // Non-interactive — no click handler attached as a button.
         expect(

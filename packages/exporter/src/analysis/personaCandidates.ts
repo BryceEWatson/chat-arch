@@ -30,7 +30,7 @@ import type {
   SessionManifest,
   UnifiedSessionEntry,
 } from '@chat-arch/schema';
-import { THRESHOLDS } from '@chat-arch/analysis';
+import { THRESHOLDS, unwrapEnvelope } from '@chat-arch/analysis';
 import { logger } from '../lib/logger.js';
 
 const NUM_QUARTILES = 4;
@@ -362,9 +362,18 @@ function parseJsonlUserTurns(
     if (text === null) continue;
     const trimmed = text.trim();
     if (trimmed.length === 0) continue;
-    if (WRAPPER_PREFIXES.some((p) => trimmed.startsWith(p))) continue;
-    if (trimmed.length > MAX_USER_PROMPT_CHARS) continue;
-    turns.push({ sessionId, userTurnIndex: idx, text: trimmed });
+    // Two-stage envelope handling. The legacy guard skips a turn
+    // outright if its first non-blank line is a wrapper prefix, which
+    // false-negatives on `<command-message>…</command-args>` blocks
+    // followed by real user prose. unwrapEnvelope unwraps those into
+    // `/cmd args + prose`, then drops turns that are pure wrapper
+    // noise (system-reminder, task-notification). If both stages
+    // agree the turn is wrappers-only, skip it the same way as before.
+    const unwrapped = unwrapEnvelope(trimmed);
+    if (unwrapped === null) continue;
+    if (WRAPPER_PREFIXES.some((p) => unwrapped.startsWith(p))) continue;
+    if (unwrapped.length > MAX_USER_PROMPT_CHARS) continue;
+    turns.push({ sessionId, userTurnIndex: idx, text: unwrapped });
     idx += 1;
   }
   return turns;

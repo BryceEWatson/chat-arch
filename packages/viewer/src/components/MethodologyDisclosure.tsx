@@ -25,7 +25,7 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
         are not a random draw — they reflect what the problem looked
         like in the moment. Any contrast between groups co-varies with
         problem difficulty, fatigue, time of day, and dozens of other
-        factors we don&rsquo;t capture.
+        factors we don’t capture.
       </>
     ),
   },
@@ -46,7 +46,7 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
       <>
         The composite score is a weighted sum of objective signals (PR
         landings, test passes, build passes, rework, affirmation). The
-        weights are the author&rsquo;s judgement, version-stamped and
+        weights are the author’s judgement, version-stamped and
         refittable. A different weighting may surface different
         trajectories. Surface drops the cached file and recomputes when
         the weights version bumps.
@@ -93,7 +93,7 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
         would have to be to fully explain the matched-pair contrast.
         It is computed on the CI bound nearest the null, not the point
         estimate. When the CI straddles null we surface
-        &ldquo;N/A &mdash; contrast not distinguishable from null&rdquo;
+        “N/A — contrast not distinguishable from null”
         rather than a misleading number.
       </>
     ),
@@ -106,9 +106,9 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
     body: (
       <>
         Viewer copy across these surfaces is checked against a {/* allow-causal */}
-        no-causal-language linter — words like &ldquo;because&rdquo;, {/* allow-causal */}
-        &ldquo;caused by&rdquo;, &ldquo;due to&rdquo;, and {/* allow-causal */}
-        &ldquo;effect of&rdquo; are forbidden. Reading the surface {/* allow-causal */}
+        no-causal-language linter — words like “because”, {/* allow-causal */}
+        “caused by”, “due to”, and {/* allow-causal */}
+        “effect of” are forbidden. Reading the surface {/* allow-causal */}
         as a causal estimate is reading it wrong.
       </>
     ),
@@ -127,7 +127,7 @@ const CAVEATS: ReadonlyArray<{ title: string; body: ReactNode }> = [
         shifts a posterior threshold) but motivated by the same intent:
         a persistently re-emerging narrative should face a higher bar
         each time. After cap-K dismissals the narrative is shelved
-        permanently and hidden unless the &ldquo;show shelved&rdquo;
+        permanently and hidden unless the “show shelved”
         toggle is on.
       </>
     ),

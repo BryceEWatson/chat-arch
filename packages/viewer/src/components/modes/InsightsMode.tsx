@@ -410,10 +410,10 @@ export function InsightsMode({
       {/* ----------------------------- CONFIG IMPACT --------------------- */}
       <section
         className="lcars-insights__section"
-        aria-label="config impact snapshots"
+        aria-labelledby="insights-config-h"
       >
         <header className="lcars-insights__section-header">
-          <h3 className="lcars-insights__section-title">CONFIG IMPACT</h3>
+          <h3 id="insights-config-h" className="lcars-insights__section-title">CONFIG IMPACT</h3>
           <p className="lcars-insights__section-blurb">
             Pre-vs-post window snapshots around config-history commits
             (CLAUDE.md, skills, settings). Descriptive contrasts only —
@@ -467,6 +467,7 @@ export function InsightsMode({
                             className="lcars-insights__chip lcars-insights__chip--stale"
                             data-testid={`stale-ack-${key}`}
                             title="The CI moved or post-n grew significantly since this row was acknowledged. Re-review."
+                            aria-label="STALE ACK — re-review: the CI moved or post-window n grew significantly since this row was acknowledged"
                           >
                             STALE ACK — re-review
                           </span>
@@ -559,13 +560,13 @@ export function InsightsMode({
       {/* ----------------------------- KNOWLEDGE DEBT -------------------- */}
       <section
         className="lcars-insights__section"
-        aria-label="knowledge debt clusters"
+        aria-labelledby="insights-debt-h"
       >
         <header className="lcars-insights__section-header">
-          <h3 className="lcars-insights__section-title">KNOWLEDGE DEBT</h3>
+          <h3 id="insights-debt-h" className="lcars-insights__section-title">KNOWLEDGE DEBT</h3>
           <p className="lcars-insights__section-blurb">
             First-user-turn questions that recur across sessions — a
-            signal the answer isn&rsquo;t sticking in your notes or
+            signal the answer isn’t sticking in your notes or
             CLAUDE.md. Each cluster is a candidate for a single
             artifact that pays the debt down.
           </p>
@@ -657,6 +658,7 @@ export function InsightsMode({
                                 type="button"
                                 className="lcars-insights__evidence-pill"
                                 onClick={() => onSelectSession(sid)}
+                                aria-label={`open session ${sid}`}
                               >
                                 ▸ session: {sid.slice(0, 8)}
                               </button>
@@ -703,6 +705,7 @@ export function InsightsMode({
                             )
                           }
                           title={`Hide this cluster. It will return when its size grows ≥${THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier}× from now.`}
+                          aria-label={`Dismiss cluster. It will return to the active list when its size grows by at least ${THRESHOLDS.actionBanner.knowledgeDebtRepromotionGrowthMultiplier} times from now.`}
                         >
                           DISMISS
                         </button>
@@ -768,10 +771,10 @@ export function InsightsMode({
       {/* ----------------------------- REFLEXIVE ------------------------ */}
       <section
         className="lcars-insights__section"
-        aria-label="reflexive matched-pair contrast"
+        aria-labelledby="insights-reflexive-h"
       >
         <header className="lcars-insights__section-header">
-          <h3 className="lcars-insights__section-title">REFLEXIVE</h3>
+          <h3 id="insights-reflexive-h" className="lcars-insights__section-title">REFLEXIVE</h3>
           <p className="lcars-insights__section-blurb">
             1-nearest-neighbor matched-pair contrast: chat-arch-touched
             sessions vs. control. Pre-treatment covariates only

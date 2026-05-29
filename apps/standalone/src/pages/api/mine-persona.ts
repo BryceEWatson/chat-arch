@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import { exitCodeHint, translateSpawnError } from '../../lib/spawnDiagnostics.js';
 import {
   assertDataDirContained,
   handleDataDirGuardError,
@@ -107,10 +108,16 @@ export function classifyOutcome(
   probe: PersonaOutcomeProbe,
 ): PersonaMiningVerdict {
   if (spawnError !== null) {
-    return { ok: false, reason: `spawn error: ${spawnError.message}` };
+    return {
+      ok: false,
+      reason: `couldn't launch the claude CLI — ${translateSpawnError(spawnError)}`,
+    };
   }
   if (exitCode !== 0) {
-    return { ok: false, reason: `claude CLI exited with code ${exitCode}` };
+    return {
+      ok: false,
+      reason: `the claude CLI exited with code ${exitCode}${exitCodeHint(exitCode)}`,
+    };
   }
   if (probe.statusFileStatus === 'error') {
     const msg = probe.statusFileError ?? '(no message in status file)';
@@ -337,7 +344,7 @@ async function streamMinePersona(
   }
 
   const extraStderr = outcome.spawnError
-    ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
+    ? '\nspawn error: ' + translateSpawnError(outcome.spawnError)
     : '';
 
   const probe = await probeOutcome(repoRoot(), dataDir, requestId);

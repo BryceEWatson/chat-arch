@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { onActivate } from '../util/a11y.js';
+import { onActivate, useFocusTrap } from '../util/a11y.js';
 import { PHASE_7_RESERVED_FILES, type TierFileState } from '../data/analysisFetch.js';
 
 /**
@@ -51,6 +51,7 @@ function formatDate(ms: number): string {
 
 export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: TierSheetProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef<HTMLDivElement | null>(null);
 
   // Esc-to-close. The viewer's other dialog surfaces handle this the same
   // way (see ChatArchViewer drill-in hash handler).
@@ -64,6 +65,8 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useFocusTrap(true, rootRef, closeRef);
 
   const headerCopy =
     tierStatus === 'browser'
@@ -85,11 +88,15 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
         className="lcars-tier-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="Analysis tier details"
+        aria-labelledby="lcars-tier-sheet-title"
+        tabIndex={-1}
       >
         <header className="lcars-tier-sheet__header">
-          <h2 className="lcars-tier-sheet__title">ANALYSIS TIERS</h2>
+          <h2 id="lcars-tier-sheet-title" className="lcars-tier-sheet__title">
+            ANALYSIS TIERS
+          </h2>
           <div
+            ref={closeRef}
             className="lcars-tier-sheet__close"
             role="button"
             tabIndex={0}
@@ -101,19 +108,23 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
           </div>
         </header>
         <p className="lcars-tier-sheet__summary">{headerCopy}</p>
+        <h3 className="lcars-tier-sheet__subhead">What ships now</h3>
         <p className="lcars-tier-sheet__hint">
           Search, filters, exact-duplicate clusters, and zombie-project detection run in-page for
           every source, including claude.ai uploads. What&apos;s genuinely missing for cloud
           sessions is model identity, token counts, and cost: the claude.ai Privacy Export is
           content-only, so those fields are hidden on cloud cards and the cost sparklines cover
           CLI / Desktop / Cowork sessions only. Running SCAN LOCAL doesn&apos;t change this —
-          model/cost for cloud rows can&apos;t be recovered from any side of the pipeline. The
-          extended tier is what LLM-assisted analysis over your full transcript corpus would add:
-          semantic similarity, why a project stalled, problems you re-solved months apart,
-          reusable prompt templates, cost post-mortems, and candidate Claude-Code skills
-          synthesized from your actual usage. Those need a local pass — running an LLM over
-          every session isn&apos;t something a browser tab should do (cost, privacy, throughput)
-          — but the tool that runs that pass isn&apos;t written yet. This sheet is the preview.
+          model/cost for cloud rows can&apos;t be recovered from any side of the pipeline.
+        </p>
+        <h3 className="lcars-tier-sheet__subhead">What the extended tier would add</h3>
+        <p className="lcars-tier-sheet__hint">
+          LLM-assisted analysis over your full transcript corpus: semantic similarity, why a
+          project stalled, problems you re-solved months apart, reusable prompt templates, cost
+          post-mortems, and candidate Claude-Code skills synthesized from your actual usage.
+          Those need a local pass — running an LLM over every session isn&apos;t something a
+          browser tab should do (cost, privacy, throughput) — but the tool that runs that pass
+          isn&apos;t written yet. This sheet is the preview.
         </p>
         <ul className="lcars-tier-sheet__list" aria-label="tier-2 analysis files">
           {PHASE_7_RESERVED_FILES.map((filename) => {
@@ -139,7 +150,7 @@ export function TierSheet({ tierStatus, tierPresentCount, tierFiles, onClose }: 
                   {present && state.generatedAt != null
                     ? formatDate(state.generatedAt)
                     : present
-                      ? 'present'
+                      ? ''
                       : 'coming soon'}
                 </span>
               </li>

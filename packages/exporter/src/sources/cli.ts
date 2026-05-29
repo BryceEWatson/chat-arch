@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TokenTotals, UnifiedSessionEntry } from '@chat-arch/schema';
 import { UNTITLED_SESSION } from '@chat-arch/schema';
+import { unwrapEnvelope } from '@chat-arch/analysis';
 import { readJsonlLines } from '../lib/jsonl.js';
 import { runWithConcurrency } from '../lib/concurrency.js';
 import { buildPreview } from '../lib/preview.js';
@@ -729,17 +730,27 @@ function resolveTitle(agg: TranscriptAggregate): {
   if (agg.aiTitle !== undefined && agg.aiTitle.length > 0) {
     return { title: agg.aiTitle, titleSource: 'ai-title' };
   }
+  // Levels 2 + 3 fall back to user-turn text, which carries the same
+  // harness-envelope leak that pollutes `buildPreview`. Unwrap before
+  // truncating so scheduled-task / slash-command sessions get a
+  // readable title instead of `<command-message>loop</command-...`.
   if (agg.lastPrompt !== undefined && agg.lastPrompt.length > 0) {
-    return {
-      title: truncate(agg.lastPrompt, TITLE_FALLBACK_MAX_CHARS),
-      titleSource: 'first-prompt',
-    };
+    const unwrapped = unwrapEnvelope(agg.lastPrompt);
+    if (unwrapped !== null && unwrapped.length > 0) {
+      return {
+        title: truncate(unwrapped, TITLE_FALLBACK_MAX_CHARS),
+        titleSource: 'first-prompt',
+      };
+    }
   }
   if (agg.firstUserText !== undefined && agg.firstUserText.length > 0) {
-    return {
-      title: truncate(agg.firstUserText, TITLE_FALLBACK_MAX_CHARS),
-      titleSource: 'first-prompt',
-    };
+    const unwrapped = unwrapEnvelope(agg.firstUserText);
+    if (unwrapped !== null && unwrapped.length > 0) {
+      return {
+        title: truncate(unwrapped, TITLE_FALLBACK_MAX_CHARS),
+        titleSource: 'first-prompt',
+      };
+    }
   }
   return { title: UNTITLED_SESSION, titleSource: 'fallback' };
 }

@@ -79,9 +79,9 @@ function TopicsOptInGate({ onEnable }: TopicsOptInGateProps) {
     <div
       className="lcars-topics-opt-in"
       role="region"
-      aria-label="enable topic clustering"
+      aria-labelledby="lcars-topics-opt-in-h"
     >
-      <h2 className="lcars-topics-opt-in__title">ENABLE TOPIC CLUSTERING</h2>
+      <h2 id="lcars-topics-opt-in-h" className="lcars-topics-opt-in__title">ENABLE TOPIC CLUSTERING</h2>
       <p className="lcars-topics-opt-in__body">
         Computes topic clusters using a 36MB embedding model downloaded one time from Hugging
         Face. The download stays in your browser cache; nothing about your conversations is
@@ -209,18 +209,23 @@ function TopicsIndex({ topics, onSelectTopic, onDisable }: TopicsIndexProps) {
   return (
     <div className="lcars-topics-index">
       <header className="lcars-topics-index__header">
-        <h2 className="lcars-topics-index__title">
-          TOPICS{' '}
-          <button
-            type="button"
-            className="lcars-topics-index__disable"
-            onClick={onDisable}
-            aria-label="disable topic clustering and return to opt-in placeholder"
-            title="clears the local opt-in flag — re-enabling triggers the embedding download again"
-          >
-            (disable)
-          </button>
-        </h2>
+        <h2 className="lcars-topics-index__title">TOPICS</h2>
+        {/* Iter-10 a11y: disable button moved OUT of the h2 (button-
+            inside-heading reads as "TOPICS, disable..." on heading
+            nav). Parens dropped (read as "left paren" on NVDA).
+            title= was carrying load-bearing risk explanation mouse-
+            only — inlined into an sr-only describedby. */}
+        <button
+          type="button"
+          className="lcars-topics-index__disable"
+          onClick={onDisable}
+          aria-describedby="lcars-topics-disable-hint"
+        >
+          disable
+        </button>
+        <span id="lcars-topics-disable-hint" className="lcars-sr-only">
+          Clears the local opt-in flag. Re-enabling triggers the embedding model download again.
+        </span>
         <label className="lcars-topics-index__filter">
           <span className="lcars-topics-index__filter-label" aria-hidden="true">
             FILTER
@@ -242,16 +247,19 @@ function TopicsIndex({ topics, onSelectTopic, onDisable }: TopicsIndexProps) {
               role="button"
               tabIndex={0}
               className="lcars-topics-index__row"
-              aria-label={`open topic ${t.displayName}`}
               onClick={() => onSelectTopic(t.id)}
               onKeyDown={(e) => onActivate(e, () => onSelectTopic(t.id))}
             >
-              <span className="lcars-topics-index__row-name"># {t.displayName}</span>
+              <span className="lcars-sr-only">open topic </span>
+              <span className="lcars-topics-index__row-name">
+                <span aria-hidden="true"># </span>
+                {t.displayName}
+              </span>
               <span className="lcars-topics-index__row-meta">
-                <span title="sessions tagged with this topic">
+                <span>
                   {t.sessionIds.length} session{t.sessionIds.length === 1 ? '' : 's'}
                 </span>
-                <span title="distinct projects this topic crosses">
+                <span>
                   {t.projectIds.length} project{t.projectIds.length === 1 ? '' : 's'}
                 </span>
               </span>
@@ -304,12 +312,15 @@ function TopicDetail({
         <button
           type="button"
           className="lcars-project-detail__back"
-          aria-label="back to topics index"
+          aria-label="BACK to topics index"
           onClick={onBack}
         >
-          ← TOPICS
+          <span aria-hidden="true">← </span>TOPICS
         </button>
-        <h2 className="lcars-topic-detail__title"># {topic.displayName}</h2>
+        <h2 className="lcars-topic-detail__title">
+          <span aria-hidden="true"># </span>
+          {topic.displayName}
+        </h2>
       </header>
       {projectsForTopic.length > 0 && (
         <section className="lcars-topic-detail__projects" aria-label="projects with this topic">

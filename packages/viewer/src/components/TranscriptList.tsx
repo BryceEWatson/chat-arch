@@ -16,9 +16,27 @@ function entryTimestamp(entry: LocalTranscriptEntry): string {
   return typeof ts === 'string' ? ts : '';
 }
 
+function formatTimeOfDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString('en-US', { hour12: false });
+}
+
+// Underscore-bearing type strings (`tool_use`, `_malformed`) read as
+// "underscore" on NVDA + VoiceOver. Show the same word visually (CSS
+// uppercases via the chrome rule) but expose a clean space-separated
+// form to the DOM so the SR rendering is unambiguous.
+function visibleType(rawType: string): string {
+  return rawType.replace(/_/g, ' ').trim();
+}
+
 export function TranscriptList({ entries }: TranscriptListProps) {
   if (entries.length === 0) {
-    return <div className="lcars-transcript-list__empty">(empty transcript)</div>;
+    return (
+      <div className="lcars-transcript-list__empty">
+        (transcript has no parsed lines)
+      </div>
+    );
   }
   return (
     <ol className="lcars-transcript-list">
@@ -38,20 +56,37 @@ export function TranscriptList({ entries }: TranscriptListProps) {
         const className = `lcars-transcript-entry lcars-transcript-entry--${type}${
           isMalformed ? ' lcars-transcript-entry--malformed' : ''
         }`;
+        const displayType = visibleType(type);
         return (
           <li key={idx} className={className}>
             <div className="lcars-transcript-entry__header">
-              <span className="lcars-transcript-entry__type">{type.toUpperCase()}</span>
-              {ts && <time className="lcars-transcript-entry__time">{ts}</time>}
+              <span className="lcars-transcript-entry__type">{displayType}</span>
+              {ts && (
+                <time
+                  className="lcars-transcript-entry__time"
+                  dateTime={ts}
+                  aria-label={ts}
+                >
+                  {formatTimeOfDay(ts)}
+                </time>
+              )}
               {isMalformed && entry.type === '_malformed' && (
-                <span className="lcars-transcript-entry__err">{entry.error}</span>
+                <span className="lcars-transcript-entry__err">
+                  <span className="lcars-sr-only">parse error: </span>
+                  {entry.error}
+                </span>
               )}
             </div>
             {preview && <pre className="lcars-transcript-entry__body">{preview}</pre>}
             {hasMore && (
               <details className="lcars-transcript-entry__details">
-                <summary className="lcars-transcript-entry__summary">full content</summary>
-                <pre className="lcars-transcript-entry__full">{full}</pre>
+                <summary
+                  className="lcars-transcript-entry__summary"
+                  aria-label={`full content for ${displayType} entry ${idx + 1}`}
+                >
+                  full content
+                </summary>
+                <pre className="lcars-transcript-entry__full" tabIndex={0}>{full}</pre>
               </details>
             )}
           </li>

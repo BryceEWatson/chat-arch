@@ -96,7 +96,8 @@ describe('mine-narratives — classifyOutcome (silent-abort detection)', () => {
       emptyProbe,
     );
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/spawn error: ENOENT claude/);
+    expect(verdict.reason).toMatch(/couldn't launch the claude CLI/);
+    expect(verdict.reason).toMatch(/claude CLI was not found on PATH/);
   });
 
   it('takes status-file `error` precedence over a fresh narratives.json', () => {

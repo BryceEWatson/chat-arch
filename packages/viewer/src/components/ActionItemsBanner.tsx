@@ -302,7 +302,7 @@ export function ActionItemsBanner({
           data-testid="action-items-dismiss"
           onClick={onDismiss}
         >
-          ✕
+          <span aria-hidden="true">✕</span>
         </button>
       </div>
       {topItems.length > 0 && (

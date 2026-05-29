@@ -6,6 +6,7 @@ import type {
   CorrectionsFile,
 } from '@chat-arch/schema';
 import { formatRelativeUnit } from '../util/time.js';
+import { stripMarkdown } from '../util/stripMarkdown.js';
 
 /**
  * Phase 2b workshop surface — "Since you patched" summary.
@@ -221,25 +222,31 @@ export function AppliedImprovementsSummary({
   return (
     <section
       className="lcars-applied-summary"
-      aria-label="since you patched"
+      aria-labelledby="lcars-applied-summary-h"
     >
       <header className="lcars-applied-summary__header">
-        <h3 className="lcars-applied-summary__headline">
-          {headlineUpper ? `SINCE YOU PATCHED ${headlineUpper}` : 'SINCE YOU PATCHED'}
+        <h3
+          id="lcars-applied-summary-h"
+          className="lcars-applied-summary__headline"
+        >
+          SINCE YOU PATCHED
+          {headlineUpper && (
+            <>
+              {' '}
+              <span className="lcars-applied-summary__headline-when">
+                {headlineUpper}
+              </span>
+            </>
+          )}
         </h3>
         {indexIsStale && (onRefreshIndex ? (
-          // Actionable variant — Maya can fix the warning by clicking
-          // it directly. The arrow glyph telegraphs "this does
-          // something"; the chrome's UPDATE LOCAL button is a longer
-          // hunt.
           <button
             type="button"
             className="lcars-applied-summary__stale lcars-applied-summary__stale--button"
-            aria-label="index is stale — click to refresh"
             title="Refresh the corpus so recurring counts include new violations."
             onClick={onRefreshIndex}
           >
-            INDEX IS STALE — RUN UPDATE LOCAL TO CHECK FOR NEW VIOLATIONS
+            INDEX IS STALE — REFRESH
             <span className="lcars-applied-summary__stale-arrow" aria-hidden="true"> →</span>
           </button>
         ) : (
@@ -249,13 +256,8 @@ export function AppliedImprovementsSummary({
           // LOCAL doesn't exist on hosted, so the copy must point the
           // visitor at the install path instead of a non-existent
           // button.
-          <span
-            className="lcars-applied-summary__stale"
-            role="status"
-            aria-label="index is stale"
-            title="Install chat-arch locally to refresh the corpus before trusting recurring counts."
-          >
-            INDEX IS STALE — INSTALL CHAT-ARCH LOCALLY TO REFRESH
+          <span className="lcars-applied-summary__stale">
+            INDEX IS STALE — INSTALL LOCALLY TO REFRESH
           </span>
         ))}
       </header>
@@ -306,12 +308,11 @@ export function AppliedImprovementsSummary({
                   type="button"
                   className="lcars-applied-summary__row-btn"
                   onClick={() => onSelectPattern(entry.patternId)}
-                  aria-label={`open pattern ${entry.ruleSummary}`}
-                  title="Jump to this pattern's card"
+                  aria-label={`open pattern: ${stripMarkdown(entry.ruleSummary).replace(/"/g, "'")}, ${bucket.toLowerCase()}, ${targetLabel}, applied ${when}`}
                 >
                   <span className="lcars-applied-summary__row-when">{when}</span>
                   <span className="lcars-applied-summary__row-rule">
-                    {entry.ruleSummary}
+                    {stripMarkdown(entry.ruleSummary)}
                   </span>
                   <span className="lcars-applied-summary__row-target">
                     <span className="lcars-applied-summary__row-target-kind">
