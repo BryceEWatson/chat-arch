@@ -76,6 +76,13 @@ export interface SkillCurveResult {
   readonly askPerActiveSession: number;
   /** Number of weeks present in the series (after filtering empty padding). */
   readonly weeksPresent: number;
+  /**
+   * The weekly series this result was computed from, preserved so the
+   * viewer can draw the sparkline. Carried verbatim from the input
+   * {@link SkillCurveSeries.points}; chronological order is the caller's
+   * responsibility. Empty for series that never had points.
+   */
+  readonly points: readonly SkillCurvePoint[];
 }
 
 export interface AnalyzeSkillCurvesOptions {
@@ -167,6 +174,7 @@ export function analyzeSkillCurves(
         pValueAdjusted: Number.NaN,
         askPerActiveSession: r.askPerActiveSession,
         weeksPresent: r.weeksPresent,
+        points: r.points,
       };
     }
     const mk = mkByTopic.get(r.topicId)!;
@@ -191,6 +199,7 @@ export function analyzeSkillCurves(
       pValueAdjusted: pAdj,
       askPerActiveSession: r.askPerActiveSession,
       weeksPresent: r.weeksPresent,
+      points: r.points,
     };
   });
 
