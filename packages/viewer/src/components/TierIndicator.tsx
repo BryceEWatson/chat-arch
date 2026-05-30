@@ -58,8 +58,7 @@ export function TierIndicator({ tierStatus, tierPresentCount, tierFiles }: TierI
         role="button"
         tabIndex={0}
         aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`analysis tier: ${label}. Click to open details.`}
+        aria-label={`analysis tier: ${label}, opens details`}
         onClick={() => setOpen(true)}
         onKeyDown={(e) => onActivate(e, () => setOpen(true))}
       >

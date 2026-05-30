@@ -119,12 +119,16 @@ function fmtSid(sid: string): string {
           id="playbook-data"
           set:html={
             // Defensive escape: JSON.stringify does NOT escape '<' (so a
-            // user-corpus excerpt containing literal '</script>' would
-            // close this tag and inject the remainder as live HTML), nor
-            // U+2028 / U+2029 (which JS treats as line terminators
-            // inside string literals — a real foot-gun in <script>
-            // blocks). Escape all three to their \u forms; JSON.parse on
-            // the consumer side decodes them transparently.
+            // user-corpus excerpt containing a literal closing script tag
+            // would terminate this inline block and inject the remainder
+            // as live HTML), nor U+2028 / U+2029 (which JS treats as line
+            // terminators inside string literals — a real foot-gun inside
+            // inline script blocks). Escape all three to their \u forms;
+            // JSON.parse on the consumer side decodes them transparently.
+            // NB: keep literal "&lt;script&gt;"-style tokens out of this
+            // comment — Vite's dep pre-scanner extracts script blocks by
+            // crude tag matching and an embedded tag desyncs it (which,
+            // with a cleared dep cache, breaks React pre-bundling).
             JSON.stringify({
               hasAuditSignal: playbook.hasAuditSignal,
               patterns: playbook.patterns.map((p) => ({

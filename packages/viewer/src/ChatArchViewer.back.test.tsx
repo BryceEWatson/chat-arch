@@ -116,12 +116,17 @@ function correctionsWithClickablePill(): CorrectionsFile {
 
 function locationLabel(): string | null {
   // Probe the active surface. Prefer the sidebar's `aria-current="page"`
-  // aria-label (e.g. `mode SESSIONS`) since that's the user-facing label
-  // string. Detail mode has no sidebar entry (it's an overlay) — fall
-  // back to the frame's `data-active-mode='detail'` for that case.
+  // aria-label (e.g. `mode SESSIONS — Full grid of every session…`)
+  // since that's the user-facing label string. The tooltip suffix that
+  // follows ` — ` is documentation, not the surface identity — strip
+  // it here so the test API only cares about the short surface name.
+  // Detail mode has no sidebar entry (it's an overlay) — fall back to
+  // the frame's `data-active-mode='detail'` for that case.
   const active = document.querySelector('[aria-current="page"]');
   const ariaLabel = active?.getAttribute('aria-label');
-  if (ariaLabel?.startsWith('mode ')) return ariaLabel.replace(/^mode /, '');
+  if (ariaLabel?.startsWith('mode ')) {
+    return ariaLabel.replace(/^mode /, '').replace(/ —.*$/, '');
+  }
   const frame = document.querySelector('.lcars-frame');
   const mode = frame?.getAttribute('data-active-mode');
   return mode === 'detail' ? 'DETAIL' : null;
@@ -167,7 +172,7 @@ describe('ChatArchViewer — BACK from detail restores prior surface (P0.1)', ()
       fireEvent.click(showDetails);
     });
     const evidence = await waitFor(() =>
-      screen.getByRole('button', { name: /EVIDENCE/ }),
+      screen.getByRole('button', { name: /show.*instance/i }),
     );
     act(() => {
       fireEvent.click(evidence);

@@ -305,9 +305,11 @@ export async function runPostMortems(
       });
       generated += 1;
     } catch (err) {
-      errors.push(
-        `${session.id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const raw = err instanceof Error ? err.message : String(err);
+      const reason = /ENOENT/.test(raw)
+        ? 'a required transcript file is missing on disk'
+        : raw;
+      errors.push(`couldn't generate post-mortem for session ${session.id}: ${reason}`);
     }
   }
   return { generated, errors, entries };
@@ -343,10 +345,12 @@ async function runGenerate(req: ValidatedRequest): Promise<GenerateRunOutcome> {
 
   if (req.kinds.has('post-mortem')) {
     if (manifest === null) {
-      errors.push('manifest.json missing — run pnpm exporter run start first.');
+      errors.push(
+        "the session manifest hasn't been built yet — run SCAN LOCAL from the DATA panel first.",
+      );
     } else if (outcomes === null) {
       errors.push(
-        'composite-outcomes.json missing — analysis writer did not run yet.',
+        "the composite-outcome scores haven't been computed yet — re-run SCAN LOCAL; the analysis step needs to complete before post-mortems can be generated.",
       );
     } else {
       const r = await runPostMortems(

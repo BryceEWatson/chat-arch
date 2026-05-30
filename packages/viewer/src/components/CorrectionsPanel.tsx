@@ -596,7 +596,7 @@ export function CorrectionsPanel({
 
   if (load.status === 'loading') {
     return (
-      <section className="lcars-corrections" aria-label="corrections">
+      <section className="lcars-corrections" aria-labelledby="lcars-corrections-h">
         <Header />
         <p className="lcars-corrections__lead">Loading corrections…</p>
       </section>
@@ -605,7 +605,7 @@ export function CorrectionsPanel({
 
   if (load.status === 'error') {
     return (
-      <section className="lcars-corrections" aria-label="corrections">
+      <section className="lcars-corrections" aria-labelledby="lcars-corrections-h">
         <Header />
         <div className="lcars-corrections__error" role="alert">
           <p>Could not load corrections: {load.message}</p>
@@ -655,7 +655,7 @@ export function CorrectionsPanel({
   })();
 
   return (
-    <section className="lcars-corrections" aria-label="corrections">
+    <section className="lcars-corrections" aria-labelledby="lcars-corrections-h">
       <Header
         {...(typeof corrections?.generatedAt === 'number'
           ? { generatedAt: corrections.generatedAt }
@@ -1096,7 +1096,7 @@ function CoverageDetail({
                   <li>
                     <strong>{fmt(actionable)}</strong> actionable
                     <span className="lcars-corrections__pipeline-note">
-                      ({fmt(classified - actionable)} ruled &ldquo;not a real correction&rdquo;)
+                      ({fmt(classified - actionable)} ruled “not a real correction”)
                     </span>
                   </li>
                   <li>
@@ -1134,10 +1134,29 @@ function DangerZone({
   onDismissError,
 }: DangerZoneProps) {
   return (
-    <div className="lcars-corrections__danger" aria-label="danger zone">
+    <section
+      className="lcars-corrections__danger"
+      aria-labelledby="lcars-corrections-danger-h"
+    >
       <div className="lcars-corrections__danger-header">
-        <span className="lcars-corrections__danger-label">DANGER ZONE</span>
+        <h3
+          id="lcars-corrections-danger-h"
+          className="lcars-corrections__danger-label"
+        >
+          DANGER ZONE
+        </h3>
       </div>
+      <span
+        className="lcars-corrections__sr-only"
+        role="status"
+        aria-live="polite"
+      >
+        {state.status === 'busy'
+          ? 'Clear corrections running.'
+          : state.status === 'error'
+            ? `Clear corrections failed: ${state.message}`
+            : ''}
+      </span>
       {state.status === 'idle' && (
         <div className="lcars-corrections__danger-row">
           <p className="lcars-corrections__danger-blurb">
@@ -1163,7 +1182,7 @@ function DangerZone({
       {state.status === 'armed' && (
         <div
           className="lcars-corrections__danger-row"
-          role="dialog"
+          role="group"
           aria-label="confirm clear corrections"
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
@@ -1198,14 +1217,17 @@ function DangerZone({
         </div>
       )}
       {state.status === 'busy' && (
-        <p className="lcars-corrections__danger-blurb" role="status">
-          Clearing…
-        </p>
+        <p className="lcars-corrections__danger-blurb">Clearing…</p>
       )}
       {state.status === 'error' && (
         <div className="lcars-corrections__error" role="alert">
           <p>Clear failed:</p>
-          <pre className="lcars-corrections__error-output">{state.message}</pre>
+          <pre
+            className="lcars-corrections__error-output"
+            tabIndex={0}
+          >
+            {state.message}
+          </pre>
           <button
             type="button"
             className="lcars-corrections__btn lcars-corrections__btn--secondary"
@@ -1215,7 +1237,7 @@ function DangerZone({
           </button>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -1228,7 +1250,7 @@ function Header({ generatedAt }: HeaderProps) {
   return (
     <header className="lcars-corrections__header">
       <div className="lcars-corrections__title-row">
-        <h2 className="lcars-corrections__title">CORRECTIONS</h2>
+        <h2 id="lcars-corrections-h" className="lcars-corrections__title">CORRECTIONS</h2>
         {hasTime && (
           <span
             className="lcars-corrections__time"
@@ -1366,7 +1388,7 @@ function ArmedPreview({ autoWindow, onRun, onCancel }: ArmedPreviewProps) {
   return (
     <div
       className="lcars-corrections__armed"
-      role="dialog"
+      role="group"
       aria-label="confirm mine"
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
@@ -1602,11 +1624,16 @@ function BucketsView({
 
   return (
     <div className="lcars-corrections__buckets">
-      {buckets.map((bucket) => (
+      {buckets.map((bucket) => {
+        const bucketHeadingId = `lcars-corrections-bucket-${bucket.key
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')}-h`;
+        return (
         <section
           key={bucket.key}
           className="lcars-corrections__bucket"
-          aria-label={bucket.label}
+          aria-labelledby={bucketHeadingId}
           data-topic={bucket.key}
           // Signal-based urgency hooks — restore the visual
           // differentiation the dropped --recurring/--encoded/--new
@@ -1617,7 +1644,12 @@ function BucketsView({
           data-has-encoded={bucket.hasEncoded ? 'true' : 'false'}
         >
           <header className="lcars-corrections__bucket-header">
-            <h3 className="lcars-corrections__bucket-title">{bucket.label}</h3>
+            <h3
+              id={bucketHeadingId}
+              className="lcars-corrections__bucket-title"
+            >
+              {bucket.label}
+            </h3>
             <span className="lcars-corrections__bucket-count">
               {bucket.patterns.length}{' '}
               {bucket.patterns.length === 1 ? 'pattern' : 'patterns'}
@@ -1649,7 +1681,8 @@ function BucketsView({
             })}
           </ul>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

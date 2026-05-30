@@ -129,8 +129,12 @@ describe('UpperPanel KPI strip (AC7)', () => {
     );
     const kpiTiles = container.querySelectorAll('.lcars-kpi');
     expect(kpiTiles.length).toBe(4);
+    // iter-14: KPI tiles gained role="group" so their aria-label (which
+    // is otherwise dropped on a bare <div>) is honored by AT. The
+    // load-bearing assertion is that they are NOT role="button" — they
+    // are non-interactive informational tiles after Phase 3.
     for (const tile of Array.from(kpiTiles)) {
-      expect(tile.getAttribute('role')).toBeNull();
+      expect(tile.getAttribute('role')).not.toBe('button');
     }
   });
 });

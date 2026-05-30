@@ -32,12 +32,19 @@ export function TrustStrip({ variant = 'landing' }: TrustStripProps = {}) {
   const className =
     'lcars-trust-strip' + (variant === 'footer' ? ' lcars-trust-strip--footer' : '');
   if (variant === 'footer') {
+    // Footer variant's body truncates with ellipsis at narrow desktop
+    // widths (CSS: `white-space: nowrap; text-overflow: ellipsis`). Add
+    // an explicit title= so the full pledge stays mouse-discoverable
+    // when truncated; SR users get the full text from the visible span
+    // textContent regardless of CSS truncation. Without title= the
+    // truncated escape route was missing entirely.
+    const footerBody = 'Parsed in your browser. No telemetry, no analytics.';
     return (
       <aside className={className} aria-label="local-first data handling">
         <div className="lcars-trust-strip__row">
           <span className="lcars-trust-strip__pledge">LOCAL-FIRST</span>
-          <span className="lcars-trust-strip__body">
-            Parsed in your browser. No telemetry, no analytics.
+          <span className="lcars-trust-strip__body" title={footerBody}>
+            {footerBody}
           </span>
           <RepoLink variant="inline" label="VIEW SOURCE" />
         </div>

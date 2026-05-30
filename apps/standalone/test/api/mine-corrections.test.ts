@@ -90,8 +90,8 @@ describe('mine-corrections — classifyOutcome', () => {
     // through as success.
     const verdict = classifyOutcome(started, 0, null, emptyProbe);
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/did not write a fresh corrections\.json/);
-    expect(verdict.reason).toMatch(/no skill status file written/);
+    expect(verdict.reason).toMatch(/didn't produce a fresh corrections file/);
+    expect(verdict.reason).toMatch(/aborted before writing any progress/);
   });
 
   it('flags the silent-abort path even when corrections.json is stale', () => {
@@ -102,7 +102,7 @@ describe('mine-corrections — classifyOutcome', () => {
       correctionsGeneratedAt: started - 60_000,
     });
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/did not write a fresh corrections\.json/);
+    expect(verdict.reason).toMatch(/didn't produce a fresh corrections file/);
   });
 
   it('surfaces the skill error message when status file says error', () => {
@@ -112,7 +112,9 @@ describe('mine-corrections — classifyOutcome', () => {
       statusFileError: 'Ollama is not running',
     });
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toBe('skill reported error: Ollama is not running');
+    expect(verdict.reason).toBe(
+      'the mining skill reported an error: Ollama is not running',
+    );
   });
 
   it('falls back to a placeholder when status=error has no message', () => {
@@ -122,7 +124,7 @@ describe('mine-corrections — classifyOutcome', () => {
       statusFileError: null,
     });
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/skill reported error/);
+    expect(verdict.reason).toMatch(/mining skill reported an error/);
   });
 
   it('includes the last-known phase when corrections is missing but status was non-error', () => {
@@ -133,7 +135,7 @@ describe('mine-corrections — classifyOutcome', () => {
       statusFileError: null,
     });
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/last skill status: classifying/);
+    expect(verdict.reason).toMatch(/last progress update was: classifying/);
   });
 
   it('reports spawn errors before checking output', () => {
@@ -144,7 +146,8 @@ describe('mine-corrections — classifyOutcome', () => {
       emptyProbe,
     );
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/spawn error.*claude not on PATH/);
+    expect(verdict.reason).toMatch(/couldn't launch the claude CLI/);
+    expect(verdict.reason).toMatch(/PATH/);
   });
 
   it('reports a non-zero exit code over the on-disk probe', () => {
@@ -153,6 +156,23 @@ describe('mine-corrections — classifyOutcome', () => {
       correctionsGeneratedAt: started + 1_000,
     });
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toBe('claude CLI exited with code 1');
+    expect(verdict.reason).toMatch(/^the claude CLI exited with code 1\b/);
+  });
+
+  it('annotates Windows DLL-init exit codes with a remediation hint (positive form)', () => {
+    const verdict = classifyOutcome(started, 0xc0000142, null, emptyProbe);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/Windows DLL initialization/);
+  });
+
+  it('annotates Windows DLL-init exit codes with a remediation hint (negative form)', () => {
+    // Node's child_process delivers Windows abnormal-termination codes
+    // as the signed-int32 cast of the OS-level status. The positive form
+    // 0xC0000142 and the negative form -1073741502 represent the same
+    // failure; the helper must annotate both. Caught by the review-loop
+    // iter-0 adversarial reviewer.
+    const verdict = classifyOutcome(started, -1073741502, null, emptyProbe);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/Windows DLL initialization/);
   });
 });

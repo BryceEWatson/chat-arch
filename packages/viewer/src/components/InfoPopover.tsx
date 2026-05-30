@@ -61,7 +61,7 @@ export function InfoPopover({ ariaLabel, children, className }: InfoPopoverProps
         tabIndex={0}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={ariaLabel}
+        aria-label={`info — ${ariaLabel}`}
         onClick={toggle}
         onKeyDown={(e) => onActivate(e, () => toggle(e))}
       >
@@ -75,7 +75,7 @@ export function InfoPopover({ ariaLabel, children, className }: InfoPopoverProps
         <span
           className="lcars-info-popover__panel"
           role="dialog"
-          aria-label={ariaLabel}
+          aria-label={`${ariaLabel} — details`}
           // Stop propagation so clicking inside the panel doesn't
           // close it via the outside-click handler above.
           onMouseDown={(e) => e.stopPropagation()}

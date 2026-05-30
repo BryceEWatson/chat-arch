@@ -21,7 +21,16 @@ import '@chat-arch/viewer/style.css';
     forcing a hash here would clobber those deep links.
   */}
   <HideViewerSidebar />
-  <main>
+  {/*
+    Skip-link target only — NOT a <main> wrapper. ChatArchViewer
+    renders its own <main className="lcars-mode-area"> internally
+    (ChatArchViewer.tsx ~L2959); wrapping it here would nest two
+    main landmarks. The div carries id="main-content" + tabindex=-1
+    so the page-shell skip-link (BaseLayout) can route focus past
+    AppSidebar on every /sessions deep-link (#data / #chat /
+    #corrections).
+  */}
+  <div id="main-content" tabindex="-1">
     <ChatArchViewer client:load />
-  </main>
+  </div>
 </BaseLayout>

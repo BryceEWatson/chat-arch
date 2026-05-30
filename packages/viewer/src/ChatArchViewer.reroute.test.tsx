@@ -133,7 +133,7 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     // async.
     await waitFor(() => {
       const active = document.querySelector('[aria-current="page"]');
-      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
+      expect(active?.getAttribute('aria-label')).toMatch(/^mode CORRECTIONS\b/);
     });
   });
 
@@ -148,7 +148,7 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     // Give the post-load effect a tick to settle and re-render.
     await new Promise((r) => setTimeout(r, 0));
     const active = document.querySelector('[aria-current="page"]');
-    expect(active?.getAttribute('aria-label')).toBe('mode SESSIONS');
+    expect(active?.getAttribute('aria-label')).toMatch(/^mode SESSIONS\b/);
   });
 
   it('stays in URL-hash-encoded mode when a hash is present (URL wins)', async () => {
@@ -163,7 +163,7 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     // the URL hash takes precedence over the reroute heuristic so deep
     // links aren't yanked.
     const active = document.querySelector('[aria-current="page"]');
-    expect(active?.getAttribute('aria-label')).toBe('mode PROJECTS');
+    expect(active?.getAttribute('aria-label')).toMatch(/^mode PROJECTS\b/);
   });
 
   it('scrubs stale Phase-3-cut hashes (#cost / #constellation) and lets the reroute fire', async () => {
@@ -177,7 +177,7 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     render(<ChatArchViewer manifest={sampleManifest} />);
     await waitFor(() => {
       const active = document.querySelector('[aria-current="page"]');
-      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
+      expect(active?.getAttribute('aria-label')).toMatch(/^mode CORRECTIONS\b/);
     });
     // And the stale hash is gone — no ghost `#cost` left in the URL.
     expect(window.location.hash).toBe('');
@@ -217,7 +217,7 @@ describe('ChatArchViewer — Phase 2a default-mode reroute', () => {
     render(<ChatArchViewer manifest={sampleManifest} />);
     await waitFor(() => {
       const active = document.querySelector('[aria-current="page"]');
-      expect(active?.getAttribute('aria-label')).toBe('mode CORRECTIONS');
+      expect(active?.getAttribute('aria-label')).toMatch(/^mode CORRECTIONS\b/);
     });
   });
 });

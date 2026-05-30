@@ -413,7 +413,18 @@ export function UpperPanel({
                 append in `zipUpload.ts`; keep the full filename in the title
                 tooltip for users who want to verify which ZIP is loaded.
               */}
-              <span className="lcars-upper-panel__upload-chip-label" title={uploadLabel}>
+              {/*
+                The full filename was previously mouse-only via `title=`,
+                unreachable for keyboard/touch/AT users. Surface it via
+                aria-label (filename is masked at upload entry — see
+                maskedUploadLabel — so no PII leak) while keeping `title`
+                for the mouse-hover tooltip.
+              */}
+              <span
+                className="lcars-upper-panel__upload-chip-label"
+                title={uploadLabel}
+                aria-label={`uploaded ZIP: ${uploadLabel}`}
+              >
                 ZIP {extractUploadSize(uploadLabel)}
               </span>
               <span
@@ -431,44 +442,52 @@ export function UpperPanel({
         )}
       </div>
 
-      <div
-        className="lcars-upper-panel__tabs"
-        role="tablist"
-        aria-label="upper panel view"
-      >
+      {/*
+        Tabs use plain <button> + aria-pressed rather than ARIA tabs pattern.
+        Tabs pattern requires aria-controls/tabpanel/aria-labelledby wiring
+        plus arrow-key roving-tabindex; this view-switcher is two buttons
+        with no inner-content navigation. role="tablist"/role="tab" with
+        only aria-selected (no aria-controls, no roving-tabindex) was an
+        incomplete contract that broke under SR — converting to a
+        button-group (per WAI-ARIA Authoring Practices for toggle-button
+        groups) honors the actual behavior. iter-14 simplification.
+      */}
+      <div className="lcars-upper-panel__tabs" role="group" aria-label="upper panel view">
         <button
           type="button"
           className={`lcars-upper-panel__tab${tab === 'overview' ? ' lcars-upper-panel__tab--active' : ''}`}
-          role="tab"
-          aria-selected={tab === 'overview'}
+          aria-pressed={tab === 'overview'}
           onClick={() => setTab('overview')}
         >
           OVERVIEW
         </button>
-        {/*
-          Renamed from "ANALYSIS" → "FINDINGS" to disentangle from the
-          (since-cut) sidebar's ANL/ANALYSIS entry that opened the
-          constellation workspace. Same component still drives a tab
-          called `analysis` internally — only the visible label moved —
-          so the rest of the wiring and semantic state stayed stable.
-        */}
         <button
           type="button"
           className={
             `lcars-upper-panel__tab${tab === 'analysis' ? ' lcars-upper-panel__tab--active' : ''}` +
             (analysisBadgeCount > 0 ? ' lcars-upper-panel__tab--flag' : '')
           }
-          role="tab"
-          aria-selected={tab === 'analysis'}
+          aria-pressed={tab === 'analysis'}
           onClick={() => setTab('analysis')}
-          title="duplicates, zombies, topic clusters"
+          aria-label={
+            analysisBadgeCount > 0
+              ? `FINDINGS (duplicates, zombies, topic clusters) — ${analysisBadgeCount} flagged`
+              : 'FINDINGS (duplicates, zombies, topic clusters)'
+          }
         >
           FINDINGS
-          <span className="lcars-upper-panel__tab-badge">{analysisBadgeCount}</span>
+          {analysisBadgeCount > 0 && (
+            <span className="lcars-upper-panel__tab-badge" aria-hidden="true">
+              {analysisBadgeCount}
+            </span>
+          )}
         </button>
       </div>
 
       {tab === 'overview' ? (
+        // Removed mismatched role="tabpanel" since the buttons above are
+        // no longer role="tab". Plain div body — landmark structure comes
+        // from the section parent.
         <div className="lcars-upper-panel__body lcars-upper-panel__body--overview">
           {/* KPI strip (Decision 9 / `[R-D9]`).
               Pre-Phase-3 the four tiles were buttons that drilled into
@@ -479,12 +498,13 @@ export function UpperPanel({
           <div
             className="lcars-kpi-strip"
             role="group"
-            aria-label="cost KPIs"
+            aria-label="key metrics"
             data-flash={flashKey}
             key={flashKey}
           >
             <div
               className="lcars-kpi"
+              role="group"
               aria-label={`total cost $${kpis.exactCostUsd.toFixed(2)} exact plus $${kpis.estimateCostUsd.toFixed(2)} estimate`}
             >
               <span className="lcars-kpi__label">COST</span>
@@ -495,6 +515,7 @@ export function UpperPanel({
             </div>
             <div
               className="lcars-kpi"
+              role="group"
               aria-label={`output tokens ${formatTokens(kpis.outputTokens)}`}
             >
               <span className="lcars-kpi__label">TOKENS</span>
@@ -502,6 +523,7 @@ export function UpperPanel({
             </div>
             <div
               className="lcars-kpi"
+              role="group"
               aria-label={`top tool ${kpis.topTool?.name ?? 'none'}`}
             >
               <span className="lcars-kpi__label">TOP TOOL</span>
@@ -509,6 +531,7 @@ export function UpperPanel({
             </div>
             <div
               className="lcars-kpi"
+              role="group"
               aria-label={`top project ${kpis.topProject?.name ?? 'none'}`}
             >
               <span className="lcars-kpi__label">TOP PROJECT</span>
@@ -537,19 +560,16 @@ export function UpperPanel({
           </div>
 
           {showSparkline && (
-            <div
+            <figure
               className="lcars-upper-panel__sparkline-wrap"
               aria-label={`sparkline for ${SOURCES.map((s) => SOURCE_LABEL[s]).join(' + ')}`}
             >
               <Sparkline allSessions={manifest.sessions} visibleSessions={filtered} />
-            </div>
+            </figure>
           )}
         </div>
       ) : (
-        <div
-          className="lcars-upper-panel__body lcars-upper-panel__body--analysis"
-          role="tabpanel"
-        >
+        <div className="lcars-upper-panel__body lcars-upper-panel__body--analysis">
           {/*
             Hero launcher — the primary action for this tab. Sits directly
             under the tab bar so users can actually see (and not miss) the

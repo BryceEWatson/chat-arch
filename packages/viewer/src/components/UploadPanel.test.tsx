@@ -175,7 +175,7 @@ describe('UploadPanel', () => {
     it('renders the install-locally headline + INSTALL LOCALLY link with the default README quickstart href', () => {
       render(<UploadPanel onLoaded={() => {}} showInstallLocally />);
       expect(screen.getByText(/INSTALL CHAT-ARCH LOCALLY/i)).toBeDefined();
-      const link = screen.getByRole('button', { name: /install chat-arch locally/i });
+      const link = screen.getByRole('link', { name: /install chat-arch locally/i });
       expect(link.tagName).toBe('A');
       expect(link.getAttribute('href')).toMatch(
         /github\.com\/BryceEWatson\/chat-arch#quickstart/,
@@ -190,7 +190,7 @@ describe('UploadPanel', () => {
           installLocallyHref="https://example.com/install"
         />,
       );
-      const link = screen.getByRole('button', { name: /install chat-arch locally/i });
+      const link = screen.getByRole('link', { name: /install chat-arch locally/i });
       expect(link.getAttribute('href')).toBe('https://example.com/install');
     });
 

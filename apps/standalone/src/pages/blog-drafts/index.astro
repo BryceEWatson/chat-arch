@@ -10,14 +10,14 @@ const candidateMap = new Map<string, (typeof candidates extends null ? never : N
 for (const c of candidates?.candidates ?? []) candidateMap.set(c.id, c);
 ---
 <BaseLayout title="Chat Archaeologist — Blog Drafts" current="DRAFTS">
-  <main class="drafts">
+  <main id="main-content" class="drafts" tabindex="-1">
     <h1>BLOG DRAFTS</h1>
     {slugs.length === 0 ? (
       <p class="drafts__empty">
-        No drafts on disk. The blog-candidate selector runs as part of
-        <code>pnpm exporter all</code>; top candidates land at
-        <code>analysis/blog-drafts/&#123;slug&#125;.prompt.md</code>. Invoke the
-        chat-answer skill in draft mode to produce the final markdown.
+        No blog drafts have been generated yet. Drafts are produced
+        when the blog-candidate selector runs as part of a full scan
+        and the chat-answer agent renders each top candidate into
+        markdown. Run SCAN LOCAL from the DATA panel to refresh.
       </p>
     ) : (
       <ul class="drafts__list">
@@ -26,18 +26,25 @@ for (const c of candidates?.candidates ?? []) candidateMap.set(c.id, c);
           const cand = candidateMap.get(`blog-candidate-${candidateId.split('-')[1] ?? '0'}`);
           return (
             <li>
-              <a href={`/blog-drafts/${s.slug}`}>
-                <span class={s.isPrompt ? 'drafts__pill drafts__pill--prompt' : 'drafts__pill drafts__pill--final'}>
-                  {s.isPrompt ? 'prompt' : 'draft'}
+              <a
+                href={`/blog-drafts/${s.slug}`}
+                aria-label={`${s.isPrompt ? 'prompt' : 'draft'} — ${s.slug}`}
+              >
+                <span
+                  class={s.isPrompt ? 'drafts__pill drafts__pill--prompt' : 'drafts__pill drafts__pill--final'}
+                  aria-hidden="true"
+                >
+                  {s.isPrompt ? 'PROMPT' : 'DRAFT'}
                 </span>
-                <code>{s.slug}</code>
+                <code aria-hidden="true">{s.slug}</code>
               </a>
               {cand ? (
                 <p class="drafts__meta">
-                  score {cand.score.toFixed(3)} · {cand.clusterSessionIds.length} session(s) ·
-                  span {cand.spanDays.toFixed(1)}d ·
-                  novelty {cand.noveltyScore.toFixed(2)}
-                  {cand.meanAuditPassRate !== null ? ` · audit ${(cand.meanAuditPassRate * 100).toFixed(0)}%` : ''}
+                  discovery score {cand.score.toFixed(3)} (0–1 scale) ·
+                  {cand.clusterSessionIds.length} session{cand.clusterSessionIds.length === 1 ? '' : 's'} ·
+                  {cand.spanDays.toFixed(1)} days span ·
+                  novelty {(cand.noveltyScore * 100).toFixed(0)}% (vs prior weeks)
+                  {cand.meanAuditPassRate !== null ? ` · audit ${(cand.meanAuditPassRate * 100).toFixed(0)}% pass-rate` : ''}
                 </p>
               ) : null}
             </li>
@@ -49,15 +56,34 @@ for (const c of candidates?.candidates ?? []) candidateMap.set(c.id, c);
 </BaseLayout>
 
 <style>
-  main.drafts { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: #FFCC99; font-family: 'IBM Plex Sans', sans-serif; }
+  main.drafts { max-width: 880px; margin: 0 auto; padding: 32px 24px 64px; color: var(--lcars-sunflower); font-family: 'IBM Plex Sans', sans-serif; }
   main.drafts h1 { font-family: 'Antonio', sans-serif; letter-spacing: 0.1em; font-size: 28px; margin: 0 0 16px; }
   .drafts__empty code { background: #FFCC9911; padding: 1px 6px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; }
   .drafts__list { list-style: none; padding: 0; margin: 0; }
-  .drafts__list li { padding: 12px 0; border-bottom: 1px solid #FFCC9922; }
-  .drafts__list a { color: #FFCC99; text-decoration: none; display: inline-flex; align-items: center; gap: 12px; }
+  .drafts__list li { padding: 12px 0; border-bottom: 1px solid #FFCC9988; }
+  .drafts__list a { color: var(--lcars-sunflower); text-decoration: none; display: inline-flex; align-items: center; gap: 12px; }
+  .drafts__list a:focus-visible {
+    outline: 2px solid var(--lcars-sunflower);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
   .drafts__list code { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
-  .drafts__pill { padding: 2px 8px; border-radius: 3px; font-size: 11px; letter-spacing: 0.08em; }
-  .drafts__pill--prompt { background: #ffaa3344; color: #ffd680; }
-  .drafts__pill--final { background: #4caf5044; color: #88e088; }
-  .drafts__meta { font-size: 12px; color: #FFCC9999; margin: 4px 0 0; padding-left: 60px; font-family: 'JetBrains Mono', monospace; }
+  /* Iter-12 — pills are LCARS chrome (uppercased + tracked) so the
+   * 11px size qualifies for the §9 chrome carve-out; colors via tokens.
+   * `--lcars-warn` (#ffd680) and `--lcars-pass` (#88e088) come from
+   * BaseLayout :root (iter-3 Bundle G). */
+  .drafts__pill {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .drafts__pill--prompt { background: #ffaa3344; color: var(--lcars-warn); }
+  .drafts__pill--final { background: #4caf5044; color: var(--lcars-pass); }
+  .drafts__meta { font-size: 12px; line-height: 1.5; color: #FFCC9999; margin: 4px 0 0; padding-left: 60px; font-family: 'JetBrains Mono', monospace; }
+  @media (max-width: 600px) {
+    .drafts__meta { padding-left: 0; }
+  }
 </style>

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveClaudeBin } from '../../lib/resolveClaude.js';
+import { exitCodeHint, translateSpawnError } from '../../lib/spawnDiagnostics.js';
 import {
   assertDataDirContained,
   handleDataDirGuardError,
@@ -144,14 +145,20 @@ export function classifyOutcome(
   probe: OutcomeProbe,
 ): MiningOutcomeVerdict {
   if (spawnError !== null) {
-    return { ok: false, reason: `spawn error: ${spawnError.message}` };
+    return {
+      ok: false,
+      reason: `couldn't launch the claude CLI — ${translateSpawnError(spawnError)}`,
+    };
   }
   if (exitCode !== 0) {
-    return { ok: false, reason: `claude CLI exited with code ${exitCode}` };
+    return {
+      ok: false,
+      reason: `the claude CLI exited with code ${exitCode}${exitCodeHint(exitCode)}`,
+    };
   }
   if (probe.statusFileStatus === 'error') {
-    const msg = probe.statusFileError ?? '(no message in status file)';
-    return { ok: false, reason: `skill reported error: ${msg}` };
+    const msg = probe.statusFileError ?? 'no further detail recorded';
+    return { ok: false, reason: `the mining skill reported an error: ${msg}` };
   }
   if (
     probe.correctionsGeneratedAt === null ||
@@ -159,17 +166,19 @@ export function classifyOutcome(
   ) {
     const detail =
       probe.statusFileStatus !== null
-        ? ` (last skill status: ${probe.statusFileStatus})`
-        : ' (no skill status file written — skill likely aborted in Stage 0 before initializing, e.g. hit a cap-and-ask branch in headless mode or failed to verify Ollama)';
+        ? ` (the skill's last progress update was: ${probe.statusFileStatus})`
+        : " — the skill probably aborted before writing any progress (commonly: hit a cap-and-ask branch in headless mode, or local Ollama wasn't reachable when embeddings were needed)";
     return {
       ok: false,
       reason:
-        `skill exited cleanly but did not write a fresh corrections.json${detail}. ` +
-        `This is the "silent abort" failure mode — the CLI returned exit 0 but no output was produced.`,
+        `the mining skill exited cleanly but didn't produce a fresh corrections file${detail}.`,
     };
   }
   return { ok: true, reason: null };
 }
+
+// translateSpawnError + exitCodeHint moved to `../../lib/spawnDiagnostics.ts`
+// (review-loop iter-1 — see commit message). Imported below.
 
 async function probeOutcome(
   rootAbs: string,
@@ -777,7 +786,7 @@ async function streamMineCorrections(
   }
 
   const extraStderr = outcome.spawnError
-    ? '\nspawn error: ' + (outcome.spawnError.message ?? String(outcome.spawnError))
+    ? '\nspawn error: ' + translateSpawnError(outcome.spawnError)
     : '';
 
   // Validate the on-disk outcome. The CLI's exit code alone isn't a

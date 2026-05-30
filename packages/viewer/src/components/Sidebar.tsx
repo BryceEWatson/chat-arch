@@ -47,6 +47,15 @@ interface NavItem {
   mode: Mode;
   label: string;
   short: string;
+  /**
+   * One-line tooltip shown on hover + as the long-form aria-label so
+   * sighted + SR users get a "what does this mode do?" cue without
+   * having to click in. Each mode label by itself
+   * (EFFECTIVENESS / INSIGHTS / DECISIONS / TRENDS) is opaque to a
+   * cold visitor; the tooltip carries the one-sentence framing the
+   * cold visitor needs.
+   */
+  tooltip: string;
 }
 
 interface NavGroup {
@@ -82,19 +91,54 @@ const NAV: readonly NavGroup[] = [
     // first on every fresh load.
     group: 'FIX RULES',
     items: [
-      { mode: 'chat', label: 'CHAT', short: 'CHT' },
-      { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
-      { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
+      {
+        mode: 'chat',
+        label: 'CHAT',
+        short: 'CHT',
+        tooltip: 'Ask the corpus a question about your own sessions',
+      },
+      {
+        mode: 'corrections',
+        label: 'CORRECTIONS',
+        short: 'COR',
+        tooltip:
+          'Patterns mined from moments where you pushed back on the assistant',
+      },
+      {
+        mode: 'practice',
+        label: 'PRACTICE',
+        short: 'PRC',
+        tooltip: 'Ranked list of what to look at right now — the curator feed',
+      },
       // Stream J — DECISIONS + TRUST live under FIX RULES because they
       // both surface "what should I change about how I'm working with
       // the assistant" — the same workshop loop CORRECTIONS owns.
-      { mode: 'decisions', label: 'DECISIONS', short: 'DEC' },
-      { mode: 'trust', label: 'TRUST', short: 'TRU' },
+      {
+        mode: 'decisions',
+        label: 'DECISIONS',
+        short: 'DEC',
+        tooltip:
+          'Decisions you made in past sessions, joined to the outcome they led to',
+      },
+      {
+        mode: 'trust',
+        label: 'TRUST',
+        short: 'TRU',
+        tooltip:
+          'Decision-acceptance vs. outcome 2×2 — does your accept-vs-override behavior track which decisions land?',
+      },
     ],
   },
   {
     group: 'BROWSE',
-    items: [{ mode: 'command', label: 'SESSIONS', short: 'SES' }],
+    items: [
+      {
+        mode: 'command',
+        label: 'SESSIONS',
+        short: 'SES',
+        tooltip: 'Full grid of every session in the corpus, filterable by project',
+      },
+    ],
   },
   {
     group: 'ANALYTICS',
@@ -105,14 +149,42 @@ const NAV: readonly NavGroup[] = [
       // debt clusters, reflexive matched-pair). They live in ANALYTICS
       // because they're descriptive roll-ups — they don't drive a patch
       // decision (which is what the FIX RULES group is for).
-      { mode: 'effectiveness', label: 'EFFECTIVENESS', short: 'EFF' },
-      { mode: 'insights', label: 'INSIGHTS', short: 'INS' },
+      {
+        mode: 'effectiveness',
+        label: 'EFFECTIVENESS',
+        short: 'EFF',
+        tooltip: 'Weekly composite-score trajectory — is your collaboration improving?',
+      },
+      {
+        mode: 'insights',
+        label: 'INSIGHTS',
+        short: 'INS',
+        tooltip:
+          'Config-change impact + recurring debt + reflexive matched-pair cards',
+      },
       // Stream J — TRENDS rolls up project trajectory + archetypes +
       // surface comparison + skill curves; same descriptive-roll-up
       // shape as EFFECTIVENESS / INSIGHTS.
-      { mode: 'trends', label: 'TRENDS', short: 'TRN' },
-      { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
-      { mode: 'topics', label: 'TOPICS', short: 'TOP' },
+      {
+        mode: 'trends',
+        label: 'TRENDS',
+        short: 'TRN',
+        tooltip:
+          'Per-project trajectories, workflow archetypes, and skill-curve trends',
+      },
+      {
+        mode: 'projects',
+        label: 'PROJECTS',
+        short: 'PRJ',
+        tooltip: 'All projects detected in the corpus + their session counts',
+      },
+      {
+        mode: 'topics',
+        label: 'TOPICS',
+        short: 'TOP',
+        tooltip:
+          'Emergent topics discovered from conversation content (cross-project themes)',
+      },
     ],
   },
   {
@@ -120,7 +192,14 @@ const NAV: readonly NavGroup[] = [
     // it's an action (generate artifacts), not a content surface, so it
     // gets its own one-item group rather than slotting into ANALYTICS.
     group: 'EXPORT',
-    items: [{ mode: 'export', label: 'EXPORT', short: 'EXP' }],
+    items: [
+      {
+        mode: 'export',
+        label: 'EXPORT',
+        short: 'EXP',
+        tooltip: 'Generate per-session post-mortems + knowledge-debt markdown',
+      },
+    ],
   },
 ];
 
@@ -128,20 +207,7 @@ const NAV: readonly NavGroup[] = [
 // so collapse-state never hides primary nav on mobile. Order mirrors
 // the FIX RULES → BROWSE → ANALYTICS reading order from the vertical
 // rail so muscle memory carries across viewports.
-const HORIZONTAL_PILL_ORDER: readonly NavItem[] = [
-  { mode: 'chat', label: 'CHAT', short: 'CHT' },
-  { mode: 'corrections', label: 'CORRECTIONS', short: 'COR' },
-  { mode: 'practice', label: 'PRACTICE', short: 'PRC' },
-  { mode: 'decisions', label: 'DECISIONS', short: 'DEC' },
-  { mode: 'trust', label: 'TRUST', short: 'TRU' },
-  { mode: 'command', label: 'SESSIONS', short: 'SES' },
-  { mode: 'effectiveness', label: 'EFFECTIVENESS', short: 'EFF' },
-  { mode: 'insights', label: 'INSIGHTS', short: 'INS' },
-  { mode: 'trends', label: 'TRENDS', short: 'TRN' },
-  { mode: 'projects', label: 'PROJECTS', short: 'PRJ' },
-  { mode: 'topics', label: 'TOPICS', short: 'TOP' },
-  { mode: 'export', label: 'EXPORT', short: 'EXP' },
-];
+const HORIZONTAL_PILL_ORDER: readonly NavItem[] = NAV.flatMap((g) => g.items);
 
 // DATA item is rendered separately from the mode-driven nav: it's a
 // panel trigger, not a content surface, so it doesn't slot into the
@@ -179,7 +245,14 @@ export function Sidebar({
   if (variant === 'horizontal') {
     return (
       <nav className="lcars-sidebar lcars-sidebar--horizontal" aria-label="primary">
-        <ul className="lcars-sidebar__pill-bar" role="tablist">
+        {/*
+          Dropped role="tablist". The children are role="button" with
+          aria-current="page" (a navigation pattern, not a tabs pattern);
+          ARIA composition required role="tab" children to be valid. The
+          surrounding <nav aria-label="primary"> already provides the
+          landmark; the <ul> is structural.
+        */}
+        <ul className="lcars-sidebar__pill-bar">
           {horizontalPills.map((item) => {
             const active = item.mode === mode;
             const style = {
@@ -192,12 +265,15 @@ export function Sidebar({
                   role="button"
                   tabIndex={0}
                   aria-current={active ? 'page' : undefined}
-                  aria-label={`mode ${item.label}`}
+                  aria-label={`mode ${item.label} — ${item.tooltip}`}
+                  title={item.tooltip}
                   style={style}
                   onClick={() => onSelectMode(item.mode)}
                   onKeyDown={(e) => onActivate(e, () => onSelectMode(item.mode))}
                 >
-                  <span className="lcars-sidebar__pill-short">{item.short}</span>
+                  <span className="lcars-sidebar__pill-short" aria-hidden="true">
+                    {item.short}
+                  </span>
                 </div>
               </li>
             );
@@ -214,7 +290,9 @@ export function Sidebar({
                 onClick={onOpenDataPanel}
                 onKeyDown={(e) => onActivate(e, onOpenDataPanel)}
               >
-                <span className="lcars-sidebar__pill-short">{DATA_ITEM_SHORT}</span>
+                <span className="lcars-sidebar__pill-short" aria-hidden="true">
+                  {DATA_ITEM_SHORT}
+                </span>
               </div>
             </li>
           )}
@@ -298,7 +376,8 @@ export function Sidebar({
                       role="button"
                       tabIndex={0}
                       aria-current={active ? 'page' : undefined}
-                      aria-label={`mode ${item.label}`}
+                      aria-label={`mode ${item.label} — ${item.tooltip}`}
+                      title={item.tooltip}
                       style={style}
                       onClick={() => onSelectMode(item.mode)}
                       onKeyDown={(e) => onActivate(e, () => onSelectMode(item.mode))}

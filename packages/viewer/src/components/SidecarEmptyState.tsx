@@ -42,10 +42,12 @@ export function SidecarEmptyState({
   testId,
 }: SidecarEmptyStateProps) {
   return (
+    // Dropped role="status" + aria-live="polite": the section wraps a
+    // <h2> + paragraph + button (CTA) — too large for "status message",
+    // and polite re-announce on every mode swap reads the entire panel
+    // aloud. Heading nav surfaces the <h2> already.
     <section
       className="lcars-empty-state lcars-empty-state--sidecar"
-      role="status"
-      aria-live="polite"
       data-testid={testId ?? 'sidecar-empty-state'}
     >
       <h2 className="lcars-empty-state__title">{title}</h2>

@@ -85,10 +85,18 @@ export function TopBar({
   const dateText = earthdate ?? defaultEarthdate();
 
   return (
-    <header className="lcars-top-bar" role="banner">
+    <header className="lcars-top-bar">
       <div className="lcars-top-bar__left">
         <span className="lcars-top-bar__dot" aria-hidden="true" />
-        <h1 className="lcars-top-bar__title">CHAT ARCHAEOLOGIST</h1>
+        {/*
+          Brand chrome — not the page's H1. Pages that mount the
+          viewer (sessions.astro, projects/[id].astro, etc.) own
+          their own H1 about the page topic; CHAT ARCHAEOLOGIST is
+          the product name, repeated across every route, and would
+          out-rank the page topic in a heading-navigated SR outline.
+          Demoted to a styled div with the same visual treatment.
+        */}
+        <div className="lcars-top-bar__title">CHAT ARCHAEOLOGIST</div>
         <InfoPopover
           ariaLabel="about the Supergraphic Panel design system"
           className="lcars-top-bar__title-info"
@@ -109,7 +117,10 @@ export function TopBar({
         {rescanDelta && (
           <div
             className="lcars-top-bar__rescan-chip"
-            aria-label={`last rescan added ${formatDelta(rescanDelta.totalLocal)} local sessions`}
+            aria-label={
+              `last rescan added ${formatDelta(rescanDelta.totalLocal)} local sessions: ` +
+              `+${rescanDelta.cowork} cowork, +${rescanDelta.cli} CLI, +${rescanDelta.desktop} desktop`
+            }
             title={`+${rescanDelta.cowork} cowork · +${rescanDelta.cli} CLI · +${rescanDelta.desktop} desktop`}
           >
             <span className="lcars-top-bar__rescan-chip-label">RESCAN</span>

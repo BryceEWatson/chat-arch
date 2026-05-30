@@ -183,24 +183,27 @@ export function DetailMode({
     <section
       className="lcars-detail-mode"
       style={{ ['--source-color' as string]: SOURCE_COLOR[session.source] } as React.CSSProperties}
-      aria-label={`session detail ${title}`}
+      aria-labelledby="lcars-detail-mode-title-h"
     >
+      <p className="lcars-sr-only">
+        Press the left-bracket key for previous session, right-bracket for next.
+      </p>
       <header className="lcars-detail-mode__header">
         <div
           className="lcars-detail-mode__back"
           role="button"
           tabIndex={0}
-          aria-label="back to list"
+          aria-label="BACK to list"
           onClick={onBack}
           onKeyDown={(e) => onActivate(e, onBack)}
         >
-          ◄ BACK
+          <span aria-hidden="true">◄ </span>BACK
         </div>
         <div
           className={`lcars-detail-mode__nav lcars-detail-mode__nav--prev${prevId ? '' : ' lcars-detail-mode__nav--disabled'}`}
           role="button"
           tabIndex={prevId ? 0 : -1}
-          aria-label="previous session ([ key)"
+          aria-label={prevId ? 'PREV session' : 'PREV session, no earlier session in list'}
           aria-disabled={prevId ? undefined : true}
           onClick={() => {
             if (prevId) onPrev();
@@ -211,13 +214,13 @@ export function DetailMode({
             })
           }
         >
-          ◄ PREV
+          <span aria-hidden="true">◄ </span>PREV
         </div>
         <div
           className={`lcars-detail-mode__nav lcars-detail-mode__nav--next${nextId ? '' : ' lcars-detail-mode__nav--disabled'}`}
           role="button"
           tabIndex={nextId ? 0 : -1}
-          aria-label="next session (] key)"
+          aria-label={nextId ? 'NEXT session' : 'NEXT session, no later session in list'}
           aria-disabled={nextId ? undefined : true}
           onClick={() => {
             if (nextId) onNext();
@@ -228,10 +231,10 @@ export function DetailMode({
             })
           }
         >
-          NEXT ►
+          NEXT<span aria-hidden="true"> ►</span>
         </div>
         <SourcePill source={session.source} active readonly />
-        <div className="lcars-detail-mode__title">{title}</div>
+        <h2 id="lcars-detail-mode-title-h" className="lcars-detail-mode__title">{title}</h2>
         <div className="lcars-detail-mode__copy-wrap">
           <div
             className="lcars-detail-mode__copy"
@@ -249,14 +252,20 @@ export function DetailMode({
               role="status"
               aria-live="polite"
             >
-              {copyState === 'ok' ? 'COPIED ✓' : 'COPY FAILED'}
+              {copyState === 'ok' ? (
+                <>
+                  COPIED<span aria-hidden="true"> ✓</span>
+                </>
+              ) : (
+                'COPY FAILED'
+              )}
             </span>
           )}
         </div>
         <div className="lcars-detail-mode__time">{formatRelative(session.updatedAt)}</div>
       </header>
 
-      <dl className="lcars-detail-mode__meta">
+      <dl className="lcars-detail-mode__meta" aria-label="session metadata">
         <div>
           <dt>SOURCE</dt>
           <dd>{SOURCE_LABEL[session.source]}</dd>
@@ -264,23 +273,25 @@ export function DetailMode({
         <div>
           <dt>TURNS</dt>
           <dd
-            title={`${session.userTurns ?? '—'} user → ${session.assistantTurns ?? '—'} assistant`}
+            aria-label={`${session.userTurns ?? 'unknown'} user turns, ${session.assistantTurns ?? 'unknown'} assistant turns`}
           >
-            {session.userTurns ?? '—'}→{session.assistantTurns ?? '—'}
+            {session.userTurns ?? '—'}
+            <span aria-hidden="true">→</span>
+            {session.assistantTurns ?? '—'}
           </dd>
         </div>
         <div>
           <dt>MODEL</dt>
           <dd
             className="lcars-detail-mode__meta--mono"
-            title={session.model ?? 'No model recorded'}
+            aria-label={session.model ?? 'No model recorded'}
           >
             {session.model ?? '—'}
           </dd>
         </div>
         <div>
           <dt>COST</dt>
-          <dd title={detailCostTooltip(session.totalCostUsd, session.costEstimatedUsd)}>
+          <dd aria-label={detailCostTooltip(session.totalCostUsd, session.costEstimatedUsd)}>
             {session.totalCostUsd !== null
               ? `$${session.totalCostUsd.toFixed(2)}`
               : typeof session.costEstimatedUsd === 'number'
@@ -292,14 +303,14 @@ export function DetailMode({
           <dt>PROJECT</dt>
           <dd
             className="lcars-detail-mode__meta--mono"
-            title={session.project ?? 'No resolved project'}
+            aria-label={session.project ?? 'No resolved project'}
           >
             {session.project ?? '—'}
           </dd>
         </div>
         <div>
           <dt>CWD</dt>
-          <dd className="lcars-detail-mode__meta--mono" title={session.cwd ?? 'No CWD recorded'}>
+          <dd className="lcars-detail-mode__meta--mono" aria-label={session.cwd ?? 'No CWD recorded'}>
             {session.cwd ?? '—'}
           </dd>
         </div>

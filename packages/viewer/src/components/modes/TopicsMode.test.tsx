@@ -141,8 +141,12 @@ describe('TopicsMode opt-in gate (Phase 3)', () => {
         onSelectSession={() => {}}
       />,
     );
+    // Iter-10 a11y: visible text "(disable)" → "disable" + aria-describedby
+    // pointing at an sr-only risk hint. Accessible name is now the
+    // visible text alone; the describedby provides additional context
+    // for SR users without bloating the call-to-action.
     const disableBtn = screen.getByRole('button', {
-      name: /disable topic clustering/i,
+      name: /^disable$/i,
     });
     fireEvent.click(disableBtn);
     // Key is cleared and the gate is back.

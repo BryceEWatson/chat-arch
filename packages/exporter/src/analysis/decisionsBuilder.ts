@@ -244,13 +244,19 @@ export async function buildDecisionsFile(
       // Cached decisions already carry their outcomeRef from the
       // prior run. If the composite-outcomes file has since changed
       // (e.g. weightsHash bumped), re-attach so the denormalized
-      // values stay current.
+      // values stay current. `classification` + `trustCalibration`
+      // are written by the `/mine-decisions` skill, NOT this builder —
+      // preserve them across the rescan so an unchanged session doesn't
+      // lose its mined results (the whole point of the cache reuse).
       for (const d of r.decisions) {
         const outcome = outcomesById?.get(d.candidate.sessionId);
         allDecisions.push({
           candidate: d.candidate,
           classification: d.classification,
           outcomeRef: outcome !== undefined ? compositeToOutcomeRef(outcome) : null,
+          ...(d.trustCalibration !== undefined && d.trustCalibration !== null
+            ? { trustCalibration: d.trustCalibration }
+            : {}),
         });
       }
     } else {

@@ -49,32 +49,36 @@ const sections: readonly ViewSection[] = [
       {
         label: 'INSIGHTS',
         href: '/sessions#insights',
-        description: 'Config-impact ITS + knowledge-debt + reflexive.',
+        description:
+          'Config-change impact (interrupted time series) + recurring knowledge gaps + reflexive matched-pair contrast.',
       },
       {
         label: 'TRENDS',
         href: '/sessions#trends',
-        description: 'Project trajectories + archetypes + skill curves.',
+        description:
+          'Per-project trajectories, workflow archetypes (k-means over tool-use), per-topic skill curves, and source × archetype outcome heatmap (Holm-Bonferroni corrected).',
       },
       {
         label: 'TRUST',
         href: '/sessions#trust',
-        description: 'Pairwise comparison (Holm-Bonferroni).',
+        description:
+          'Decision-acceptance × outcome 2×2 with Wilson 95% CI on the landed-rate gap — does overriding the assistant actually land more often?',
       },
       {
         label: 'EXPORT',
         href: '/sessions#export',
-        description: 'Obsidian-targeted export checklist.',
+        description:
+          'Generate Obsidian-targeted post-mortem markdown + knowledge-debt export.',
       },
       {
         label: 'CORRECTIONS',
         href: '/sessions#corrections',
-        description: 'Mined correction patterns (workshop loop).',
+        description: 'Mined correction patterns from past push-back moments (workshop loop).',
       },
       {
         label: 'CHAT',
         href: '/sessions#chat',
-        description: 'Chat-answer skill against the corpus.',
+        description: 'Ask the chat-answer agent a question grounded in your own corpus.',
       },
     ],
   },
@@ -126,7 +130,7 @@ const sections: readonly ViewSection[] = [
 ];
 ---
 <BaseLayout title="Chat Archaeologist — All Views" current="ALL VIEWS">
-  <main class="views">
+  <main id="main-content" class="views" tabindex="-1">
     <header class="views__header">
       <h1>ALL VIEWS</h1>
       <p class="views__lede">
@@ -137,25 +141,29 @@ const sections: readonly ViewSection[] = [
       </p>
     </header>
 
-    {sections.map((section) => (
-      <section class="views__section" aria-labelledby={`views-section-${section.label}`}>
-        <div class="views__bar" aria-hidden="true"></div>
-        <h2 class="views__section-label" id={`views-section-${section.label}`}>
-          {section.label}
-        </h2>
-        <ul class="views__list">
-          {section.entries.map((entry) => (
-            <li class="views__item">
-              <a class="views__card" href={entry.href}>
-                <span class="views__card-label">{entry.label}</span>
-                <code class="views__card-href">{entry.href}</code>
-                <span class="views__card-desc">{entry.description}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
-    ))}
+    {sections.map((section) => {
+      const slug = section.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const sectionHId = `views-section-${slug}-h`;
+      return (
+        <section class="views__section" aria-labelledby={sectionHId}>
+          <div class="views__bar" aria-hidden="true"></div>
+          <h2 class="views__section-label" id={sectionHId}>
+            {section.label}
+          </h2>
+          <ul class="views__list">
+            {section.entries.map((entry) => (
+              <li class="views__item">
+                <a class="views__card" href={entry.href}>
+                  <span class="views__card-label">{entry.label}</span>
+                  <code class="views__card-href" aria-hidden="true">{entry.href}</code>
+                  <span class="views__card-desc">{entry.description}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    })}
   </main>
 </BaseLayout>
 
@@ -164,7 +172,7 @@ const sections: readonly ViewSection[] = [
     max-width: 1000px;
     margin: 0 auto;
     padding: 32px 24px 64px;
-    color: #FFCC99;
+    color: var(--lcars-sunflower);
     font-family: 'IBM Plex Sans', sans-serif;
   }
   .views__header h1 {
@@ -194,7 +202,7 @@ const sections: readonly ViewSection[] = [
     grid-row: 1 / span 2;
     width: 12px;
     align-self: stretch;
-    background: #DD9944;
+    background: var(--lcars-butterscotch);
     border-radius: 0 6px 6px 0;
     min-height: 100%;
   }
@@ -203,7 +211,7 @@ const sections: readonly ViewSection[] = [
     font-family: 'Antonio', sans-serif;
     font-size: 14px;
     letter-spacing: 0.18em;
-    color: #DD9944;
+    color: var(--lcars-butterscotch);
     text-transform: uppercase;
     margin: 0 0 12px;
     padding: 4px 0 6px;
@@ -230,19 +238,24 @@ const sections: readonly ViewSection[] = [
     row-gap: 6px;
     padding: 12px 14px;
     background: #0a0a0a;
-    border: 1px solid #FFCC9944;
-    border-left: 3px solid #FFCC9966;
+    border: 1px solid #FFCC9988;
+    border-left: 3px solid #FFCC9988;
     border-radius: 0 6px 6px 0;
     text-decoration: none;
-    color: #FFCC99;
+    color: var(--lcars-sunflower);
     transition: background 80ms linear, border-color 80ms linear;
   }
-  .views__card:hover,
+  .views__card:hover {
+    background: #FFCC9911;
+    border-color: var(--lcars-sunflower);
+    border-left-color: var(--lcars-peach);
+  }
   .views__card:focus-visible {
     background: #FFCC9911;
-    border-color: #FFCC99;
-    border-left-color: #FF9933;
-    outline: none;
+    border-color: var(--lcars-sunflower);
+    border-left-color: var(--lcars-peach);
+    outline: 2px solid var(--lcars-sunflower);
+    outline-offset: 2px;
   }
   .views__card-label {
     grid-column: 1;
@@ -251,14 +264,14 @@ const sections: readonly ViewSection[] = [
     font-size: 14px;
     letter-spacing: 0.12em;
     font-weight: 700;
-    color: #FFCC99;
+    color: var(--lcars-sunflower);
     line-height: 1.1;
   }
   .views__card-href {
     grid-column: 2;
     grid-row: 1;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.04em;
     color: #FFCC9999;
     background: #FFCC9911;
@@ -274,5 +287,6 @@ const sections: readonly ViewSection[] = [
     font-size: 12px;
     line-height: 1.45;
     color: #FFCC99cc;
+    max-width: 60ch;
   }
 </style>

@@ -227,8 +227,29 @@ export interface RunAnalysisResult {
  * emission. Heuristic rows emitted by `discoverNarratives` now stamp
  * `attributedTo: 'deterministic'`; existing on-disk legacy rows still
  * read via `normalizeNarrativeRow`'s reader-side defaults.
+ *
+ * Bumped 1.7.0 -> 1.8.0 in the UI content-display pass (research/
+ * ui-content-issues.md) when `unwrapEnvelope` landed in
+ * `@chat-arch/analysis` and started stripping harness wrappers
+ * (slash-command triples, scheduled-task envelopes, system-reminder
+ * blocks, etc.) from preview / title-fallback / correction-evidence /
+ * persona-candidate excerpts BEFORE truncation. No new on-disk
+ * sidecar — but `correction-candidates.json` excerpts +
+ * `manifest.json` preview field + `persona-candidates.json` +
+ * `personas/<id>.md` evidence rows all change content on next
+ * rescan. `HEURISTIC_RECALL_VERSION` 2 -> 3 (see
+ * `detectCorrectionCandidates.ts`) invalidates cached
+ * `correction-candidates.json` files so they re-emit under the new
+ * excerpt shape.
  */
-export const EXPORTER_VERSION = '1.7.0';
+// 1.9.0 — decisions LLM pipeline goes live: the `/mine-decisions` skill
+// merges `classification` (now incl. `rationale`) + `trustCalibration`
+// into `decisions.json`, the candidate gains `precedingAssistantExcerpt`
+// (DECISION_HEURISTIC_VERSION 1→2, forces a rescan), and a new
+// `analysis/decision-clusters.json` sidecar holds recurring-decision
+// clusters. (1.8.0 was the UI-content / unwrapEnvelope release; both are
+// combined on this integration branch.)
+export const EXPORTER_VERSION = '1.9.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

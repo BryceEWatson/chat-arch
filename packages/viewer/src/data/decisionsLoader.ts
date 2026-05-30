@@ -1,4 +1,4 @@
-import type { DecisionsFile } from '@chat-arch/schema';
+import type { DecisionsFile, DecisionClustersFile } from '@chat-arch/schema';
 
 /**
  * Fetcher for `analysis/decisions.json` (Stream J #1 / Phase 2 #1).
@@ -27,6 +27,32 @@ export async function loadDecisionsFile(
   try {
     const body = (await res.json()) as DecisionsFile;
     if (!body || !Array.isArray(body.decisions)) return null;
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetcher for `analysis/decision-clusters.json` (recurring-decision
+ * clusters written by the `/mine-decisions` skill). Same null-on-failure
+ * posture — absence just means clustering hasn't run (or Ollama was down).
+ */
+export async function loadDecisionClustersFile(
+  baseUrl: string,
+): Promise<DecisionClustersFile | null> {
+  const url = joinAnalysisUrl(baseUrl, 'decision-clusters.json');
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    return null;
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  try {
+    const body = (await res.json()) as DecisionClustersFile;
+    if (!body || !Array.isArray(body.clusters)) return null;
     return body;
   } catch {
     return null;

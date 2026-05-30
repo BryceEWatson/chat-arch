@@ -228,7 +228,7 @@ function renderBlock(
 ): React.ReactNode {
   if (block.kind === 'code') {
     return (
-      <pre key={key} className="lcars-chat-message__code">
+      <pre key={key} className="lcars-chat-message__code" tabIndex={0}>
         <code data-lang={block.lang || undefined}>{block.content}</code>
       </pre>
     );
@@ -329,13 +329,24 @@ function renderInline(
   // Walk matches; render non-match runs via renderTextRun (handles
   // bold/italic/code), interleaved with citation chips.
   let key = 0;
-  for (const match of matches) {
+  const total = matches.length;
+  for (let mi = 0; mi < matches.length; mi++) {
+    const match = matches[mi]!;
     if (match.start > cursor) {
       out.push(...renderTextRun(text.slice(cursor, match.start), () => key++));
     }
     const cit = citationBySid.get(match.sid);
     if (cit) {
-      out.push(<CitationChip key={`c${key++}`} citation={cit} onActivate={onCitationClick} verified={true} />);
+      out.push(
+        <CitationChip
+          key={`c${key++}`}
+          citation={cit}
+          onActivate={onCitationClick}
+          verified={true}
+          index={mi + 1}
+          total={total}
+        />,
+      );
     } else {
       out.push(
         <CitationChip
@@ -343,6 +354,8 @@ function renderInline(
           citation={{ sessionId: match.sid, source: 'cowork' }}
           onActivate={onCitationClick}
           verified={false}
+          index={mi + 1}
+          total={total}
         />,
       );
     }

@@ -339,7 +339,7 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
   if (available === 'checking') {
     return (
       <div className="lcars-chat lcars-chat--probing">
-        <div className="lcars-chat__probe">Checking backend availability…</div>
+        <div className="lcars-chat__probe">Connecting&hellip;</div>
       </div>
     );
   }
@@ -348,18 +348,20 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
     return (
       <div className="lcars-chat lcars-chat--unavailable">
         <div className="lcars-chat__empty">
-          <h2>CHAT REQUIRES THE LOCAL BACKEND</h2>
+          <h2>CHAT IS NOT AVAILABLE IN THIS BUILD</h2>
           <p>
-            The chat page talks to your local Claude Code CLI via{' '}
-            <code>/api/chat-answer</code>, which only runs when you&apos;ve started the chat-
-            arch dev server (<code>pnpm dev</code> at the repo root). The static-only
-            build doesn&apos;t include the endpoint.
+            The CHAT surface needs the local Chat Archaeologist
+            backend running on your machine — it talks to your local
+            Claude Code CLI to answer questions grounded in your own
+            corpus. The hosted build at chat-arch.dev is static and
+            doesn&apos;t include that backend.
           </p>
-          <p>Open a terminal in the repo and run:</p>
-          <pre>
-            <code>pnpm dev</code>
-          </pre>
-          <p>Then refresh this page.</p>
+          <p>
+            To enable CHAT: clone the repo, start the local dev
+            server, and open the same surface there. The hosted demo
+            data plus a Privacy-Export ZIP upload exercise every other
+            surface without needing CHAT.
+          </p>
         </div>
       </div>
     );
@@ -387,7 +389,7 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
                 onClick={() => setActiveChatId(c.chatId)}
               >
                 <span className="lcars-chat__list-intent">
-                  {c.intent === 'find-opportunities' ? 'OPPS' : 'ASK'}
+                  {c.intent === 'find-opportunities' ? 'OPPORTUNITIES' : 'ASK'}
                 </span>
                 <span className="lcars-chat__list-title">{c.title}</span>
               </button>
@@ -433,7 +435,27 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
           </div>
         </header>
 
-        <div className="lcars-chat__transcript" aria-live="polite">
+        {/* Iter-10 a11y: aria-live moved off the transcript wrapper.
+            The whole-transcript live region was re-announcing every
+            assistant turn as a new addition to the polite region — and
+            on stream-complete, the live-variant ChatStreamedMessage
+            unmounted and a final-variant remounted inside the same
+            wrapper, triggering a full re-announcement of the just-read
+            answer. The sr-only status announcer below replaces it with
+            three discrete state messages (thinking / answer ready /
+            error). The streaming text is still readable to sighted
+            users; SR users hear the high-level state without per-token
+            spam. */}
+        <span
+          className="lcars-sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {inFlight && !inFlight.error && 'Assistant is replying.'}
+          {inFlight && inFlight.error && `Assistant error: ${inFlight.error}`}
+        </span>
+        <div className="lcars-chat__transcript">
           {!activeChat && (
             <div className="lcars-chat__seed">
               <h2>Ask your corpus.</h2>
@@ -489,7 +511,10 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
                 variant="live"
               />
               {inFlight.error && (
-                <div className="lcars-chat-message__error">{inFlight.error}</div>
+                <div className="lcars-chat-message__error" role="alert">
+                  <span aria-hidden="true">⚠ </span>
+                  {inFlight.error}
+                </div>
               )}
             </div>
           )}
@@ -497,6 +522,7 @@ export function ChatMode({ onSelectSession }: ChatModeProps) {
 
         <form
           className="lcars-chat__inputbar"
+          aria-busy={!!inFlight}
           onSubmit={(e) => {
             e.preventDefault();
             handleSendClick();

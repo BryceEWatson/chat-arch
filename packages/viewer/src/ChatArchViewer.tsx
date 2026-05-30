@@ -54,7 +54,7 @@ import {
   loadInsightsBundle,
   type InsightsBundle,
 } from './data/insightsLoader.js';
-import { loadDecisionsFile } from './data/decisionsLoader.js';
+import { loadDecisionsFile, loadDecisionClustersFile } from './data/decisionsLoader.js';
 import {
   loadTrendsBundle,
   type TrendsBundle,
@@ -72,6 +72,7 @@ import type {
   CompositeOutcomesFile,
   CorrectionsFile,
   DecisionsFile,
+  DecisionClustersFile,
 } from '@chat-arch/schema';
 import { fetchAnalysisTierStatus } from './data/analysisFetch.js';
 import { fetchV2Entities, buildSessionV2Index } from './data/v2EntitiesFetch.js';
@@ -92,6 +93,7 @@ import {
   buildZombieProjects,
   firstHumanText,
   THRESHOLDS,
+  unwrapEnvelope,
   type DuplicateInput,
 } from '@chat-arch/analysis';
 import {
@@ -513,6 +515,14 @@ export function ChatArchViewer({
   const [decisionsFile, setDecisionsFile] = useState<DecisionsFile | null>(
     null,
   );
+  const [decisionClusters, setDecisionClusters] =
+    useState<DecisionClustersFile | null>(null);
+  // Re-fetch decisions + clusters in place (after a mine/clear run) so the
+  // DECISIONS surface updates without a full page reload.
+  const refreshDecisions = () => {
+    void loadDecisionsFile(dataRoot).then((f) => setDecisionsFile(f));
+    void loadDecisionClustersFile(dataRoot).then((f) => setDecisionClusters(f));
+  };
   const [trendsBundle, setTrendsBundle] = useState<TrendsBundle>({
     trajectories: null,
     archetypes: null,
@@ -920,6 +930,10 @@ export function ChatArchViewer({
       if (cancelled) return;
       setDecisionsFile(f);
     });
+    loadDecisionClustersFile(dataRoot).then((f) => {
+      if (cancelled) return;
+      setDecisionClusters(f);
+    });
     loadTrendsBundle(dataRoot).then((bundle) => {
       if (cancelled) return;
       setTrendsBundle(bundle);
@@ -1018,21 +1032,32 @@ export function ChatArchViewer({
     // Highest-confidence + largest knowledge-debt cluster.
     const debt = insightsBundle.knowledgeDebt;
     if (debt !== null && debt.clusters.length > 0) {
-      const top = [...debt.clusters].sort((a, b) => {
-        const ca = a.confidence === 'high' ? 1 : 0;
-        const cb = b.confidence === 'high' ? 1 : 0;
+      // Strip harness wrappers from the canonical question and skip
+      // slash-command invocations (e.g. "/shopsmith-menu") — those are
+      // commands, not natural-language questions worth turning into a
+      // rule, and leaking the raw <command-message> envelope into the
+      // headline is exactly the noise this strip is meant to avoid.
+      const cleaned = [...debt.clusters]
+        .map((c) => ({ cluster: c, question: unwrapEnvelope(c.canonicalQuestion) }))
+        .filter(
+          (x): x is { cluster: (typeof debt.clusters)[number]; question: string } =>
+            x.question !== null && !x.question.trimStart().startsWith('/'),
+        );
+      const top = cleaned.sort((a, b) => {
+        const ca = a.cluster.confidence === 'high' ? 1 : 0;
+        const cb = b.cluster.confidence === 'high' ? 1 : 0;
         if (ca !== cb) return cb - ca;
-        return b.sessionIds.length - a.sessionIds.length;
+        return b.cluster.sessionIds.length - a.cluster.sessionIds.length;
       })[0];
       if (top !== undefined) {
         const q =
-          top.canonicalQuestion.length > 80
-            ? top.canonicalQuestion.slice(0, 77) + '…'
-            : top.canonicalQuestion;
+          top.question.length > 80
+            ? top.question.slice(0, 77) + '…'
+            : top.question;
         out.push({
           kind: 'knowledge-debt',
-          headline: `recurring question (${top.sessionIds.length} sessions) — ${q}`,
-          detail: `confidence ${top.confidence}`,
+          headline: `recurring question (${top.cluster.sessionIds.length} sessions) — ${q}`,
+          detail: `confidence ${top.cluster.confidence}`,
           mode: 'insights',
         });
       }
@@ -3095,6 +3120,9 @@ export function ChatArchViewer({
                     ) : baseMode === 'decisions' ? (
                       <DecisionsMode
                         file={decisionsFile}
+                        clustersFile={decisionClusters}
+                        dataRoot={dataRoot}
+                        onRefresh={refreshDecisions}
                         onSelectSession={(id) => {
                           setPriorModeBeforeDetail('decisions');
                           onSelect(id);

@@ -87,7 +87,8 @@ Per-package alternatives:
 ```
 apps/standalone/     Astro shell + /api/rescan + /api/clear endpoints
                      + /api/mine-corrections + /api/clear-corrections
-                     + /api/mine-decisions + /api/generate-exports
+                     + /api/mine-decisions + /api/clear-decisions
+                     + /api/generate-exports
                      + /api/insights-ack + /api/entity-states
                      + /api/apply-correction + /api/regen-brief
 packages/schema/     UnifiedSessionEntry + manifest + correction types
@@ -132,8 +133,18 @@ scripts/             One-off audits (audit-correction-recall.mjs) +
                      lint-thresholds-imports.mjs, lint-fixture-pii.mjs)
 .claude/skills/
   mine-corrections/  Skill driving the corrections LLM stages
-  mine-decisions/    Skill driving the decisions LLM stages (stub UI
-                     until LLM pipeline lands; see Phase Rev3-F)
+  mine-decisions/    Skill driving the decisions LLM stages (LIVE as of
+                     EXPORTER_VERSION 1.9.0). Reads heuristic candidates
+                     from analysis/decisions.json, classifies each via
+                     Haiku sub-agents (kind / distilledDecision / chosen /
+                     rejected / rationale / confidence / actionable +
+                     acceptedAssistant), computes the trustCalibration
+                     cell, clusters recurring decisions into
+                     analysis/decision-clusters.json (via
+                     cluster-decisions-cli, Ollama-gated + skippable), and
+                     CAS-merges classification + trustCalibration back into
+                     decisions.json (two writers: exporter cache-reuse +
+                     this skill). Ollama optional (clustering only).
   curate/            Phase Rev3-F F1 curator skill — ranks tier-2 +
                      tier-3 narratives + knowledge-debt + applied-
                      pattern watcher items into analysis/curator-feed.json
@@ -300,7 +311,17 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `reflexive.json` — matched-pair contrast for "touched chat-arch"
   sessions. PII: session IDs + composite scores.
 - `decisions.json` — extracted decisions (LF candidates) joined to
-  composite outcome. PII: decision prose.
+  composite outcome. As of EXPORTER_VERSION 1.9.0 the `/mine-decisions`
+  skill merges `classification` (kind / distilledDecision / chosen /
+  rejected / rationale / confidence / actionable) + `trustCalibration`
+  into the rows the exporter emits — TWO writers on one file, the skill's
+  write is CAS-guarded on `generatedAt`. The candidate now also carries
+  `precedingAssistantExcerpt`. PII: decision prose + the prior assistant
+  excerpt.
+- `decision-clusters.json` — recurring-decision clusters
+  (`DecisionPattern[]`) produced by the `/mine-decisions` clustering
+  stage. Skill-only writer (the exporter never touches it). PII: decision
+  prose. Reset by `/api/clear-decisions`.
 - `archetypes.json` — k-means workflow-archetype centroids + per-
   session assignments. PII: session-archetype mapping.
 - `project-trajectories.json` — Theil-Sen slope per project +
@@ -557,15 +578,17 @@ out of date and needs an update:
    - Local: full pipeline (SCAN LOCAL, /api/* endpoints, SQLite
      substrate, curator + falsifier skills, MCP server).
 6. **When should I bump `EXPORTER_VERSION`?**
-   - When the on-disk artifact set EXPANDS (new sidecar) or the
-     shape of an existing artifact changes. The version label
-     appears in `analysis/meta.json` so operators can correlate a
-     bundle with the CHANGELOG. Bumped 1.2.0 → 1.3.0 in Phase
-     Rev3-I I5 for the Rev3 substrate cutover; see CHANGELOG.md
-     `[1.3.0]` for the full ledger of what landed. Bumped 1.3.0
-     → 1.4.0 in the feed-redesign Phase A plumbing when
-     `analysis/surprises.json` landed; see CHANGELOG.md `[1.4.0]`.
-     Bumped 1.4.0 → 1.4.1 in feed-redesign Phase γ when
+   - When the on-disk artifact set EXPANDS (new sidecar), the
+     shape of an existing artifact changes, OR a semantic-content
+     cutover invalidates cached bundles such that operators need
+     to know which set of rules a bundle was emitted under. The
+     version label appears in `analysis/meta.json` so operators
+     can correlate a bundle with the CHANGELOG. Bumped 1.2.0 → 1.3.0
+     in Phase Rev3-I I5 for the Rev3 substrate cutover; see
+     CHANGELOG.md `[1.3.0]` for the full ledger of what landed.
+     Bumped 1.3.0 → 1.4.0 in the feed-redesign Phase A plumbing
+     when `analysis/surprises.json` landed; see CHANGELOG.md
+     `[1.4.0]`. Bumped 1.4.0 → 1.4.1 in feed-redesign Phase γ when
      `buildDailyBrief` gained shipped-this-week / surprises /
      trajectories / applied-pattern-closures sections (no new on-
      disk sidecar; brief markdown shape grew); see CHANGELOG.md
@@ -576,4 +599,14 @@ out of date and needs an update:
      (`narrative-candidates.json` new sidecar + two additive optional
      top-level fields on existing `narratives.json` + new LLM-derived
      row family with `attributedTo: 'llm-derived'`); see CHANGELOG.md
-     `[1.7.0]`.
+     `[1.7.0]`. Bumped 1.7.0 → 1.8.0 in the UI content-display pass
+     when `unwrapEnvelope` landed and started stripping harness
+     wrappers from preview / title-fallback / correction-evidence /
+     persona-candidate excerpts before truncation;
+     `HEURISTIC_RECALL_VERSION` 2 → 3 invalidates cached
+     `correction-candidates.json` files so they re-emit under the
+     new excerpt shape. No new sidecar — but the textual content of
+     `correction-candidates.json`, `manifest.json` previews,
+     `persona-candidates.json` excerpts, and `personas/<id>.md`
+     evidence rows all change on next rescan. See CHANGELOG.md
+     `[1.8.0]`.

@@ -10,6 +10,24 @@
 
 const MINE_DECISIONS_PATH = '/api/mine-decisions';
 const REQUIRED_HEADER_VALUE = 'chat-arch-mine-decisions';
+const CLEAR_DECISIONS_PATH = '/api/clear-decisions';
+const CLEAR_HEADER_VALUE = 'chat-arch-clear-decisions';
+
+/**
+ * Shape of `analysis/decision-status-${requestId}.json` — written by the
+ * `/mine-decisions` skill on every stage transition. Mirrors
+ * `CorrectionRunStatus`. The viewer polls this for live progress while a
+ * run is in flight.
+ */
+export interface DecisionRunStatus {
+  requestId: string;
+  status: 'starting' | 'classifying' | 'clustering' | 'writing' | 'complete' | 'error';
+  progress?: { phase?: string; current?: number; total?: number };
+  startedAt?: number;
+  updatedAt?: number;
+  log?: readonly string[];
+  error?: string;
+}
 
 /**
  * Wave 7 P2 #7 — selectable mining batch size. `5` / `20` cap the run
@@ -38,6 +56,12 @@ export interface MineDecisionsStartOpts {
    * The argument is the cumulative count of classified candidates.
    */
   onProgress?: (cumulativeCount: number) => void;
+  /**
+   * Called once with the run's `requestId` when the server emits its
+   * `start` event — lets the caller poll
+   * `analysis/decision-status-${requestId}.json` for live progress.
+   */
+  onStart?: (requestId: string) => void;
 }
 
 interface DoneEvent {
@@ -51,6 +75,19 @@ interface DoneEvent {
 interface ProgressEvent {
   type: 'progress' | 'decision-done';
   count?: number;
+}
+
+interface StartEvent {
+  type: 'start';
+  requestId?: string;
+}
+
+function isStart(obj: unknown): obj is StartEvent {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    (obj as { type?: unknown }).type === 'start'
+  );
 }
 
 function isDone(obj: unknown): obj is DoneEvent {
@@ -145,6 +182,8 @@ export async function startMineDecisions(
           const obj = JSON.parse(line) as unknown;
           if (isDone(obj)) {
             final = obj;
+          } else if (isStart(obj)) {
+            if (typeof obj.requestId === 'string') opts.onStart?.(obj.requestId);
           } else if (isProgress(obj)) {
             progressCount =
               typeof obj.count === 'number' && Number.isFinite(obj.count)
@@ -169,4 +208,67 @@ export async function startMineDecisions(
     stdoutTail: final.stdoutTail,
     stderrTail: final.stderrTail,
   };
+}
+
+/**
+ * Fetch `analysis/decision-status-${requestId}.json` once. Returns null
+ * on 404 / network / parse failure — callers poll on an interval and
+ * treat absence as "skill hasn't flushed status yet". Mirrors
+ * `fetchCorrectionRunStatus`.
+ */
+export async function fetchDecisionRunStatus(
+  dataDirBaseUrl: string,
+  requestId: string,
+): Promise<DecisionRunStatus | null> {
+  const root = dataDirBaseUrl.endsWith('/') ? dataDirBaseUrl.slice(0, -1) : dataDirBaseUrl;
+  const url = `${root}/analysis/decision-status-${requestId}.json`;
+  let res: Response;
+  try {
+    res = await fetch(url, { cache: 'no-store' });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  try {
+    return (await res.json()) as DecisionRunStatus;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST `/api/clear-decisions`. Resets `classification` +
+ * `trustCalibration` in decisions.json (preserving candidates) and
+ * deletes the cluster/status sidecars, so the user can re-mine without
+ * re-running the exporter. Returns the deleted filenames + how many rows
+ * were reset.
+ */
+export async function clearDecisions(
+  signal?: AbortSignal,
+): Promise<{ removed: string[]; reset: number }> {
+  const init: RequestInit = {
+    method: 'POST',
+    headers: { 'X-Requested-With': CLEAR_HEADER_VALUE },
+  };
+  if (signal !== undefined) init.signal = signal;
+  const res = await fetch(CLEAR_DECISIONS_PATH, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`clear-decisions failed (status ${res.status}): ${text}`);
+  }
+  const body = (await res.json()) as { ok: boolean; removed?: string[]; reset?: number };
+  return { removed: body.removed ?? [], reset: body.reset ?? 0 };
+}
+
+/**
+ * GET `/api/clear-decisions` — readiness probe. False when the endpoint
+ * is absent (static build).
+ */
+export async function probeClearDecisions(): Promise<boolean> {
+  try {
+    const res = await fetch(CLEAR_DECISIONS_PATH, { method: 'GET' });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

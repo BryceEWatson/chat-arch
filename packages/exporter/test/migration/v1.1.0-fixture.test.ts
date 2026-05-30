@@ -41,7 +41,7 @@ import type {
   CorrectionsFile,
   SessionManifest,
 } from '@chat-arch/schema';
-import { runAnalysis } from '../../src/analysis/index.js';
+import { runAnalysis, EXPORTER_VERSION } from '../../src/analysis/index.js';
 import { runSemanticAnalysis } from '../../src/analysis/semanticAnalysis.js';
 import { logger } from '../../src/lib/logger.js';
 
@@ -94,25 +94,30 @@ describe('migration v1.1.0 → 1.2.0', () => {
     await runAnalysis(manifest, { outDir: tmpDataDir, now });
     await runSemanticAnalysis({ outDir: tmpDataDir, manifest, now });
 
-    // ---- (a) Corrections cache REUSED ----
-    // No new corrections in the fixture; the cache should reuse the
-    // prior generatedAt verbatim because the session's updatedAt
-    // (1699995000000) is <= corrections.generatedAt (1699996000000).
+    // ---- (a) Corrections cache INVALIDATED ----
+    // The fixture was written under heuristicRecallVersion 2; the
+    // current kernel runs at version 3 (envelope-unwrap pass added,
+    // see detectCorrectionCandidates.ts history block). A version
+    // mismatch invalidates the cache and forces a full rescan.
+    // The fixture's transcript contains the user turn "Please open
+    // a PR for these changes." which fires the `imperative-override`
+    // LF, so the rescan emits exactly one correction. This used to
+    // be empty under the v1.1.0 → v1.2.0 migration (when both
+    // versions had heuristicRecallVersion 2 and the cache reused
+    // verbatim); the assertion below is the post-invalidate shape.
     const correctionsAfter = await readJson<CorrectionsFile>(
       path.join(tmpDataDir, 'analysis', 'correction-candidates.json'),
     );
-    expect(correctionsAfter.heuristicRecallVersion).toBe(2);
-    // The orchestrator restamps generatedAt to `now` on every run, BUT
-    // cache reuse means scannedSessionIds round-trips unchanged and
-    // we observe zero candidates again (no rescan-induced flakiness).
-    // The plan's "(a)" assertion is about CACHE-HIT semantics, not
-    // wall-clock identity of generatedAt. So we assert the cache-key
-    // invariants: same version, same scanned set, same corrections.
+    expect(correctionsAfter.heuristicRecallVersion).toBe(3);
     expect(correctionsAfter.scannedSessionIds).toEqual(['s-1']);
-    expect(correctionsAfter.corrections).toEqual([]);
-    expect(correctionsAfter.scanStatsBySession).toEqual({ 's-1': [1, 0, 0] });
-    // The cache being reused (not invalidated) means our updated
-    // generatedAt has NOT been pushed below the prior file's value.
+    expect(correctionsAfter.corrections).toHaveLength(1);
+    expect(correctionsAfter.corrections[0]?.sessionId).toBe('s-1');
+    expect(correctionsAfter.corrections[0]?.signals[0]?.kind).toBe(
+      'imperative-override',
+    );
+    // After invalidation, generatedAt resets to `now` (the orchestrator
+    // restamps on rescan). It must be strictly later than the pre-run
+    // fixture timestamp.
     expect(correctionsAfter.generatedAt).toBeGreaterThanOrEqual(
       correctionsGeneratedAtBefore,
     );
@@ -159,7 +164,10 @@ describe('migration v1.1.0 → 1.2.0', () => {
       tiers: { browser: { files: readonly string[] } };
       counts: Record<string, unknown>;
     }>(path.join(tmpDataDir, 'analysis', 'meta.json'));
-    expect(meta.exporterVersion).toBe('1.7.0');
+    // Assert against the constant, not a literal — the migration writes
+    // whatever EXPORTER_VERSION currently says, so a version bump should
+    // not break this test.
+    expect(meta.exporterVersion).toBe(EXPORTER_VERSION);
 
     // The Wave-5 sidecars (+ feed-redesign Phase A surprises.json)
     // must all be registered in the browser tier.

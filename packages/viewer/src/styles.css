@@ -82,6 +82,14 @@
   --lcars-dim: #665544;
   --lcars-divider: rgba(221, 153, 68, 0.18);
 
+  /* Semantic-status tokens. BaseLayout :root also declares these for
+     standalone Astro pages (iter-3 Bundle G); duplicated here so the
+     viewer component cleanly resolves them whether or not BaseLayout
+     is in the cascade above. Values match BaseLayout. */
+  --lcars-pass: #88e088;
+  --lcars-fail: #f08080;
+  --lcars-warn: #ffd680;
+
   /* Triad font stacks — see the header comment for when to reach for each. */
   --lcars-font-chrome: 'Antonio', 'Oswald', 'Impact', sans-serif;
   --lcars-font-prose: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
@@ -335,7 +343,9 @@
 .lcars-filter-bar__row-label {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  /* Tracking raised from 0.12em → 0.14em to clear the LCARS chrome
+     carve-out floor (≥9px ALL-CAPS + ≥0.14em tracking, design-system §9). */
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--lcars-butterscotch);
   min-width: 70px;
@@ -773,7 +783,7 @@
 }
 .lcars-info-popover__panel code {
   font-family: var(--lcars-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   background: rgba(255, 204, 153, 0.08);
   color: var(--lcars-ice);
   padding: 1px 5px;
@@ -794,12 +804,20 @@
     transform: translateY(0);
   }
 }
+/* Source-btn caption — mixed-case status text from `scanProgress.latest`
+   (path strings, "embedding sessions 432/1041", etc.). Was 9.5px /
+   opacity 0.85 / no tracking — below the 12px body-prose floor and not
+   eligible for the chrome carve-out (mixed case). Bumped to 11.5px
+   with mono tabular-nums; opacity replaced by color-mix so the
+   composited contrast is auditable. 11.5px is the chrome-microcopy
+   floor across the source-pill / KPI families established in iter-7. */
 .lcars-top-bar__source-btn-caption {
   font-family: var(--lcars-font-mono);
-  font-size: 9.5px;
+  font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0;
-  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, currentColor 85%, transparent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -824,18 +842,28 @@
   color: var(--lcars-bg);
 }
 /* Web-only / no-backend: button renders but is visibly inert.
-   Hover tooltip explains how to enable it (install locally). */
+   Hover tooltip explains how to enable it (install locally). This is
+   a `<div role="button">` (not a native :disabled control), so the
+   WCAG opacity exemption does NOT apply — the muted appearance must
+   be expressed via explicit color/background mixes so the composited
+   contrast is auditable. Earlier `rgba(0,0,0,X)` + `opacity: 0.55`
+   stacking produced unpredictable contrast and tripped the iter-14
+   "opacity-on-functional-text" check. */
 .lcars-top-bar__source-btn--unavailable {
   cursor: help;
-  background: rgba(0, 0, 0, 0.12);
-  border-color: rgba(0, 0, 0, 0.25);
-  opacity: 0.55;
+  background: color-mix(in srgb, var(--lcars-bg) 55%, transparent);
+  border-color: color-mix(in srgb, var(--lcars-bg) 70%, transparent);
+  color: color-mix(in srgb, currentColor 55%, var(--lcars-bg-1));
 }
-.lcars-top-bar__source-btn--unavailable:hover,
-.lcars-top-bar__source-btn--unavailable:focus-visible {
-  background: rgba(0, 0, 0, 0.2);
+.lcars-top-bar__source-btn--unavailable:hover {
+  background: color-mix(in srgb, var(--lcars-bg) 65%, transparent);
   color: var(--lcars-bg);
-  opacity: 0.75;
+}
+.lcars-top-bar__source-btn--unavailable:focus-visible {
+  background: color-mix(in srgb, var(--lcars-bg) 65%, transparent);
+  color: var(--lcars-bg);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 @keyframes lcars-source-btn-pulse {
   0%,
@@ -1178,22 +1206,29 @@
   letter-spacing: 0.06em;
   transition: background 80ms linear;
 }
-.lcars-sidebar__item:hover,
+.lcars-sidebar__item:hover {
+  background: var(--mode-color, var(--lcars-sunflower));
+}
 .lcars-sidebar__item:focus-visible {
   background: var(--mode-color, var(--lcars-sunflower));
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: -2px;
 }
 .lcars-sidebar__item--active {
   background: var(--mode-color, var(--lcars-sunflower));
   color: var(--lcars-bg);
+  /* Active state needs to be visually distinct from hover (both set the
+     same mode-color background). Inset left accent bar gives the active
+     state a persistent visual cue that survives :hover and a contrast-
+     based mode-color check. */
+  box-shadow: inset 4px 0 0 var(--lcars-sunflower);
 }
 .lcars-sidebar__item-short {
   font-family: var(--lcars-font-mono);
   font-weight: 700;
-  color: var(--lcars-bg);
+  color: color-mix(in srgb, var(--lcars-bg) 70%, transparent);
   font-size: 10px;
   letter-spacing: 0.06em;
-  opacity: 0.7;
 }
 .lcars-sidebar__item-label {
   font-weight: 700;
@@ -1216,7 +1251,7 @@
   }
   .lcars-sidebar__item-short {
     font-size: 11px;
-    opacity: 0.9;
+    color: color-mix(in srgb, var(--lcars-bg) 90%, transparent);
   }
 }
 
@@ -1250,7 +1285,7 @@
   }
   .lcars-sidebar__item-short {
     font-size: 10px;
-    opacity: 0.7;
+    color: color-mix(in srgb, var(--lcars-bg) 70%, transparent);
   }
   .lcars-sidebar__item-label {
     display: inline;
@@ -1324,15 +1359,21 @@
     background 80ms linear,
     color 80ms linear;
 }
-.lcars-sidebar__pill:hover,
-.lcars-sidebar__pill:focus-visible {
-  outline: none;
+.lcars-sidebar__pill:hover {
   background: var(--mode-color, var(--lcars-sunflower));
   color: var(--lcars-bg);
+}
+.lcars-sidebar__pill:focus-visible {
+  background: var(--mode-color, var(--lcars-sunflower));
+  color: var(--lcars-bg);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-sidebar__pill--active {
   background: var(--mode-color, var(--lcars-sunflower));
   color: var(--lcars-bg);
+  /* Persistent inset accent so active state survives :hover overlap. */
+  box-shadow: inset 0 -3px 0 var(--lcars-sunflower);
 }
 .lcars-sidebar__pill-short {
   font-weight: 700;
@@ -1506,10 +1547,13 @@
   user-select: none;
   transition: background 100ms;
 }
-.lcars-source-pill:hover,
-.lcars-source-pill:focus-visible {
-  outline: none;
+.lcars-source-pill:hover {
   background: color-mix(in srgb, var(--source-color) 22%, transparent);
+}
+.lcars-source-pill:focus-visible {
+  background: color-mix(in srgb, var(--source-color) 22%, transparent);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-source-pill__label {
   /* Must be nowrap with no overflow/ellipsis — the pill sizes to content.
@@ -1569,13 +1613,13 @@
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: 0.04em;
-  opacity: 0.85;
+  color: color-mix(in srgb, currentColor 85%, transparent);
   border-left: 1px solid currentColor;
   margin-left: 4px;
   padding-left: 8px;
 }
 .lcars-source-pill--active .lcars-source-pill__count {
-  opacity: 1;
+  color: currentColor;
 }
 .lcars-source-pill--all {
   --source-color: var(--lcars-sunflower);
@@ -1671,7 +1715,9 @@
   flex-direction: column;
   gap: 3px;
   font-family: var(--lcars-font-mono);
-  font-size: 10.5px;
+  /* Bumped 10.5px → 12px to clear body floor; chrome carve-out doesn't
+     apply (mono mixed-case data values, not ALL-CAPS chrome). */
+  font-size: 12px;
 }
 .lcars-sparkline__tooltip-source {
   display: grid;
@@ -1733,7 +1779,7 @@
   stroke-width: 1.5;
 }
 .lcars-sparkline__baseline {
-  stroke: rgba(221, 153, 68, 0.18);
+  stroke: color-mix(in srgb, var(--lcars-butterscotch) 18%, transparent);
   stroke-width: 1;
   stroke-dasharray: 3 3;
   fill: none;
@@ -1838,9 +1884,8 @@
   font-family: var(--lcars-font-mono);
   font-size: 11px;
   font-weight: 500;
-  color: var(--lcars-butterscotch);
+  color: color-mix(in srgb, var(--lcars-butterscotch) 90%, var(--lcars-bg-1));
   letter-spacing: 0.12em;
-  opacity: 0.9;
 }
 .lcars-sparkline__axis-months {
   position: relative;
@@ -1854,9 +1899,8 @@
   white-space: nowrap;
   font-family: var(--lcars-font-mono);
   font-size: 10px;
-  letter-spacing: 0.12em;
-  color: var(--lcars-butterscotch);
-  opacity: 0.78;
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--lcars-butterscotch) 78%, var(--lcars-bg-1));
 }
 .lcars-sparkline--empty {
   font-size: 11px;
@@ -1957,11 +2001,15 @@
   letter-spacing: 0.08em;
   cursor: pointer;
 }
-.lcars-command-mode__more-btn:hover,
+.lcars-command-mode__more-btn:hover {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+}
 .lcars-command-mode__more-btn:focus-visible {
   background: var(--lcars-butterscotch);
   color: var(--lcars-bg);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 
 /* --- session card ---
@@ -1996,15 +2044,20 @@
   content-visibility: auto;
   contain-intrinsic-size: 320px 160px;
 }
-.lcars-session-card:hover,
-.lcars-session-card:focus-visible {
+.lcars-session-card:hover {
   /* bg-1 → a sunflower-tinted surface, so hover is obvious and the
      sunflower title + ice model text keep full legibility instead
      of merging into the nearly-identical bg-2 darker variant. */
   background: color-mix(in srgb, var(--lcars-sunflower) 5%, var(--lcars-bg-1));
   border-color: var(--source-color);
-  outline: none;
   transform: translateY(-1px);
+}
+.lcars-session-card:focus-visible {
+  background: color-mix(in srgb, var(--lcars-sunflower) 5%, var(--lcars-bg-1));
+  border-color: var(--source-color);
+  transform: translateY(-1px);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-session-card__row {
   display: flex;
@@ -2026,13 +2079,16 @@
  */
 .lcars-session-card__project--semantic {
   font-style: italic;
-  opacity: 0.6;
+  /* Inherited color is bumped via the explicit color-mix on the base
+     rule; the italic alone is sufficient to distinguish semantic from
+     string-match labels. Previous extra `opacity: 0.6` stacked on the
+     base opacity 0.7 — net ~0.42, pushing 10px mono text below AA. */
+  color: color-mix(in srgb, var(--lcars-ice) 70%, var(--lcars-bg-1));
 }
 .lcars-session-card__project {
   font-family: var(--lcars-font-mono);
-  font-size: 10px;
-  color: var(--lcars-ice);
-  opacity: 0.7;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-ice) 82%, var(--lcars-bg-1));
   letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -2044,10 +2100,9 @@
 .lcars-session-card__row--top > .lcars-session-card__time {
   flex: 0 0 auto;
   font-family: var(--lcars-font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0;
-  color: var(--lcars-butterscotch);
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--lcars-butterscotch) 90%, var(--lcars-bg-1));
   padding-left: 8px;
   margin-left: 4px;
   border-left: 1px solid var(--lcars-divider);
@@ -2100,7 +2155,7 @@
   font-weight: 400;
   line-height: 1.5;
   letter-spacing: 0.005em;
-  color: rgba(255, 204, 153, 0.78);
+  color: color-mix(in srgb, var(--lcars-sunflower) 82%, var(--lcars-bg-1));
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -2135,12 +2190,15 @@
   gap: 2px;
   min-width: 0;
 }
+/* dt labels are chrome (all-caps + 0.16em tracking) per §9 carve-out; raised
+   from 8.5px → 9.5px to clear the established ≥9px chrome floor.
+   Opacity-on-text replaced with explicit color-mix to keep the contrast
+   computable. */
 .lcars-session-card__meta dt {
-  font-size: 8.5px;
+  font-size: 9.5px;
   letter-spacing: 0.16em;
   font-weight: 700;
-  color: var(--lcars-butterscotch);
-  opacity: 0.75;
+  color: color-mix(in srgb, var(--lcars-butterscotch) 80%, var(--lcars-bg-1));
 }
 .lcars-session-card__meta dd {
   margin: 0;
@@ -2265,7 +2323,7 @@
   align-items: center;
   gap: 10px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--lcars-divider);
+  border-bottom: 1px solid rgba(255, 204, 153, 0.12);
 }
 .lcars-detail-mode__back {
   background: var(--lcars-butterscotch);
@@ -2279,13 +2337,17 @@
   user-select: none;
   flex: 0 0 auto;
 }
-.lcars-detail-mode__back:hover,
+.lcars-detail-mode__back:hover {
+  background: var(--lcars-sunflower);
+}
 .lcars-detail-mode__back:focus-visible {
   background: var(--lcars-sunflower);
-  outline: none;
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
 }
 .lcars-detail-mode__title {
   flex: 1 1 100%;
+  margin: 0;
   color: var(--lcars-sunflower);
   font-size: 16px;
   font-weight: 600;
@@ -2323,7 +2385,7 @@
   margin: 0;
   padding: 10px 14px;
   background: var(--lcars-bg-1);
-  border: 1px solid var(--lcars-divider);
+  border: 1px solid rgba(255, 204, 153, 0.12);
   border-left: 3px solid var(--source-color);
   border-radius: 8px;
 }
@@ -2346,8 +2408,9 @@
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1.45;
   font-variant-numeric: tabular-nums;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .lcars-detail-mode__meta--mono {
   font-family: var(--lcars-font-mono);
@@ -2396,7 +2459,7 @@
   gap: 14px;
 }
 .lcars-message {
-  border: 1px solid var(--lcars-divider);
+  border: 1px solid rgba(255, 204, 153, 0.12);
   border-radius: 8px;
   padding: 12px 16px;
   background: var(--lcars-bg-1);
@@ -2429,7 +2492,8 @@
 .lcars-message__time {
   font-family: var(--lcars-font-mono);
   letter-spacing: 0.04em;
-  opacity: 0.75;
+  color: color-mix(in srgb, var(--lcars-butterscotch) 85%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 .lcars-message__body {
   display: flex;
@@ -2440,8 +2504,41 @@
   list-style: none;
   margin: 6px 0 0;
   padding: 0;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--lcars-text);
+}
+.lcars-message__attach-summary {
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  border: 1px solid var(--lcars-butterscotch);
+  border-radius: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+.lcars-message__attach-summary::-webkit-details-marker {
+  display: none;
+}
+.lcars-message__attach-summary:hover {
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+}
+.lcars-message__attach-summary:focus-visible {
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-message__attach-disclosure[open] > .lcars-message__attach-summary::before {
+  content: '▾ ';
+}
+.lcars-message__attach-disclosure:not([open]) > .lcars-message__attach-summary::before {
+  content: '▸ ';
 }
 
 /* --- content blocks --- */
@@ -2467,15 +2564,30 @@
   letter-spacing: 0.16em;
   cursor: pointer;
   font-weight: 700;
+  list-style: none;
+}
+.lcars-cb--thinking summary::-webkit-details-marker {
+  display: none;
+}
+.lcars-cb--thinking summary:focus-visible {
+  outline: 2px solid var(--lcars-violet);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.lcars-cb--thinking[open] > summary .lcars-cb--thinking__glyph::before {
+  content: '▾ ';
+}
+.lcars-cb--thinking:not([open]) > summary .lcars-cb--thinking__glyph::before {
+  content: '▸ ';
 }
 .lcars-cb--thinking p {
   margin: 8px 0 0;
+  max-width: 75ch;
   font-family: var(--lcars-font-prose);
   font-size: 12.5px;
-  color: var(--lcars-violet);
+  color: color-mix(in srgb, var(--lcars-violet) 90%, transparent);
   line-height: 1.55;
   font-style: italic;
-  opacity: 0.9;
   white-space: pre-wrap;
 }
 .lcars-cb--tool-use {
@@ -2486,11 +2598,15 @@
   border-left: 2px solid var(--lcars-peach);
   padding-left: 8px;
 }
+.lcars-cb--tool-result-error {
+  /* Non-color secondary cue is the leading ✗ glyph in the label;
+     keep the peach rail (consistent with non-error result) so the
+     visual semantic stays "this is a tool result" — the error
+     glyph + label text differentiate the state. */
+}
 .lcars-cb--token-budget,
 .lcars-cb--unknown {
-  font-size: 11px;
   color: var(--lcars-butterscotch);
-  font-style: italic;
 }
 .lcars-cb__label {
   color: var(--lcars-butterscotch);
@@ -2543,6 +2659,11 @@
   text-transform: uppercase;
   color: var(--lcars-sunflower);
 }
+.lcars-prose__list {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
 .lcars-prose__li {
   margin: 0 0 4px 12px;
   list-style: none;
@@ -2586,8 +2707,14 @@
   gap: 6px;
 }
 .lcars-transcript-entry {
-  border-left: 2px solid var(--lcars-butterscotch);
-  padding: 4px 10px;
+  border-left: 3px solid var(--lcars-butterscotch);
+  padding: 8px 12px 10px;
+  background: rgba(255, 204, 153, 0.03);
+  border-radius: 0 4px 4px 0;
+  transition: background 100ms;
+}
+.lcars-transcript-entry:hover {
+  background: rgba(255, 204, 153, 0.06);
 }
 .lcars-transcript-entry--user {
   border-left-color: var(--lcars-sunflower);
@@ -2602,7 +2729,7 @@
   border-left-color: var(--lcars-violet);
 }
 .lcars-transcript-entry--malformed {
-  border-left-color: #cc3333;
+  border-left-color: var(--lcars-fail);
 }
 .lcars-transcript-entry__header {
   display: flex;
@@ -2614,19 +2741,20 @@
 .lcars-transcript-entry__type {
   color: var(--lcars-butterscotch);
   font-weight: 700;
+  text-transform: uppercase;
 }
 .lcars-transcript-entry__time {
-  color: var(--lcars-butterscotch);
-  opacity: 0.7;
+  color: color-mix(in srgb, var(--lcars-butterscotch) 80%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 .lcars-transcript-entry__err {
-  color: #ff6666;
+  color: var(--lcars-fail);
 }
 .lcars-transcript-entry__body {
   margin: 4px 0 0;
   color: var(--lcars-text);
   white-space: pre-wrap;
-  font-family: 'Courier New', monospace;
+  font-family: var(--lcars-font-mono);
   font-size: 12px;
 }
 /* <details> expander: reveals the unabridged body when the preview
@@ -2658,11 +2786,15 @@
 .lcars-transcript-entry__summary::-webkit-details-marker {
   display: none;
 }
-.lcars-transcript-entry__summary:hover,
+.lcars-transcript-entry__summary:hover {
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+}
 .lcars-transcript-entry__summary:focus-visible {
   color: var(--lcars-sunflower);
   border-color: var(--lcars-sunflower);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-transcript-entry__details[open] > .lcars-transcript-entry__summary {
   color: var(--lcars-sunflower);
@@ -2682,10 +2814,14 @@
   background: var(--lcars-bg-1);
   border-left: 2px solid var(--lcars-divider);
   white-space: pre-wrap;
-  font-family: 'Courier New', monospace;
+  font-family: var(--lcars-font-mono);
   font-size: 12px;
   line-height: 1.45;
   overflow-x: auto;
+}
+.lcars-transcript-entry__full:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
 }
 .lcars-transcript-list__empty,
 .lcars-message-list__empty {
@@ -2717,7 +2853,7 @@
   letter-spacing: 0.12em;
 }
 .lcars-error-state__title {
-  color: #ff8866;
+  color: var(--lcars-peach);
 }
 .lcars-empty-state__message,
 .lcars-error-state__detail,
@@ -2803,10 +2939,13 @@
   height: 26px;
   align-self: center;
 }
-.lcars-upload-panel__button:hover,
+.lcars-upload-panel__button:hover {
+  background: var(--lcars-sunflower);
+}
 .lcars-upload-panel__button:focus-visible {
   background: var(--lcars-sunflower);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-upload-panel__button:disabled {
   background: var(--lcars-butterscotch-muted);
@@ -2829,10 +2968,15 @@
   color: var(--lcars-violet);
   border: 1.5px solid var(--lcars-violet);
 }
-.lcars-upload-panel__button--secondary:hover:not(:disabled),
+.lcars-upload-panel__button--secondary:hover:not(:disabled) {
+  background: var(--lcars-violet);
+  color: var(--lcars-bg);
+}
 .lcars-upload-panel__button--secondary:focus-visible:not(:disabled) {
   background: var(--lcars-violet);
   color: var(--lcars-bg);
+  outline: 2px solid var(--lcars-violet);
+  outline-offset: 2px;
 }
 /* CHOOSE ZIP demoted to outlined when SCAN LOCAL is the primary
    action (i.e. running locally). Keeps cloud-export branded as
@@ -2843,26 +2987,39 @@
   color: var(--lcars-butterscotch);
   border: 1.5px solid var(--lcars-butterscotch);
 }
-.lcars-upload-panel__button--cloud-secondary:hover:not(:disabled),
-.lcars-upload-panel__button--cloud-secondary:focus-visible:not(:disabled) {
+.lcars-upload-panel__button--cloud-secondary:hover:not(:disabled) {
   background: var(--lcars-butterscotch);
   color: var(--lcars-bg);
 }
+.lcars-upload-panel__button--cloud-secondary:focus-visible:not(:disabled) {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  outline: 2px solid var(--lcars-butterscotch);
+  outline-offset: 2px;
+}
 .lcars-upload-panel__hint--demo {
-  font-size: 11px;
-  color: var(--lcars-text);
-  opacity: 0.65;
-  line-height: 1.45;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg));
+  line-height: 1.5;
   margin-top: 2px;
 }
+/* Status messages are mixed-case prose (e.g. "PARSING final.zip…") in some
+   states and ALL-CAPS in others — treat as body class and clear the 12px
+   floor across the board. The single live-region container is always
+   rendered (text content swapped by state); the container empty-state
+   collapses to zero height naturally. */
 .lcars-upload-panel__status {
   color: var(--lcars-text);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.05em;
+  line-height: 1.5;
   word-break: break-word;
 }
+.lcars-upload-panel__status:empty {
+  display: none;
+}
 .lcars-upload-panel__status--error {
-  color: #ff8866;
+  color: var(--lcars-peach);
 }
 .lcars-upload-panel__status--ok {
   color: var(--lcars-sunflower);
@@ -2992,7 +3149,7 @@
   background: rgba(221, 153, 68, 0.12);
 }
 .lcars-semantic-chip--stale:hover {
-  background: rgba(221, 153, 68, 0.22);
+  background: color-mix(in srgb, var(--lcars-butterscotch) 22%, transparent);
   color: var(--lcars-sunflower);
 }
 .lcars-upper-panel__unload {
@@ -3011,10 +3168,13 @@
   user-select: none;
   border: none;
 }
-.lcars-upper-panel__unload:hover,
+.lcars-upper-panel__unload:hover {
+  background: var(--lcars-sunflower);
+}
 .lcars-upper-panel__unload:focus-visible {
   background: var(--lcars-sunflower);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-upper-panel__upload-slot {
   display: inline-flex;
@@ -3183,9 +3343,13 @@
   border-radius: 50%;
   user-select: none;
 }
-.lcars-tier-sheet__close:hover,
+.lcars-tier-sheet__close:hover {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 153, 0.1);
+}
 .lcars-tier-sheet__close:focus-visible {
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
   color: var(--lcars-sunflower);
   background: rgba(255, 204, 153, 0.1);
 }
@@ -3195,12 +3359,20 @@
   font-size: 12px;
   letter-spacing: 0.05em;
 }
+.lcars-tier-sheet__subhead {
+  margin: 8px 0 0;
+  color: var(--lcars-butterscotch);
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
 .lcars-tier-sheet__hint {
   margin: 0;
   color: var(--lcars-text);
-  opacity: 0.85;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
 }
 .lcars-tier-sheet__hint code {
   font-family: 'Courier New', monospace;
@@ -3224,7 +3396,7 @@
   grid-template-rows: auto auto;
   gap: 2px 10px;
   padding: 6px 8px;
-  border: 1px solid var(--lcars-dim);
+  border: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 35%, transparent);
   border-radius: 6px;
   align-items: baseline;
 }
@@ -3254,8 +3426,9 @@
   grid-column: 2 / 3;
   grid-row: 2 / 3;
   color: var(--lcars-text);
-  opacity: 0.75;
-  font-size: 11px;
+  opacity: 0.9;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .lcars-tier-sheet__ts {
   grid-column: 3 / 4;
@@ -3275,8 +3448,11 @@
    preserves the "footnote vs primary" hierarchy without introducing
    a color that reads as muddy against saturated parent chips. */
 .lcars-attribution {
-  color: currentColor;
-  opacity: 0.85;
+  /* Use color-mix to lift the alpha into an explicit composited color
+     rather than CSS opacity (which stacks unpredictably against any
+     ancestor `opacity` on the parent chip). Same visual weight, but the
+     contrast is now auditable against the actual surface palette. */
+  color: color-mix(in srgb, currentColor 85%, transparent);
   font-size: inherit;
   letter-spacing: inherit;
   font-weight: 400;
@@ -3401,10 +3577,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lcars-project-pill:hover,
+.lcars-project-pill:hover {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+}
 .lcars-project-pill:focus-visible {
   background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
-  outline: none;
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
 }
 .lcars-project-pill--active {
   background: var(--lcars-ice);
@@ -3450,11 +3629,15 @@
   opacity: 1;
   background: color-mix(in srgb, var(--lcars-butterscotch) 14%, transparent);
 }
-.lcars-project-pill--rest:hover,
+.lcars-project-pill--rest:hover {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 22%, transparent);
+  box-shadow: 0 0 0 2px var(--lcars-sunflower);
+}
 .lcars-project-pill--rest:focus-visible {
   background: color-mix(in srgb, var(--lcars-butterscotch) 22%, transparent);
   box-shadow: 0 0 0 2px var(--lcars-sunflower);
-  outline: none;
+  outline: 2px solid var(--lcars-butterscotch);
+  outline-offset: 2px;
 }
 .lcars-project-pill--rest[aria-expanded='true'] {
   background: color-mix(in srgb, var(--lcars-butterscotch) 22%, transparent);
@@ -3524,10 +3707,13 @@
   white-space: nowrap;
   transition: background 100ms;
 }
-.lcars-zero-turn-toggle:hover,
+.lcars-zero-turn-toggle:hover {
+  background: color-mix(in srgb, var(--source-color) 22%, transparent);
+}
 .lcars-zero-turn-toggle:focus-visible {
   background: color-mix(in srgb, var(--source-color) 22%, transparent);
-  outline: none;
+  outline: 2px solid var(--source-color);
+  outline-offset: 2px;
 }
 .lcars-zero-turn-toggle--active {
   background: var(--source-color);
@@ -3550,7 +3736,11 @@
   padding: 1px 6px;
   border-radius: 8px;
   font-size: 9px;
-  letter-spacing: 0.06em;
+  /* Tracking raised from 0.06em → 0.14em to satisfy the LCARS chrome
+     carve-out (≥9px ALL-CAPS + ≥0.14em tracking, per design-system §9).
+     The chip family is UPPERCASE text-content already (DUP / NARR /
+     ZOMBIE labels), so all three legs of the carve-out clear. */
+  letter-spacing: 0.14em;
   font-weight: 600;
   border: 1px solid currentColor;
 }
@@ -3566,19 +3756,25 @@
   color: var(--lcars-violet);
   background: rgba(204, 153, 204, 0.12);
 }
-.lcars-chip--dup[role='button']:hover,
+.lcars-chip--dup[role='button']:hover {
+  background: color-mix(in srgb, var(--lcars-violet) 28%, transparent);
+}
 .lcars-chip--dup[role='button']:focus-visible {
-  background: rgba(204, 153, 204, 0.28);
-  outline: none;
+  background: color-mix(in srgb, var(--lcars-violet) 28%, transparent);
+  outline: 2px solid var(--lcars-violet);
+  outline-offset: 2px;
 }
 .lcars-chip--zombie {
   color: var(--lcars-peach);
   background: rgba(255, 153, 51, 0.1);
 }
-.lcars-chip--zombie[role='button']:hover,
+.lcars-chip--zombie[role='button']:hover {
+  background: color-mix(in srgb, var(--lcars-peach) 25%, transparent);
+}
 .lcars-chip--zombie[role='button']:focus-visible {
-  background: rgba(255, 153, 51, 0.25);
-  outline: none;
+  background: color-mix(in srgb, var(--lcars-peach) 25%, transparent);
+  outline: 2px solid var(--lcars-peach);
+  outline-offset: 2px;
 }
 /* v2 spec §5.3: NARR (narrative-attached) and topic chips. NARR
    borrows the existing sentiment palette (sunflower=positive,
@@ -3595,10 +3791,13 @@
 .lcars-chip--narrative-positive[role='button'] {
   cursor: pointer;
 }
-.lcars-chip--narrative-positive[role='button']:hover,
+.lcars-chip--narrative-positive[role='button']:hover {
+  background: color-mix(in srgb, var(--lcars-sunflower) 28%, transparent);
+}
 .lcars-chip--narrative-positive[role='button']:focus-visible {
-  background: rgba(255, 204, 102, 0.28);
-  outline: none;
+  background: color-mix(in srgb, var(--lcars-sunflower) 28%, transparent);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-chip--narrative-negative {
   color: var(--lcars-peach);
@@ -3607,10 +3806,13 @@
 .lcars-chip--narrative-negative[role='button'] {
   cursor: pointer;
 }
-.lcars-chip--narrative-negative[role='button']:hover,
+.lcars-chip--narrative-negative[role='button']:hover {
+  background: color-mix(in srgb, var(--lcars-peach) 28%, transparent);
+}
 .lcars-chip--narrative-negative[role='button']:focus-visible {
-  background: rgba(255, 153, 51, 0.28);
-  outline: none;
+  background: color-mix(in srgb, var(--lcars-peach) 28%, transparent);
+  outline: 2px solid var(--lcars-peach);
+  outline-offset: 2px;
 }
 .lcars-session-card__topics {
   display: flex;
@@ -3666,8 +3868,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
   cursor: pointer;
 }
 .lcars-projects-index__list {
@@ -3691,11 +3894,15 @@
     background 120ms,
     transform 120ms;
 }
-.lcars-projects-index__row:hover,
+.lcars-projects-index__row:hover {
+  background: rgba(255, 204, 102, 0.12);
+  transform: translateX(2px);
+}
 .lcars-projects-index__row:focus-visible {
   background: rgba(255, 204, 102, 0.12);
-  outline: none;
   transform: translateX(2px);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-projects-index__row--unassigned {
   border-left-color: color-mix(in srgb, var(--lcars-text) 30%, transparent);
@@ -3716,8 +3923,9 @@
 .lcars-projects-index__row-meta {
   display: flex;
   gap: 14px;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
 }
 .lcars-projects-index__sentiment {
   display: inline-flex;
@@ -3752,6 +3960,11 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* WCAG 2.4.11 Focus Not Obscured: the sticky __header below this
+   * surface can hide focused content as the user tabs through the
+   * session grid. scroll-padding-top reserves space so the browser
+   * scrolls focused targets out from under the sticky band. */
+  scroll-padding-top: 56px;
 }
 .lcars-project-detail__header {
   display: flex;
@@ -3777,10 +3990,13 @@
   cursor: pointer;
   line-height: 1;
 }
-.lcars-project-detail__back:hover,
+.lcars-project-detail__back:hover {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+}
 .lcars-project-detail__back:focus-visible {
   background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
-  outline: none;
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
 }
 .lcars-project-detail__title {
   font-family: var(--lcars-font-chrome);
@@ -3804,6 +4020,78 @@
   color: var(--lcars-butterscotch);
   margin: 0 0 8px;
   text-transform: uppercase;
+}
+/* Iter-9 — mid-refactor closure: orphan classNames in ProjectsMode
+ * that had no CSS rules. Rendered with UA defaults until now (REGEN
+ * button as a system-grey button; skip-hint as plain paragraph;
+ * heuristic-cluster as default <details>). */
+.lcars-project-detail__regen-narratives {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--lcars-butterscotch);
+  background: transparent;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+}
+.lcars-project-detail__regen-narratives:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 18%, transparent);
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+}
+.lcars-project-detail__regen-narratives:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-project-detail__regen-narratives:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.lcars-project-detail__llm-skip-hint {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
+  background: rgba(153, 204, 255, 0.05);
+  border-left: 3px solid color-mix(in srgb, var(--lcars-ice) 53%, transparent);
+  border-radius: 0 4px 4px 0;
+  max-width: 72ch;
+}
+.lcars-project-detail__heuristic-cluster {
+  margin-top: 12px;
+}
+.lcars-project-detail__heuristic-cluster-summary {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+  list-style: none;
+  padding: 4px 0;
+}
+.lcars-project-detail__heuristic-cluster-summary::-webkit-details-marker {
+  display: none;
+}
+.lcars-project-detail__heuristic-cluster-summary:hover {
+  color: var(--lcars-sunflower);
+}
+.lcars-project-detail__heuristic-cluster-summary:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.lcars-project-detail__heuristic-cluster[open] > .lcars-project-detail__heuristic-cluster-summary::before {
+  content: '▾ ';
+}
+.lcars-project-detail__heuristic-cluster:not([open]) > .lcars-project-detail__heuristic-cluster-summary::before {
+  content: '▸ ';
 }
 .lcars-project-detail__narrative-list {
   list-style: none;
@@ -3894,10 +4182,13 @@
   color: inherit;
   text-decoration: none;
 }
-.lcars-narrative-card__evidence-pill:hover,
+.lcars-narrative-card__evidence-pill:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
 .lcars-narrative-card__evidence-pill:focus-visible {
   background: rgba(0, 0, 0, 0.4);
-  outline: none;
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
 }
 .lcars-narrative-card__footer {
   display: flex;
@@ -3924,25 +4215,117 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
-.lcars-narrative-card__action:hover:not(:disabled),
+.lcars-narrative-card__action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
 .lcars-narrative-card__action:focus-visible:not(:disabled) {
   background: rgba(255, 255, 255, 0.06);
-  outline: none;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 .lcars-narrative-card__status {
   margin: 0;
-  font-size: 11px;
-  line-height: 1.4;
-  opacity: 0.85;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .lcars-narrative-card__status--ok {
-  color: var(--lcars-ice);
+  color: color-mix(in srgb, var(--lcars-ice) 85%, transparent);
 }
 .lcars-narrative-card__status--error {
-  color: var(--lcars-peach);
+  color: color-mix(in srgb, var(--lcars-peach) 85%, transparent);
 }
 .lcars-narrative-card__status--running {
-  color: var(--lcars-violet);
+  color: color-mix(in srgb, var(--lcars-violet) 85%, transparent);
+}
+
+/* Iter-9 — tier badge styling. Mid-refactor: className was referenced
+ * in JSX without a CSS rule, so badges rendered as unstyled inline
+ * spans. Mirrors the .lcars-narrative-card__sentiment pill shape with
+ * per-tier color via [data-tier] attribute selector. */
+.lcars-narrative-card__tier {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--lcars-font-chrome);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+}
+.lcars-narrative-card__tier[data-tier='1'] {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.14);
+}
+.lcars-narrative-card__tier[data-tier='2'] {
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
+  background: rgba(255, 204, 153, 0.06);
+}
+.lcars-narrative-card__tier[data-tier='3'] {
+  color: color-mix(in srgb, var(--lcars-text) 55%, transparent);
+  background: rgba(255, 204, 153, 0.03);
+}
+
+/* Iter-9 — provenance disclosure (LLM-derived narratives). Mid-refactor:
+ * the `<details>` + summary + dl markup had zero CSS rules. Mirrors
+ * iter-8 F-FV-2 thinking-summary state-glyph pattern plus the iter-7
+ * playbook for the dl contents. */
+.lcars-narrative-card__provenance {
+  margin-top: 6px;
+}
+.lcars-narrative-card__provenance-summary {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 0;
+}
+.lcars-narrative-card__provenance-summary::-webkit-details-marker {
+  display: none;
+}
+.lcars-narrative-card__provenance-summary:hover {
+  color: var(--lcars-sunflower);
+}
+.lcars-narrative-card__provenance-summary:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.lcars-narrative-card__provenance[open] > .lcars-narrative-card__provenance-summary::before {
+  content: '▾ ';
+}
+.lcars-narrative-card__provenance:not([open]) > .lcars-narrative-card__provenance-summary::before {
+  content: '▸ ';
+}
+.lcars-narrative-card__provenance-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  background: rgba(255, 204, 153, 0.03);
+  border-left: 3px solid rgba(255, 204, 153, 0.53);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.lcars-narrative-card__provenance-dl dt {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--lcars-butterscotch);
+}
+.lcars-narrative-card__provenance-dl dd {
+  margin: 0;
+  color: var(--lcars-text);
+  overflow-wrap: anywhere;
 }
 
 /* Rev3-E E3 — falsifier-skip override checkbox in the encode-as-
@@ -3955,10 +4338,9 @@
   align-items: center;
   gap: 6px;
   align-self: flex-end;
-  font-family: var(--lcars-font-chrome);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  opacity: 0.78;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 78%, transparent);
   cursor: pointer;
   user-select: none;
 }
@@ -3984,10 +4366,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--lcars-font-chrome);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  opacity: 0.85;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
   cursor: pointer;
   user-select: none;
 }
@@ -4008,24 +4389,24 @@
   font-family: var(--lcars-font-chrome);
   font-size: 10px;
   letter-spacing: 0.08em;
-  /* The audit row sits inside a column-flex footer; opacity 0.85 (was
-   * 0.75) preserves visual hierarchy below the primary action while
-   * staying within WCAG AA contrast for the `--lcars-ice` text colour
-   * over the LCARS dark surface. */
-  opacity: 0.85;
+  /* Auditable contrast: was opacity:0.85 on this row + opacity:0.7 on
+   * the inner __audit-label (effective alpha ~0.6 on ice, ~5:1 — the
+   * inline comment claimed AA, but stacked opacities are not auditable
+   * without recomputing. Replaced by explicit color-mix per element
+   * matching iter-8 Bundle C auditability rationale.) */
+  color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
 }
 .lcars-narrative-card__audit-label {
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: var(--lcars-ice);
-  opacity: 0.7;
+  color: color-mix(in srgb, var(--lcars-ice) 60%, transparent);
 }
 .lcars-narrative-card__audit-counts {
   font-variant-numeric: tabular-nums;
 }
 .lcars-narrative-card__audit-threshold {
   font-variant-numeric: tabular-nums;
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
 }
 .lcars-narrative-card__audit-shelved {
   font-weight: 700;
@@ -4047,10 +4428,13 @@
   color: var(--lcars-peach);
   cursor: pointer;
 }
-.lcars-narrative-card__audit-dismiss:hover,
+.lcars-narrative-card__audit-dismiss:hover {
+  background: rgba(255, 153, 102, 0.12);
+}
 .lcars-narrative-card__audit-dismiss:focus-visible {
   background: rgba(255, 153, 102, 0.12);
-  outline: none;
+  outline: 2px solid var(--lcars-peach);
+  outline-offset: 2px;
 }
 
 /* ---------------------------------------------------------------- *
@@ -4097,12 +4481,18 @@
   vertical-align: baseline;
   opacity: 0.75;
 }
-.lcars-topics-index__disable:hover,
+.lcars-topics-index__disable:hover {
+  color: var(--lcars-peach);
+  opacity: 1;
+  text-decoration: underline;
+}
 .lcars-topics-index__disable:focus-visible {
   color: var(--lcars-peach);
   opacity: 1;
-  outline: none;
   text-decoration: underline;
+  outline: 2px solid var(--lcars-butterscotch);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* Phase 3 opt-in gate — disclosure card shown until the user clicks
@@ -4148,10 +4538,13 @@
   border-radius: 16px;
   cursor: pointer;
 }
-.lcars-topics-opt-in__cta:hover,
+.lcars-topics-opt-in__cta:hover {
+  background: var(--lcars-sunflower);
+}
 .lcars-topics-opt-in__cta:focus-visible {
   background: var(--lcars-sunflower);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-topics-index__filter {
   display: inline-flex;
@@ -4161,6 +4554,11 @@
   border: 1px solid var(--lcars-ice);
   border-radius: 14px;
   padding: 3px 10px;
+}
+.lcars-topics-index__filter:focus-within {
+  border-color: var(--lcars-sunflower);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-topics-index__filter-label {
   color: var(--lcars-ice);
@@ -4201,11 +4599,15 @@
     background 120ms,
     transform 120ms;
 }
-.lcars-topics-index__row:hover,
+.lcars-topics-index__row:hover {
+  background: rgba(153, 204, 255, 0.12);
+  transform: translateX(2px);
+}
 .lcars-topics-index__row:focus-visible {
   background: rgba(153, 204, 255, 0.12);
-  outline: none;
   transform: translateX(2px);
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
 }
 .lcars-topics-index__row-name {
   font-family: var(--lcars-font-chrome);
@@ -4217,8 +4619,22 @@
 .lcars-topics-index__row-meta {
   display: flex;
   gap: 14px;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
+}
+
+/* Iter-10 — mid-refactor closure: orphan className references in
+ * TopicsMode TopicDetail had no CSS rules (same HOT-file drift iter-9
+ * found in ProjectsMode). */
+.lcars-topic-detail__projects,
+.lcars-topic-detail__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-topic-detail__sessions {
+  margin-top: 8px;
 }
 
 .lcars-topic-detail {
@@ -4226,6 +4642,10 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* WCAG 2.4.11 Focus Not Obscured: parallel to ProjectDetail iter-9
+   * Bundle L — sticky header can obscure focused content as user
+   * tabs through session grid below. */
+  scroll-padding-top: 56px;
 }
 .lcars-topic-detail__header {
   display: flex;
@@ -4265,10 +4685,13 @@
   font-weight: 600;
   cursor: pointer;
 }
-.lcars-chip--cross-project:hover:not(:disabled),
+.lcars-chip--cross-project:hover:not(:disabled) {
+  background: rgba(255, 204, 102, 0.22);
+}
 .lcars-chip--cross-project:focus-visible:not(:disabled) {
   background: rgba(255, 204, 102, 0.22);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-chip--cross-project:disabled {
   opacity: 0.55;
@@ -4343,9 +4766,10 @@
 }
 .lcars-curator-feed__lead {
   margin: 0;
-  font-size: 11.5px;
-  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
-  line-height: 1.45;
+  font-size: 12px;
+  max-width: 72ch;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
+  line-height: 1.5;
 }
 .lcars-curator-feed__falsifier-inline--verified {
   font-family: var(--lcars-font-chrome);
@@ -4360,14 +4784,14 @@
   border-radius: 6px;
   background: rgba(255, 153, 102, 0.12);
   color: var(--lcars-peach);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
 }
 .lcars-curator-feed__loading,
 .lcars-curator-feed__empty {
   margin: 0;
-  font-size: 11.5px;
-  color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
 }
 .lcars-curator-feed__list {
   list-style: none;
@@ -4380,12 +4804,16 @@
 .lcars-curator-feed__row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.02);
+  padding: 8px 12px 10px;
+  border-radius: 0 4px 4px 0;
+  background: rgba(255, 153, 102, 0.03);
+  border-left: 3px solid rgba(255, 153, 102, 0.53);
   font-size: 12px;
+}
+.lcars-curator-feed__row:hover {
+  background: rgba(255, 153, 102, 0.06);
 }
 .lcars-curator-feed__rank {
   font-family: var(--lcars-font-chrome);
@@ -4420,8 +4848,9 @@
 .lcars-curator-feed__tie-break {
   font-family: var(--lcars-font-chrome);
   font-size: 10px;
-  letter-spacing: 0.08em;
-  color: color-mix(in srgb, var(--lcars-text) 55%, transparent);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
   font-variant-numeric: tabular-nums;
 }
 .lcars-curator-feed__falsifier {
@@ -4442,10 +4871,12 @@
 }
 .lcars-curator-feed__reasoning {
   flex: 1 0 100%;
-  margin: 0;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--lcars-text) 60%, transparent);
-  font-style: italic;
+  margin: 2px 0 0;
+  padding: 4px 0 0 10px;
+  border-left: 1px solid rgba(255, 153, 102, 0.27);
+  font-size: 12px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
 }
 .lcars-practice__lens-header {
   display: flex;
@@ -4461,13 +4892,15 @@
   margin: 0;
 }
 .lcars-practice__lens-blurb {
-  font-size: 11px;
-  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
 }
 .lcars-practice__empty {
   margin: 0;
-  font-size: 11.5px;
-  color: color-mix(in srgb, var(--lcars-text) 50%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
 }
 .lcars-practice__finding-list {
   list-style: none;
@@ -4475,16 +4908,45 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
+/* Iter-10 — apply the iter-7 dense-evidence-list playbook + per-severity
+ * rail so the eye can scan severity from the row edge instead of the
+ * trailing chip on every row. */
 .lcars-practice__finding {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid color-mix(in srgb, var(--lcars-violet) 30%, transparent);
-  border-radius: 6px;
+  padding: 8px 12px 10px;
+  background: rgba(204, 153, 204, 0.04);
+  border: none;
+  border-left: 3px solid rgba(204, 153, 204, 0.53);
+  border-radius: 0 4px 4px 0;
+  transition: background 120ms;
+}
+.lcars-practice__finding:hover {
+  background: rgba(204, 153, 204, 0.06);
+}
+.lcars-practice__finding:has(.lcars-practice__severity--info) {
+  border-left-color: rgba(153, 204, 255, 0.53);
+  background: rgba(153, 204, 255, 0.04);
+}
+.lcars-practice__finding:has(.lcars-practice__severity--info):hover {
+  background: rgba(153, 204, 255, 0.06);
+}
+.lcars-practice__finding:has(.lcars-practice__severity--warn) {
+  border-left-color: rgba(255, 204, 102, 0.53);
+  background: rgba(255, 204, 102, 0.04);
+}
+.lcars-practice__finding:has(.lcars-practice__severity--warn):hover {
+  background: rgba(255, 204, 102, 0.06);
+}
+.lcars-practice__finding:has(.lcars-practice__severity--alert) {
+  border-left-color: rgba(255, 153, 51, 0.53);
+  background: rgba(255, 153, 51, 0.04);
+}
+.lcars-practice__finding:has(.lcars-practice__severity--alert):hover {
+  background: rgba(255, 153, 51, 0.06);
 }
 .lcars-practice__finding-header {
   display: flex;
@@ -4495,10 +4957,10 @@
   display: inline-flex;
   align-items: center;
   font-family: var(--lcars-font-chrome);
-  font-size: 9px;
-  letter-spacing: 0.18em;
+  font-size: 10px;
+  letter-spacing: 0.16em;
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 6px;
   border: 1px solid currentColor;
 }
@@ -4538,21 +5000,26 @@
 }
 .lcars-practice__evidence-pill {
   font-family: var(--lcars-font-chrome);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  min-height: 22px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--lcars-violet) 50%, transparent);
   background: rgba(0, 0, 0, 0.35);
   color: var(--lcars-text);
   cursor: pointer;
 }
-.lcars-practice__evidence-pill:hover,
+.lcars-practice__evidence-pill:hover {
+  background: rgba(204, 153, 204, 0.20);
+}
 .lcars-practice__evidence-pill:focus-visible {
   background: rgba(204, 153, 204, 0.20);
-  outline: none;
+  outline: 2px solid var(--lcars-violet);
+  outline-offset: 2px;
 }
 .lcars-practice__evidence-pill--static {
+  opacity: 1;
   cursor: default;
   opacity: 0.85;
 }
@@ -4570,10 +5037,13 @@
   cursor: pointer;
   background: transparent;
 }
-.lcars-detail-mode__nav:hover,
+.lcars-detail-mode__nav:hover {
+  background: rgba(255, 204, 153, 0.12);
+}
 .lcars-detail-mode__nav:focus-visible {
   background: rgba(255, 204, 153, 0.12);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-detail-mode__nav--disabled {
   border-color: var(--lcars-dim);
@@ -4599,10 +5069,13 @@
   cursor: pointer;
   background: transparent;
 }
-.lcars-detail-mode__copy:hover,
+.lcars-detail-mode__copy:hover {
+  background: rgba(204, 153, 204, 0.15);
+}
 .lcars-detail-mode__copy:focus-visible {
   background: rgba(204, 153, 204, 0.15);
-  outline: none;
+  outline: 2px solid var(--lcars-violet);
+  outline-offset: 2px;
 }
 .lcars-detail-mode__copy-toast {
   font-size: 10px;
@@ -4742,17 +5215,17 @@
 }
 .lcars-delete-dropdown__hint {
   margin: 0;
-  color: var(--lcars-text);
-  font-size: 11.5px;
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--lcars-text) 85%, var(--lcars-bg));
+  font-size: 12px;
+  line-height: 1.5;
 }
 .lcars-delete-dropdown__hint code {
-  background: rgba(255, 204, 153, 0.08);
-  border: 1px solid rgba(255, 204, 153, 0.22);
+  background: color-mix(in srgb, var(--lcars-sunflower) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 55%, transparent);
   border-radius: 3px;
   padding: 0 4px;
   font-family: var(--lcars-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--lcars-sunflower);
 }
 .lcars-delete-dropdown__list {
@@ -4797,23 +5270,23 @@
 }
 .lcars-delete-dropdown__row-sub {
   font-family: var(--lcars-font-mono);
-  font-size: 10.5px;
-  color: var(--lcars-text);
-  opacity: 0.6;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg));
 }
 .lcars-delete-dropdown__row-count {
   font-family: var(--lcars-font-mono);
-  font-size: 11px;
-  color: var(--lcars-text);
-  opacity: 0.75;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg));
   white-space: nowrap;
 }
+/* The path-explain row is the only place a user learns *which* directories
+   the wipe targets — load-bearing on a destructive flow. Previously 10.5px
+   mono at opacity 0.45 (~2:1 contrast); raised to body floor + ~5:1. */
 .lcars-delete-dropdown__row-explain {
   margin: 3px 0 0 22px;
   font-family: var(--lcars-font-mono);
-  font-size: 10.5px;
-  color: var(--lcars-text);
-  opacity: 0.45;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg));
   word-break: break-all;
 }
 .lcars-delete-dropdown__selectall {
@@ -4839,11 +5312,15 @@
     border-color 100ms,
     color 100ms;
 }
-.lcars-delete-dropdown__selectall-btn:hover:not(:disabled),
-.lcars-delete-dropdown__selectall-btn:focus-visible:not(:disabled) {
-  outline: none;
-  background: rgba(255, 204, 153, 0.08);
+.lcars-delete-dropdown__selectall-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lcars-sunflower) 8%, transparent);
   border-color: var(--lcars-sunflower);
+}
+.lcars-delete-dropdown__selectall-btn:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--lcars-sunflower) 8%, transparent);
+  border-color: var(--lcars-sunflower);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-delete-dropdown__selectall-btn:disabled {
   opacity: 0.4;
@@ -4866,11 +5343,12 @@
 .lcars-delete-dropdown__error {
   margin: 8px 0 0 0;
   padding: 6px 10px;
-  background: rgba(255, 80, 60, 0.12);
+  background: color-mix(in srgb, var(--lcars-peach) 12%, transparent);
   border: 1px solid var(--lcars-peach);
   border-radius: 6px;
   color: var(--lcars-peach);
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .lcars-delete-dropdown__actions {
   display: flex;
@@ -4901,25 +5379,37 @@
   border-color: rgba(255, 204, 153, 0.4);
   color: var(--lcars-sunflower);
 }
-.lcars-delete-dropdown__cancel:hover:not(:disabled),
-.lcars-delete-dropdown__cancel:focus-visible:not(:disabled) {
-  outline: none;
-  background: rgba(255, 204, 153, 0.1);
+.lcars-delete-dropdown__cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lcars-sunflower) 10%, transparent);
   border-color: var(--lcars-sunflower);
+}
+.lcars-delete-dropdown__cancel:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--lcars-sunflower) 10%, transparent);
+  border-color: var(--lcars-sunflower);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-delete-dropdown__primary {
   background: var(--lcars-peach);
   color: var(--lcars-bg);
 }
-.lcars-delete-dropdown__primary:hover:not(:disabled),
-.lcars-delete-dropdown__primary:focus-visible:not(:disabled) {
-  outline: none;
+.lcars-delete-dropdown__primary:hover:not(:disabled) {
   background: #ff9a6a;
+}
+.lcars-delete-dropdown__primary:focus-visible:not(:disabled) {
+  background: #ff9a6a;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-delete-dropdown__primary--armed {
   /* Pulse when armed so the user notices the button-label change and
-     the "are you sure?" prompt above it. */
+     the "are you sure?" prompt above it. Reduced-motion users get only
+     the static escalation below (deeper peach + thicker border) so the
+     armed state still reads visually distinct from idle. */
   animation: lcars-delete-armed-pulse 1400ms ease-in-out infinite;
+  background: #ff7050;
+  border-color: var(--lcars-sunflower);
+  border-width: 2px;
 }
 @keyframes lcars-delete-armed-pulse {
   0%,
@@ -5000,7 +5490,9 @@
   font-size: 10px;
   letter-spacing: 0.12em;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 7px 10px;
+  min-width: 28px;
+  min-height: 28px;
   cursor: pointer;
   line-height: 1;
 }
@@ -5009,23 +5501,30 @@
   cursor: not-allowed;
 }
 .lcars-activity-log__action:hover:not(:disabled),
-.lcars-activity-log__close:hover {
+.lcars-activity-log__close:hover,
+.lcars-activity-log__action:focus-visible,
+.lcars-activity-log__close:focus-visible {
   background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+}
+.lcars-activity-log__action:focus-visible,
+.lcars-activity-log__close:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-activity-log__close {
   font-size: 12px;
-  padding: 2px 7px;
+  padding: 6px 9px;
 }
 .lcars-activity-log__list {
   flex: 1;
   overflow-y: auto;
   padding: 6px 10px 12px;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .lcars-activity-log__empty {
   color: var(--lcars-text);
-  opacity: 0.45;
+  opacity: 0.7;
   text-align: center;
   margin-top: 40px;
   font-family: var(--lcars-font-prose, 'IBM Plex Sans', sans-serif);
@@ -5043,7 +5542,7 @@
 }
 .lcars-activity-log__time {
   color: var(--lcars-text);
-  opacity: 0.55;
+  opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
 .lcars-activity-log__glyph {
@@ -5064,7 +5563,7 @@
 }
 .lcars-activity-log__entry--debug .lcars-activity-log__glyph,
 .lcars-activity-log__entry--debug .lcars-activity-log__message {
-  opacity: 0.6;
+  opacity: 0.75;
 }
 .lcars-activity-log__entry--info .lcars-activity-log__glyph {
   color: var(--lcars-ice);
@@ -5240,6 +5739,12 @@
   background: color-mix(in srgb, var(--lcars-butterscotch) 14%, transparent);
   color: var(--lcars-sunflower);
 }
+.lcars-upper-panel__tab:focus-visible {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 14%, transparent);
+  color: var(--lcars-sunflower);
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: -2px;
+}
 .lcars-upper-panel__tab--active {
   background: var(--lcars-butterscotch);
   color: #000;
@@ -5253,7 +5758,7 @@
   font-size: 9px;
   padding: 0 5px;
   border-radius: 7px;
-  background: rgba(0, 0, 0, 0.22);
+  background: color-mix(in srgb, var(--lcars-bg) 22%, transparent);
   font-weight: 700;
 }
 .lcars-upper-panel__tab--active .lcars-upper-panel__tab-badge {
@@ -5263,12 +5768,12 @@
 /* Urgency flag: red badge when dupe + zombie counts exceed zero. Survives
    both active and inactive tab states so the signal is never hidden. */
 .lcars-upper-panel__tab--flag .lcars-upper-panel__tab-badge {
-  background: #ff6b4a;
-  color: #fff;
+  background: var(--lcars-peach);
+  color: var(--lcars-bg);
 }
 .lcars-upper-panel__tab--active.lcars-upper-panel__tab--flag .lcars-upper-panel__tab-badge {
-  background: #ff6b4a;
-  color: #fff;
+  background: var(--lcars-peach);
+  color: var(--lcars-bg);
 }
 
 .lcars-upper-panel__body {
@@ -5347,7 +5852,7 @@
   --card-accent: var(--lcars-peach);
 }
 .lcars-analysis-card--zombie {
-  --card-accent: #ff6b4a;
+  --card-accent: var(--lcars-peach);
 }
 .lcars-analysis-card--classified {
   /* Ice-blue accent reads as "matched / known good" and keeps the
@@ -5380,10 +5885,9 @@
 }
 .lcars-analysis-card__desc {
   font-family: var(--lcars-font-prose);
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--lcars-text);
-  opacity: 0.72;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-2));
   flex: 1;
 }
 .lcars-analysis-card__cta {
@@ -5465,8 +5969,7 @@
   font-family: var(--lcars-font-prose);
   font-size: 12.5px;
   line-height: 1.45;
-  color: var(--lcars-text);
-  opacity: 0.82;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
 }
 .lcars-analysis-launcher__actions {
   display: flex;
@@ -5564,7 +6067,7 @@
 }
 .lcars-analysis-launcher__progress {
   height: 6px;
-  background: rgba(204, 153, 204, 0.15);
+  background: color-mix(in srgb, var(--lcars-violet) 30%, transparent);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -5612,16 +6115,14 @@
 }
 .lcars-analysis-launcher__preview-note {
   margin-top: 4px;
-  font-size: 11.5px;
-  color: var(--lcars-text);
-  opacity: 0.72;
-  line-height: 1.45;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-1));
+  line-height: 1.5;
 }
 .lcars-analysis-launcher__preview-mono {
   font-family: var(--lcars-font-mono);
-  font-size: 11.5px;
-  color: var(--lcars-text);
-  opacity: 0.85;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 88%, var(--lcars-bg-1));
 }
 
 /* Numbered step list — the "exact analysis steps" requested by the
@@ -5669,10 +6170,9 @@
   grid-column: 2;
 }
 .lcars-analysis-launcher__step-detail {
-  font-size: 11.5px;
-  color: var(--lcars-text);
-  opacity: 0.72;
-  line-height: 1.45;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-1));
+  line-height: 1.5;
   display: block;
   grid-column: 2;
   margin-top: 1px;
@@ -6051,14 +6551,14 @@
   min-width: 0;
 }
 .lcars-trust-strip__footnote {
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--lcars-dim);
   padding-left: 0;
 }
 .lcars-trust-strip__footnote code {
   font-family: var(--lcars-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--lcars-butterscotch-muted);
 }
 /* Center + align within the empty-state column to match its other
@@ -6093,8 +6593,7 @@
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--lcars-text);
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--lcars-text) 85%, var(--lcars-bg));
 }
 @media (min-width: 600px) {
   .lcars-empty-pitch__headline {
@@ -6119,7 +6618,7 @@
   font-size: 12px;
   border-left: none;
   border-top: 2px solid var(--lcars-butterscotch-muted);
-  background: rgba(221, 153, 68, 0.04);
+  background: color-mix(in srgb, var(--lcars-butterscotch) 4%, transparent);
   border-radius: 0;
   grid-column: 1 / -1;
 }
@@ -6322,12 +6821,19 @@
   font-size: 12px;
   letter-spacing: 0.12em;
   font-weight: 600;
-  padding: 2px 7px;
+  padding: 6px 10px;
+  min-width: 28px;
+  min-height: 28px;
   cursor: pointer;
   line-height: 1;
 }
-.lcars-data-panel__close:hover {
+.lcars-data-panel__close:hover,
+.lcars-data-panel__close:focus-visible {
   background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+}
+.lcars-data-panel__close:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-data-panel__lead {
   margin: 12px 14px 4px;
@@ -6555,6 +7061,9 @@
   gap: 12px;
   justify-content: space-between;
 }
+.lcars-applied-summary__headline-when {
+  color: var(--lcars-peach);
+}
 .lcars-applied-summary__headline {
   margin: 0;
   font-family: var(--lcars-font-chrome);
@@ -6582,11 +7091,15 @@ button.lcars-applied-summary__stale--button {
   font: inherit;
   text-align: left;
 }
-button.lcars-applied-summary__stale--button:hover,
+button.lcars-applied-summary__stale--button:hover {
+  background: rgba(255, 153, 51, 0.16);
+  border-color: var(--lcars-peach);
+}
 button.lcars-applied-summary__stale--button:focus-visible {
   background: rgba(255, 153, 51, 0.16);
   border-color: var(--lcars-peach);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-applied-summary__stale-arrow {
   display: inline-block;
@@ -6630,7 +7143,7 @@ button.lcars-applied-summary__stale--button:focus-visible {
 .lcars-applied-summary__stat-label {
   font-family: var(--lcars-font-chrome);
   font-size: 10px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.18em;
   color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
 }
 .lcars-applied-summary__toggle {
@@ -6649,10 +7162,13 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-weight: 700;
   color: var(--lcars-sunflower);
 }
-.lcars-applied-summary__toggle:hover,
+.lcars-applied-summary__toggle:hover {
+  background: rgba(255, 204, 153, 0.08);
+}
 .lcars-applied-summary__toggle:focus-visible {
   background: rgba(255, 204, 153, 0.08);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-applied-summary__chevron {
   font-size: 10px;
@@ -6671,6 +7187,7 @@ button.lcars-applied-summary__stale--button:focus-visible {
 .lcars-applied-summary__row-btn {
   display: grid;
   grid-template-columns: minmax(80px, auto) 1fr minmax(140px, auto) auto;
+  border-left: 3px solid rgba(255, 204, 153, 0.27);
   gap: 12px;
   align-items: baseline;
   width: 100%;
@@ -6683,15 +7200,17 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-family: var(--lcars-font-prose);
   color: var(--lcars-text);
 }
-.lcars-applied-summary__row-btn:hover,
+.lcars-applied-summary__row-btn:hover {
+  background: rgba(255, 204, 153, 0.06);
+}
 .lcars-applied-summary__row-btn:focus-visible {
   background: rgba(255, 204, 153, 0.06);
-  border-color: color-mix(in srgb, var(--lcars-sunflower) 40%, transparent);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-applied-summary__row-when {
   font-family: var(--lcars-font-mono, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
   color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -6717,8 +7236,8 @@ button.lcars-applied-summary__stale--button:focus-visible {
 }
 .lcars-applied-summary__row-target-path {
   font-family: var(--lcars-font-mono, monospace);
-  font-size: 10.5px;
-  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
 }
 .lcars-applied-summary__row-bucket {
   font-family: var(--lcars-font-chrome);
@@ -6741,6 +7260,19 @@ button.lcars-applied-summary__stale--button:focus-visible {
 .lcars-applied-summary__row-bucket--gone {
   color: color-mix(in srgb, var(--lcars-text) 55%, transparent);
   background: rgba(255, 255, 255, 0.04);
+}
+/* F-DE-4 — left-rail keyed to bucket so the eye scans urgency
+   off the row edge instead of having to read the trailing pill on
+   every row. `:has()` shipped baseline-stable in all targets the
+   viewer supports (Chrome ≥105, Safari ≥15.4, Firefox ≥121). */
+.lcars-applied-summary__row:has(.lcars-applied-summary__row-bucket--holding) .lcars-applied-summary__row-btn {
+  border-left-color: color-mix(in srgb, var(--lcars-sunflower) 60%, transparent);
+}
+.lcars-applied-summary__row:has(.lcars-applied-summary__row-bucket--recurring) .lcars-applied-summary__row-btn {
+  border-left-color: var(--lcars-peach);
+}
+.lcars-applied-summary__row:has(.lcars-applied-summary__row-bucket--gone) .lcars-applied-summary__row-btn {
+  border-left-color: color-mix(in srgb, var(--lcars-text) 30%, transparent);
 }
 @media (max-width: 600px) {
   .lcars-applied-summary__row-btn {
@@ -6765,6 +7297,12 @@ button.lcars-applied-summary__stale--button:focus-visible {
   .lcars-applied-summary__row-target {
     grid-row: 3;
     grid-column: 1 / 3;
+    /* F-M-13 — collapse target kind+path to one inline meta-line so
+       the wide 0.18em-tracked chip doesn't dwarf the rule above it
+       at narrow widths. */
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
   }
 }
 
@@ -6855,11 +7393,15 @@ button.lcars-applied-summary__stale--button:focus-visible {
   text-align: left;
   font-variant-numeric: tabular-nums;
 }
-.lcars-corrections__coverage-provenance:hover,
+.lcars-corrections__coverage-provenance:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--lcars-text);
+}
 .lcars-corrections__coverage-provenance:focus-visible {
   background: rgba(255, 255, 255, 0.04);
   color: var(--lcars-text);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-corrections__coverage-chevron {
   font-size: 10px;
@@ -6975,9 +7517,8 @@ button.lcars-applied-summary__stale--button:focus-visible {
 }
 .lcars-corrections__stage-note {
   font-family: var(--lcars-font-mono, monospace);
-  font-size: 11px;
-  font-style: italic;
-  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
 }
 .lcars-corrections__stage-body {
   display: flex;
@@ -7075,7 +7616,8 @@ button.lcars-applied-summary__stale--button:focus-visible {
   color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
   letter-spacing: 0.06em;
 }
-.lcars-corrections__sr-only {
+.lcars-corrections__sr-only,
+.lcars-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -7098,10 +7640,9 @@ button.lcars-applied-summary__stale--button:focus-visible {
   letter-spacing: 0.04em;
 }
 .lcars-corrections__running-staleness {
-  font-size: 10px;
-  color: color-mix(in srgb, var(--lcars-text) 72%, transparent);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, transparent);
   letter-spacing: 0.04em;
-  text-transform: lowercase;
 }
 .lcars-corrections__running-error {
   margin: 0;
@@ -7134,14 +7675,19 @@ button.lcars-applied-summary__stale--button:focus-visible {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   font-family: var(--lcars-font-mono, monospace);
-  font-size: 11px;
-  max-height: 120px;
+  font-size: 12px;
+  max-height: 160px;
   overflow: auto;
 }
 .lcars-corrections__log-line {
+  padding: 3px 8px;
+  background: rgba(255, 153, 51, 0.04);
+  border-left: 2px solid rgba(255, 153, 51, 0.45);
+  border-radius: 0 3px 3px 0;
   color: color-mix(in srgb, var(--lcars-text) 92%, transparent);
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -7272,6 +7818,7 @@ button.lcars-applied-summary__stale--button:focus-visible {
 }
 .lcars-correction-pattern__rule {
   margin: 0;
+  max-width: 70ch;
   font-size: 14px;
   line-height: 1.4;
   font-weight: 600;
@@ -7319,10 +7866,13 @@ button.lcars-applied-summary__stale--button:focus-visible {
   border-radius: 999px;
   cursor: pointer;
 }
-.lcars-correction-pattern__toggle:hover,
+.lcars-correction-pattern__toggle:hover {
+  background: rgba(255, 153, 51, 0.10);
+}
 .lcars-correction-pattern__toggle:focus-visible {
   background: rgba(255, 153, 51, 0.10);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-correction-pattern__body {
   display: flex;
@@ -7409,11 +7959,15 @@ button.lcars-applied-summary__stale--button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 6px;
+  padding: 8px 12px 10px;
+  background: rgba(255, 204, 153, 0.03);
+  border-left: 3px solid rgba(255, 204, 153, 0.53);
+  border-radius: 0 4px 4px 0;
   font-size: 12px;
   line-height: 1.55;
+}
+.lcars-correction-pattern__instance:hover {
+  background: rgba(255, 204, 153, 0.06);
 }
 .lcars-correction-pattern__instance-context {
   margin: 0;
@@ -7530,8 +8084,14 @@ button.lcars-applied-summary__stale--button:focus-visible {
 }
 .lcars-correction-pattern__empty {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: color-mix(in srgb, var(--lcars-text) 78%, transparent);
+}
+.lcars-correction-pattern__apply-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 80%, transparent);
 }
 .lcars-correction-pattern__btn--ghost {
   border-color: color-mix(in srgb, var(--lcars-text) 30%, transparent);
@@ -7551,10 +8111,13 @@ button.lcars-applied-summary__stale--button:focus-visible {
   cursor: pointer;
   border-radius: 4px;
 }
-.lcars-correction-pattern__instance-pill:hover,
+.lcars-correction-pattern__instance-pill:hover {
+  border-color: color-mix(in srgb, var(--lcars-peach) 50%, transparent);
+}
 .lcars-correction-pattern__instance-pill:focus-visible {
   border-color: color-mix(in srgb, var(--lcars-peach) 50%, transparent);
-  outline: none;
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
 }
 .lcars-correction-pattern__applied {
   font-family: var(--lcars-font-chrome);
@@ -7570,7 +8133,7 @@ button.lcars-applied-summary__stale--button:focus-visible {
   margin-left: 6px;
   font-weight: 400;
   letter-spacing: 0.04em;
-  opacity: 0.7;
+  color: color-mix(in srgb, var(--lcars-peach) 80%, transparent);
 }
 .lcars-correction-pattern__confirm,
 .lcars-correction-pattern__apply-error {
@@ -7942,12 +8505,26 @@ button.lcars-applied-summary__stale--button:focus-visible {
   overflow-x: auto;
   margin: 0.5em 0;
 }
+.lcars-chat-message__code:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
+}
+.lcars-chat-message__user-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 
 .lcars-chat-message__caret {
   display: inline-block;
   margin-left: 2px;
   animation: lcars-chat-caret 1s steps(2) infinite;
   color: var(--lcars-sunflower);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcars-chat-message__caret {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 @keyframes lcars-chat-caret {
@@ -7987,8 +8564,12 @@ button.lcars-applied-summary__stale--button:focus-visible {
   color: var(--lcars-ice);
   text-transform: uppercase;
   user-select: none;
-  outline: none;
   list-style: none;
+}
+.lcars-chat-message__details-summary:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .lcars-chat-message__details-summary::-webkit-details-marker {
@@ -8120,8 +8701,12 @@ button.lcars-applied-summary__stale--button:focus-visible {
   cursor: pointer;
   font-family: var(--lcars-font-mono, monospace);
   letter-spacing: 0.06em;
-  outline: none;
   user-select: none;
+}
+.lcars-chat-trace__summary:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .lcars-chat-trace__label {
@@ -8130,8 +8715,8 @@ button.lcars-applied-summary__stale--button:focus-visible {
 }
 
 .lcars-chat-trace__counts {
-  color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 78%, transparent);
+  font-size: 12px;
 }
 
 .lcars-chat-trace__list {
@@ -8148,7 +8733,7 @@ button.lcars-applied-summary__stale--button:focus-visible {
   align-items: baseline;
   gap: 6px;
   font-family: var(--lcars-font-mono, monospace);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .lcars-chat-trace__glyph {
@@ -8164,11 +8749,14 @@ button.lcars-applied-summary__stale--button:focus-visible {
 }
 
 .lcars-chat-trace__thinking {
-  color: color-mix(in srgb, var(--lcars-text) 55%, transparent);
-  font-style: italic;
-  font-size: 10.5px;
+  color: color-mix(in srgb, var(--lcars-text) 72%, transparent);
+  font-size: 12px;
 }
 
+.lcars-chat-trace__item--error {
+  border-left: 2px solid var(--lcars-peach);
+  padding-left: 6px;
+}
 .lcars-chat-trace__item--error .lcars-chat-trace__code {
   color: var(--lcars-peach);
 }
@@ -8275,9 +8863,10 @@ button.lcars-applied-summary__stale--button:focus-visible {
 .lcars-chat-disclosure__cancel,
 .lcars-chat-disclosure__confirm {
   font-family: var(--lcars-font-mono, monospace);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
-  padding: 8px 14px;
+  padding: 10px 16px;
+  min-height: 36px;
   cursor: pointer;
   border-radius: 4px;
 }
@@ -8293,4 +8882,1757 @@ button.lcars-applied-summary__stale--button:focus-visible {
   color: #000;
   border: none;
   font-weight: bold;
+}
+
+.lcars-chat-disclosure__cancel:focus-visible,
+.lcars-chat-disclosure__confirm:focus-visible {
+  outline: 2px solid var(--lcars-ice);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+ * Iter-14 — chrome backfill
+ *
+ * Five component class families were shipping without ANY CSS rules and
+ * rendering with browser-default `<button>` / `<aside>` chrome on top of
+ * the LCARS frame. Authored minimal LCARS-style rules here (tokens-only,
+ * no hardcoded colors) to restore visual hierarchy + focus-visible
+ * outlines + body-prose contrast. Not a full design pass — just enough
+ * to fix the a11y/readability gaps the iter-14 review surfaced.
+ * ============================================================================ */
+
+/* --- MethodologyDisclosure ------------------------------------------------- */
+.lcars-methodology {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 35%, transparent);
+  border-left: 3px solid var(--lcars-butterscotch);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lcars-butterscotch) 4%, transparent);
+}
+.lcars-methodology__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+}
+.lcars-methodology__toggle:hover {
+  color: var(--lcars-sunflower);
+}
+.lcars-methodology__toggle:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.lcars-methodology__body {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--lcars-butterscotch) 35%, transparent);
+}
+.lcars-methodology__lead {
+  margin: 0 0 10px;
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--lcars-sunflower);
+  max-width: 72ch;
+}
+.lcars-methodology__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 72ch;
+}
+.lcars-methodology__item {
+  padding: 6px 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--lcars-butterscotch) 25%, transparent);
+}
+.lcars-methodology__item:last-child {
+  border-bottom: 0;
+}
+.lcars-methodology__item-title {
+  display: block;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  margin-bottom: 4px;
+}
+.lcars-methodology__item-body {
+  display: block;
+  font-family: var(--lcars-font-prose);
+  font-size: 12px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--lcars-text) 92%, var(--lcars-bg-1));
+}
+
+/* --- ActionItemsBanner ----------------------------------------------------- */
+.lcars-action-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--lcars-peach) 8%, var(--lcars-bg-1));
+  border: 1px solid color-mix(in srgb, var(--lcars-peach) 40%, transparent);
+  border-left: 4px solid var(--lcars-peach);
+  border-radius: 6px;
+  margin: 12px 0;
+}
+.lcars-action-items__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lcars-action-items__label {
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--lcars-sunflower);
+}
+.lcars-action-items__label strong {
+  color: var(--lcars-peach);
+  font-weight: 700;
+}
+.lcars-action-items__dismiss {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-peach) 55%, transparent);
+  color: var(--lcars-peach);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+}
+.lcars-action-items__dismiss:hover {
+  background: color-mix(in srgb, var(--lcars-peach) 18%, transparent);
+}
+.lcars-action-items__dismiss:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+/* Action rows lead — vertical list, one full-width row per bucket so
+   the destination cue can right-align. */
+.lcars-action-items__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-action-items__item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.lcars-action-items__link {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 50%, transparent);
+  color: var(--lcars-sunflower);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-family: var(--lcars-font-prose);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  text-align: left;
+}
+.lcars-action-items__link:hover {
+  background: color-mix(in srgb, var(--lcars-sunflower) 12%, transparent);
+}
+.lcars-action-items__link:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-action-items__delta {
+  font-family: var(--lcars-font-prose);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg-1));
+}
+.lcars-action-items__dest {
+  margin-left: auto;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+
+/* "Worth a look" examples strip — supporting region below the rows. */
+.lcars-action-items__examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--lcars-peach) 22%, transparent);
+}
+.lcars-action-items__examples-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-action-items__examples-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.lcars-action-items__examples-link {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 50%, transparent);
+  color: var(--lcars-sunflower);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-family: var(--lcars-font-prose);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  text-align: left;
+}
+.lcars-action-items__examples-link:hover {
+  background: color-mix(in srgb, var(--lcars-sunflower) 12%, transparent);
+}
+.lcars-action-items__examples-link:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+
+/* --- DataUpdatedBanner ----------------------------------------------------- */
+.lcars-data-updated-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--lcars-ice) 10%, var(--lcars-bg-1));
+  border: 1px solid color-mix(in srgb, var(--lcars-ice) 40%, transparent);
+  border-left: 4px solid var(--lcars-ice);
+  border-radius: 6px;
+  margin: 10px 0;
+}
+.lcars-data-updated-banner__tag {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--lcars-ice);
+  color: var(--lcars-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.lcars-data-updated-banner__message {
+  flex: 1 1 200px;
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--lcars-sunflower);
+}
+.lcars-data-updated-banner__detail {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-ice);
+}
+.lcars-data-updated-banner__btn {
+  background: var(--lcars-ice);
+  color: var(--lcars-bg);
+  border: 0;
+  border-radius: 14px;
+  padding: 5px 14px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+}
+.lcars-data-updated-banner__btn:hover {
+  background: var(--lcars-sunflower);
+}
+.lcars-data-updated-banner__btn:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-data-updated-banner__btn--ghost {
+  background: transparent;
+  color: var(--lcars-ice);
+  border: 1px solid color-mix(in srgb, var(--lcars-ice) 55%, transparent);
+  width: 26px;
+  padding: 0;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.lcars-data-updated-banner__btn--ghost:hover {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+  color: var(--lcars-sunflower);
+}
+
+/* --- CopyMarkdownButton ---------------------------------------------------- */
+.lcars-copy-md-btn {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 40%, transparent);
+  color: var(--lcars-butterscotch);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 80ms linear, color 80ms linear, border-color 80ms linear;
+}
+.lcars-copy-md-btn:hover {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 12%, transparent);
+  color: var(--lcars-sunflower);
+  border-color: var(--lcars-sunflower);
+}
+.lcars-copy-md-btn:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-copy-md-btn[data-state='copied'] {
+  background: color-mix(in srgb, var(--lcars-ice) 18%, transparent);
+  color: var(--lcars-ice);
+  border-color: var(--lcars-ice);
+}
+.lcars-copy-md-btn[data-state='failed'] {
+  background: color-mix(in srgb, var(--lcars-fail) 14%, transparent);
+  color: var(--lcars-fail);
+  border-color: var(--lcars-fail);
+}
+
+/* --- empty-state CTA + muted message variant ------------------------------- */
+.lcars-empty-state__cta {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  border: 0;
+  border-radius: 16px;
+  padding: 8px 22px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  margin-top: 8px;
+  align-self: center;
+}
+.lcars-empty-state__cta:hover {
+  background: var(--lcars-sunflower);
+}
+.lcars-empty-state__cta:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-empty-state__message--muted {
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg));
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 72ch;
+}
+
+/* ============================================================================
+ * Iter-15 / F71 — outcome-substrate mode chrome backfill
+ *
+ * Seven major viewer surfaces (TrendsMode / EffectivenessMode / InsightsMode /
+ * DecisionsMode / TrustMode / ExportMode + OutcomeSparkline) had ZERO CSS
+ * rules in styles.css and were rendering with browser-default chrome on top
+ * of the LCARS frame — 3430+ LOC of components without paint discipline.
+ *
+ * Authored shared mode-page rules first (header / lead / section / panel
+ * / empty / caption / card-list / card / chip), then per-mode specifics.
+ * Tokens-only, no hardcoded colors, focus-visible outlines on every
+ * interactive surface, body-prose ≥12px / line-height 1.5, LCARS chrome
+ * carve-out (≥9px ALL-CAPS + ≥0.14em tracking + uppercase).
+ *
+ * Each mode uses a distinct left-edge accent color so the surface
+ * communicates which view you're on at a glance:
+ *   Trends → ice          Effectiveness → violet     Insights → sunflower
+ *   Decisions → peach     Trust → butterscotch        Export → sunflower-muted
+ * ============================================================================ */
+
+/* --- Shared mode-page base ------------------------------------------------- */
+.lcars-trends,
+.lcars-effectiveness,
+.lcars-insights,
+.lcars-decisions,
+.lcars-trust,
+.lcars-export {
+  padding: 16px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--lcars-bg);
+  color: var(--lcars-text);
+  font-family: var(--lcars-font-prose);
+  min-height: 0;
+}
+.lcars-trends__header,
+.lcars-effectiveness__header,
+.lcars-insights__header,
+.lcars-decisions__header,
+.lcars-trust__header,
+.lcars-export__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 35%, transparent);
+}
+.lcars-trends__title,
+.lcars-effectiveness__title,
+.lcars-insights__title,
+.lcars-decisions__title,
+.lcars-trust__title,
+.lcars-export__title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--lcars-sunflower);
+}
+.lcars-trends__lead,
+.lcars-effectiveness__lead,
+.lcars-insights__lead,
+.lcars-decisions__lead,
+.lcars-trust__lead,
+.lcars-export__lead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 88%, var(--lcars-bg));
+  max-width: 72ch;
+}
+.lcars-trends__section,
+.lcars-insights__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--lcars-bg-1);
+  border-radius: 6px;
+  border-left: 4px solid var(--lcars-butterscotch);
+}
+.lcars-trends__section-title,
+.lcars-insights__section-title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+.lcars-insights__section-blurb,
+.lcars-insights__section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-insights__section-blurb {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+}
+.lcars-trends__empty,
+.lcars-effectiveness__empty,
+.lcars-insights__empty,
+.lcars-decisions__empty,
+.lcars-trust__empty,
+.lcars-export__empty {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg));
+  background: color-mix(in srgb, var(--lcars-dim) 14%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--lcars-dim) 55%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-trends__caption {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-1));
+  max-width: 72ch;
+}
+
+/* --- TrendsMode (ice accent — trajectories + archetypes + skill curves) --- */
+.lcars-trends {
+  border-left: 4px solid var(--lcars-ice);
+}
+.lcars-trends__section {
+  border-left-color: var(--lcars-ice);
+}
+.lcars-trends__section-title {
+  color: var(--lcars-ice);
+}
+.lcars-trends__project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-trends__project-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lcars-ice) 4%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--lcars-ice) 55%, transparent);
+}
+.lcars-trends__project-name {
+  font-family: var(--lcars-font-mono);
+  font-size: 12.5px;
+  color: var(--lcars-sunflower);
+  font-weight: 600;
+}
+.lcars-trends__project-meta {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+.lcars-trends__centroid-list,
+.lcars-trends__archetype-sessions,
+.lcars-trends__session-list,
+.lcars-trends__skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-trends__centroid-id {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-ice);
+}
+.lcars-trends__centroid-count {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+.lcars-trends__session-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-ice);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.lcars-trends__session-link:hover {
+  color: var(--lcars-sunflower);
+}
+.lcars-trends__session-link:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-trends__matrix {
+  display: grid;
+  gap: 2px;
+  background: color-mix(in srgb, var(--lcars-butterscotch) 8%, transparent);
+  padding: 4px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+.lcars-trends__matrix-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  background: var(--lcars-bg-1);
+  min-height: 28px;
+  min-width: 28px;
+}
+.lcars-trends__bar-glyph {
+  display: inline-block;
+  width: 36px;
+  height: 8px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lcars-ice) 55%, transparent);
+}
+.lcars-trends__sig-mark {
+  margin-left: 4px;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: var(--lcars-pass);
+}
+.lcars-trends__skill-group-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-trends__skill-group-title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-ice);
+}
+.lcars-trends__skill-group-blurb {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 78%, var(--lcars-bg-1));
+}
+.lcars-trends__skill-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lcars-ice) 4%, transparent);
+}
+.lcars-trends__skill-label {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-sunflower);
+}
+.lcars-trends__skill-meta {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 80%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- EffectivenessMode (violet accent — trajectory + EWMA + Wilson CI) --- */
+.lcars-effectiveness {
+  border-left: 4px solid var(--lcars-violet);
+}
+.lcars-effectiveness__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--lcars-bg-1);
+  border-radius: 6px;
+  border-left: 4px solid var(--lcars-violet);
+}
+.lcars-effectiveness__panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.lcars-effectiveness__panel-title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-violet);
+}
+.lcars-effectiveness__readout {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 85%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+.lcars-effectiveness__verdict {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lcars-violet) 8%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--lcars-violet) 55%, transparent);
+}
+.lcars-effectiveness__verdict--up {
+  border-left-color: var(--lcars-pass);
+  background: color-mix(in srgb, var(--lcars-pass) 8%, transparent);
+}
+.lcars-effectiveness__verdict--down {
+  border-left-color: var(--lcars-fail);
+  background: color-mix(in srgb, var(--lcars-fail) 8%, transparent);
+}
+.lcars-effectiveness__verdict--flat {
+  border-left-color: var(--lcars-butterscotch);
+  background: color-mix(in srgb, var(--lcars-butterscotch) 8%, transparent);
+}
+.lcars-effectiveness__commit-ticks {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-effectiveness__commit-tick {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 78%, var(--lcars-bg-1));
+  line-height: 1.4;
+}
+.lcars-effectiveness__commit-tick code {
+  background: color-mix(in srgb, var(--lcars-violet) 14%, transparent);
+  color: var(--lcars-violet);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+/* --- InsightsMode (sunflower accent — insight cards with ack/dismiss) ----- */
+.lcars-insights {
+  border-left: 4px solid var(--lcars-sunflower);
+}
+.lcars-insights__section {
+  border-left-color: var(--lcars-sunflower);
+}
+.lcars-insights__section-title {
+  color: var(--lcars-sunflower);
+}
+.lcars-insights__card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lcars-insights__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--lcars-bg-1);
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 35%, transparent);
+  border-left: 3px solid var(--lcars-sunflower);
+  border-radius: 4px;
+}
+.lcars-insights__card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.lcars-insights__card-tag {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: var(--lcars-sunflower);
+  color: var(--lcars-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.lcars-insights__card-title {
+  margin: 0;
+  font-family: var(--lcars-font-prose);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--lcars-sunflower);
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lcars-insights__card-meta {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 78%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+.lcars-insights__chip {
+  display: inline-block;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--lcars-butterscotch) 18%, transparent);
+  color: var(--lcars-butterscotch);
+  border: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 50%, transparent);
+}
+.lcars-insights__card-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+.lcars-insights__card-dl-row {
+  display: contents;
+}
+.lcars-insights__card-dl-row > dt {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+  padding-top: 2px;
+}
+.lcars-insights__card-dl-row > dd {
+  margin: 0;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.lcars-insights__card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lcars-insights__ack-pill,
+.lcars-insights__install-btn,
+.lcars-insights__dismiss-btn,
+.lcars-insights__restore-btn {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 50%, transparent);
+  color: var(--lcars-sunflower);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 80ms linear, color 80ms linear, border-color 80ms linear;
+}
+.lcars-insights__ack-pill:hover,
+.lcars-insights__install-btn:hover,
+.lcars-insights__restore-btn:hover {
+  background: color-mix(in srgb, var(--lcars-sunflower) 18%, transparent);
+}
+.lcars-insights__dismiss-btn {
+  border-color: color-mix(in srgb, var(--lcars-dim) 60%, transparent);
+  color: var(--lcars-dim);
+}
+.lcars-insights__dismiss-btn:hover {
+  background: color-mix(in srgb, var(--lcars-dim) 18%, transparent);
+  color: var(--lcars-text);
+}
+.lcars-insights__ack-pill:focus-visible,
+.lcars-insights__install-btn:focus-visible,
+.lcars-insights__dismiss-btn:focus-visible,
+.lcars-insights__restore-btn:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-insights__acked,
+.lcars-insights__dismissed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid color-mix(in srgb, var(--lcars-dim) 55%, transparent);
+  background: color-mix(in srgb, var(--lcars-dim) 8%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-insights__acked-summary,
+.lcars-insights__dismissed-summary {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-dim);
+  font-weight: 700;
+  cursor: pointer;
+}
+.lcars-insights__card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.lcars-insights__card-term {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 88%, var(--lcars-bg-1));
+}
+.lcars-insights__evidence {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.lcars-insights__evidence-pill {
+  background: color-mix(in srgb, var(--lcars-butterscotch) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 50%, transparent);
+  color: var(--lcars-sunflower);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+}
+.lcars-insights__card-footnote {
+  font-family: var(--lcars-font-prose);
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-1));
+}
+
+/* --- DecisionsMode (peach accent — decision table + composite chips) ------- */
+.lcars-decisions {
+  border-left: 4px solid var(--lcars-peach);
+}
+.lcars-decisions__cta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--lcars-bg-1);
+  border-left: 4px solid var(--lcars-peach);
+  border-radius: 0 6px 6px 0;
+}
+.lcars-decisions__cta-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 88%, var(--lcars-bg-1));
+}
+.lcars-decisions__cta-stub {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-1));
+  background: color-mix(in srgb, var(--lcars-butterscotch) 8%, transparent);
+  border-radius: 4px;
+}
+.lcars-decisions__cta-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.lcars-decisions__cta-batch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lcars-decisions__cta-batch-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+.lcars-decisions__cta-btn {
+  background: var(--lcars-peach);
+  color: var(--lcars-bg);
+  border: 0;
+  border-radius: 14px;
+  padding: 6px 16px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.lcars-decisions__cta-btn:hover:not(:disabled) {
+  background: var(--lcars-sunflower);
+}
+.lcars-decisions__cta-btn:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-decisions__cta-error {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lcars-fail);
+  background: color-mix(in srgb, var(--lcars-fail) 10%, transparent);
+  border-left: 3px solid var(--lcars-fail);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-decisions__cta-status {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lcars-ice);
+}
+.lcars-decisions__bucket {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--lcars-bg-1);
+  border-left: 4px solid var(--lcars-peach);
+  border-radius: 0 6px 6px 0;
+}
+.lcars-decisions__bucket-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.lcars-decisions__bucket-title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-peach);
+  font-weight: 700;
+}
+.lcars-decisions__bucket-count {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+.lcars-decisions__rate {
+  font-family: var(--lcars-font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+}
+.lcars-decisions__ci {
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg-1));
+}
+.lcars-decisions__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+}
+.lcars-decisions__table th,
+.lcars-decisions__table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--lcars-butterscotch) 25%, transparent);
+  vertical-align: baseline;
+}
+.lcars-decisions__table th {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+.lcars-decisions__phrase {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-sunflower);
+}
+.lcars-decisions__context {
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+}
+.lcars-decisions__session {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+}
+.lcars-decisions__session-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-ice);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.lcars-decisions__session-link:hover {
+  color: var(--lcars-sunflower);
+}
+.lcars-decisions__session-link:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-decisions__score {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- TrustMode (butterscotch accent — 2x2 grid with Wilson CIs) ----------- */
+.lcars-trust {
+  border-left: 4px solid var(--lcars-butterscotch);
+}
+.lcars-trust__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .lcars-trust__grid {
+    grid-template-columns: 1fr;
+  }
+}
+.lcars-trust__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--lcars-bg-1);
+  border-left: 4px solid var(--lcars-butterscotch);
+  border-radius: 0 6px 6px 0;
+}
+.lcars-trust__copy-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 0;
+}
+.lcars-trust__cell-mark {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+.lcars-trust__rate {
+  font-family: var(--lcars-font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+}
+.lcars-trust__ci {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 78%, var(--lcars-bg-1));
+}
+
+/* --- ExportMode (sunflower-muted accent — kind checklist + filters) ------- */
+.lcars-export {
+  border-left: 4px solid var(--lcars-butterscotch);
+}
+.lcars-export__checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lcars-export__kind {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  background: var(--lcars-bg-1);
+  border-left: 3px solid var(--lcars-butterscotch);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-export__kind-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-sunflower);
+}
+.lcars-export__kind-count {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 82%, var(--lcars-bg-1));
+  font-variant-numeric: tabular-nums;
+}
+.lcars-export__kind-blurb {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 78%, var(--lcars-bg-1));
+}
+.lcars-export__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--lcars-bg-1);
+  border-radius: 4px;
+}
+.lcars-export__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  cursor: pointer;
+}
+.lcars-export__filter input {
+  accent-color: var(--lcars-butterscotch);
+}
+.lcars-export__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0 4px;
+}
+.lcars-export__btn {
+  background: var(--lcars-butterscotch);
+  color: var(--lcars-bg);
+  border: 0;
+  border-radius: 16px;
+  padding: 8px 18px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.lcars-export__btn:hover:not(:disabled) {
+  background: var(--lcars-sunflower);
+}
+.lcars-export__btn:focus-visible {
+  outline: 2px solid var(--lcars-sunflower);
+  outline-offset: 2px;
+}
+.lcars-export__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lcars-export__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 75%, var(--lcars-bg));
+}
+.lcars-export__result {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lcars-pass);
+  background: color-mix(in srgb, var(--lcars-pass) 10%, transparent);
+  border-left: 3px solid var(--lcars-pass);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-export__error {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lcars-fail);
+  background: color-mix(in srgb, var(--lcars-fail) 10%, transparent);
+  border-left: 3px solid var(--lcars-fail);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-export__existing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-export__section-title {
+  margin: 0;
+  font-family: var(--lcars-font-chrome);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+.lcars-export__entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-export__entry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--lcars-butterscotch) 4%, transparent);
+  border-radius: 4px;
+}
+.lcars-export__entry-kind {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-export__entry-path {
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 80%, var(--lcars-bg-1));
+  word-break: break-all;
+}
+.lcars-export__entry-title {
+  font-family: var(--lcars-font-prose);
+  font-size: 12.5px;
+  color: var(--lcars-sunflower);
+}
+
+/* --- OutcomeSparkline (used inside EffectivenessMode + others) ------------- */
+.lcars-outcome-sparkline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-outcome-sparkline--empty {
+  padding: 12px 14px;
+  font-family: var(--lcars-font-chrome);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg));
+  background: color-mix(in srgb, var(--lcars-dim) 14%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--lcars-dim) 55%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.lcars-outcome-sparkline__label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+}
+.lcars-outcome-sparkline__chart {
+  position: relative;
+  width: 100%;
+}
+.lcars-outcome-sparkline svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lcars-outcome-sparkline__baseline {
+  stroke: color-mix(in srgb, var(--lcars-butterscotch) 35%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  fill: none;
+}
+.lcars-outcome-sparkline__ribbon {
+  fill: color-mix(in srgb, var(--lcars-violet) 22%, transparent);
+}
+.lcars-outcome-sparkline__raw {
+  stroke: color-mix(in srgb, var(--lcars-sunflower) 75%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.lcars-outcome-sparkline__ewma {
+  stroke: var(--lcars-violet);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.lcars-outcome-sparkline__hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: crosshair;
+}
+.lcars-outcome-sparkline__tooltip {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--lcars-bg);
+  border: 1px solid var(--lcars-violet);
+  border-radius: 4px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  pointer-events: none;
+  min-width: 160px;
+}
+.lcars-outcome-sparkline__tooltip-head {
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: var(--lcars-sunflower);
+  letter-spacing: 0.04em;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--lcars-divider);
+  white-space: nowrap;
+}
+.lcars-outcome-sparkline__tooltip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--lcars-font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.lcars-outcome-sparkline__tooltip-label {
+  font-family: var(--lcars-font-chrome);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--lcars-butterscotch);
+  font-weight: 700;
+}
+.lcars-outcome-sparkline__tooltip-value {
+  color: var(--lcars-sunflower);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.lcars-outcome-sparkline__axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--lcars-butterscotch) 85%, var(--lcars-bg-1));
+  letter-spacing: 0.04em;
+}
+
+/* --- DECISIONS mode (PR2 redesign) -------------------------------------- */
+.lcars-decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 20px 48px;
+  max-width: 920px;
+  margin: 0 auto;
+  font-family: var(--lcars-font-prose);
+  color: var(--lcars-text);
+}
+.lcars-decisions__title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 26px;
+  letter-spacing: 0.1em;
+  margin: 0 0 6px;
+  color: var(--lcars-peach);
+}
+.lcars-decisions__lead {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--lcars-text) 85%, var(--lcars-bg-1));
+  margin: 0 0 8px;
+  max-width: 68ch;
+}
+.lcars-decisions__method {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg-1));
+}
+.lcars-decisions__method summary {
+  cursor: pointer;
+  color: var(--lcars-butterscotch);
+  font-family: var(--lcars-font-chrome);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.lcars-decisions__method p {
+  margin: 8px 0 0;
+  line-height: 1.55;
+  max-width: 66ch;
+}
+
+/* MINE call-to-action */
+.lcars-decisions__cta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--lcars-peach) 8%, var(--lcars-bg-1));
+  border: 1px solid color-mix(in srgb, var(--lcars-peach) 40%, transparent);
+  border-left: 4px solid var(--lcars-peach);
+  border-radius: 6px;
+}
+.lcars-decisions__cta-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lcars-decisions__cta-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.lcars-decisions__cta-batch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--lcars-butterscotch);
+}
+.lcars-decisions__cta-batch select {
+  background: var(--lcars-bg-2);
+  color: var(--lcars-text);
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 50%, transparent);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-family: var(--lcars-font-mono);
+}
+.lcars-decisions__cta-btn {
+  font-family: var(--lcars-font-chrome);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #000;
+  background: var(--lcars-peach);
+  border: none;
+  border-radius: 14px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+.lcars-decisions__cta-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lcars-decisions__cta-status {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--lcars-font-mono);
+  color: var(--lcars-ice);
+}
+.lcars-decisions__cta-error {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--lcars-font-mono);
+  color: var(--lcars-peach);
+  white-space: pre-wrap;
+}
+.lcars-decisions__reload {
+  background: transparent;
+  border: 1px solid var(--lcars-ice);
+  color: var(--lcars-ice);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Kind buckets + recurring + unclassified sections */
+.lcars-decisions__bucket-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 6px 0 8px;
+  border-bottom: 1px solid var(--lcars-divider);
+  padding-bottom: 6px;
+}
+.lcars-decisions__bucket-title {
+  font-family: var(--lcars-font-chrome);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  color: var(--lcars-sunflower);
+  margin: 0;
+}
+.lcars-decisions__bucket-count {
+  font-size: 11px;
+  font-family: var(--lcars-font-mono);
+  color: color-mix(in srgb, var(--lcars-text) 65%, var(--lcars-bg-1));
+}
+.lcars-decisions__rate {
+  margin-left: auto;
+  font-size: 12px;
+  font-family: var(--lcars-font-mono);
+  color: var(--lcars-ice);
+}
+.lcars-decisions__rate--hidden {
+  color: color-mix(in srgb, var(--lcars-text) 55%, var(--lcars-bg-1));
+}
+.lcars-decisions__ci {
+  color: color-mix(in srgb, var(--lcars-text) 55%, var(--lcars-bg-1));
+}
+
+.lcars-decisions__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lcars-decisions__row {
+  background: var(--lcars-bg-1);
+  border: 1px solid var(--lcars-divider);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcars-decisions__row--pending {
+  background: transparent;
+  border-style: dashed;
+}
+.lcars-decisions__row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lcars-decisions__distilled {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lcars-text);
+}
+.lcars-decisions__context {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--lcars-text) 80%, var(--lcars-bg-1));
+}
+.lcars-decisions__choice {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-family: var(--lcars-font-mono);
+}
+.lcars-decisions__chose {
+  color: var(--lcars-ice);
+}
+.lcars-decisions__over {
+  color: color-mix(in srgb, var(--lcars-text) 60%, var(--lcars-bg-1));
+}
+.lcars-decisions__rationale {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-style: italic;
+  color: color-mix(in srgb, var(--lcars-text) 78%, var(--lcars-bg-1));
+}
+.lcars-decisions__row-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 2px;
+}
+.lcars-decisions__confidence {
+  font-size: 11px;
+  font-family: var(--lcars-font-mono);
+  color: color-mix(in srgb, var(--lcars-text) 60%, var(--lcars-bg-1));
+}
+.lcars-decisions__session-link {
+  background: transparent;
+  border: none;
+  color: var(--lcars-butterscotch);
+  font-family: var(--lcars-font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.lcars-decisions__session-link:hover {
+  text-decoration: underline;
+}
+
+/* Outcome chip — LCARS palette (no invented green/red): ice=good,
+   peach=bad, butterscotch=neutral, dim=none). */
+.lcars-decisions__score {
+  font-size: 11px;
+  font-family: var(--lcars-font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lcars-decisions__score--good {
+  color: var(--lcars-ice);
+}
+.lcars-decisions__score--bad {
+  color: var(--lcars-peach);
+}
+.lcars-decisions__score--neutral {
+  color: var(--lcars-butterscotch-muted);
+}
+.lcars-decisions__score--none {
+  color: color-mix(in srgb, var(--lcars-text) 45%, var(--lcars-bg-1));
+}
+
+.lcars-decisions__recurring-lead {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg-1));
+  margin: 2px 0 8px;
+}
+.lcars-decisions__show-all {
+  margin-top: 8px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-sunflower) 45%, transparent);
+  color: var(--lcars-sunflower);
+  border-radius: 12px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lcars-decisions__legend {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--lcars-text) 65%, var(--lcars-bg-1));
+}
+.lcars-decisions__clear {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg-1));
+}
+.lcars-decisions__clear-btn {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lcars-peach) 45%, transparent);
+  color: var(--lcars-peach);
+  border-radius: 10px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.lcars-decisions__clear-btn:hover {
+  background: color-mix(in srgb, var(--lcars-peach) 12%, transparent);
+}
+.lcars-decisions__clear-confirm {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 80%, var(--lcars-bg-1));
 }

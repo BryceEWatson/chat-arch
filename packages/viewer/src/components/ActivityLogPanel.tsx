@@ -58,6 +58,8 @@ export function ActivityLogPanel({
 }: ActivityLogPanelProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef<boolean>(true);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
 
   // Auto-scroll on new entries, but only when the user is already
   // at/near the bottom. If they've scrolled up to read history, don't
@@ -80,6 +82,20 @@ export function ActivityLogPanel({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
+
+  // The trigger button unmounts on open, so without explicit focus
+  // management focus lands on <body>. On open, move focus to the
+  // close button (the safest landing inside the panel). DELIBERATELY
+  // NOT a focus trap — iter-4 F34: this is a complementary slide-out
+  // landmark, not a modal dialog. Tab should be able to leave the
+  // panel into the main app (the user can still interact with the
+  // page while the log is open). The useFocusTrap call from iter-1
+  // imposed dialog-style trapping that contradicted the role+contract.
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = window.setTimeout(() => closeRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [isOpen]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget;
@@ -118,12 +134,15 @@ export function ActivityLogPanel({
 
   return (
     <aside
+      ref={panelRef}
       className="lcars-activity-log"
-      role="dialog"
-      aria-label="system activity log"
+      role="complementary"
+      aria-labelledby="lcars-activity-log-title"
     >
       <header className="lcars-activity-log__header">
-        <h2 className="lcars-activity-log__title">ACTIVITY LOG</h2>
+        <h2 id="lcars-activity-log-title" className="lcars-activity-log__title">
+          ACTIVITY LOG
+        </h2>
         <div className="lcars-activity-log__actions">
           <button
             type="button"
@@ -136,6 +155,7 @@ export function ActivityLogPanel({
             CLEAR
           </button>
           <button
+            ref={closeRef}
             type="button"
             className="lcars-activity-log__close"
             onClick={onClose}
@@ -150,38 +170,37 @@ export function ActivityLogPanel({
         ref={listRef}
         className="lcars-activity-log__list"
         role="log"
-        aria-live="polite"
-        aria-relevant="additions"
         onScroll={handleScroll}
       >
         {entries.length === 0 ? (
           <p className="lcars-activity-log__empty">
-            No activity yet. Upload a ZIP, scan local, or click
-            <br />
-            ANALYZE TOPICS to start generating log events.
+            No activity yet. Upload a ZIP, scan local, or click ANALYZE TOPICS to start generating
+            log events.
           </p>
         ) : (
-          entries.map((e) => (
-            <div
-              key={e.id}
-              className={`lcars-activity-log__entry lcars-activity-log__entry--${e.severity}`}
-            >
-              <span
-                className="lcars-activity-log__time"
-                title={new Date(e.timestamp).toISOString()}
+          entries.map((e) => {
+            const isoTimestamp = new Date(e.timestamp).toISOString();
+            return (
+              <div
+                key={e.id}
+                className={`lcars-activity-log__entry lcars-activity-log__entry--${e.severity}`}
               >
-                {formatTime(e.timestamp)}
-              </span>
-              <span
-                className="lcars-activity-log__glyph"
-                aria-hidden="true"
-              >
-                {severityGlyph(e.severity)}
-              </span>
-              <span className="lcars-activity-log__source">{e.source.toUpperCase()}</span>
-              <span className="lcars-activity-log__message">{e.message}</span>
-            </div>
-          ))
+                <span className="lcars-sr-only">{e.severity}: </span>
+                <span
+                  className="lcars-activity-log__time"
+                  title={isoTimestamp}
+                  aria-label={isoTimestamp}
+                >
+                  {formatTime(e.timestamp)}
+                </span>
+                <span className="lcars-activity-log__glyph" aria-hidden="true">
+                  {severityGlyph(e.severity)}
+                </span>
+                <span className="lcars-activity-log__source">{e.source.toUpperCase()}</span>
+                <span className="lcars-activity-log__message">{e.message}</span>
+              </div>
+            );
+          })
         )}
       </div>
     </aside>

@@ -36,8 +36,8 @@ const durations = Object.entries(tokens.duration);
     </header>
 
     <div class="walkthrough__layout">
-      <aside class="walkthrough__toc" aria-label="Sections">
-        <div class="walkthrough__toc-label">SECTIONS</div>
+      <aside class="walkthrough__toc" aria-labelledby="ds-toc-label">
+        <h2 id="ds-toc-label" class="walkthrough__toc-label">SECTIONS</h2>
         <ol class="walkthrough__toc-list">
           <li><a href="#vibe">1. Vibe</a></li>
           <li><a href="#palette">2. Palette</a></li>
@@ -84,7 +84,12 @@ const durations = Object.entries(tokens.duration);
           </p>
           <table class="ds-palette">
             <thead>
-              <tr><th>Swatch</th><th>Token</th><th>Value</th><th>Role</th></tr>
+              <tr>
+                <th scope="col">Swatch</th>
+                <th scope="col">Token</th>
+                <th scope="col">Value</th>
+                <th scope="col">Role</th>
+              </tr>
             </thead>
             <tbody>
               {palette.map(([name, token]) => (
@@ -132,19 +137,19 @@ const durations = Object.entries(tokens.duration);
           </p>
           <div class="ds-shapes">
             <div class="ds-shape">
-              <div class="ds-shape__demo ds-shape__demo--elbow-tl"></div>
+              <div class="ds-shape__demo ds-shape__demo--elbow-tl" aria-hidden="true"></div>
               <div class="ds-shape__label">elbow top-left · <code>40px 0 0 0</code></div>
             </div>
             <div class="ds-shape">
-              <div class="ds-shape__demo ds-shape__demo--elbow-bl"></div>
+              <div class="ds-shape__demo ds-shape__demo--elbow-bl" aria-hidden="true"></div>
               <div class="ds-shape__label">elbow bottom-left · <code>0 0 0 40px</code></div>
             </div>
             <div class="ds-shape">
-              <div class="ds-shape__demo ds-shape__demo--pill-right"></div>
+              <div class="ds-shape__demo ds-shape__demo--pill-right" aria-hidden="true"></div>
               <div class="ds-shape__label">half-pill · <code>0 18px 18px 0</code></div>
             </div>
             <div class="ds-shape">
-              <div class="ds-shape__demo ds-shape__demo--card"></div>
+              <div class="ds-shape__demo ds-shape__demo--card" aria-hidden="true"></div>
               <div class="ds-shape__label">card with left accent · <code>8px</code> + 3px ice rule</div>
             </div>
           </div>
@@ -197,7 +202,7 @@ const durations = Object.entries(tokens.duration);
               <header class="lcars-top-bar ds-inline-top-bar">
                 <div class="lcars-top-bar__left">
                   <span class="lcars-top-bar__dot"></span>
-                  <h1 class="lcars-top-bar__title">CHAT ARCHAEOLOGIST</h1>
+                  <span class="lcars-top-bar__title" role="presentation">CHAT ARCHAEOLOGIST</span>
                 </div>
               </header>
             </div>
@@ -219,7 +224,7 @@ const durations = Object.entries(tokens.duration);
                   <span class="lcars-session-card__project">chat-arch</span>
                   <span class="lcars-session-card__time">14:05</span>
                 </div>
-                <h2 class="lcars-session-card__title">Refactor the exporter cloud-mapping</h2>
+                <span class="lcars-session-card__title" role="presentation">Refactor the exporter cloud-mapping</span>
                 <p class="ds-demo-card__preview">
                   Pulled the cloud-mapping logic into a shared package so the
                   viewer can reuse it without crossing exporter boundaries.
@@ -387,11 +392,11 @@ const durations = Object.entries(tokens.duration);
             </div>
           </div>
 
-          <div class="ds-boot-demo" id="ds-boot-demo">
+          <div class="ds-boot-demo" id="ds-boot-demo" aria-hidden="true">
             <header class="lcars-top-bar">
               <div class="lcars-top-bar__left">
                 <span class="lcars-top-bar__dot"></span>
-                <h1 class="lcars-top-bar__title">BOOT CASCADE</h1>
+                <span class="lcars-top-bar__title" role="presentation">BOOT CASCADE</span>
               </div>
             </header>
             <div class="lcars-sidebar ds-boot-demo__sidebar">
@@ -411,7 +416,7 @@ const durations = Object.entries(tokens.duration);
             <li>Don't add drop shadows. Floating popovers are the one exception.</li>
             <li>Don't introduce a fourth font. Antonio / IBM Plex Sans / JetBrains Mono.</li>
             <li>Don't soften the asymmetric radii into four-corner-equal corners.</li>
-            <li>Don't use <code>{tokens.color.dim.$value}</code> for body text. It fails AA.</li>
+            <li>Don't use the dim color token (<code>{tokens.color.dim.$value}</code>) for body text — it fails WCAG AA contrast.</li>
             <li>Don't cross type roles. Chrome, prose, mono each own a family.</li>
             <li>Don't tint <code>color.divider</code>. It's already a low-alpha butterscotch.</li>
           </ul>
@@ -539,11 +544,15 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       text-decoration: none;
       transition: background 120ms, color 120ms;
     }
-    .ds-top__link:hover,
+    .ds-top__link:hover {
+      background: var(--lcars-bg);
+      color: var(--lcars-sunflower);
+    }
     .ds-top__link:focus-visible {
       background: var(--lcars-bg);
       color: var(--lcars-sunflower);
-      outline: none;
+      outline: 2px solid var(--lcars-peach);
+      outline-offset: 2px;
     }
     @media (max-width: 899px) {
       .ds-top__link {
@@ -551,10 +560,15 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
         color: var(--lcars-butterscotch);
         border-color: var(--lcars-butterscotch);
       }
-      .ds-top__link:hover,
+      .ds-top__link:hover {
+        background: var(--lcars-butterscotch);
+        color: var(--lcars-bg);
+      }
       .ds-top__link:focus-visible {
         background: var(--lcars-butterscotch);
         color: var(--lcars-bg);
+        outline: 2px solid var(--lcars-peach);
+        outline-offset: 2px;
       }
     }
 
@@ -591,9 +605,10 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       font-family: var(--lcars-font-chrome);
       font-size: 10px;
       font-weight: 700;
-      letter-spacing: 0.22em;
+      letter-spacing: 0.18em;
       color: var(--lcars-butterscotch);
-      margin-bottom: 10px;
+      margin: 0 0 10px;
+      text-transform: uppercase;
     }
     .walkthrough__toc-list {
       list-style: none;
@@ -613,10 +628,14 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       display: block;
       padding: 4px 0;
     }
-    .walkthrough__toc-list a:hover,
+    .walkthrough__toc-list a:hover {
+      color: var(--lcars-ice);
+    }
     .walkthrough__toc-list a:focus-visible {
       color: var(--lcars-ice);
-      outline: none;
+      outline: 2px solid var(--lcars-ice);
+      outline-offset: 2px;
+      border-radius: 2px;
     }
 
     .walkthrough__content {
@@ -832,9 +851,8 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
     }
     .ds-type-specimen__stack {
       font-family: var(--lcars-font-mono);
-      font-size: 11px;
+      font-size: 12px;
       color: var(--lcars-butterscotch);
-      opacity: 0.85;
     }
 
     /* Shapes */
@@ -904,7 +922,7 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       border: 1px solid var(--lcars-divider);
       border-radius: 6px;
       font-family: var(--lcars-font-mono);
-      font-size: 11.5px;
+      font-size: 12px;
       line-height: 1.45;
       color: var(--lcars-sunflower);
       overflow-x: auto;
@@ -928,12 +946,11 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       margin: 0;
       font-family: var(--lcars-font-prose);
       font-size: 12px;
-      color: var(--lcars-text);
-      opacity: 0.85;
+      color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
     }
     .ds-component__inline-note {
       font-family: var(--lcars-font-prose);
-      font-size: 11.5px;
+      font-size: 12px;
       color: var(--lcars-dim);
     }
     .ds-demo-card {
@@ -987,8 +1004,7 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       font-family: var(--lcars-font-prose);
       font-size: 12.5px;
       line-height: 1.45;
-      color: var(--lcars-text);
-      opacity: 0.85;
+      color: color-mix(in srgb, var(--lcars-text) 85%, transparent);
     }
 
     /* Motion section */
@@ -1036,11 +1052,15 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
       cursor: pointer;
       transition: background 120ms, color 120ms;
     }
-    .ds-motion__replay:hover,
+    .ds-motion__replay:hover {
+      background: var(--lcars-butterscotch);
+      color: var(--lcars-bg);
+    }
     .ds-motion__replay:focus-visible {
       background: var(--lcars-butterscotch);
       color: var(--lcars-bg);
-      outline: none;
+      outline: 2px solid var(--lcars-peach);
+      outline-offset: 2px;
     }
     /* Under reduced-motion the replay button is disabled by the page
        script; swap to a muted state so the user sees the affordance
@@ -1162,11 +1182,32 @@ LLM discovery: https://chat-arch.dev/llms.txt`}</code></pre>
 
       // Code blocks can overflow horizontally; without tabindex a
       // keyboard user can't pan through them. Add focusability and a
-      // generic aria-label so screen readers announce them as regions.
+      // context-derived aria-label so SR users hear which sample they
+      // landed on (e.g. "code sample, Source pill" instead of the
+      // numbered generic that gave no clue across 5+ samples).
       document.querySelectorAll('.ds-component__code').forEach((pre, i) => {
         pre.setAttribute('tabindex', '0');
         pre.setAttribute('role', 'region');
-        pre.setAttribute('aria-label', 'code sample ' + (i + 1));
+        // Walk up the DOM looking for the nearest preceding section /
+        // component title so the announced label is "code sample,
+        // Source pill" / "code sample, Tailwind theme" / etc.
+        let ctx = '';
+        const component = pre.closest('.ds-component');
+        if (component) {
+          const title = component.querySelector('.ds-component__title');
+          if (title && title.textContent) ctx = title.textContent.trim();
+        }
+        if (!ctx) {
+          const section = pre.closest('.ds-section');
+          if (section) {
+            const title = section.querySelector('.ds-section__title');
+            if (title && title.textContent) ctx = title.textContent.trim();
+          }
+        }
+        pre.setAttribute(
+          'aria-label',
+          ctx ? 'code sample: ' + ctx : 'code sample ' + (i + 1),
+        );
       });
 
       if (!demo) return;
