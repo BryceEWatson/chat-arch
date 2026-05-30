@@ -124,6 +124,45 @@ describe('buildArchetypesFile', () => {
     expect(second.file.chosenK).toBe(first.file.chosenK);
   });
 
+  it('automation-exclusion: automated session is excluded, interactive twin included', async () => {
+    const outDir = path.join(tmpRoot, 'automation');
+    await mkdir(path.join(outDir, 'analysis'), { recursive: true });
+
+    // 60 interactive sessions (enough mass for ≥1 centroid) plus one
+    // automated twin carrying identical tool stats to an interactive
+    // session — the only difference is `automationTemplateId`.
+    const sessions: UnifiedSessionEntry[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      sessions.push(makeEntry(`read-${i}`, { Read: 10 + (i % 3), Edit: 1, Bash: 0 }));
+    }
+    for (let i = 0; i < 30; i += 1) {
+      sessions.push(makeEntry(`edit-${i}`, { Read: 1, Edit: 15 + (i % 4), Bash: 3 }));
+    }
+    const automated = {
+      ...makeEntry('sess-auto', { Read: 10, Edit: 1, Bash: 0 }),
+      automationTemplateId: 'status-paragraph',
+    } as UnifiedSessionEntry;
+    sessions.push(automated);
+
+    const result = await buildArchetypesFile(makeManifest(sessions), {
+      outDir,
+      now: 1,
+      seed: 42,
+    });
+
+    // 60 interactive scanned; the automated one is excluded (not counted
+    // as scanned, and absent from assignments + scannedSessionIds).
+    expect(result.scannedSessions).toBe(60);
+    expect(result.file.scannedSessionIds).not.toContain('sess-auto');
+    expect(result.file.scannedSessionIds).toContain('read-0');
+
+    const onDisk = JSON.parse(
+      await readFile(path.join(outDir, 'analysis', 'archetypes.json'), 'utf8'),
+    );
+    expect(Object.keys(onDisk.assignments)).toHaveLength(60);
+    expect(onDisk.assignments['sess-auto']).toBeUndefined();
+  });
+
   it('missing-input-graceful: zero sessions with topTools → empty file, no crash', async () => {
     const outDir = path.join(tmpRoot, 'empty');
     await mkdir(path.join(outDir, 'analysis'), { recursive: true });

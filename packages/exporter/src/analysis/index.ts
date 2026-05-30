@@ -249,7 +249,14 @@ export interface RunAnalysisResult {
 // `analysis/decision-clusters.json` sidecar holds recurring-decision
 // clusters. (1.8.0 was the UI-content / unwrapEnvelope release; both are
 // combined on this integration branch.)
-export const EXPORTER_VERSION = '1.9.0';
+//
+// 1.10.0 — automation classify + collapse. CLI entries gain an additive
+// `automationTemplateId` (from the `classifyAutomation` kernel); the bump
+// invalidates the cli-sessions.json reuse cache so existing entries get
+// re-classified on next rescan. NB: #113 (project-identity-v2) also
+// targets the 1.9.0→1.10.0 slot; if it lands, the second-merged bumps to
+// 1.11.0 (version reconcile per the centralize plan / Step-5 convention).
+export const EXPORTER_VERSION = '1.10.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,

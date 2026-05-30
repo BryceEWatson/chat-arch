@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TokenTotals, UnifiedSessionEntry } from '@chat-arch/schema';
 import { UNTITLED_SESSION } from '@chat-arch/schema';
-import { unwrapEnvelope } from '@chat-arch/analysis';
+import { unwrapEnvelope, classifyAutomation } from '@chat-arch/analysis';
 import { readJsonlLines } from '../lib/jsonl.js';
 import { runWithConcurrency } from '../lib/concurrency.js';
 import { buildPreview } from '../lib/preview.js';
@@ -701,6 +701,11 @@ export function buildCliDirectEntry(
   const cwd = agg.cwd;
   const project = cwd !== undefined ? path.win32.basename(cwd) || undefined : undefined;
 
+  // Automation classification — runs over the FULL first-user-text (the
+  // marker often sits at the END of a long templated prompt, so the
+  // truncated preview is insufficient). Absent ⇒ interactive.
+  const automation = classifyAutomation(agg.firstUserText);
+
   // Merge subagent rollup into the parent aggregate. Parent transcript and
   // subagent transcripts are disjoint files, so summing tokens + tools never
   // double-counts; model union preserves parent-first insertion order.
@@ -750,6 +755,7 @@ export function buildCliDirectEntry(
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
     ...(agg.userTextSamples.length > 0 ? { userTextSamples: agg.userTextSamples } : {}),
     ...(subagentRollup ? { subagentRollup } : {}),
+    ...(automation.templateId !== null ? { automationTemplateId: automation.templateId } : {}),
   };
   return entry;
 }
@@ -782,6 +788,9 @@ export function enrichCliDesktopEntry(
   // Project derived from transcript cwd if present, else from phase2 cwd.
   const cwd = phase2Entry.cwd ?? agg.cwd;
   const project = cwd !== undefined ? path.win32.basename(cwd) || undefined : undefined;
+
+  // Automation classification — see buildCliDirectEntry for rationale.
+  const automation = classifyAutomation(agg.firstUserText);
 
   // Merge subagent rollup the same way buildCliDirectEntry does — see its
   // comment for the disjointness rationale.
@@ -830,6 +839,7 @@ export function enrichCliDesktopEntry(
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
     ...(agg.userTextSamples.length > 0 ? { userTextSamples: agg.userTextSamples } : {}),
     ...(subagentRollup ? { subagentRollup } : {}),
+    ...(automation.templateId !== null ? { automationTemplateId: automation.templateId } : {}),
   };
 
   return entry;

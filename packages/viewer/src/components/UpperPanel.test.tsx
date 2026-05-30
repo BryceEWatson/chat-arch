@@ -116,6 +116,55 @@ describe('UpperPanel KPI strip (AC7)', () => {
     expect(screen.queryByText(/tagged\)/)).toBeNull();
   });
 
+  it('collapses automated runs so they do not dominate TOTAL / TOP PROJECT', () => {
+    // 5 near-identical automated status-paragraph runs in "Command" +
+    // 2 interactive sessions in "alpha". Pre-collapse, Command would win
+    // TOP PROJECT (5 > 2) and TOTAL would read 7. Collapsed: Command is a
+    // single row (1) so alpha (2) wins, and TOTAL reads 3.
+    const automated = Array.from({ length: 5 }, (_, i) =>
+      entry(`auto-${i}`, {
+        project: 'Command',
+        automationTemplateId: 'status-paragraph',
+      }),
+    );
+    const interactive = [
+      entry('h1', { project: 'alpha' }),
+      entry('h2', { project: 'alpha' }),
+    ];
+    const entries = [...automated, ...interactive];
+    render(
+      <UpperPanel manifest={manifest(entries)} filtered={entries} {...base} />,
+    );
+    // TOP PROJECT KPI shows alpha (collapsed counts: alpha=2 > Command=1).
+    const topProjectKpi = screen
+      .getByText('TOP PROJECT')
+      .closest('.lcars-kpi') as HTMLElement;
+    expect(topProjectKpi.textContent).toContain('alpha');
+    expect(topProjectKpi.textContent).not.toContain('Command');
+    // Coverage caption: 3 of 3 tagged would be ≥30% so it's hidden; the
+    // key check is the collapsed TOTAL is 3, not 7 — assert via a low-
+    // coverage variant below.
+  });
+
+  it('coverage caption uses the COLLAPSED total, not the raw session count', () => {
+    // 5 automated (collapse to 1) in Command + 4 untagged interactive.
+    // Collapsed rows = 5; tagged = 1 (the Command group) → 1/5 = 20% < 30%,
+    // so the caption shows "1 of 5 tagged" — proving TOTAL collapsed to 5
+    // rather than the raw 9.
+    const automated = Array.from({ length: 5 }, (_, i) =>
+      entry(`auto-${i}`, {
+        project: 'Command',
+        automationTemplateId: 'status-paragraph',
+      }),
+    );
+    const untagged = [entry('u1'), entry('u2'), entry('u3'), entry('u4')];
+    const entries = [...automated, ...untagged];
+    render(
+      <UpperPanel manifest={manifest(entries)} filtered={entries} {...base} />,
+    );
+    expect(screen.getByText(/1 of 5 tagged/)).toBeDefined();
+  });
+
   it('KPI tiles render as informational (no role="button") after Phase 3 cut', () => {
     // Phase 3 cut CostMode, so KPI tiles no longer drill in. They keep
     // displaying the same data values but are not interactive.

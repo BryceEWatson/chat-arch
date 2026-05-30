@@ -382,6 +382,26 @@ export interface UnifiedSessionEntry {
    * Consumers MUST treat absence as "unknown / not scored", never as 0.
    */
   discoveryScore?: number;
+
+  /**
+   * Present iff the session was classified as an automated / templated
+   * orchestration run (e.g. a tool spawning `claude -p` to generate a
+   * status paragraph). ABSENT for genuine interactive sessions.
+   *
+   * The value is the stable template id from the analysis-layer
+   * `classifyAutomation` kernel (`status-paragraph` / `action-orchestration`
+   * / `test-probe` / `automated-envelope`); it is the grouping key the
+   * collapse builder uses to fold near-identical automated runs in a
+   * project into a single "activity" row. Typed as `string` here so the
+   * schema package stays dependency-free; the analysis kernel narrows it
+   * to its `AutomationTemplateId` union.
+   *
+   * Per-session analytical surfaces (composite / decisions / trust /
+   * archetypes / skill-curves) treat presence as "exclude" — a templated
+   * run is not a decision/correction/skill. Consumers MUST treat absence
+   * as "interactive / not automated", never as a bug.
+   */
+  automationTemplateId?: string;
 }
 
 export interface SessionManifest {

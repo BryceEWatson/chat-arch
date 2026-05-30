@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
+import {
+  collapseAutomatedSessions,
+  collapsedRowCountFields,
+} from '@chat-arch/analysis';
 import type { FilterState } from '../types.js';
 import { SourcePill } from './SourcePill.js';
 import { onActivate } from '../util/a11y.js';
@@ -117,12 +121,26 @@ function computeFilterPills(
   topics: PillBucket;
   unknownCount: number;
 } {
+  // Project / UNKNOWN counts run over the COLLAPSED view: a project's
+  // near-identical automated runs fold into a single row so the chip
+  // shows "Command 11" instead of "Command 1,305". The project-axis
+  // partition invariant (named + UNKNOWN === row count) is asserted
+  // against the COLLAPSED length below, not the raw session count.
+  const collapsed = collapseAutomatedSessions(sessions);
   const projectCounts = new Map<string, number>();
-  const topicCounts = new Map<string, number>();
   let unknown = 0;
-  for (const s of sessions) {
-    if (s.project) projectCounts.set(s.project, (projectCounts.get(s.project) ?? 0) + 1);
+  for (const row of collapsed) {
+    const project = collapsedRowCountFields(row).project;
+    if (project) projectCounts.set(project, (projectCounts.get(project) ?? 0) + 1);
     else unknown += 1;
+  }
+
+  // Topics remain a per-interactive-session axis — automated runs are
+  // excluded from the semantic classifier, so they carry no `topic`.
+  // Counting topics off the raw session list keeps the topic-chip totals
+  // unchanged for interactive sessions.
+  const topicCounts = new Map<string, number>();
+  for (const s of sessions) {
     if (s.topic) topicCounts.set(s.topic, (topicCounts.get(s.topic) ?? 0) + 1);
   }
   const projectsSorted = [...projectCounts.entries()]
@@ -133,15 +151,15 @@ function computeFilterPills(
     .map(([id, count]) => ({ id, count }));
 
   if (process.env.NODE_ENV !== 'production') {
-    // Sanity: projects row + UNKNOWN must partition the input (each
-    // session contributes once on the project axis). If this fires,
-    // there's a drift between the enrichment merge and the chip
+    // Sanity: projects row + UNKNOWN must partition the COLLAPSED row set
+    // (each collapsed row contributes once on the project axis). If this
+    // fires, there's a drift between the collapse builder and the chip
     // counter — catch it loudly instead of silently rendering numbers
     // that don't add up to VISIBLE.
     const projectSum = unknown + projectsSorted.reduce((a, p) => a + p.count, 0);
-    if (projectSum !== sessions.length) {
+    if (projectSum !== collapsed.length) {
       console.warn(
-        `FilterBar: project-row sum ${projectSum} ≠ ${sessions.length} sessions ` +
+        `FilterBar: project-row sum ${projectSum} ≠ ${collapsed.length} collapsed rows ` +
           `(named=${projectsSorted.reduce((a, p) => a + p.count, 0)}, unknown=${unknown})`,
       );
     }

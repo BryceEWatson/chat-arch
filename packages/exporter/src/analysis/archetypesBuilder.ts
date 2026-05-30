@@ -124,7 +124,16 @@ export async function buildArchetypesFile(
   const t0 = Date.now();
   const stats: SessionToolStats[] = [];
   let skipped = 0;
-  for (const entry of manifest.sessions) {
+  // Automation-exclusion (classify+collapse Stage 4): drop automated/
+  // templated orchestration runs (`automationTemplateId` present) before
+  // clustering. A templated run is not a workflow-archetype sample — its
+  // tool histogram reflects the template, not genuine interactive work —
+  // so it must not pull centroids toward the automation profile. Its
+  // cost/frequency is preserved elsewhere via the collapse view.
+  const interactiveSessions = manifest.sessions.filter(
+    (s) => s.automationTemplateId == null,
+  );
+  for (const entry of interactiveSessions) {
     const s = projectSession(entry);
     if (s === null) {
       skipped += 1;

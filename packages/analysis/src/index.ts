@@ -470,6 +470,15 @@ export {
 
 export { unwrapEnvelope } from './unwrapEnvelope.js';
 
+export {
+  AUTOMATION_CLASSIFIER_VERSION,
+  AUTOMATION_SIGNATURES,
+  classifyAutomation,
+  type AutomationClassification,
+  type AutomationSignature,
+  type AutomationTemplateId,
+} from './classifyAutomation.js';
+
 // Selectors — `data → view-model` derivations (the "Centralize data
 // processing" plan). Re-exported from the package root so viewer
 // components import `{ buildX } from '@chat-arch/analysis'` exactly like

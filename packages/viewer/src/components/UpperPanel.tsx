@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionManifest, UnifiedSessionEntry } from '@chat-arch/schema';
+import {
+  collapseAutomatedSessions,
+  collapsedRowCountFields,
+  type CollapsedSessionRow,
+} from '@chat-arch/analysis';
 import type { FilterState, UploadedCloudData } from '../types.js';
 import { SOURCE_LABEL } from '../types.js';
 import { Sparkline } from './Sparkline.js';
@@ -210,7 +215,15 @@ interface Kpis {
   totalSessions: number;
 }
 
-function computeKpis(sessions: readonly UnifiedSessionEntry[]): Kpis {
+/**
+ * Compute the KPI strip over the COLLAPSED session view: each automated
+ * group (e.g. the ~1,305 status-paragraph runs in `Command`) counts as a
+ * single row for TOTAL / project chips / top-project, while its summed
+ * cost + tokens are preserved. Interactive sessions count one-each exactly
+ * as before. This is what stops the automated runs from dominating the
+ * counts (TOTAL ~2,607 → ~1,316). See `collapseAutomatedSessions`.
+ */
+function computeKpis(rows: readonly CollapsedSessionRow[]): Kpis {
   let exactCost = 0;
   let estimateCost = 0;
   let outputTok = 0;
@@ -218,18 +231,19 @@ function computeKpis(sessions: readonly UnifiedSessionEntry[]): Kpis {
   const projectCounts = new Map<string, number>();
   let projectTagged = 0;
 
-  for (const s of sessions) {
-    if (s.totalCostUsd !== null) exactCost += s.totalCostUsd;
-    else if (typeof s.costEstimatedUsd === 'number') estimateCost += s.costEstimatedUsd;
-    if (s.tokenTotals) outputTok += s.tokenTotals.output;
-    if (s.topTools) {
-      for (const [name, count] of Object.entries(s.topTools)) {
+  for (const row of rows) {
+    const f = collapsedRowCountFields(row);
+    if (f.totalCostUsd !== null) exactCost += f.totalCostUsd;
+    else if (typeof f.costEstimatedUsd === 'number') estimateCost += f.costEstimatedUsd;
+    if (f.tokenTotals) outputTok += f.tokenTotals.output;
+    if (f.topTools) {
+      for (const [name, count] of Object.entries(f.topTools)) {
         toolCounts.set(name, (toolCounts.get(name) ?? 0) + count);
       }
     }
-    if (s.project) {
+    if (f.project) {
       projectTagged += 1;
-      projectCounts.set(s.project, (projectCounts.get(s.project) ?? 0) + 1);
+      projectCounts.set(f.project, (projectCounts.get(f.project) ?? 0) + 1);
     }
   }
 
@@ -244,7 +258,7 @@ function computeKpis(sessions: readonly UnifiedSessionEntry[]): Kpis {
     topTool: topTool ? { name: topTool[0], count: topTool[1] } : null,
     topProject: topProject ? { name: topProject[0], count: topProject[1] } : null,
     projectTaggedCount: projectTagged,
-    totalSessions: sessions.length,
+    totalSessions: rows.length,
   };
 }
 
@@ -299,7 +313,15 @@ export function UpperPanel({
   onOpenLabelsAnalysis,
 }: UpperPanelProps) {
   const range = dateRange(filtered);
-  const kpis = useMemo(() => computeKpis(filtered), [filtered]);
+  // Count derivations (TOTAL / top-project / project-coverage) run over the
+  // COLLAPSED view so a project's near-identical automated runs count as
+  // one row, not hundreds. The date range + sparkline below stay on the
+  // raw `filtered` list — they describe the temporal span / per-session
+  // activity, which collapsing would distort.
+  const kpis = useMemo(
+    () => computeKpis(collapseAutomatedSessions(filtered)),
+    [filtered],
+  );
 
   /**
    * Cloud session-id set used by the AnalysisLauncher's staleness

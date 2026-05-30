@@ -226,6 +226,52 @@ describe('buildDecisionsFile', () => {
     expect(row?.trustCalibration).toEqual({ acceptedAssistant: true, landed: true });
   });
 
+  it('automation-exclusion: automated session is excluded, interactive twin included', async () => {
+    const outDir = path.join(tmpRoot, 'automation');
+    await mkdir(path.join(outDir, 'analysis'), { recursive: true });
+    await mkdir(path.join(outDir, 'transcripts'), { recursive: true });
+
+    // A transcript with an explicit decision marker so a candidate is
+    // detected for whichever sessions are scanned.
+    const transcript = [
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: "Decision: let's ship the new parser." },
+      }),
+    ].join('\n');
+    const transcriptPath = path.join('transcripts', 'sess-shared.jsonl');
+    await writeFile(path.join(outDir, transcriptPath), transcript, 'utf8');
+
+    // Interactive + automated twin pointing at the SAME transcript — the
+    // only difference is `automationTemplateId`.
+    const interactive = makeEntry({ id: 'sess-int', transcriptPath });
+    const automated = makeEntry({
+      id: 'sess-auto',
+      transcriptPath,
+      automationTemplateId: 'status-paragraph',
+    });
+    const manifest: SessionManifest = {
+      schemaVersion: 4,
+      generatedAt: 0,
+      counts: { 'cli-direct': 2, 'cli-desktop': 0, cowork: 0, cloud: 0 },
+      sessions: [interactive, automated],
+    } as SessionManifest;
+
+    const result = await buildDecisionsFile(manifest, { outDir, now: 100 });
+    // Only the interactive session is scanned; the automated one is dropped.
+    expect(result.scannedSessions).toBe(1);
+    expect(result.missingTranscripts).toBe(0);
+
+    const onDisk = JSON.parse(
+      await readFile(path.join(outDir, 'analysis', 'decisions.json'), 'utf8'),
+    ) as DecisionsFile;
+    expect(onDisk.scannedSessionIds).toContain('sess-int');
+    expect(onDisk.scannedSessionIds).not.toContain('sess-auto');
+    for (const d of onDisk.decisions) {
+      expect(d.candidate.sessionId).not.toBe('sess-auto');
+    }
+  });
+
   it('missing-input-graceful: counts missing transcripts, still writes file', async () => {
     const outDir = path.join(tmpRoot, 'missing');
     await mkdir(path.join(outDir, 'analysis'), { recursive: true });

@@ -28,3 +28,4 @@
 export * from './trust.js';
 export * from './decisions.js';
 export * from './actionItems.js';
+export * from './sessions.js';
