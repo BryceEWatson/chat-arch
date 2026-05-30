@@ -517,6 +517,12 @@ export function ChatArchViewer({
   );
   const [decisionClusters, setDecisionClusters] =
     useState<DecisionClustersFile | null>(null);
+  // Re-fetch decisions + clusters in place (after a mine/clear run) so the
+  // DECISIONS surface updates without a full page reload.
+  const refreshDecisions = () => {
+    void loadDecisionsFile(dataRoot).then((f) => setDecisionsFile(f));
+    void loadDecisionClustersFile(dataRoot).then((f) => setDecisionClusters(f));
+  };
   const [trendsBundle, setTrendsBundle] = useState<TrendsBundle>({
     trajectories: null,
     archetypes: null,
@@ -3116,6 +3122,7 @@ export function ChatArchViewer({
                         file={decisionsFile}
                         clustersFile={decisionClusters}
                         dataRoot={dataRoot}
+                        onRefresh={refreshDecisions}
                         onSelectSession={(id) => {
                           setPriorModeBeforeDetail('decisions');
                           onSelect(id);

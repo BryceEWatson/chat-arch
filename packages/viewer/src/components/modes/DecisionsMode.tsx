@@ -40,6 +40,12 @@ export interface DecisionsModeProps {
   clustersFile?: DecisionClustersFile | null;
   /** Data-root base URL — used to poll the run-status sidecar. */
   dataRoot?: string;
+  /**
+   * Re-fetch decisions + clusters in place after a mine/clear run, so the
+   * surface updates without a full page reload. When omitted, the UI
+   * falls back to a manual "reload" affordance.
+   */
+  onRefresh?: () => void;
   onSelectSession?: (sessionId: string) => void;
   onOpenDataPanel?: () => void;
 }
@@ -119,6 +125,7 @@ export function DecisionsMode({
   file,
   clustersFile = null,
   dataRoot,
+  onRefresh,
   onSelectSession,
   onOpenDataPanel,
 }: DecisionsModeProps) {
@@ -204,11 +211,14 @@ export function DecisionsMode({
       onProgress: (count) =>
         setMineState((prev) => (prev.status === 'running' ? { ...prev, count } : prev)),
     });
+    if (result.ok) onRefresh?.();
     setMineState({
       status: 'done',
       ok: result.ok,
       message: result.ok
-        ? 'Mining complete — reload to see the classified decisions.'
+        ? onRefresh
+          ? 'Mining complete — classified decisions updated below.'
+          : 'Mining complete — reload to see the classified decisions.'
         : result.stderrTail || result.error || 'Mining run did not complete.',
     });
   };
@@ -249,9 +259,12 @@ export function DecisionsMode({
     setClearState({ status: 'busy' });
     try {
       const { reset } = await clearDecisions();
+      onRefresh?.();
       setClearState({
         status: 'done',
-        message: `Cleared ${reset} classification${reset === 1 ? '' : 's'} — reload to re-mine.`,
+        message: `Cleared ${reset} classification${reset === 1 ? '' : 's'}.${
+          onRefresh ? '' : ' Reload to re-mine.'
+        }`,
       });
     } catch (err) {
       setClearState({
@@ -349,7 +362,7 @@ export function DecisionsMode({
               data-testid="mine-decisions-result"
             >
               {mineState.message}
-              {mineState.ok && (
+              {mineState.ok && !onRefresh && (
                 <>
                   {' '}
                   <button
@@ -491,14 +504,19 @@ export function DecisionsMode({
           )}
           {clearState.status === 'done' && (
             <span className="lcars-decisions__clear-confirm" role="status" aria-live="polite">
-              {clearState.message}{' '}
-              <button
-                type="button"
-                className="lcars-decisions__reload"
-                onClick={() => window.location.reload()}
-              >
-                reload
-              </button>
+              {clearState.message}
+              {!onRefresh && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="lcars-decisions__reload"
+                    onClick={() => window.location.reload()}
+                  >
+                    reload
+                  </button>
+                </>
+              )}
             </span>
           )}
         </div>
