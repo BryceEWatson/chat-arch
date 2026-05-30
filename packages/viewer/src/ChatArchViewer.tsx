@@ -93,7 +93,10 @@ import {
   buildZombieProjects,
   firstHumanText,
   THRESHOLDS,
-  unwrapEnvelope,
+  rankTopActionItems,
+  build2x2,
+  deriveTrustSignalExplicitOnly,
+  isTrustMisCalibrated,
   type DuplicateInput,
 } from '@chat-arch/analysis';
 import {
@@ -1027,108 +1030,31 @@ export function ChatArchViewer({
   // Computed here so the banner is a pure renderer over the sidecar
   // data. The same heuristic the modes use to flag rows surfaces the
   // headline candidates.
-  const topActionItems = useMemo<readonly TopItem[]>(() => {
-    const out: TopItem[] = [];
-    // Highest-confidence + largest knowledge-debt cluster.
-    const debt = insightsBundle.knowledgeDebt;
-    if (debt !== null && debt.clusters.length > 0) {
-      // Strip harness wrappers from the canonical question and skip
-      // slash-command invocations (e.g. "/shopsmith-menu") — those are
-      // commands, not natural-language questions worth turning into a
-      // rule, and leaking the raw <command-message> envelope into the
-      // headline is exactly the noise this strip is meant to avoid.
-      const cleaned = [...debt.clusters]
-        .map((c) => ({ cluster: c, question: unwrapEnvelope(c.canonicalQuestion) }))
-        .filter(
-          (x): x is { cluster: (typeof debt.clusters)[number]; question: string } =>
-            x.question !== null && !x.question.trimStart().startsWith('/'),
-        );
-      const top = cleaned.sort((a, b) => {
-        const ca = a.cluster.confidence === 'high' ? 1 : 0;
-        const cb = b.cluster.confidence === 'high' ? 1 : 0;
-        if (ca !== cb) return cb - ca;
-        return b.cluster.sessionIds.length - a.cluster.sessionIds.length;
-      })[0];
-      if (top !== undefined) {
-        const q =
-          top.question.length > 80
-            ? top.question.slice(0, 77) + '…'
-            : top.question;
-        out.push({
-          kind: 'knowledge-debt',
-          headline: `recurring question (${top.cluster.sessionIds.length} sessions) — ${q}`,
-          detail: `confidence ${top.cluster.confidence}`,
-          mode: 'insights',
-        });
-      }
-    }
-    // Biggest |delta| disjoint-CI ITS contrast.
-    const its = insightsBundle.its;
-    if (its !== null) {
-      const clear = its.results
-        .filter(
-          (r) =>
-            r.pre.n >= THRESHOLDS.display.minNForRate &&
-            r.post.n >= THRESHOLDS.display.minNForRate &&
-            ((r.deltaCI.low > 0 && r.deltaCI.high > 0) ||
-              (r.deltaCI.low < 0 && r.deltaCI.high < 0)),
-        )
-        .sort((a, b) => Math.abs(b.deltaGoodShare) - Math.abs(a.deltaGoodShare));
-      const top = clear[0];
-      if (top !== undefined) {
-        const pp = Math.round(top.deltaGoodShare * 100);
-        out.push({
-          kind: 'its',
-          headline: `${top.subject || top.path} shifted good-share ${pp >= 0 ? '+' : ''}${pp} pp`,
-          detail: `commit ${top.sha.slice(0, 7)}`,
-          mode: 'insights',
-        });
-      }
-    }
-    return out;
-  }, [insightsBundle]);
+  const topActionItems = useMemo<readonly TopItem[]>(
+    () =>
+      rankTopActionItems({
+        knowledgeDebt: insightsBundle.knowledgeDebt,
+        its: insightsBundle.its,
+      }),
+    [insightsBundle],
+  );
 
   // Trust mis-calibration flag — pure read from the decisions file.
-  // Mirrors the logic in TrustMode without duplicating the full 2×2
-  // build (we only need the boolean here).
-  const trustMisCalibrationFired = useMemo(() => {
-    if (decisionsFile === null) return false;
-    const minN = THRESHOLDS.trustCell.minN;
-    let aL = 0,
-      aN = 0,
-      oL = 0,
-      oN = 0;
-    for (const d of decisionsFile.decisions) {
-      const tc = d.trustCalibration;
-      if (tc === null || tc === undefined) continue;
-      if (tc.acceptedAssistant) {
-        if (tc.landed) aL += 1;
-        else aN += 1;
-      } else {
-        if (tc.landed) oL += 1;
-        else oN += 1;
-      }
-    }
-    const aTotal = aL + aN;
-    const oTotal = oL + oN;
-    if (aL < minN || aN < minN || oL < minN || oN < minN) return false;
-    if (aTotal === 0 || oTotal === 0) return false;
-    const pA = aL / aTotal;
-    const pO = oL / oTotal;
-    // Wilson CI inline (we don't want to depend on the analysis package here).
-    const wilson = (p: number, n: number) => {
-      const z = 1.96;
-      const z2 = z * z;
-      const denom = 1 + z2 / n;
-      const centre = (p + z2 / (2 * n)) / denom;
-      const radius =
-        (z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / denom;
-      return { low: centre - radius, high: centre + radius };
-    };
-    const ciA = wilson(pA, aTotal);
-    const ciO = wilson(pO, oTotal);
-    return ciA.high < ciO.low || ciO.high < ciA.low;
-  }, [decisionsFile]);
+  // Routes through the shared selector (`build2x2` + `isTrustMisCalibrated`,
+  // which call the analysis `wilsonCI`) instead of the old hand-rolled
+  // Wilson CI that this component used to inline. `deriveTrustSignalExplicitOnly`
+  // preserves the banner's pre-centralization behavior exactly: it counts
+  // ONLY decisions with an explicit accept/override signal (no fallback),
+  // which is what the old inline loop did (`if (tc == null) continue`).
+  const trustMisCalibrationFired = useMemo(
+    () =>
+      decisionsFile === null
+        ? false
+        : isTrustMisCalibrated(
+            build2x2(decisionsFile.decisions, deriveTrustSignalExplicitOnly),
+          ),
+    [decisionsFile],
+  );
 
   // --- fetch manifest ---
   useEffect(() => {
