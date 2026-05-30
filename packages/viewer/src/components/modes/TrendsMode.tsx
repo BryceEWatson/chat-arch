@@ -620,12 +620,13 @@ function SkillCurvesSection({ skillCurves }: SkillCurvesSectionProps) {
             </header>
             <ul className="lcars-trends__skill-list" role="list">
               {rows.map((r) => {
-                const series: readonly number[] = []; // builder doesn't ship the points array
-                // back into SkillCurveResult — only the summary stats.
-                // The 0-length list collapses TinySpark into the empty
-                // placeholder, which is the honest rendering. A future
-                // builder pass can ship the points if we want
-                // per-topic sparklines.
+                // Per-week ask counts, now shipped on the result by the
+                // skill-curves builder. Guarded with `?? []` because a
+                // skill-curves.json emitted by a pre-fix exporter has no
+                // `points` field; that falls back to the empty placeholder,
+                // the prior behavior. Empty also when the topic truly had no
+                // points.
+                const series: readonly number[] = (r.points ?? []).map((p) => p.askCount);
                 return (
                   <li key={r.topicId} className="lcars-trends__skill-row">
                     <span

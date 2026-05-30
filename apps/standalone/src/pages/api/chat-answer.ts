@@ -67,9 +67,18 @@ const MAX_CONCURRENT = 3;
 // the grace window — a real silent-abort signal. An agentic flow that
 // dispatches sub-agents legitimately runs for minutes; what we care
 // about is "did the agent stop producing output?", not "is the total
-// duration too long." So this resets on every successful send. The
-// hard cap below catches genuine runaway cases.
-const INACTIVITY_GRACE_MS = 120_000;
+// duration too long." So this resets on every successful send AND on
+// any raw stdout/stderr chunk from the child (see ctx.keepAlive) — a
+// sub-agent fan-out that's silent on parsed events but still producing
+// process output keeps the stream alive. The hard cap below catches
+// genuine runaway cases.
+//
+// Sized at 5 minutes (was 2): a single Task sub-agent can run several
+// minutes producing no parent-visible events, and 120s truncated those
+// legitimate runs. 5 min still trips well before the 10-min hard cap
+// for an agent that goes truly silent early (e.g. blocked on a headless
+// permission prompt).
+const INACTIVITY_GRACE_MS = 300_000;
 // Hard upper bound on a single turn, regardless of activity. Sized for
 // fan-out questions that legitimately spawn 2-3 sub-agents each doing
 // minutes of corpus work. Past this, we declare the turn lost — most
@@ -251,6 +260,12 @@ function summarizeToolUse(name: string, input: unknown): string {
 
 interface SpawnContext {
   send: (ev: ChatStreamEvent) => void;
+  /**
+   * Re-arm the inactivity watchdog without emitting an event. Called on
+   * every raw stdout/stderr chunk so process liveness — not just parsed
+   * ChatStreamEvents — keeps a long, event-quiet sub-agent run alive.
+   */
+  keepAlive?: () => void;
   validator: CitationValidator;
   /** SIDs already emitted as `citation` events this turn. */
   emittedCitations: Set<string>;
@@ -433,6 +448,7 @@ function buildRequestBundle(body: ParsedBody, turnIndex: number): string {
 async function runChatAnswer(
   body: ParsedBody,
   send: (ev: ChatStreamEvent) => void,
+  keepAlive?: () => void,
 ): Promise<void> {
   const requestId = randomUUID();
   const startedAt = Date.now();
@@ -444,6 +460,7 @@ async function runChatAnswer(
   const validator = new CitationValidator();
   const ctx: SpawnContext = {
     send,
+    keepAlive,
     validator,
     emittedCitations: new Set<string>(),
     assistantBuf: { v: '' },
@@ -491,6 +508,9 @@ async function runChatAnswer(
     let spawnError: Error | null = null;
 
     child.stdout.on('data', (chunk: Buffer) => {
+      // Any byte from the child is liveness — re-arm the inactivity
+      // watchdog even if this chunk holds no complete/parseable event.
+      ctx.keepAlive?.();
       stdoutBuf += chunk.toString('utf8');
       // Process complete lines; keep the trailing partial in the buffer.
       const lines = stdoutBuf.split('\n');
@@ -518,6 +538,8 @@ async function runChatAnswer(
       }
     });
     child.stderr.on('data', (chunk: Buffer) => {
+      // Liveness too — stderr diagnostics mean the child is still working.
+      ctx.keepAlive?.();
       stderrBuf += chunk.toString('utf8');
       // stderr lines surface as collapsed thinking traces — they're
       // usually claude's own diagnostics, not user-facing errors.
@@ -618,9 +640,12 @@ export const POST: APIRoute = async ({ request }) => {
   totalInFlight += 1;
 
   // Two watchdogs:
-  //   - inactivityTimer: fires after INACTIVITY_GRACE_MS of no events.
-  //     Reset on every successful `send()` so an agent that's actively
-  //     emitting tool_use / token / trace events keeps the stream alive.
+  //   - inactivityTimer: fires after INACTIVITY_GRACE_MS of no output.
+  //     Reset on every successful `send()` AND on any raw stdout/stderr
+  //     chunk from the child (via the keepAlive callback passed to
+  //     runChatAnswer) so an agent that's actively working — even one
+  //     whose parent process is event-quiet during a sub-agent run —
+  //     keeps the stream alive.
   //   - hardCapTimer: absolute upper bound — fires even if events flow,
   //     to catch a stuck loop that's emitting noise but making no
   //     progress on the actual answer.
@@ -672,7 +697,10 @@ export const POST: APIRoute = async ({ request }) => {
       }, HARD_CAP_MS);
 
       try {
-        await runChatAnswer(body, send);
+        // keepAlive re-arms the inactivity watchdog on raw child output
+        // (stdout/stderr chunks) without enqueuing a client event — so a
+        // long, event-quiet sub-agent run isn't killed at the grace mark.
+        await runChatAnswer(body, send, armInactivity);
       } finally {
         if (inactivityTimer) clearTimeout(inactivityTimer);
         if (hardCapTimer) clearTimeout(hardCapTimer);

@@ -14,6 +14,34 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+Bounded bug fixes (PR #124). `main` is now at 1.9.0; 1.10.0 is reserved
+for the pending #113 version reconcile, so no `EXPORTER_VERSION` number is
+assigned here yet — assign the next free number at merge time. The
+`skill-curves.json` shape change below is purely additive (older bundles
+simply lack the field; the viewer falls back to an empty sparkline), so
+deferring the number is safe.
+
+### Fixed
+
+- **TrendsMode skill-curve sparklines rendered empty.** The
+  `analyzeSkillCurves` kernel computed the per-week `points` but dropped
+  them from `SkillCurveResult`, so the viewer hard-coded an empty series
+  and every sparkline collapsed to the placeholder. `SkillCurveResult`
+  now carries `points: readonly SkillCurvePoint[]` (echoed from the
+  input series, including for `Insufficient`/filtered rows), and
+  `TrendsMode` derives the sparkline from it (guarded `?? []` so a
+  pre-fix `skill-curves.json` still loads). **On-disk shape change:**
+  `analysis/skill-curves.json` `results[]` now each include a `points`
+  array. Additive — older files without it still load. (#121)
+- **`chat-answer` inactivity watchdog killed legitimate multi-agent
+  runs.** The 120s no-events timeout aborted a `claude -p` turn whenever
+  the parent process was event-quiet during a long sub-agent `Task`
+  (which is normal). The watchdog now also re-arms on any raw
+  stdout/stderr chunk from the child (process liveness, not just parsed
+  events) via a `keepAlive` callback, and the grace is raised 120s → 5m
+  — still well under the 10-minute hard cap that backstops a genuinely
+  stuck agent. (#123)
+
 ## [1.9.0] — 2026-05-29
 
 Decisions LLM pipeline — the DECISIONS surface goes from a raw
