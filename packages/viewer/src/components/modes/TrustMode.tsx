@@ -1,6 +1,12 @@
 import { useMemo } from 'react';
-import type { Decision, DecisionsFile } from '@chat-arch/schema';
-import { THRESHOLDS, wilsonCI } from '@chat-arch/analysis';
+import type { DecisionsFile } from '@chat-arch/schema';
+import {
+  THRESHOLDS,
+  build2x2,
+  isTrustMisCalibrated,
+  type CellKey,
+  type RowSummary,
+} from '@chat-arch/analysis';
 import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import { CopyMarkdownButton } from '../CopyMarkdownButton.js';
 
@@ -30,126 +36,6 @@ export interface TrustModeProps {
   file: DecisionsFile | null;
   /** Wave 7 P1 #4 — wire empty-state CTA to the data panel. */
   onOpenDataPanel?: () => void;
-}
-
-type CellKey = 'accept-land' | 'accept-noland' | 'override-land' | 'override-noland';
-
-interface CellTally {
-  accepted: boolean;
-  landed: boolean;
-  n: number;
-}
-
-interface RowSummary {
-  accepted: boolean;
-  /** Total decisions in this row (n_accepted or n_overrode). */
-  total: number;
-  /** Landed count. */
-  landed: number;
-  pHat: number;
-  ci: { low: number; high: number };
-  meetsCellN: boolean;
-}
-
-interface TrustTally {
-  cells: Record<CellKey, CellTally>;
-  acceptRow: RowSummary;
-  overrideRow: RowSummary;
-  /** Total joined+actionable decisions used. */
-  totalUsable: number;
-}
-
-/**
- * Pull (accepted, landed) signal out of a Decision. Prefers the explicit
- * `trustCalibration` field (populated by the `/mine-decisions` skill's
- * trust-calibration stage), then falls back to deriving from the
- * classification + outcomeRef when the field is absent (older
- * decisions.json files predating the skill). Returns null when neither
- * path resolves — the row is excluded from the 2x2 entirely.
- */
-function derive(d: Decision): { accepted: boolean; landed: boolean } | null {
-  const tc = d.trustCalibration;
-  if (tc !== null && tc !== undefined) {
-    return { accepted: tc.acceptedAssistant, landed: tc.landed };
-  }
-  // Fallback derivation: requires both classification AND outcomeRef.
-  // Without the trustCalibration field we can only make a coarse guess
-  // — treat `alternative-block` kind as "accepted assistant" (user
-  // picked from the LLM's enumerated alternatives) and everything else
-  // as ambiguous. Conservative: skip ambiguous rows so the 2x2 doesn't
-  // mix derivations with explicit signals.
-  if (d.classification === null || d.outcomeRef === null) return null;
-  if (d.outcomeRef.binaryClass === 'neutral') return null;
-  const accepted = d.classification.kind === 'alternative-block';
-  // Skip non-alternative-block rows in the fallback path so the 2x2
-  // doesn't surface guesses as data.
-  if (!accepted && d.classification.kind !== 'imperative-choice') return null;
-  return {
-    accepted,
-    landed: d.outcomeRef.binaryClass === 'good',
-  };
-}
-
-function build2x2(decisions: readonly Decision[]): TrustTally {
-  const cells: Record<CellKey, CellTally> = {
-    'accept-land': { accepted: true, landed: true, n: 0 },
-    'accept-noland': { accepted: true, landed: false, n: 0 },
-    'override-land': { accepted: false, landed: true, n: 0 },
-    'override-noland': { accepted: false, landed: false, n: 0 },
-  };
-  let totalUsable = 0;
-  for (const d of decisions) {
-    const sig = derive(d);
-    if (sig === null) continue;
-    totalUsable += 1;
-    const key: CellKey = sig.accepted
-      ? sig.landed
-        ? 'accept-land'
-        : 'accept-noland'
-      : sig.landed
-        ? 'override-land'
-        : 'override-noland';
-    cells[key]!.n += 1;
-  }
-  const minN = THRESHOLDS.trustCell.minN;
-  const acceptTotal = cells['accept-land'].n + cells['accept-noland'].n;
-  const acceptLanded = cells['accept-land'].n;
-  const overrideTotal = cells['override-land'].n + cells['override-noland'].n;
-  const overrideLanded = cells['override-land'].n;
-
-  const acceptPHat = acceptTotal > 0 ? acceptLanded / acceptTotal : 0;
-  const overridePHat = overrideTotal > 0 ? overrideLanded / overrideTotal : 0;
-
-  return {
-    cells,
-    acceptRow: {
-      accepted: true,
-      total: acceptTotal,
-      landed: acceptLanded,
-      pHat: acceptPHat,
-      ci: wilsonCI(acceptPHat, acceptTotal),
-      meetsCellN:
-        cells['accept-land'].n >= minN && cells['accept-noland'].n >= minN,
-    },
-    overrideRow: {
-      accepted: false,
-      total: overrideTotal,
-      landed: overrideLanded,
-      pHat: overridePHat,
-      ci: wilsonCI(overridePHat, overrideTotal),
-      meetsCellN:
-        cells['override-land'].n >= minN && cells['override-noland'].n >= minN,
-    },
-    totalUsable,
-  };
-}
-
-/** CIs do not overlap iff one's upper < the other's lower. */
-function cisDisjoint(
-  a: { low: number; high: number },
-  b: { low: number; high: number },
-): boolean {
-  return a.high < b.low || b.high < a.low;
 }
 
 function formatRate(p: number): string {
@@ -190,10 +76,10 @@ export function TrustMode({ file, onOpenDataPanel }: TrustModeProps) {
 
   // Mis-calibration flag: BOTH rows must meet per-cell minN AND the
   // landed-rate CIs must be disjoint. Anything weaker is "looks
-  // suggestive, not statistically distinguishable".
+  // suggestive, not statistically distinguishable". `bothRowsQualified`
+  // is retained for the quiet-flag explanatory copy below.
   const bothRowsQualified = acceptRow.meetsCellN && overrideRow.meetsCellN;
-  const misCalibrated =
-    bothRowsQualified && cisDisjoint(acceptRow.ci, overrideRow.ci);
+  const misCalibrated = isTrustMisCalibrated(tally);
 
   // Outer aria-label dropped — divs without role don't expose
   // aria-label to AT (ARIA 1.2 §5.2.7.2). The <h2>TRUST</h2> below

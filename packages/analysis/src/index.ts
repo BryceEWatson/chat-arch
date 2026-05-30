@@ -469,3 +469,9 @@ export {
 } from './correlationPermutation.js';
 
 export { unwrapEnvelope } from './unwrapEnvelope.js';
+
+// Selectors — `data → view-model` derivations (the "Centralize data
+// processing" plan). Re-exported from the package root so viewer
+// components import `{ buildX } from '@chat-arch/analysis'` exactly like
+// any other kernel. Populated phase by phase; empty in Phase 0.
+export * from './selectors/index.js';

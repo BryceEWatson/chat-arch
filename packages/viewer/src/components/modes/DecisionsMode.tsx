@@ -4,7 +4,13 @@ import type {
   DecisionsFile,
   DecisionClustersFile,
 } from '@chat-arch/schema';
-import { THRESHOLDS, wilsonCI, unwrapEnvelope } from '@chat-arch/analysis';
+import {
+  THRESHOLDS,
+  wilsonCI,
+  unwrapEnvelope,
+  groupDecisionsByKind,
+  partitionDecisions,
+} from '@chat-arch/analysis';
 import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import {
   startMineDecisions,
@@ -54,26 +60,6 @@ const MINE_BATCH_OPTIONS: ReadonlyArray<MineDecisionsBatch> = [5, 20, 'all'];
 const STATUS_POLL_MS = 1500;
 const UNCLASSIFIED_PREVIEW = 15;
 
-const KIND_LABEL: Record<string, string> = {
-  'explicit-marker': 'EXPLICIT MARKER',
-  'explicit-go-with': 'GO-WITH',
-  'instead-of': 'INSTEAD-OF',
-  'alternative-block': 'ALTERNATIVE',
-  'imperative-choice': 'IMPERATIVE',
-  'tool-pivot': 'TOOL PIVOT',
-  'scope-cut': 'SCOPE CUT',
-  other: 'OTHER',
-};
-
-interface KindGroup {
-  key: string;
-  label: string;
-  rows: Decision[];
-  /** outcomeRef present AND non-neutral — landed-rate denominator. */
-  denom: number;
-  landed: number;
-}
-
 function formatScore(s: number): string {
   return Number.isFinite(s) ? s.toFixed(2) : '—';
 }
@@ -85,30 +71,6 @@ function cleanContext(raw: string): string {
 }
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
-}
-
-function buildKindGroups(classified: readonly Decision[]): KindGroup[] {
-  const m = new Map<string, Decision[]>();
-  for (const d of classified) {
-    const k = d.classification?.kind ?? 'other';
-    const arr = m.get(k);
-    if (arr) arr.push(d);
-    else m.set(k, [d]);
-  }
-  const out: KindGroup[] = [];
-  for (const [key, rows] of m) {
-    let denom = 0;
-    let landed = 0;
-    for (const r of rows) {
-      const ref = r.outcomeRef;
-      if (ref === null || ref.binaryClass === 'neutral') continue;
-      denom += 1;
-      if (ref.binaryClass === 'good') landed += 1;
-    }
-    out.push({ key, label: KIND_LABEL[key] ?? key.toUpperCase(), rows, denom, landed });
-  }
-  out.sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label));
-  return out;
 }
 
 type MineState =
@@ -149,15 +111,11 @@ export function DecisionsMode({
     };
   }, []);
 
-  const classified = useMemo(
-    () => (file === null ? [] : file.decisions.filter((d) => d.classification !== null)),
+  const { classified, unclassified } = useMemo(
+    () => (file === null ? { classified: [], unclassified: [] } : partitionDecisions(file.decisions)),
     [file],
   );
-  const unclassified = useMemo(
-    () => (file === null ? [] : file.decisions.filter((d) => d.classification === null)),
-    [file],
-  );
-  const kindGroups = useMemo(() => buildKindGroups(classified), [classified]);
+  const kindGroups = useMemo(() => groupDecisionsByKind(classified), [classified]);
 
   // Poll the run-status sidecar while a mine is in flight.
   const mineStatus = mineState.status;

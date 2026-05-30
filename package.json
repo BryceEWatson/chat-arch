@@ -11,9 +11,10 @@
   "scripts": {
     "build": "node design-system/scripts/generate-tokens.mjs && pnpm -r --filter=\"./packages/*\" --filter=\"./apps/*\" build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint && pnpm lint:causal-copy && pnpm lint:thresholds-imports && pnpm lint:fixture-pii",
+    "lint": "pnpm -r lint && pnpm lint:causal-copy && pnpm lint:thresholds-imports && pnpm lint:data-processing && pnpm lint:fixture-pii",
     "lint:causal-copy": "node scripts/lint-causal-copy.mjs",
     "lint:thresholds-imports": "node scripts/lint-thresholds-imports.mjs",
+    "lint:data-processing": "node scripts/lint-data-processing-in-components.mjs",
     "lint:fixture-pii": "node scripts/lint-fixture-pii.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
