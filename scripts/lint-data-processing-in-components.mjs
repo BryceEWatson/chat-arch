@@ -38,7 +38,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // PR is green; ratcheted DOWN each phase as derivations migrate into
 // selectors. The plan's terminal state is a budget at the irreducible
 // (UI-coupled) floor.
-const MAX_FLAGS = Number(process.env.DATA_PROCESSING_LINT_BUDGET ?? 35);
+const MAX_FLAGS = Number(process.env.DATA_PROCESSING_LINT_BUDGET ?? 33);
 
 const TARGET_GLOB_ROOT = 'packages/viewer/src/components';
 
