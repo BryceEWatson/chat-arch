@@ -1,11 +1,14 @@
 import type {
-  ArchetypeCentroid,
-  SkillCurveResult,
+  ArchetypesFile,
+  ProjectTrajectoriesFile,
+  SkillCurvesFile,
+  SurfaceComparisonFile,
+  TrendsBundle,
 } from '@chat-arch/analysis';
 
 /**
- * Trends data — Stream J #4. Loads the four Phase-3 sidecars used by
- * the TRENDS surface:
+ * Trends data — Stream J #4. Loads the four sidecars used by the TRENDS
+ * surface:
  *
  *   - `analysis/project-trajectories.json`
  *   - `analysis/archetypes.json`
@@ -16,99 +19,25 @@ import type {
  * returns null for that slot and TrendsMode falls back to a
  * per-section empty state.
  *
- * Types are defined locally rather than imported from the exporter
- * package because the viewer doesn't import from `@chat-arch/exporter`
- * (its `exports` field only declares the root, and the analysis
- * builders live in node-only subpaths).
+ * The wrapper *types* now live in `@chat-arch/analysis`
+ * (`sidecarFiles.ts`) — Phase 3 of the "Centralize data processing"
+ * refactor moved the envelope shapes next to the payloads they wrap. The
+ * fetchers below STAY here: they do browser `fetch` I/O, which must not
+ * enter the React-free / Node-free analysis kernel. Re-export the types
+ * so existing consumers that import them from this loader keep working.
  */
 
-export type TrajectoryClassification =
-  | 'stalling'
-  | 'stalled-finished'
-  | 'accelerating'
-  | 'flat';
-
-export interface ProjectTrajectoryEntry {
-  projectId: string;
-  projectName: string;
-  classification: TrajectoryClassification;
-  totalSessions: number;
-  recentSessions: number;
-  slope: number | null;
-  ci: { low: number; high: number } | null;
-  blockLength: number | null;
-  bootstrapStatus: 'ok' | 'series-too-short';
-  series: readonly number[];
-}
-
-export interface ProjectTrajectoriesFile {
-  version: number;
-  generatedAt: number;
-  rollingWindow: number;
-  projects: readonly ProjectTrajectoryEntry[];
-}
-
-export interface ArchetypesFile {
-  version: number;
-  generatedAt: number;
-  archetypeVersion: number;
-  centroids: readonly ArchetypeCentroid[];
-  assignments: Record<string, string | null>;
-  silhouette: number;
-  chosenK: number;
-  scannedSessionIds: readonly string[];
-}
-
-export interface SurfaceCell {
-  key: string;
-  source: string;
-  archetypeId: string;
-  n: number;
-  good: number;
-  pHat: number;
-  ci: { low: number; high: number };
-  meetsDisplayN: boolean;
-}
-
-export interface SurfacePairwiseTest {
-  a: string;
-  b: string;
-  pValue: number;
-  pValueAdjusted: number;
-  significant: boolean;
-  /**
-   * Which test produced `pValue` — `'z-test'` (pooled two-proportion z,
-   * large-sample) or `'fisher-exact'` (two-sided Fisher's exact,
-   * small-sample where any expected cell count < 5). The viewer's
-   * methodology disclosure can surface which rule fired per pair so
-   * users see why a small-cell pair's p-value differs from the naive
-   * z-test they might have computed.
-   */
-  testMethod: 'z-test' | 'fisher-exact';
-}
-
-export interface SurfaceComparisonFile {
-  version: number;
-  generatedAt: number;
-  familyAlpha: number;
-  cells: readonly SurfaceCell[];
-  pairwise: readonly SurfacePairwiseTest[];
-}
-
-export interface SkillCurvesFile {
-  version: number;
-  generatedAt: number;
-  minWeeksPresent: number;
-  bhFdrAlpha: number;
-  results: readonly SkillCurveResult[];
-}
-
-export interface TrendsBundle {
-  trajectories: ProjectTrajectoriesFile | null;
-  archetypes: ArchetypesFile | null;
-  surfaceComparison: SurfaceComparisonFile | null;
-  skillCurves: SkillCurvesFile | null;
-}
+export type {
+  ArchetypesFile,
+  ProjectTrajectoriesFile,
+  ProjectTrajectoryEntry,
+  SkillCurvesFile,
+  SurfaceCell,
+  SurfaceComparisonFile,
+  SurfacePairwiseTest,
+  TrajectoryClassification,
+  TrendsBundle,
+} from '@chat-arch/analysis';
 
 function joinAnalysisUrl(baseUrl: string, filename: string): string {
   const root = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;

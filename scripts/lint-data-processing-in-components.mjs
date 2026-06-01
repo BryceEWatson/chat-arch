@@ -38,7 +38,13 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // PR is green; ratcheted DOWN each phase as derivations migrate into
 // selectors. The plan's terminal state is a budget at the irreducible
 // (UI-coupled) floor.
-const MAX_FLAGS = Number(process.env.DATA_PROCESSING_LINT_BUDGET ?? 33);
+//
+// Ratchet log:
+//   Phase 0 baseline ........ 33
+//   Phase 3 ................. 26  (EffectivenessMode → buildWeeklyComposite;
+//                                  Projects/Topics index sorts →
+//                                  selectors/indexes.ts)
+const MAX_FLAGS = Number(process.env.DATA_PROCESSING_LINT_BUDGET ?? 26);
 
 const TARGET_GLOB_ROOT = 'packages/viewer/src/components';
 

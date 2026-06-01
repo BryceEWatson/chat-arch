@@ -479,6 +479,13 @@ export {
   type AutomationTemplateId,
 } from './classifyAutomation.js';
 
+// Sidecar file wrappers — the thin `*File` / `*Bundle` envelope types for
+// the analysis sidecars the viewer fetches (`analysis/*.json`). The
+// payloads they wrap already live in this package; Phase 3 of the
+// "Centralize data processing" refactor moved the envelopes here too.
+// The fetcher functions stay viewer-side (they do browser I/O).
+export * from './sidecarFiles.js';
+
 // Selectors — `data → view-model` derivations (the "Centralize data
 // processing" plan). Re-exported from the package root so viewer
 // components import `{ buildX } from '@chat-arch/analysis'` exactly like

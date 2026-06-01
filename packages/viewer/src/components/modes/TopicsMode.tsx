@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { UnifiedSessionEntry, Topic, Project } from '@chat-arch/schema';
+import {
+  rankTopicsBySessionCount,
+  sortSessionsByRecency,
+} from '@chat-arch/analysis';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
 import { SessionCard } from '../SessionCard.js';
@@ -197,9 +201,10 @@ interface TopicsIndexProps {
 
 function TopicsIndex({ topics, onSelectTopic, onDisable }: TopicsIndexProps) {
   const [filter, setFilter] = useState('');
-  const sorted = useMemo(() => {
-    return [...topics].sort((a, b) => b.sessionIds.length - a.sessionIds.length);
-  }, [topics]);
+  // Ordering lives in the `rankTopicsBySessionCount` analysis selector
+  // (Phase 3 of "Centralize data processing"); the search filter is
+  // UI-coupled and stays local.
+  const sorted = useMemo(() => rankTopicsBySessionCount(topics), [topics]);
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return sorted;
@@ -290,15 +295,10 @@ function TopicDetail({
   onSelectProject,
   now,
 }: TopicDetailProps) {
-  const sessionsForTopic = useMemo(() => {
-    const list: UnifiedSessionEntry[] = [];
-    for (const sid of topic.sessionIds) {
-      const s = sessionById.get(sid);
-      if (s) list.push(s);
-    }
-    list.sort((a, b) => b.updatedAt - a.updatedAt);
-    return list;
-  }, [topic.sessionIds, sessionById]);
+  const sessionsForTopic = useMemo(
+    () => sortSessionsByRecency(topic.sessionIds, sessionById),
+    [topic.sessionIds, sessionById],
+  );
 
   const projectsForTopic = useMemo(() => {
     return topic.projectIds

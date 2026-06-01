@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { CompositeOutcomesFile } from '@chat-arch/schema';
-import { THRESHOLDS, ewma, wilsonCI } from '@chat-arch/analysis';
+import { THRESHOLDS, buildWeeklyComposite } from '@chat-arch/analysis';
 import { SidecarEmptyState } from '../SidecarEmptyState.js';
 import { MethodologyDisclosure } from '../MethodologyDisclosure.js';
 import { CopyMarkdownButton } from '../CopyMarkdownButton.js';
@@ -27,28 +27,8 @@ import type { ConfigHistoryFile } from '../../data/insightsLoader.js';
  * `minNForRate` weeks of any data exist.
  */
 
-/** Mirrors the unified entry's startedAt → week-start (UTC Sunday). */
+/** Week stride in ms — used to bound the commit-tick annotation range. */
 const WEEK_MS = 7 * 86_400_000;
-function weekStart(ms: number): number {
-  // Floor to UTC midnight, then back up to the nearest UTC Sunday.
-  // Matches the bucketing in `data/search.ts` so the bars on this
-  // mode and the SESSIONS Sparkline land on the same calendar weeks.
-  const d = new Date(ms);
-  const utc = Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-  );
-  // getUTCDay: 0 = Sunday. Subtract to land on Sunday.
-  return utc - new Date(utc).getUTCDay() * 86_400_000;
-}
-
-interface WeeklyBucket {
-  start: number;
-  scores: number[];
-  good: number;
-  total: number;
-}
 
 export interface EffectivenessModeProps {
   /**
@@ -80,91 +60,19 @@ export function EffectivenessMode({
   onOpenDataPanel,
   configHistory = null,
 }: EffectivenessModeProps) {
-  const buckets = useMemo<WeeklyBucket[]>(() => {
-    if (outcomes === null) return [];
-    const m = new Map<number, WeeklyBucket>();
-    for (const o of outcomes.outcomes) {
-      // Skip rows whose hash was rejected by the loader — they're
-      // marked `binary: 'unknown'` and have no rate semantics.
-      if (o.binary === 'unknown') continue;
-      const ts = sessionUpdatedAt.get(o.sessionId);
-      if (ts === undefined) continue;
-      const w = weekStart(ts);
-      let bucket = m.get(w);
-      if (bucket === undefined) {
-        bucket = { start: w, scores: [], good: 0, total: 0 };
-        m.set(w, bucket);
-      }
-      bucket.scores.push(o.score);
-      bucket.total += 1;
-      if (o.binary === 'good') bucket.good += 1;
-    }
-    return [...m.values()].sort((a, b) => a.start - b.start);
-  }, [outcomes, sessionUpdatedAt]);
-
-  // Fill missing weeks with empty buckets so the line is continuous —
-  // a gap of 0/0 is information (you didn't work that week), not noise.
-  const filled = useMemo<WeeklyBucket[]>(() => {
-    if (buckets.length === 0) return [];
-    const out: WeeklyBucket[] = [];
-    const first = buckets[0]!.start;
-    const last = buckets[buckets.length - 1]!.start;
-    const byStart = new Map(buckets.map((b) => [b.start, b] as const));
-    for (let ts = first; ts <= last; ts += WEEK_MS) {
-      const existing = byStart.get(ts);
-      if (existing !== undefined) out.push(existing);
-      else out.push({ start: ts, scores: [], good: 0, total: 0 });
-    }
-    return out;
-  }, [buckets]);
-
-  const meanSeries = useMemo<OutcomeWeek[]>(() => {
-    if (filled.length === 0) return [];
-    // Per-week mean composite score.
-    const rawValues = filled.map((b) =>
-      b.total === 0 ? 0 : b.scores.reduce((s, x) => s + x, 0) / b.total,
-    );
-    const smoothed = ewma(rawValues, THRESHOLDS.ewma.halfLifeWeeks);
-    // No Wilson CI for a mean of continuous scores — the ribbon below
-    // is for the binarized-good share. Carry a flat ribbon == raw value
-    // so the chart primitive renders without a visible band.
-    return filled.map((b, i) => ({
-      start: b.start,
-      value: rawValues[i]!,
-      ewma: smoothed[i]!,
-      ciLow: rawValues[i]!,
-      ciHigh: rawValues[i]!,
-      n: b.total,
-    }));
-  }, [filled]);
-
-  const goodSeries = useMemo<OutcomeWeek[]>(() => {
-    if (filled.length === 0) return [];
-    const rawValues = filled.map((b) =>
-      b.total === 0 ? 0 : b.good / b.total,
-    );
-    const smoothed = ewma(rawValues, THRESHOLDS.ewma.halfLifeWeeks);
-    return filled.map((b, i) => {
-      const ci =
-        b.total >= THRESHOLDS.display.minNForRate
-          ? wilsonCI(rawValues[i]!, b.total)
-          : { low: rawValues[i]!, high: rawValues[i]! };
-      return {
-        start: b.start,
-        value: rawValues[i]!,
-        ewma: smoothed[i]!,
-        ciLow: ci.low,
-        ciHigh: ci.high,
-        n: b.total,
-      };
-    });
-  }, [filled]);
-
-  const informativeWeeks = useMemo(
-    () =>
-      filled.filter((b) => b.total >= THRESHOLDS.display.minNForRate).length,
-    [filled],
+  // All weekly-trajectory derivation lives in the `buildWeeklyComposite`
+  // analysis selector (Phase 3 of the "Centralize data processing"
+  // refactor) — bucketing, gap-fill, EWMA, Wilson CI, and the verdict.
+  // The component is a thin renderer over its output. The selector's
+  // point shape is structurally `OutcomeWeek`, so the series feed the
+  // sparkline directly.
+  const composite = useMemo(
+    () => buildWeeklyComposite(outcomes, sessionUpdatedAt),
+    [outcomes, sessionUpdatedAt],
   );
+  const meanSeries: readonly OutcomeWeek[] = composite.mean;
+  const goodSeries: readonly OutcomeWeek[] = composite.good;
+  const informativeWeeks = composite.informativeWeeks;
 
   // Lift the commit-ticks memo to the top of the render — react-hooks
   // rules forbid calling a hook after an early return. Filters to
@@ -224,10 +132,10 @@ export function EffectivenessMode({
   const latestGood = goodSeries[goodSeries.length - 1];
 
   // Wave 7 P2 #10 — trajectory verdict line over the last
-  // `verdictWindow` informative weeks. Wilson-tested: we read the
-  // sign of (latest CI low - earliest CI high) and surface
-  // direction-with-confidence rather than just a raw delta.
-  const verdict = computeVerdict(goodSeries);
+  // `verdictWindow` informative weeks. Wilson-tested (computed by the
+  // `buildWeeklyComposite` selector): the sign of (latest CI low -
+  // earliest CI high) drives direction-with-confidence, not a raw delta.
+  const verdict = composite.verdict;
 
   return (
     <div className="lcars-effectiveness">
@@ -357,43 +265,13 @@ export function EffectivenessMode({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Verdict + commit-tick helpers (Wave 7 P2 #10)
+// Commit-tick helpers (Wave 7 P2 #10)
+//
+// The weekly trajectory + Wilson-tested verdict now live in the
+// `buildWeeklyComposite` analysis selector. Only the commit-tick
+// annotation (which threads `ConfigHistoryFile` — a viewer sidecar —
+// against the rendered week range) stays here as UI-coupled glue.
 // ─────────────────────────────────────────────────────────────────────
-
-interface TrajectoryVerdict {
-  /** Direction relative to the start of the verdict window. */
-  direction: 'up' | 'down' | 'flat';
-  /** Signed delta in percentage points (raw-rate, not EWMA). */
-  deltaPp: number;
-  /** Width of the verdict window, in informative weeks. */
-  windowWeeks: number;
-}
-
-/**
- * Wilson-tested verdict: take up to the last
- * `THRESHOLDS.trajectory.rollingWindow` informative weeks of the good
- * share. Direction is `up` when the latest week's Wilson CI low
- * exceeds the earliest week's CI high (and the raw delta is positive),
- * `down` for the mirror case, and `flat` otherwise. Returns `null`
- * when too few informative weeks are available.
- */
-function computeVerdict(series: readonly OutcomeWeek[]): TrajectoryVerdict | null {
-  if (series.length < 2) return null;
-  const informative = series.filter((w) => w.n >= THRESHOLDS.display.minNForRate);
-  if (informative.length < 2) return null;
-  const window = Math.min(
-    THRESHOLDS.trajectory.rollingWindow,
-    informative.length,
-  );
-  const slice = informative.slice(-window);
-  const first = slice[0]!;
-  const last = slice[slice.length - 1]!;
-  const deltaPp = (last.value - first.value) * 100;
-  let direction: 'up' | 'down' | 'flat' = 'flat';
-  if (last.ciLow > first.ciHigh && deltaPp > 0) direction = 'up';
-  else if (last.ciHigh < first.ciLow && deltaPp < 0) direction = 'down';
-  return { direction, deltaPp, windowWeeks: slice.length };
-}
 
 interface CommitTick {
   sha: string;

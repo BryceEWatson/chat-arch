@@ -1,13 +1,22 @@
 import type {
-  ItsConfigCommit,
-  ItsResult,
-  KnowledgeDebtCluster,
-  ReflexiveResult,
+  ConfigHistoryFile,
+  InsightsBundle,
+  ItsFile,
+  KnowledgeDebtFile,
+  ReflexiveFile,
 } from '@chat-arch/analysis';
 
 /**
- * Sidecar shapes for InsightsMode. Mirrors the file shapes emitted by
- * the Wave 3 builders in `packages/exporter/src/analysis/`:
+ * InsightsMode sidecar loaders. The wrapper *types* now live in
+ * `@chat-arch/analysis` (`sidecarFiles.ts`) — Phase 3 of the "Centralize
+ * data processing" refactor moved the envelope shapes next to the
+ * payloads they wrap. The fetchers below STAY here: they do browser
+ * `fetch` I/O, which must not enter the React-free / Node-free analysis
+ * kernel. Re-export the types so existing consumers that import them from
+ * this loader keep working.
+ *
+ * The sidecars mirror the file shapes emitted by the Wave 3 builders in
+ * `packages/exporter/src/analysis/`:
  *
  *   - `analysis/config-history.json` — `configHistory.ts`
  *   - `analysis/its-analysis.json` — `itsBuilder.ts`
@@ -19,42 +28,13 @@ import type {
  * mode renders the empty state for that sub-section.
  */
 
-export interface ConfigHistoryFile {
-  version: 1;
-  generatedAt: number;
-  commits: readonly ItsConfigCommit[];
-}
-
-export interface ItsFile {
-  version: 1;
-  generatedAt: number;
-  windowDays: number;
-  results: readonly ItsResult[];
-}
-
-export interface KnowledgeDebtFile {
-  version: 1;
-  generatedAt: number;
-  confidence: 'high' | 'low' | 'mixed' | 'none';
-  clusters: readonly KnowledgeDebtCluster[];
-}
-
-export interface ReflexiveFile {
-  version: 1;
-  generatedAt: number;
-  result: ReflexiveResult;
-  methodology: {
-    covariates: readonly string[];
-    notes: string;
-  };
-}
-
-export interface InsightsBundle {
-  configHistory: ConfigHistoryFile | null;
-  its: ItsFile | null;
-  knowledgeDebt: KnowledgeDebtFile | null;
-  reflexive: ReflexiveFile | null;
-}
+export type {
+  ConfigHistoryFile,
+  InsightsBundle,
+  ItsFile,
+  KnowledgeDebtFile,
+  ReflexiveFile,
+} from '@chat-arch/analysis';
 
 function joinAnalysisUrl(baseUrl: string, filename: string): string {
   const root = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;

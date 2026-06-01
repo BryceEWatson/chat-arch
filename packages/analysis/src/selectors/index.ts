@@ -30,3 +30,5 @@ export * from './decisions.js';
 export * from './actionItems.js';
 export * from './sessions.js';
 export * from './corrections.js';
+export * from './weeklyComposite.js';
+export * from './indexes.js';
