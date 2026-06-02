@@ -24,6 +24,39 @@ import {
 } from 'node:fs';
 
 /**
+ * Windows raises these when the destination is momentarily held open by
+ * another handle — most commonly the dev server's static-file middleware
+ * serving the very sidecar we're rewriting during a rescan. The rename is
+ * still the right primitive; the lock is transient, so we retry with a
+ * short backoff instead of letting the write fail (which `runAnalysis`
+ * fail-soft try/catch would swallow, silently leaving a STALE sidecar —
+ * the bug this guards against). POSIX rename over an open file succeeds,
+ * so these never fire there.
+ */
+const TRANSIENT_RENAME_CODES: ReadonlySet<string> = new Set([
+  'EPERM',
+  'EACCES',
+  'EBUSY',
+  'ENOTEMPTY',
+]);
+const RENAME_MAX_ATTEMPTS = 10;
+const RENAME_BACKOFF_MS = 25;
+
+function isTransientRenameError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    TRANSIENT_RENAME_CODES.has((err as NodeJS.ErrnoException).code ?? '')
+  );
+}
+
+/** Synchronous sleep — used by the sync rename-retry on Windows lock races. */
+function sleepSync(ms: number): void {
+  // Atomics.wait blocks the thread without a busy-spin. The SharedArrayBuffer
+  // is never signaled, so it always waits the full timeout.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
  * Stamped tmp filename so two concurrent writers to the same
  * destination never share a tmp name and race rename(). Format:
  * `<filePath>.tmp-<pid>-<msec>-<rand6>`. (S3)
@@ -45,7 +78,15 @@ export async function atomicWriteJson(
 ): Promise<void> {
   const tmpPath = stampedTmpPath(filePath);
   await writeFile(tmpPath, content, 'utf8');
-  await rename(tmpPath, filePath);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(tmpPath, filePath);
+      return;
+    } catch (err) {
+      if (attempt >= RENAME_MAX_ATTEMPTS || !isTransientRenameError(err)) throw err;
+      await new Promise((r) => setTimeout(r, RENAME_BACKOFF_MS * attempt));
+    }
+  }
 }
 
 /**
@@ -74,5 +115,13 @@ export function atomicWriteTextSync(target: string, content: string): void {
   } finally {
     closeSync(fd);
   }
-  renameSync(tmp, target);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      renameSync(tmp, target);
+      return;
+    } catch (err) {
+      if (attempt >= RENAME_MAX_ATTEMPTS || !isTransientRenameError(err)) throw err;
+      sleepSync(RENAME_BACKOFF_MS * attempt);
+    }
+  }
 }

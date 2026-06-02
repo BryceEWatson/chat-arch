@@ -194,13 +194,24 @@ export async function buildCompositeOutcomesFile(
     weightsHash,
   );
 
+  // Automation-exclusion (classify+collapse Stage 4): drop automated/
+  // templated orchestration runs (`automationTemplateId` present) before
+  // composing outcomes. A templated run (e.g. a "status paragraph"
+  // generator spawning `claude -p`) is not a genuine interactive sample,
+  // so it must not pollute the composite-outcome distribution that every
+  // downstream per-session surface (DECISIONS / TRUST / archetypes) reads.
+  // Its cost/frequency is preserved elsewhere via the collapse view.
+  const interactiveSessions = manifest.sessions.filter(
+    (s) => s.automationTemplateId == null,
+  );
+
   type PerSession =
     | { kind: 'reused'; outcome: CompositeOutcome }
     | { kind: 'scanned'; outcome: CompositeOutcome }
     | { kind: 'missing' };
 
   const results = await parallelMap<UnifiedSessionEntry, PerSession>(
-    manifest.sessions,
+    interactiveSessions,
     concurrency,
     async (entry): Promise<PerSession> => {
       if (prior !== null) {
@@ -236,7 +247,7 @@ export async function buildCompositeOutcomesFile(
   let missing = 0;
   for (let i = 0; i < results.length; i += 1) {
     const r = results[i] as PerSession;
-    const entry = manifest.sessions[i] as UnifiedSessionEntry;
+    const entry = interactiveSessions[i] as UnifiedSessionEntry;
     if (r.kind === 'missing') {
       missing += 1;
       continue;

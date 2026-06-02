@@ -127,6 +127,65 @@ describe('buildSkillCurvesFile', () => {
     expect(b.file.results).toEqual(a.file.results);
   });
 
+  it('automation-exclusion: automated session is excluded from ask counts + active denominator', async () => {
+    const outDir = path.join(tmpRoot, 'automation');
+    await mkdir(path.join(outDir, 'analysis'), { recursive: true });
+
+    // 8 weeks, two interactive sessions per week, all in one topic — clears
+    // minWeeksPresent. Then add an automated twin in week 0 (same week as an
+    // interactive session) and reference it in the topic. The exclusion must
+    // drop it from BOTH the topic's week-0 askCount and the corpus-wide
+    // week-0 activeSessions denominator.
+    const sessions: UnifiedSessionEntry[] = [];
+    const sessionIds: string[] = [];
+    const weekMs = 7 * 86_400_000;
+    const baseTime = new Date('2025-01-06T00:00:00Z').getTime();
+    for (let w = 0; w < 8; w += 1) {
+      for (let i = 0; i < 2; i += 1) {
+        const id = `s-${w}-${i}`;
+        sessions.push(makeEntry(id, baseTime + w * weekMs + i * 1000));
+        sessionIds.push(id);
+      }
+    }
+    // Automated twin in week 0.
+    const automated = {
+      ...makeEntry('sess-auto', baseTime + 500),
+      automationTemplateId: 'status-paragraph',
+    } as UnifiedSessionEntry;
+    sessions.push(automated);
+    sessionIds.push('sess-auto');
+
+    const week0Label = isoWeekLabel(new Date(baseTime));
+    const topic: Topic = {
+      id: 'topic_auto',
+      displayName: 'Auto',
+      sessionIds,
+      projectIds: [],
+      firstSeenAt: '',
+      lastSeenAt: '',
+    };
+    await writeTopics(outDir, [topic]);
+
+    const manifest: SessionManifest = {
+      schemaVersion: 4,
+      generatedAt: 0,
+      counts: { 'cli-direct': sessions.length, 'cli-desktop': 0, cowork: 0, cloud: 0 },
+      sessions,
+    } as SessionManifest;
+
+    const result = await buildSkillCurvesFile(manifest, { outDir, now: 1 });
+    expect(result.topicsAnalyzed).toBe(1);
+    const r = result.file.results[0]!;
+    // weeksPresent must be 8 (the automated twin shares week 0 with an
+    // interactive session, so it adds no new week).
+    expect(r.weeksPresent).toBe(8);
+    const week0 = r.points.find((p) => p.week === week0Label)!;
+    // Two interactive sessions in week 0 — the automated twin is excluded
+    // from both the topic askCount and the corpus active-session count.
+    expect(week0.askCount).toBe(2);
+    expect(week0.activeSessions).toBe(2);
+  });
+
   it('missing-input-graceful: missing topics.json → empty results, no crash', async () => {
     const outDir = path.join(tmpRoot, 'no-topics');
     await mkdir(path.join(outDir, 'analysis'), { recursive: true });

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { UnifiedSessionEntry, Narrative } from '@chat-arch/schema';
+import { collapseAutomatedSessions } from '@chat-arch/analysis';
 import { SessionCard } from '../SessionCard.js';
+import { AutomatedSessionCard } from '../AutomatedSessionCard.js';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
 import type { SessionDuplicateInfo } from '../../data/mergeDuplicates.js';
@@ -53,7 +55,14 @@ export function CommandMode({
   const [visible, setVisible] = useState(PAGE_SIZE);
   const now = useMemo(() => Date.now(), []);
 
-  if (sessions.length === 0) {
+  // Collapse near-identical AUTOMATED runs into one row each so they stop
+  // dominating the grid. Interactive sessions pass through 1:1 (and keep
+  // their dup / zombie / topic / narrative chip lookups, which key on the
+  // session id). The collapsed list is what drives pagination + the empty
+  // state, so "SHOW 50 MORE" and the row count reflect the de-polluted view.
+  const rows = useMemo(() => collapseAutomatedSessions(sessions), [sessions]);
+
+  if (rows.length === 0) {
     return (
       <EmptyState
         title="NO MATCHES"
@@ -62,13 +71,24 @@ export function CommandMode({
     );
   }
 
-  const slice = sessions.slice(0, visible);
-  const canLoadMore = visible < sessions.length;
+  const slice = rows.slice(0, visible);
+  const canLoadMore = visible < rows.length;
 
   return (
     <div className="lcars-command-mode">
       <div className="lcars-command-mode__grid" role="list">
-        {slice.map((s) => {
+        {slice.map((row) => {
+          if (row.kind === 'automated') {
+            return (
+              <div
+                role="listitem"
+                key={`auto:${row.project ?? '(none)'}:${row.automationTemplateId}`}
+              >
+                <AutomatedSessionCard row={row} onSelect={onSelect} now={now} />
+              </div>
+            );
+          }
+          const s = row.entry;
           const dup = sessionDupIndex?.get(s.id);
           const isZombie = !!(s.project && zombieProjectIds?.has(s.project));
           const isSemanticProject = !!semanticSessionIds?.has(s.id);
@@ -98,11 +118,11 @@ export function CommandMode({
             role="button"
             tabIndex={0}
             className="lcars-command-mode__more-btn"
-            aria-label={`show 50 more (${sessions.length - visible} remaining)`}
+            aria-label={`show 50 more (${rows.length - visible} remaining)`}
             onClick={() => setVisible((v) => v + PAGE_SIZE)}
             onKeyDown={(e) => onActivate(e, () => setVisible((v) => v + PAGE_SIZE))}
           >
-            SHOW 50 MORE ({sessions.length - visible} REMAINING)
+            SHOW 50 MORE ({rows.length - visible} REMAINING)
           </div>
         </div>
       )}

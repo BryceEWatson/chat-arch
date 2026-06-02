@@ -118,6 +118,38 @@ describe('analyzeSkillCurves', () => {
     expect(Number.isNaN(out[0]!.pValue)).toBe(true);
   });
 
+  it('carries the weekly points through to the result (both branches)', () => {
+    // Regression for the empty-sparkline bug: the builder computed the
+    // per-week points but the result dropped them, so the viewer always
+    // rendered an empty sparkline. The result must echo the input series.
+    const inFamily: SkillCurveSeries = {
+      topicId: 'in-family',
+      points: Array.from({ length: 8 }, (_, i) => ({
+        week: `W${i + 1}`,
+        askCount: 8 - i,
+        activeSessions: 10,
+      })),
+    };
+    const insufficient: SkillCurveSeries = {
+      topicId: 'too-short',
+      points: [
+        { week: 'W1', askCount: 3, activeSessions: 10 },
+        { week: 'W2', askCount: 2, activeSessions: 10 },
+      ], // < minWeeksPresent → Insufficient branch
+    };
+    const out = analyzeSkillCurves([inFamily, insufficient]);
+    const byId = new Map(out.map((r) => [r.topicId, r]));
+
+    const a = byId.get('in-family')!;
+    expect(a.classification).not.toBe('Insufficient');
+    expect(a.points.map((p) => p.askCount)).toEqual([8, 7, 6, 5, 4, 3, 2, 1]);
+
+    const b = byId.get('too-short')!;
+    expect(b.classification).toBe('Insufficient');
+    // Even filtered-out series keep their points so the UI can still draw them.
+    expect(b.points.map((p) => p.askCount)).toEqual([3, 2]);
+  });
+
   it('applies BH-FDR across the multi-topic family', () => {
     // Three series — two declining (real signal), one flat (no signal).
     const declining1: SkillCurveSeries = {

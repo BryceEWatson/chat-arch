@@ -14,6 +14,70 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-05-30
+
+Automation classify + collapse — programmatic / templated `claude` runs
+(e.g. the "Command" orchestration tool's ~1,300 status-paragraph runs)
+were ingested as ordinary sessions and dominated every per-session metric
+(counts, top-project, cost, archetypes). There is NO transcript metadata
+marker distinguishing them from human sessions, so they are classified by
+first-user-text envelope signature, then collapsed in the SESSIONS view
+and excluded from the analytical kernels.
+
+> **Version note:** `main` is at 1.9.0 and #113 (project-identity-v2) also
+> targets the 1.9.0→1.10.0 slot. This integration branch takes 1.10.0; if
+> #113 lands, the second-merged bumps to 1.11.0 (version reconcile per the
+> Step-5 convention). Also folds in the deferred bug-fix / `skill-curves`
+> additive change from PR #124.
+
+### Added
+
+- **`classifyAutomation` kernel** (`@chat-arch/analysis`) — versioned
+  (`AUTOMATION_CLASSIFIER_VERSION`) first-match-wins signature list
+  (`status-paragraph` / `action-orchestration` / `test-probe` /
+  `automated-envelope`). Matched ~1,403 corpus sessions with zero false
+  positives outside genuinely-automated runs at authoring time.
+- **`UnifiedSessionEntry.automationTemplateId?`** (additive optional) —
+  the matched template id, stamped by the exporter in `buildCliDirectEntry`
+  / `enrichCliDesktopEntry`. Absent ⇒ interactive. `EXPORTER_VERSION`
+  1.9.0 → 1.10.0 invalidates the `cli-sessions.json` reuse cache so
+  existing entries re-classify on next rescan.
+- **`collapseAutomatedSessions` selector** (`@chat-arch/analysis/selectors`)
+  — folds automated entries by `(project, templateId)` into one activity
+  row carrying `instanceCount` + summed exact/estimated cost + summed
+  tokens + a representative member. The SESSIONS grid renders these via a
+  distinct `AutomatedSessionCard` (×N badge, aggregate cost); TOTAL /
+  top-project / project-chip counts derive over the collapsed view.
+
+### Changed
+
+- Per-session analytical builders (`composeOutcomes`, `decisions` — and
+  therefore TRUST downstream —, `archetypes`, `skillCurves`) now EXCLUDE
+  `automationTemplateId != null` entries: a templated run is not a
+  decision / correction / skill / archetype sample. Cost/frequency stay
+  visible via the collapsed activity row.
+
+### Fixed
+
+- **TrendsMode skill-curve sparklines rendered empty.** The
+  `analyzeSkillCurves` kernel computed the per-week `points` but dropped
+  them from `SkillCurveResult`, so the viewer hard-coded an empty series
+  and every sparkline collapsed to the placeholder. `SkillCurveResult`
+  now carries `points: readonly SkillCurvePoint[]` (echoed from the
+  input series, including for `Insufficient`/filtered rows), and
+  `TrendsMode` derives the sparkline from it (guarded `?? []` so a
+  pre-fix `skill-curves.json` still loads). **On-disk shape change:**
+  `analysis/skill-curves.json` `results[]` now each include a `points`
+  array. Additive — older files without it still load. (#121)
+- **`chat-answer` inactivity watchdog killed legitimate multi-agent
+  runs.** The 120s no-events timeout aborted a `claude -p` turn whenever
+  the parent process was event-quiet during a long sub-agent `Task`
+  (which is normal). The watchdog now also re-arms on any raw
+  stdout/stderr chunk from the child (process liveness, not just parsed
+  events) via a `keepAlive` callback, and the grace is raised 120s → 5m
+  — still well under the 10-minute hard cap that backstops a genuinely
+  stuck agent. (#123)
+
 ## [1.9.0] — 2026-05-29
 
 Decisions LLM pipeline — the DECISIONS surface goes from a raw

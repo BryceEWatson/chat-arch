@@ -202,13 +202,23 @@ export async function buildDecisionsFile(
   const prior = await loadPriorCache(options.outDir, DECISION_HEURISTIC_VERSION);
   const outcomesById = await loadCompositeOutcomes(options.outDir);
 
+  // Automation-exclusion (classify+collapse Stage 4): drop automated/
+  // templated orchestration runs (`automationTemplateId` present) before
+  // detecting decisions. A templated run is not a decision sample, so it
+  // must not inflate decisions.json — which is also the file the TRUST
+  // surface reads, so this de-pollutes TRUST too. Its cost/frequency is
+  // preserved elsewhere via the collapse view.
+  const interactiveSessions = manifest.sessions.filter(
+    (s) => s.automationTemplateId == null,
+  );
+
   type PerSession =
     | { kind: 'reused'; decisions: readonly Decision[] }
     | { kind: 'scanned'; candidates: readonly DecisionCandidate[] }
     | { kind: 'missing' };
 
   const results = await parallelMap<UnifiedSessionEntry, PerSession>(
-    manifest.sessions,
+    interactiveSessions,
     concurrency,
     async (entry) => {
       if (prior !== null) {
@@ -232,7 +242,7 @@ export async function buildDecisionsFile(
   let missing = 0;
 
   for (let i = 0; i < results.length; i += 1) {
-    const entry = manifest.sessions[i] as UnifiedSessionEntry;
+    const entry = interactiveSessions[i] as UnifiedSessionEntry;
     const r = results[i] as PerSession;
     if (r.kind === 'missing') {
       missing += 1;

@@ -3830,6 +3830,30 @@
   padding: 1px 7px;
 }
 
+/* --- Collapsed AUTOMATED-session card (Stage 3 "classify+collapse") ---
+   A single card standing in for N near-identical templated runs in one
+   project. Distinct from a normal session card: a dashed border-left +
+   muted surface so it reads as an aggregate, an AUTOMATED tag chip, and a
+   "×N" instance-count badge. The card itself is still role="button" and
+   opens the representative member. */
+.lcars-session-card--automated {
+  border-left-style: dashed;
+  background: color-mix(in srgb, var(--lcars-ice) 4%, var(--lcars-bg-1));
+}
+.lcars-chip--automated {
+  color: var(--lcars-ice);
+  background: rgba(153, 204, 255, 0.12);
+  border-color: color-mix(in srgb, var(--lcars-ice) 55%, transparent);
+  cursor: default;
+}
+.lcars-chip--instance-count {
+  color: var(--lcars-sunflower);
+  background: rgba(255, 204, 102, 0.14);
+  border-color: color-mix(in srgb, var(--lcars-sunflower) 55%, transparent);
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------- *
  * v2 Phase 6 — PROJECTS surface (spec §5.1).                        *
  *                                                                   *

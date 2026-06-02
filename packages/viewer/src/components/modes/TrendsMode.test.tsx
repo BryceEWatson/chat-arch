@@ -122,6 +122,11 @@ const skillCurves: SkillCurvesFile = {
       pValueAdjusted: 0.02,
       askPerActiveSession: 0.4,
       weeksPresent: 10,
+      points: [
+        { week: 'W1', askCount: 8, activeSessions: 20 },
+        { week: 'W2', askCount: 4, activeSessions: 20 },
+        { week: 'W3', askCount: 2, activeSessions: 20 },
+      ],
     },
     {
       topicId: 't2',
@@ -133,6 +138,10 @@ const skillCurves: SkillCurvesFile = {
       pValueAdjusted: 0.4,
       askPerActiveSession: 0.9,
       weeksPresent: 8,
+      points: [
+        { week: 'W1', askCount: 9, activeSessions: 10 },
+        { week: 'W2', askCount: 9, activeSessions: 10 },
+      ],
     },
   ],
 };

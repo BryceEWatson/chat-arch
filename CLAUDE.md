@@ -82,6 +82,38 @@ Per-package alternatives:
 - `pnpm --filter @chat-arch/standalone dev` to boot the dev server
   on port 4321 (via `pnpm dev` at root — Astro's default)
 
+## Data processing lives in selectors, not components
+
+A viewer component should be a thin renderer over a view-model. The
+`data → view-model` derivation belongs in ONE place, not inline in
+whichever component happens to use the data:
+
+- **Schema- or analysis-typed derivation → `packages/analysis/src/
+  selectors/`** (re-exported from `@chat-arch/analysis`). Pure,
+  deterministic, React-free; any "now" is a parameter, never
+  `Date.now()`. Naming: `group*`/`build*` (structured), `rank*`/`sort*`
+  (ordered), `count*` (scalar), `is*`/`*Fired` (boolean).
+- **Client-state-coupled derivation → `packages/viewer/src/selectors/`**
+  (localStorage cursors, `insightsAcks`, uploaded-ZIP merge). These
+  compose an analysis selector with client state.
+  `mergeAppliedImprovements` (`viewer/src/data/correctionsLoader.ts`) is
+  the canonical prototype.
+- **Never reimplement a stat.** `wilsonCI` / `ewma` / `cosineSimilarity`
+  / `THRESHOLDS` / `unwrapEnvelope` all live in `@chat-arch/analysis` —
+  selectors import them. (The old inline Wilson CI in `ChatArchViewer`
+  is exactly the dup this rule kills.)
+- **UI-only state stays in the component** (toggles, search text, the
+  active filter, `showAll`, archetype-selection).
+
+Enforcement: `scripts/lint-data-processing-in-components.mjs` (wired into
+the root `lint` as `lint:data-processing`) is a budget-based advisory
+guard mirroring `lint-thresholds-imports.mjs`. It flags in-component
+`.reduce`/`.sort`/`new Map`/`.flatMap` and hand-rolled-stat fingerprints
+in `viewer/src/components/**/*.tsx`. The budget
+(`DATA_PROCESSING_LINT_BUDGET`) starts at the pre-refactor baseline and
+ratchets DOWN each migration phase toward the irreducible UI-coupled
+floor.
+
 ## Shape of the workspace
 
 ```

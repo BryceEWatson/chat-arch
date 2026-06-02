@@ -118,6 +118,35 @@ describe('buildCompositeOutcomesFile', () => {
     expect(second.file.outcomes[0]?.testPass).toBe(true);
   });
 
+  it('automation-exclusion — automated session is excluded, interactive twin included', async () => {
+    const { outDir, manifest } = await makeFixture('automation');
+    // Add an automated twin pointing at the SAME transcript as sess-1 so
+    // the only difference is `automationTemplateId`. The interactive
+    // session must compose an outcome; the automated one must not.
+    const interactive = manifest.sessions[0] as UnifiedSessionEntry;
+    const automated: UnifiedSessionEntry = {
+      ...interactive,
+      id: 'sess-auto',
+      automationTemplateId: 'status-paragraph',
+    } as UnifiedSessionEntry;
+    const twoManifest: SessionManifest = {
+      ...manifest,
+      sessions: [interactive, automated],
+    } as SessionManifest;
+
+    const result = await buildCompositeOutcomesFile(twoManifest, {
+      outDir,
+      now: 1_000,
+    });
+
+    expect(result.scannedSessions).toBe(1);
+    expect(result.file.outcomes).toHaveLength(1);
+    const ids = result.file.outcomes.map((o) => o.sessionId);
+    expect(ids).toContain('sess-1');
+    expect(ids).not.toContain('sess-auto');
+    expect(result.file.scannedSessionIds).not.toContain('sess-auto');
+  });
+
   it('cache invalidation — bumping the weightsHash invalidates every row', async () => {
     const { outDir, manifest } = await makeFixture('invalidate');
     await buildCompositeOutcomesFile(manifest, { outDir, now: 200 });

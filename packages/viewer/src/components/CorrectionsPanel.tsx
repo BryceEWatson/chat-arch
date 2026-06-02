@@ -13,6 +13,7 @@ import type {
   CorrectionsFile,
   ScanStats,
 } from '@chat-arch/schema';
+import { buildTopicBuckets } from '@chat-arch/analysis';
 import {
   loadAppliedImprovementsFile,
   loadCorrectionCandidatesFile,
@@ -124,112 +125,6 @@ type MiningState =
 const RUNNING_LINE_TAIL = 8;
 const STATUS_POLL_MS = 1500;
 const STATUS_LOG_TAIL = 6;
-
-/**
- * Sentinel topic for patterns emitted by mining runs that predate the
- * `tag-topics` skill stage. Acts as a graceful fallback so the viewer
- * doesn't break on legacy `corrections.json` files; re-mining assigns a
- * real topic and the bucket disappears.
- */
-const UNTAGGED_TOPIC = 'Untagged';
-
-function topicOf(p: CorrectionPattern): string {
-  return typeof p.topic === 'string' && p.topic.trim().length > 0
-    ? p.topic.trim()
-    : UNTAGGED_TOPIC;
-}
-
-interface TopicBucket {
-  key: string;
-  label: string;
-  patterns: CorrectionPattern[];
-  /** Sum of occurrenceCount across all patterns — drives bucket order. */
-  weight: number;
-  /** True when ≥1 pattern is recurring after applied. Hoists the bucket
-   *  toward the top regardless of weight (recurring is the highest-
-   *  signal finding the user can act on), AND drives the bucket's
-   *  visual urgency via the `data-has-recurring` style hook so the
-   *  user can scan the page for hot spots at a glance. */
-  hasRecurring: boolean;
-  /** True when ≥1 pattern is alreadyEncoded but not recurring — a
-   *  weaker urgency signal than `hasRecurring`. Drives the bucket's
-   *  visual treatment when `hasRecurring` is false. */
-  hasEncoded: boolean;
-}
-
-/**
- * Group patterns by their LLM-derived topic. Buckets are ordered by:
- *   1. has-recurring desc (recurring topics surface first)
- *   2. weight desc (larger topics before smaller)
- *   3. label asc (stable tiebreak)
- * Within a bucket, recurring patterns sort to the top so the highest-
- * signal items inside a topic are visible without scrolling.
- */
-function buildTopicBuckets(
-  patterns: ReadonlyArray<CorrectionPattern>,
-): TopicBucket[] {
-  const seen = new Set<string>();
-  const byTopic = new Map<string, CorrectionPattern[]>();
-  for (const p of patterns) {
-    if (seen.has(p.id)) continue;
-    seen.add(p.id);
-    const topic = topicOf(p);
-    const arr = byTopic.get(topic);
-    if (arr) arr.push(p);
-    else byTopic.set(topic, [p]);
-  }
-  const buckets: TopicBucket[] = [];
-  for (const [topic, group] of byTopic) {
-    group.sort(sortPatterns);
-    let weight = 0;
-    let hasRecurring = false;
-    let hasEncoded = false;
-    for (const p of group) {
-      weight += p.occurrenceCount;
-      if (p.recurringPostApplication) hasRecurring = true;
-      else if (p.alreadyEncoded) hasEncoded = true;
-    }
-    buckets.push({
-      key: topic,
-      // The Untagged sentinel gets a friendlier label so a partial
-      // re-mine (or legacy corrections.json from before tag-topics
-      // landed) doesn't surface a bare "UNTAGGED" header. The
-      // bucket's `key` stays `Untagged` so [data-topic] selectors and
-      // bucket-order rules can still target it.
-      label:
-        topic === UNTAGGED_TOPIC
-          ? 'UNTAGGED · re-mine to assign'
-          : topic.toUpperCase(),
-      patterns: group,
-      weight,
-      hasRecurring,
-      hasEncoded,
-    });
-  }
-  buckets.sort((a, b) => {
-    // The Untagged bucket is a graceful fallback, not signal — pin it
-    // to the bottom regardless of weight/recurring so it doesn't
-    // float above named topics on a partial re-mine.
-    const aUntagged = a.key === UNTAGGED_TOPIC;
-    const bUntagged = b.key === UNTAGGED_TOPIC;
-    if (aUntagged !== bUntagged) return aUntagged ? 1 : -1;
-    if (a.hasRecurring !== b.hasRecurring) return a.hasRecurring ? -1 : 1;
-    if (b.weight !== a.weight) return b.weight - a.weight;
-    return a.label.localeCompare(b.label);
-  });
-  return buckets;
-}
-
-function sortPatterns(a: CorrectionPattern, b: CorrectionPattern): number {
-  // Recurring-after-applied sorts to the top within a bucket — the
-  // strongest "your rule is failing in practice" signal beats raw
-  // confidence.
-  if (a.recurringPostApplication !== b.recurringPostApplication) {
-    return a.recurringPostApplication ? -1 : 1;
-  }
-  if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-  return b.occurrenceCount - a.occurrenceCount;
-}
 
 function formatGenerated(ms: number): string {
   if (!Number.isFinite(ms)) return 'unknown';

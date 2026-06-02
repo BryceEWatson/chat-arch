@@ -1,0 +1,299 @@
+/**
+ * SESSIONS selectors — the `data → view-model` derivations behind the
+ * SESSIONS surface (the "Centralize data processing" plan).
+ *
+ * The headline derivation here is {@link collapseAutomatedSessions}: it
+ * folds near-identical AUTOMATED / templated orchestration runs into a
+ * single "activity" row carrying an instance count + aggregate cost +
+ * aggregate token totals, so per-session counts (TOTAL, top-project,
+ * project chips) de-pollute while the frequency / cost signal is
+ * preserved. Interactive sessions pass through one-row-each, unchanged.
+ *
+ * Motivation (see `classifyAutomation.ts`): tooling that spawns `claude`
+ * programmatically writes hundreds-to-thousands of near-identical
+ * transcripts. Ingested raw they dominate every per-session metric. The
+ * exporter stamps the matched template id onto `automationTemplateId`;
+ * this selector groups on `(project, automationTemplateId)` and emits one
+ * collapsed row per group.
+ *
+ * Pure / deterministic / React-free. Labels come from
+ * {@link AUTOMATION_SIGNATURES} — never hardcoded here.
+ */
+
+import type { TokenTotals, UnifiedSessionEntry } from '@chat-arch/schema';
+import {
+  AUTOMATION_SIGNATURES,
+  type AutomationTemplateId,
+} from '../classifyAutomation.js';
+
+/** Project bucket used as the grouping key when an entry has no project. */
+const NO_PROJECT = '(none)';
+
+/**
+ * A single row in the collapsed SESSIONS view. Discriminated on `kind`:
+ *
+ *   - `'session'` — a genuine interactive session, passed through 1:1.
+ *     Carries the original `entry` for rendering / click-through.
+ *   - `'automated'` — an aggregate of N near-identical automated runs in
+ *     one project under one template. Carries the instance count, summed
+ *     cost / tokens, the temporal span, and a `representative` member
+ *     (the most-recently-updated one) for title / preview / click-through.
+ */
+export type CollapsedSessionRow =
+  | {
+      readonly kind: 'session';
+      readonly entry: UnifiedSessionEntry;
+    }
+  | {
+      readonly kind: 'automated';
+      /** Project the group belongs to (`null` when the members had none). */
+      readonly project: string | null;
+      /** The template id all members share — the grouping key. */
+      readonly automationTemplateId: string;
+      /** Display label from {@link AUTOMATION_SIGNATURES}, or the raw id. */
+      readonly label: string;
+      /** Number of automated runs folded into this row (≥ 1). */
+      readonly instanceCount: number;
+      /**
+       * Summed EXACT `totalCostUsd` across members that carried one. Null
+       * when no member had an exact cost (e.g. an all-`cli-direct` group,
+       * which carries estimated cost only — see `costEstimatedUsd`). Exact
+       * and estimated are kept DISJOINT per member (a member contributes to
+       * exactly one), matching the KPI's exact-or-estimate accounting.
+       */
+      readonly totalCostUsd: number | null;
+      /**
+       * Summed rate-table ESTIMATE across members that had NO exact cost.
+       * Null when no member contributed an estimate. For the automated
+       * `cli-direct` runs (which dominate, and have `totalCostUsd: null`)
+       * this is the load-bearing figure — it preserves the group's total
+       * estimated cost (~instanceCount × per-run estimate), NOT one run's.
+       */
+      readonly costEstimatedUsd: number | null;
+      /**
+       * Element-wise summed token totals across members. Null only when
+       * NO member carried `tokenTotals`.
+       */
+      readonly tokenTotals: TokenTotals | null;
+      /** Earliest `startedAt` across members. */
+      readonly startedAt: number;
+      /** Latest `updatedAt` across members. */
+      readonly updatedAt: number;
+      /** Most-recently-updated member — drives title / preview / open. */
+      readonly representative: UnifiedSessionEntry;
+    };
+
+/** Display label for a template id; falls back to the raw id if unknown. */
+function labelFor(templateId: string): string {
+  const sig = AUTOMATION_SIGNATURES.find((s) => s.templateId === templateId);
+  return sig ? sig.label : templateId;
+}
+
+/**
+ * The `updatedAt` of a collapsed row, used for the stable cross-row sort
+ * (recency desc, matching the existing SESSIONS sort default).
+ */
+export function collapsedRowUpdatedAt(row: CollapsedSessionRow): number {
+  return row.kind === 'session' ? row.entry.updatedAt : row.updatedAt;
+}
+
+interface MutableGroup {
+  project: string | null;
+  automationTemplateId: string;
+  instanceCount: number;
+  costSum: number;
+  /** True once at least one member carried a non-null `totalCostUsd`. */
+  anyCost: boolean;
+  /** Summed estimate across members with NO exact cost (disjoint from costSum). */
+  estimateSum: number;
+  /** True once at least one no-exact-cost member carried an estimate. */
+  anyEstimate: boolean;
+  tokens: TokenTotals;
+  /** True once at least one member carried `tokenTotals`. */
+  anyTokens: boolean;
+  startedAt: number;
+  updatedAt: number;
+  representative: UnifiedSessionEntry;
+}
+
+/**
+ * Collapse the AUTOMATED entries in a session list into per-(project,
+ * template) aggregate rows; pass interactive entries through 1:1.
+ *
+ * - Grouping key: `(project ?? '(none)', automationTemplateId)`. An entry
+ *   is automated iff `automationTemplateId != null`.
+ * - Each automated group → ONE row (`kind: 'automated'`).
+ * - Each interactive entry → ONE row (`kind: 'session'`).
+ * - Ordering: by row `updatedAt` descending (matches the existing
+ *   sessions recency sort) with the entry/representative `id` as a stable
+ *   tiebreaker, so the output is deterministic for equal timestamps.
+ *
+ * Pure / deterministic / React-free.
+ */
+export function collapseAutomatedSessions(
+  sessions: readonly UnifiedSessionEntry[],
+): readonly CollapsedSessionRow[] {
+  const passthrough: CollapsedSessionRow[] = [];
+  const groups = new Map<string, MutableGroup>();
+
+  for (const s of sessions) {
+    const templateId = s.automationTemplateId;
+    if (templateId == null) {
+      passthrough.push({ kind: 'session', entry: s });
+      continue;
+    }
+    // `project` is optional/nullable on the entry; normalize to the
+    // grouping bucket but keep the real value for the row.
+    const projectValue = s.project ?? null;
+    const projectKey = projectValue === null || projectValue === '' ? NO_PROJECT : projectValue;
+    const key = `${projectKey}\u0000${templateId}`;
+
+    // Exact-or-estimate, kept disjoint per member: a member with an exact
+    // `totalCostUsd` contributes to the exact sum; one without (e.g. every
+    // cli-direct run) contributes its rate-table estimate instead. This
+    // mirrors the KPI's per-row exact-OR-estimate accounting, so collapsed
+    // and uncollapsed totals agree.
+    const exactCost = s.totalCostUsd;
+    const estCost =
+      exactCost === null && typeof s.costEstimatedUsd === 'number'
+        ? s.costEstimatedUsd
+        : null;
+
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        project: projectValue === '' ? null : projectValue,
+        automationTemplateId: templateId,
+        instanceCount: 1,
+        costSum: exactCost ?? 0,
+        anyCost: exactCost !== null,
+        estimateSum: estCost ?? 0,
+        anyEstimate: estCost !== null,
+        tokens: s.tokenTotals
+          ? { ...s.tokenTotals }
+          : { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 },
+        anyTokens: s.tokenTotals != null,
+        startedAt: s.startedAt,
+        updatedAt: s.updatedAt,
+        representative: s,
+      });
+      continue;
+    }
+
+    existing.instanceCount += 1;
+    if (exactCost !== null) {
+      existing.costSum += exactCost;
+      existing.anyCost = true;
+    } else if (estCost !== null) {
+      existing.estimateSum += estCost;
+      existing.anyEstimate = true;
+    }
+    if (s.tokenTotals) {
+      existing.tokens.input += s.tokenTotals.input;
+      existing.tokens.output += s.tokenTotals.output;
+      existing.tokens.cacheCreation += s.tokenTotals.cacheCreation;
+      existing.tokens.cacheRead += s.tokenTotals.cacheRead;
+      existing.anyTokens = true;
+    }
+    if (s.startedAt < existing.startedAt) existing.startedAt = s.startedAt;
+    if (s.updatedAt >= existing.updatedAt) {
+      // `>=` so the LAST seen of equal-timestamp members wins, but more
+      // importantly the strictly-most-recent member becomes representative.
+      existing.updatedAt = s.updatedAt;
+      existing.representative = s;
+    }
+  }
+
+  const collapsed: CollapsedSessionRow[] = passthrough;
+  for (const g of groups.values()) {
+    collapsed.push({
+      kind: 'automated',
+      project: g.project,
+      automationTemplateId: g.automationTemplateId,
+      label: labelFor(g.automationTemplateId),
+      instanceCount: g.instanceCount,
+      totalCostUsd: g.anyCost ? g.costSum : null,
+      costEstimatedUsd: g.anyEstimate ? g.estimateSum : null,
+      tokenTotals: g.anyTokens ? g.tokens : null,
+      startedAt: g.startedAt,
+      updatedAt: g.updatedAt,
+      representative: g.representative,
+    });
+  }
+
+  collapsed.sort((a, b) => {
+    const da = collapsedRowUpdatedAt(b) - collapsedRowUpdatedAt(a);
+    if (da !== 0) return da;
+    const ida = a.kind === 'session' ? a.entry.id : a.representative.id;
+    const idb = b.kind === 'session' ? b.entry.id : b.representative.id;
+    return ida < idb ? -1 : ida > idb ? 1 : 0;
+  });
+  return collapsed;
+}
+
+/**
+ * Narrowing helper for the `AutomationTemplateId` union — the schema
+ * types `automationTemplateId` as a bare `string`, so consumers that want
+ * the narrowed union (e.g. to switch on template kind) can use this.
+ * Returns the id when it is a known template, else `null`.
+ */
+export function asAutomationTemplateId(
+  templateId: string,
+): AutomationTemplateId | null {
+  return AUTOMATION_SIGNATURES.some((s) => s.templateId === templateId)
+    ? (templateId as AutomationTemplateId)
+    : null;
+}
+
+/**
+ * The fields a collapsed row contributes to per-session count / cost /
+ * token / tool aggregations — the projection the SESSIONS KPI strip and
+ * the project-chip counter read. Each collapsed row counts as exactly ONE
+ * unit on the count axis (`instanceCount` is NOT spread back out), which
+ * is the whole point: an automated group of 1,305 status-paragraph runs
+ * contributes 1 to TOTAL and 1 to its project's chip, while its summed
+ * cost / tokens are preserved.
+ */
+export interface CollapsedRowCountFields {
+  /** Resolved project, or null when none — the project-chip key. */
+  readonly project: string | null;
+  /** Exact cost (summed for automated rows), or null when unknown. */
+  readonly totalCostUsd: number | null;
+  /** Rate-table estimate, or null/absent when not estimated. */
+  readonly costEstimatedUsd: number | null | undefined;
+  /** Token totals (summed for automated rows), or null when none. */
+  readonly tokenTotals: TokenTotals | null;
+  /** Per-tool call counts (merged across members for automated rows). */
+  readonly topTools: Readonly<Record<string, number>> | undefined;
+}
+
+/**
+ * Project a collapsed row down to its count / cost / token / tool fields.
+ * For an interactive row this is just the entry's fields; for an
+ * automated row it's the aggregate carried on the row (tools are merged
+ * from the representative — the only member whose `topTools` we keep —
+ * since the collapsed row is a single click-through anyway).
+ */
+export function collapsedRowCountFields(
+  row: CollapsedSessionRow,
+): CollapsedRowCountFields {
+  if (row.kind === 'session') {
+    return {
+      project: row.entry.project ?? null,
+      totalCostUsd: row.entry.totalCostUsd,
+      costEstimatedUsd: row.entry.costEstimatedUsd,
+      tokenTotals: row.entry.tokenTotals ?? null,
+      topTools: row.entry.topTools,
+    };
+  }
+  return {
+    project: row.project,
+    totalCostUsd: row.totalCostUsd,
+    // Summed estimate across the group's no-exact-cost members — preserves
+    // the full estimated cost of the automation (≈ instanceCount × per-run
+    // estimate), not one representative run's.
+    costEstimatedUsd: row.costEstimatedUsd,
+    tokenTotals: row.tokenTotals,
+    topTools: row.representative.topTools,
+  };
+}

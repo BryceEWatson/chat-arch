@@ -12,6 +12,8 @@ import {
   narrativeSaturation,
   narrativeTier,
   normalizeNarrativeRow,
+  rankProjectsByActivity,
+  sortSessionsByRecency,
 } from '@chat-arch/analysis';
 import { EmptyState } from '../EmptyState.js';
 import { onActivate } from '../../util/a11y.js';
@@ -218,16 +220,10 @@ interface ProjectsIndexProps {
 function ProjectsIndex({ projects, onSelectProject, now }: ProjectsIndexProps) {
   const [showUnassigned, setShowUnassigned] = useState(true);
 
-  const sorted = useMemo(() => {
-    return [...projects].sort((a, b) => {
-      // Real projects first; UNASSIGNED last.
-      const aU = isUnassignedProject(a);
-      const bU = isUnassignedProject(b);
-      if (aU !== bU) return aU ? 1 : -1;
-      // Within real projects: most-recent activity first.
-      return Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt);
-    });
-  }, [projects]);
+  // Ordering lives in the `rankProjectsByActivity` analysis selector
+  // (Phase 3 of "Centralize data processing"); the show/hide toggle is
+  // UI-coupled and stays local.
+  const sorted = useMemo(() => rankProjectsByActivity(projects), [projects]);
 
   const filtered = useMemo(
     () => sorted.filter((p) => showUnassigned || !isUnassignedProject(p)),
@@ -334,15 +330,10 @@ function ProjectDetail({
   dataDirBaseUrl,
   onRegenNarratives,
 }: ProjectDetailProps) {
-  const projectSessions = useMemo(() => {
-    const list: UnifiedSessionEntry[] = [];
-    for (const sid of project.sessionIds) {
-      const s = sessionById.get(sid);
-      if (s) list.push(s);
-    }
-    list.sort((a, b) => b.updatedAt - a.updatedAt);
-    return list;
-  }, [project.sessionIds, sessionById]);
+  const projectSessions = useMemo(
+    () => sortSessionsByRecency(project.sessionIds, sessionById),
+    [project.sessionIds, sessionById],
+  );
 
   // Rev3-D D3 — load per-narrative entity-states for the audit
   // affordance. PENDING is the implicit default for any narrative not

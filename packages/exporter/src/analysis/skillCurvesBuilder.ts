@@ -131,8 +131,17 @@ export async function buildSkillCurvesFile(
   }
 
   // Index sessions by id for quick updatedAt lookup.
+  //
+  // Automation-exclusion (classify+collapse Stage 4): drop automated/
+  // templated orchestration runs (`automationTemplateId` present) before
+  // indexing. A templated run is not a skill-acquisition sample, so it
+  // must not inflate either the corpus-wide weekly active denominator or
+  // any topic's weekly ask counts (a session absent from this index is
+  // skipped at both lookup sites below). Its cost/frequency is preserved
+  // elsewhere via the collapse view.
   const sessionsById = new Map<string, UnifiedSessionEntry>();
   for (const s of manifest.sessions as readonly UnifiedSessionEntry[]) {
+    if (s.automationTemplateId != null) continue;
     sessionsById.set(s.id, s);
   }
 
