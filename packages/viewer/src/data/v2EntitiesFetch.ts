@@ -1,4 +1,4 @@
-import type { Project, Topic, Narrative } from '@chat-arch/schema';
+import type { Project, Topic, Narrative, ProjectResolvedVia } from '@chat-arch/schema';
 
 /**
  * Parallel-fetch the three v2 entity sidecars written by the exporter
@@ -15,15 +15,33 @@ import type { Project, Topic, Narrative } from '@chat-arch/schema';
  *     for the caller; `generatedAt` isn't load-bearing in the viewer.
  */
 
+/**
+ * Per-session provenance record from `projects.json`'s top-level
+ * `attribution` map (Project Identity v2 §5). `resolvedVia` names the
+ * cascade rule that assigned the project; `confidence` is monotonic with
+ * cascade order (0..1). `projectId` is the resolved `proj_…` id.
+ */
+export interface SessionAttribution {
+  projectId: string;
+  resolvedVia: ProjectResolvedVia;
+  confidence: number;
+}
+
 export interface V2EntitiesFetchResult {
   projects: readonly Project[] | null;
   topics: readonly Topic[] | null;
   narratives: readonly Narrative[] | null;
+  /**
+   * sessionId → provenance record (Project Identity v2). `null` when the
+   * `projects.json` sidecar is absent or pre-v2 (no `attribution` key).
+   */
+  attribution: Record<string, SessionAttribution> | null;
 }
 
 interface ProjectsFile {
   generatedAt?: number;
   projects?: readonly Project[];
+  attribution?: Record<string, SessionAttribution>;
 }
 interface TopicsFile {
   generatedAt?: number;
@@ -59,6 +77,7 @@ export async function fetchV2Entities(dataRoot: string): Promise<V2EntitiesFetch
     projects: Array.isArray(projectsFile?.projects) ? projectsFile.projects : null,
     topics: Array.isArray(topicsFile?.topics) ? topicsFile.topics : null,
     narratives: Array.isArray(narrativesFile?.narratives) ? narrativesFile.narratives : null,
+    attribution: projectsFile?.attribution ?? null,
   };
 }
 

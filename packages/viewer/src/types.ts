@@ -9,6 +9,7 @@ import type {
   Narrative,
 } from '@chat-arch/schema';
 import type { TierFileState } from './data/analysisFetch.js';
+import type { SessionAttribution } from './data/v2EntitiesFetch.js';
 
 /**
  * In-memory manifest produced by parsing a user-uploaded cloud-export ZIP.
@@ -268,6 +269,12 @@ export interface AnalysisState {
   v2Projects: readonly Project[] | null;
   v2Topics: readonly Topic[] | null;
   v2Narratives: readonly Narrative[] | null;
+  /**
+   * Project Identity v2 per-session provenance map from `projects.json`'s
+   * top-level `attribution` key. `null` when absent / pre-v2. Drives the
+   * RESOLVED VIA row in DetailMode.
+   */
+  v2Attribution: Record<string, SessionAttribution> | null;
 }
 
 export type { SessionManifest, UnifiedSessionEntry, SessionSource };

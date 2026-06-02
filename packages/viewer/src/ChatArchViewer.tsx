@@ -471,6 +471,7 @@ export function ChatArchViewer({
     v2Projects: null,
     v2Topics: null,
     v2Narratives: null,
+    v2Attribution: null,
   });
 
   // Phase 2a: lift the applied-improvements ledger to the viewer level
@@ -1239,6 +1240,7 @@ export function ChatArchViewer({
         v2Projects: v2.projects,
         v2Topics: v2.topics,
         v2Narratives: v2.narratives,
+        v2Attribution: v2.attribution,
       });
     })();
     return () => {
@@ -3161,6 +3163,13 @@ export function ChatArchViewer({
                       nextId={nextId}
                       onPrev={onPrev}
                       onNext={onNext}
+                      {...(effectiveV2Entities.projects
+                        ? { projects: effectiveV2Entities.projects }
+                        : {})}
+                      {...(analysisState.v2Attribution &&
+                      analysisState.v2Attribution[selectedSession.id]
+                        ? { attribution: analysisState.v2Attribution[selectedSession.id] }
+                        : {})}
                       {...(uploadedData
                         ? { uploadedConversationsById: uploadedData.conversationsById }
                         : {})}

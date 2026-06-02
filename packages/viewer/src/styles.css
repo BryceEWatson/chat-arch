@@ -5113,6 +5113,51 @@
   color: var(--lcars-peach);
 }
 
+/* MOVE TO PROJECT affordance (Project Identity v2 PR2). Reuses the
+   .lcars-detail-mode__copy pill shape; the panel is a thin inline row
+   that appears under the header when the picker is open. */
+.lcars-detail-mode__move {
+  font-family: inherit;
+}
+.lcars-detail-mode__move-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.lcars-detail-mode__move-label {
+  color: var(--lcars-butterscotch);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.lcars-detail-mode__move-select,
+.lcars-detail-mode__move-new-name {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--lcars-text);
+  border: 1px solid var(--lcars-violet);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: var(--lcars-font-mono);
+}
+.lcars-detail-mode__move-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.lcars-detail-mode__move-result {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+.lcars-detail-mode__move-result--ok {
+  color: var(--lcars-ice);
+}
+.lcars-detail-mode__move-result--err {
+  color: var(--lcars-peach);
+}
+
 /* --- Prose / data-dense weight bump ---
    Antonio at its default 500 weight reads thin at 11-14 px on dark
    backgrounds. Bumping prose and data-cell selectors to 600 weight
