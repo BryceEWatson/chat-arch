@@ -78,6 +78,32 @@ export interface CliExportResult {
    * the user can see how much work the incremental-rescan path saved.
    */
   reuseCounts: { 'cli-direct': number; 'cli-desktop': number };
+  /**
+   * Project Identity v2 parse-boundary filter (plan §2): 0-turn sidecar
+   * sessions dropped before they entered the manifest. `byParent` links each
+   * drop to its spawning session when the source carries that linkage (empty
+   * in the current corpus — the `ai-title` phantoms carry no parent field).
+   */
+  parserSkips: { reason: '0-turn-sidecar'; count: number; byParent: Record<string, number> };
+}
+
+/**
+ * Project Identity v2 parse-boundary predicate (plan §2). Drops the phantom
+ * `ai-title` sidecars that every `claude -p` subprocess writes (a 1-line
+ * JSONL with 0 turns), while the `&& !cwd && !project` clause PRESERVES the
+ * 0-turn sessions that carry a real `cwd` (e.g. the 24 chat-arch ones). The
+ * predicate and a `titleSource === 'ai-title'` filter yield the identical set
+ * on the verified corpus.
+ */
+export function isZeroTurnSidecar(
+  entry: Pick<UnifiedSessionEntry, 'userTurns' | 'assistantTurns' | 'cwd' | 'project'>,
+): boolean {
+  return (
+    entry.userTurns === 0 &&
+    (entry.assistantTurns === undefined || entry.assistantTurns === 0) &&
+    (entry.cwd === undefined || entry.cwd === '') &&
+    (entry.project === undefined || entry.project === '')
+  );
 }
 
 /** Per-transcript accumulator produced by a single streaming pass. */
@@ -121,6 +147,16 @@ interface TranscriptAggregate {
    * inputs like `discoverNarratives` clustering.
    */
   userTextSamples: string[];
+  /**
+   * Project Identity v2: cross-session spawn linkage, captured from an
+   * explicit `parentSessionId` field on any transcript line (a `claude -p`
+   * subprocess child). Absent in the current corpus — the only parented
+   * sessions are 0-turn `ai-title` sidecars, which carry no parent field and
+   * are dropped by the parse-boundary filter. NOT `parentUuid` (that is
+   * intra-session message threading, not a session id). Capture lands for the
+   * deferred subagent-attribution feature (plan §14).
+   */
+  parentSessionId: string | undefined;
 }
 
 export const USER_TEXT_SAMPLES_MAX = 5;
@@ -142,6 +178,7 @@ function zeroAggregate(): TranscriptAggregate {
     malformedLineCount: 0,
     toolUses: {},
     userTextSamples: [],
+    parentSessionId: undefined,
   };
 }
 
@@ -229,6 +266,22 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
   let desktopCount = 0;
   let directReused = 0;
   let desktopReused = 0;
+  let zeroTurnSkips = 0;
+  const zeroTurnByParent: Record<string, number> = {};
+
+  /** Emit an entry unless it's a 0-turn phantom sidecar (plan §2). */
+  const emit = (entry: UnifiedSessionEntry, desktop: boolean): void => {
+    if (isZeroTurnSidecar(entry)) {
+      zeroTurnSkips += 1;
+      if (entry.parentSessionId !== undefined) {
+        zeroTurnByParent[entry.parentSessionId] = (zeroTurnByParent[entry.parentSessionId] ?? 0) + 1;
+      }
+      return;
+    }
+    entries.push(entry);
+    if (desktop) desktopCount += 1;
+    else directCount += 1;
+  };
 
   await runWithConcurrency(transcriptPaths, CONCURRENCY, async (transcriptPath) => {
     const base = path.win32.basename(transcriptPath); // D15 / plan rule
@@ -263,6 +316,15 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
       typeof prev.sourceMtimeMs === 'number' &&
       prev.sourceMtimeMs === fileMtime
     ) {
+      // Drop a cached 0-turn phantom (plan §2) before reusing/recopying it.
+      if (isZeroTurnSidecar(prev)) {
+        zeroTurnSkips += 1;
+        if (prev.parentSessionId !== undefined) {
+          zeroTurnByParent[prev.parentSessionId] =
+            (zeroTurnByParent[prev.parentSessionId] ?? 0) + 1;
+        }
+        return;
+      }
       let destUpToDate = false;
       try {
         const destSt = await stat(destAbs);
@@ -327,19 +389,14 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
     if (isDesktop) {
       const phase2Entry = phase2Entries.get(uuid);
       if (phase2Entry) {
-        entries.push(
-          enrichCliDesktopEntry(phase2Entry, agg, transcriptRel, fileMtime, subagentRollup),
-        );
-        desktopCount += 1;
+        emit(enrichCliDesktopEntry(phase2Entry, agg, transcriptRel, fileMtime, subagentRollup), true);
       } else {
         // UUID was reported by Phase 2 but the entry has vanished — should be
         // impossible since we read from the same file, but fall back to direct.
-        entries.push(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime, subagentRollup));
-        directCount += 1;
+        emit(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime, subagentRollup), false);
       }
     } else {
-      entries.push(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime, subagentRollup));
-      directCount += 1;
+      emit(buildCliDirectEntry(agg, uuid, transcriptRel, fileMtime, subagentRollup), false);
     }
   });
 
@@ -362,6 +419,13 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
     });
     for (const e of pruned) {
       if (emittedIds.has(e.id)) continue;
+      if (isZeroTurnSidecar(e)) {
+        zeroTurnSkips += 1;
+        if (e.parentSessionId !== undefined) {
+          zeroTurnByParent[e.parentSessionId] = (zeroTurnByParent[e.parentSessionId] ?? 0) + 1;
+        }
+        continue;
+      }
       emittedIds.add(e.id);
       entries.push(e);
       prunedCount += 1;
@@ -396,6 +460,7 @@ export async function runCliExport(opts: RunCliExportOptions): Promise<CliExport
       'cli-desktop': desktopReused,
     },
     prunedCount,
+    parserSkips: { reason: '0-turn-sidecar', count: zeroTurnSkips, byParent: zeroTurnByParent },
   };
 }
 
@@ -549,6 +614,17 @@ export async function streamAggregate(transcriptPath: string): Promise<Transcrip
     // cwd: first string wins. D2/D3.
     if (agg.cwd === undefined && typeof line['cwd'] === 'string') {
       agg.cwd = line['cwd'] as string;
+    }
+
+    // parentSessionId: first explicit cross-session spawn linkage wins
+    // (plan §14 capture). Distinct from `parentUuid` (intra-session
+    // threading) — only an explicit `parentSessionId` string is captured.
+    if (
+      agg.parentSessionId === undefined &&
+      typeof line['parentSessionId'] === 'string' &&
+      (line['parentSessionId'] as string) !== ''
+    ) {
+      agg.parentSessionId = line['parentSessionId'] as string;
     }
 
     // Timestamp min/max — D10.
@@ -754,6 +830,7 @@ export function buildCliDirectEntry(
     sourceMtimeMs: fileMtimeMs,
     ...(transcriptRel !== undefined ? { transcriptPath: transcriptRel } : {}),
     ...(agg.userTextSamples.length > 0 ? { userTextSamples: agg.userTextSamples } : {}),
+    ...(agg.parentSessionId !== undefined ? { parentSessionId: agg.parentSessionId } : {}),
     ...(subagentRollup ? { subagentRollup } : {}),
     ...(automation.templateId !== null ? { automationTemplateId: automation.templateId } : {}),
   };

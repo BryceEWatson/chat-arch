@@ -59,7 +59,7 @@ export async function runCliSubcommand(argv: readonly string[]): Promise<number>
 
   const elapsedMs = Date.now() - started;
   logger.info(
-    `cli export complete in ${elapsedMs} ms — cli-direct=${result.counts['cli-direct']}, cli-desktop=${result.counts['cli-desktop']}, pruned (reconstructed from sessions-index)=${result.prunedCount}, transcripts copied=${result.transcriptsCopied}, skipped=${result.transcriptsSkipped}, malformed lines=${result.malformedLinesTotal}`,
+    `cli export complete in ${elapsedMs} ms — cli-direct=${result.counts['cli-direct']}, cli-desktop=${result.counts['cli-desktop']}, pruned (reconstructed from sessions-index)=${result.prunedCount}, 0-turn-sidecars dropped=${result.parserSkips.count}, transcripts copied=${result.transcriptsCopied}, skipped=${result.transcriptsSkipped}, malformed lines=${result.malformedLinesTotal}`,
   );
 
   // Post-write shape validation — R11.

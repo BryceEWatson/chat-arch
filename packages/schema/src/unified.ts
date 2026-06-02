@@ -24,6 +24,32 @@ export type TitleSource =
 
 export type CwdKind = 'host' | 'vm' | 'none';
 
+/**
+ * Why a session resolved to its project — the cascade rule that fired.
+ * Confidences are monotonically non-increasing down the cascade order
+ * (see `@chat-arch/analysis` inferProject). Lives on the entry as
+ * `projectAttribution.resolvedVia` and in `analysis/projects.json`'s
+ * per-session `attribution` map (Project Identity v2).
+ */
+export type ProjectResolvedVia =
+  | 'override' // rule 0: projectOverrides.json (cwdGlob | sessionIds)
+  | 'project_field' // rule 1: explicit session.project
+  | 'scheduled-task' // rule 2: cowork scheduledTaskId → routine project
+  | 'vm-folder' // rule 3: cwdKind==='vm' && userSelectedFolders[0] basename
+  | 'cwd_basename' // rule 4: host cwd basename
+  | 'title_keyword' // rule 5: title-keyword regex
+  | 'unassigned'; // rule 6: no rule matched
+
+/**
+ * Trimmed provenance record (Project Identity v2 §5). Just enough to answer
+ * "why is this session here?" in the viewer and to drive the audit script.
+ */
+export interface ProjectAttribution {
+  resolvedVia: ProjectResolvedVia;
+  /** 0..1, monotonic with cascade order. */
+  confidence: number;
+}
+
 export interface TokenTotals {
   input: number;
   output: number;
@@ -179,6 +205,18 @@ export interface UnifiedSessionEntry {
    * to the flat `project` string.
    */
   projectId?: string;
+
+  /**
+   * Project Identity v2: trimmed provenance for project attribution
+   * (`{ resolvedVia, confidence }`). Optional — absent on pre-v2 manifests
+   * and on the rescan-written manifest (the rescan keeps the authoritative
+   * per-session attribution in `analysis/projects.json`'s `attribution`
+   * map, since the manifest is written before the analysis pass). Reserved
+   * for an in-memory parity path (e.g. browser-side demoUpload) that builds
+   * and serves entries without a separate projects.json; no current writer
+   * populates it. Consumers MUST tolerate absence.
+   */
+  projectAttribution?: ProjectAttribution;
 
   /**
    * v2 foreign keys: stable ids of topics the session is tagged with.
@@ -344,6 +382,34 @@ export interface UnifiedSessionEntry {
 
   /** Cowork-only: host folders mounted into the VM workspace. */
   userSelectedFolders?: readonly string[];
+
+  /**
+   * Cowork-only (Project Identity v2): id of the scheduled task that spawned
+   * this session. Present only on scheduled-task ("routine") manifests; read
+   * from the raw Cowork manifest and propagated onto the entry. Drives
+   * cascade rule 2 (`routine_<scheduledTaskId>`). Low-PII identifier (a
+   * human-readable task slug, not a path or content). Absent on interactive
+   * sessions and all non-Cowork sources.
+   */
+  scheduledTaskId?: string;
+
+  /**
+   * Cowork-only (Project Identity v2): session kind from the raw Cowork
+   * manifest. `'scheduled'` for routine/scheduled-task runs, `'interactive'`
+   * for user-initiated sessions; the `string` arm tolerates future values.
+   * Absent on non-Cowork sources.
+   */
+  sessionType?: 'scheduled' | 'interactive' | string;
+
+  /**
+   * Project Identity v2: id of the session that spawned this one (e.g. a
+   * `claude -p` subprocess child). Captured for the deferred
+   * subagent-attribution feature (plan §14) — NOT consumed by any cascade
+   * rule today (in the current corpus the only parented sessions are the
+   * 0-turn sidecars dropped by the parse-boundary filter). Absent when no
+   * spawn linkage is present in the source. Low-PII identifier.
+   */
+  parentSessionId?: string;
 
   /** Cowork-only: skill/command IDs available to the session. Source-name match. */
   slashCommands?: readonly string[];

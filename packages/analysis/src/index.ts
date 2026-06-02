@@ -47,11 +47,19 @@ export {
 
 export {
   PROJECTS_FILE,
+  RESOLVED_VIA_CONFIDENCE,
   extractBasename,
+  globMatch,
   inferProject,
+  isSyntheticVmCwd,
+  scheduledDisplayCandidate,
+  titleCaseSlug,
   type InferenceSource,
+  type InferProjectInput,
   type InferredProject,
   type ProjectDef,
+  type ProjectOverride,
+  type ProjectOverrideMatch,
   type ProjectsFile,
 } from './inferProject.js';
 
@@ -123,8 +131,11 @@ export {
 
 export {
   discoverProjects,
+  disambiguateCollisions,
+  modalDisplayName,
   type DiscoverProjectsOptions,
   type DiscoverProjectsResult,
+  type SessionAttribution,
 } from './discoverProjects.js';
 
 export {

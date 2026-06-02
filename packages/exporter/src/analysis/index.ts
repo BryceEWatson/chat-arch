@@ -74,6 +74,7 @@ import { buildSurprisesFile } from './surprisesBuilder.js';
 import { buildPersonaCandidatesFile } from './personaCandidates.js';
 import { buildNarrativeCandidatesFile } from './narrativeCandidates.js';
 import { buildNarrativesFileObject } from './buildNarrativesFileObject.js';
+import { loadProjectOverrides } from './projectIdentity.js';
 
 export interface RunAnalysisOptions {
   /** Root output dir (same one `manifest.json` sits in). */
@@ -91,6 +92,14 @@ export interface RunAnalysisOptions {
    * `audit-results.json` so the builder has gh-pr-* claims to look up.
    */
   enablePrJoin?: boolean;
+  /**
+   * Project Identity v2: parse-boundary drop count from the source phase
+   * (cli `parserSkips`). Persisted into `analysis/meta.json` so the audit
+   * script can verify the §12 gated-drop == prior-UNASSIGNED invariant from
+   * on-disk artifacts (the count is otherwise only logged). Absent when the
+   * caller is the analyze-only command (no source re-parse happened).
+   */
+  parserSkips?: { reason: string; count: number };
 }
 
 export interface RunAnalysisResult {
@@ -321,7 +330,10 @@ export async function runAnalysis(
   // Pure functions over the manifest; deterministic given identical input.
   // Three sidecars per spec §13 / decision D2. Browser-side parity is
   // preserved by `demoUpload.ts` calling the same kernels.
-  const projectsResult = discoverProjects(manifest.sessions, { now });
+  // Project Identity v2: user overrides (cascade rule 0). Fail-soft — `[]`
+  // when projectOverrides.json is absent/unconfigured.
+  const projectOverrides = await loadProjectOverrides(options.outDir);
+  const projectsResult = discoverProjects(manifest.sessions, { now, overrides: projectOverrides });
   const topicsResult = discoverTopics(
     manifest.sessions,
     projectsResult.sessionToProject,
@@ -347,10 +359,19 @@ export async function runAnalysis(
     };
   });
 
+  // Project Identity v2: per-session attribution ({ projectId, resolvedVia,
+  // confidence }) — the authoritative provenance the audit script + viewer
+  // read (the rescan-written manifest carries no projectId, so projects.json
+  // is the source of truth for "why is this session here?").
+  const attribution: Record<string, { projectId: string; resolvedVia: string; confidence: number }> = {};
+  for (const [sid, a] of projectsResult.attribution) {
+    attribution[sid] = { projectId: a.projectId, resolvedVia: a.resolvedVia, confidence: a.confidence };
+  }
+
   const projectsPath = path.join(analysisDir, 'projects.json');
   await writeFile(
     projectsPath,
-    JSON.stringify({ generatedAt: now, projects: enrichedProjects }, null, 2) + '\n',
+    JSON.stringify({ generatedAt: now, projects: enrichedProjects, attribution }, null, 2) + '\n',
     'utf8',
   );
   logger.info(
@@ -796,6 +817,9 @@ export async function runAnalysis(
     exporterVersion: EXPORTER_VERSION,
     exporterRunId,
     ...(gitSha !== null ? { gitSha } : {}),
+    // Project Identity v2 (plan §2/§12): parse-boundary 0-turn-sidecar drop
+    // count, surfaced for the audit script's gated-drop equivalence check.
+    ...(options.parserSkips !== undefined ? { parserSkips: options.parserSkips } : {}),
     tiers: {
       browser: {
         generatedAt: now,

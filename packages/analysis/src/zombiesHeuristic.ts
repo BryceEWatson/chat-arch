@@ -19,7 +19,7 @@
  */
 
 import type { UnifiedSessionEntry } from '@chat-arch/schema';
-import { inferProject, type InferenceSource } from './inferProject.js';
+import { inferProject, RESOLVED_VIA_CONFIDENCE, type InferenceSource } from './inferProject.js';
 
 export const PROBE_REGEX: RegExp =
   /re-?evaluate|still (worth|viable|relevant)|revisit|check.?in|status of|profitability|feasibility|mvp|viable|worth (building|continuing|pursuing)|what (do you think|happened to)/i;
@@ -218,16 +218,14 @@ export function buildZombieProjects(
       byId.set(inf.id, {
         id: inf.id,
         displayName: inf.displayName,
-        inferenceSource: inf.inferenceSource,
+        inferenceSource: inf.resolvedVia,
         sessions: [e],
       });
     } else {
       existing.sessions.push(e);
-      // Prefer a more specific inference source: project_field > cwd_basename > title_keyword.
-      const rank = (x: InferenceSource): number =>
-        x === 'project_field' ? 2 : x === 'cwd_basename' ? 1 : 0;
-      if (rank(inf.inferenceSource) > rank(existing.inferenceSource)) {
-        existing.inferenceSource = inf.inferenceSource;
+      // Prefer a more specific (higher-confidence) inference source.
+      if (RESOLVED_VIA_CONFIDENCE[inf.resolvedVia] > RESOLVED_VIA_CONFIDENCE[existing.inferenceSource]) {
+        existing.inferenceSource = inf.resolvedVia;
       }
     }
   }
