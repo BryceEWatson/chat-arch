@@ -137,13 +137,24 @@ populates the TRUST 2×2.
 ### Stage 3 — Cluster recurring decisions (optional; needs Ollama)
 
 Only meaningful with >= 2 classified decisions total (this run's kept
-results + any pre-existing classified rows in `decisions.json`).
+results + any pre-existing classified rows in `decisions.json`). With
+< 2 there's nothing to cluster — skip Stage 3 entirely (this is NOT a
+skip-marker case; there are simply no recurring decisions to find, so no
+`decision-clusters.json` is written).
 
-1. Probe Ollama: `curl -s -m 1 http://localhost:11434/api/tags`. If it's
-   not up, **skip this stage** (log "Ollama down — skipping clustering;
-   classification still written") and continue. Clustering is an
-   enhancement, not a gate — unlike mine-corrections, classification
-   here doesn't need embeddings.
+1. (Optional) Probe Ollama for a friendly log line only:
+   `curl -s -m 1 http://localhost:11434/api/tags`. **Do NOT use the probe
+   to bypass the CLI.** As of EXPORTER_VERSION 1.11.0 the clusterer handles
+   an unreachable embedding backend itself: on an embed failure it writes a
+   *soft-skip marker* to `decision-clusters.json`
+   (`{ clusters: [], skipped: true, skipReason: 'embeddings-unavailable' }`)
+   and **exits 0**, so the viewer can disclose "clustering skipped — Ollama
+   unavailable" instead of showing nothing (indistinguishable from "no
+   recurring decisions"). So whenever there are >= 2 classified decisions,
+   **always run the CLI** (step 3) regardless of the probe result — that's
+   what guarantees the marker is written on the Ollama-down path too.
+   Clustering is an enhancement, not a gate; classification doesn't need
+   embeddings.
 2. Collect `{ id, distilledDecision, sessionId, binaryClass, updatedAt }`
    for every classified decision (this run + already-classified rows).
    `binaryClass` is each row's `outcomeRef.binaryClass`, or `null` when
@@ -159,10 +170,12 @@ results + any pre-existing classified rows in `decisions.json`).
      --classified ${dataDir}/analysis/_decisions-classified.json \
      --output ${dataDir}/analysis/decision-clusters.json
    ```
-   The CLI writes a `DecisionClustersFile` (clusters of >=2 distinct
-   sessions, each with `canonicalDecision`, `instanceIds`,
-   `occurrenceCount`, `firstSeen`/`lastSeen`, and `landedRate`). Surface
-   any stderr.
+   The CLI writes a `DecisionClustersFile`. On a successful run that's
+   clusters of >=2 distinct sessions (each with `canonicalDecision`,
+   `instanceIds`, `occurrenceCount`, `firstSeen`/`lastSeen`, `landedRate`,
+   `landedDenom`). On an embed failure it instead writes the soft-skip
+   marker described in step 1 and **exits 0** — do NOT treat that clean
+   exit as a failure or retry it. Surface any stderr either way.
 
 ### Stage 4 — Merge + write (compare-and-swap)
 
@@ -200,7 +213,7 @@ Write `${dataDir}/analysis/decision-status-${requestId}.json`:
   "completedAt": <ms>,
   "classifiedCount": <kept after filter>,
   "candidatesConsidered": <work-set size>,
-  "clusterCount": <decision-clusters.json clusters, 0 if skipped>,
+  "clusterCount": <decision-clusters.json clusters; 0 when the CLI wrote a skip marker (embeddings-unavailable) or the stage was skipped>,
   "tokenCost": "<estimate>"
 }
 ```
@@ -230,7 +243,10 @@ shape to `correction-status-*.json`:
 ## Error handling
 
 - `decisions.json` missing → stop, tell the user to run the exporter.
-- Ollama down → skip clustering (NOT fatal); classification still writes.
+- Ollama down → run the cluster CLI anyway; it writes a soft-skip marker to
+  `decision-clusters.json` (`skipped:true`, `skipReason:'embeddings-unavailable'`)
+  and exits 0. NOT fatal; classification still writes. Do NOT pre-empt the
+  CLI with the Ollama probe — that suppresses the marker the viewer needs.
 - Sub-agent malformed JSON → retry once, then drop that batch.
 - Concurrent rescan that survives a re-read retry → `status: error`
   (`concurrent-rescan-aborted`), exit 1.
@@ -246,4 +262,7 @@ shape to `correction-status-*.json`:
   coexist in one file).
 - Don't re-classify already-classified rows unless `--reclassify`.
 - Don't fail the whole run because Ollama is down — clustering is optional.
+- Don't pre-probe Ollama and skip the cluster CLI when there are >= 2
+  classified decisions — that suppresses the soft-skip marker the viewer
+  relies on to disclose the skip (issue #122). Let the CLI write it.
 - Don't invent `chosen`/`rejected` options not grounded in the context.

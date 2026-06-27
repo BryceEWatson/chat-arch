@@ -265,4 +265,16 @@ export interface DecisionPattern {
 export interface DecisionClustersFile {
   generatedAt: number;
   clusters: readonly DecisionPattern[];
+  /**
+   * True when the clusterer ran but could NOT cluster because the
+   * embedding backend (Ollama) was unreachable. Clustering is an
+   * optional enhancement, so this is a soft, *visible* skip rather than
+   * a silent no-op: the file is still written (with `clusters: []`) so
+   * the viewer can disclose "clustering skipped — Ollama unavailable"
+   * instead of showing nothing (indistinguishable from "no recurring
+   * decisions"). Absent on a normal run. See issue #122.
+   */
+  skipped?: boolean;
+  /** Machine-readable reason for the skip. Currently the only reason. */
+  skipReason?: 'embeddings-unavailable';
 }

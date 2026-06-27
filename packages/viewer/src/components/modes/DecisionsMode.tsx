@@ -480,8 +480,25 @@ export function DecisionsMode({
         </div>
       )}
 
-      {/* RECURRING — clusters of the same call made across sessions. */}
-      {clusters.length > 0 && (
+      {/* RECURRING — clusters of the same call made across sessions.
+          When clustering was soft-skipped (embeddings/Ollama unavailable,
+          issue #122) surface that explicitly rather than hiding the
+          section — a skip must not read as "no recurring decisions". */}
+      {clustersFile?.skipped ? (
+        <section
+          className="lcars-decisions__recurring"
+          aria-label="recurring decisions"
+          data-testid="decisions-recurring-skipped"
+        >
+          <h3 className="lcars-decisions__bucket-title">RECURRING DECISIONS</h3>
+          <p className="lcars-decisions__recurring-skip" role="status">
+            Clustering skipped — embeddings unavailable (Ollama not reachable).
+            Recurring-decision detection is an optional enhancement; the
+            classification above is unaffected. Start Ollama and re-run MINE to
+            populate this section.
+          </p>
+        </section>
+      ) : clusters.length > 0 ? (
         <section
           className="lcars-decisions__recurring"
           aria-label="recurring decisions"
@@ -500,10 +517,22 @@ export function DecisionsMode({
                     {cl.occurrenceCount} sessions
                   </span>
                 </div>
-                {cl.landedRate !== null && (
+                {cl.landedRate !== null ? (
                   <div className="lcars-decisions__choice">
                     <span className="lcars-decisions__chose">
                       landed {formatRate(cl.landedRate)} of {cl.landedDenom} decided
+                    </span>
+                  </div>
+                ) : (
+                  // #119 — disclose the n<minN landed-rate floor instead of
+                  // blanking silently (parity with the per-kind / Trust /
+                  // Trajectory disclosures). landedDenom is always a number.
+                  <div className="lcars-decisions__choice">
+                    <span
+                      className="lcars-decisions__rate lcars-decisions__rate--hidden"
+                      data-testid={`cluster-rate-hidden-${cl.id}`}
+                    >
+                      landed-rate hidden — n={cl.landedDenom} of {minN}
                     </span>
                   </div>
                 )}
@@ -511,7 +540,7 @@ export function DecisionsMode({
             ))}
           </ul>
         </section>
-      )}
+      ) : null}
 
       {/* UNCLASSIFIED — clean browsable list, collapsed. */}
       {unclassified.length > 0 && (
