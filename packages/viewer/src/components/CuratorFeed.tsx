@@ -36,6 +36,26 @@ const FALSIFIER_TAG_LABEL: Record<CuratorFalsifierStatus, string> = {
   unavailable: 'UNVERIFIED',
 };
 
+/**
+ * Scaffold gate (issue #120). The curator ranker (F3), falsifier verifier
+ * (F4), and meta-validation (F8) kernels are NOT yet wired into any
+ * production path, and the MCP server has no transport — so any
+ * `falsifierStatus` tag on a feed item is a PLACEHOLDER, not a real
+ * verdict. While this is `false` the UI must not present "VERIFIED" as an
+ * affirmative "passed the falsifier" claim, and it shows a standing
+ * scaffold disclaimer so a reader can't mistake a placeholder for a
+ * verified finding.
+ *
+ * FLIP-GUARDRAIL — do NOT set this to `true` until per-item verdict
+ * provenance actually exists: F4 must write a real per-finding verdict
+ * AND `curator-feed.json` must carry a provenance field the UI can trust.
+ * A coarse global flip WITHOUT that provenance would re-introduce blanket
+ * "VERIFIED" for items that never passed a real falsifier — the exact
+ * trust bug #120 names. Gate the flip on the provenance landing, not on
+ * the kernels merely existing.
+ */
+export const CURATOR_PIPELINE_LIVE = false;
+
 export interface CuratorFeedProps {
   /** Base URL for the chat-arch-data sidecar tree. */
   dataDirBaseUrl?: string;
@@ -74,14 +94,31 @@ export function CuratorFeed({
         <p className="lcars-curator-feed__lead">
           Top items the curator surfaced this run. Ranking is deterministic
           (tier &gt; confidence &gt; recency &gt; correlation tie-break) —
-          not a model judgement. Items tagged{' '}
-          <span className="lcars-curator-feed__falsifier-inline lcars-curator-feed__falsifier-inline--verified">
-            VERIFIED
-          </span>{' '}
-          passed the falsifier; others carry their citation-hygiene tag for
-          audit.
+          not a model judgement.
+          {CURATOR_PIPELINE_LIVE ? (
+            <>
+              {' '}
+              Items tagged{' '}
+              <span className="lcars-curator-feed__falsifier-inline lcars-curator-feed__falsifier-inline--verified">
+                VERIFIED
+              </span>{' '}
+              passed the falsifier; others carry their citation-hygiene tag for
+              audit.
+            </>
+          ) : null}
         </p>
       </header>
+      {!CURATOR_PIPELINE_LIVE && (
+        <p
+          className="lcars-curator-feed__scaffold-note"
+          role="note"
+          data-testid="curator-scaffold-note"
+        >
+          The curator ranker and falsifier are a scaffold — not yet wired into a
+          production path. Any status tags shown below (VERIFIED / UNVERIFIED)
+          are placeholders, not real verdicts.
+        </p>
+      )}
       {feed?.metaAccuracy?.inDrift === true && (
         <p
           className="lcars-curator-feed__drift-banner"
@@ -152,10 +189,21 @@ function CuratorFeedRow({ item }: { item: CuratorFeedItem }): JSX.Element {
       )}
       {item.falsifierStatus !== undefined && (
         <span
-          className={`lcars-curator-feed__falsifier lcars-curator-feed__falsifier--${item.falsifierStatus}`}
-          aria-label={`falsifier ${item.falsifierStatus}`}
+          className={
+            `lcars-curator-feed__falsifier lcars-curator-feed__falsifier--${item.falsifierStatus}` +
+            (CURATOR_PIPELINE_LIVE ? '' : ' lcars-curator-feed__falsifier--placeholder')
+          }
+          aria-label={
+            CURATOR_PIPELINE_LIVE
+              ? `falsifier ${item.falsifierStatus}`
+              : `falsifier ${item.falsifierStatus} (placeholder — pipeline is a scaffold)`
+          }
+          {...(CURATOR_PIPELINE_LIVE
+            ? {}
+            : { title: 'placeholder — the falsifier pipeline is a scaffold, not a real verdict' })}
         >
           {FALSIFIER_TAG_LABEL[item.falsifierStatus]}
+          {CURATOR_PIPELINE_LIVE ? '' : ' (placeholder)'}
         </span>
       )}
       {item.reasoning !== undefined && item.reasoning.length > 0 && (
