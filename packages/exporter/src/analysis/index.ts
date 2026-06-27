@@ -265,7 +265,17 @@ export interface RunAnalysisResult {
 // re-classified on next rescan. NB: #113 (project-identity-v2) also
 // targets the 1.9.0→1.10.0 slot; if it lands, the second-merged bumps to
 // 1.11.0 (version reconcile per the centralize plan / Step-5 convention).
-export const EXPORTER_VERSION = '1.10.0';
+//
+// 1.11.0 — honest disclosure of skipped / withheld / unverified state
+// (#122/#119/#120). `analysis/decision-clusters.json` gains two additive
+// optional fields (`skipped` + `skipReason`): the cluster CLI now writes a
+// soft-skip marker on an unreachable embedding backend instead of crashing,
+// so the viewer can disclose "clustering skipped — Ollama unavailable"
+// rather than showing nothing. Skill-written sidecar, but the version label
+// in meta.json is the bundle-wide provenance anchor for the shape change.
+// (If #113 already took the 1.11.0 slot on merge, reconcile to the next
+// free version per the Step-5 convention.)
+export const EXPORTER_VERSION = '1.11.0';
 
 export async function runAnalysis(
   manifest: SessionManifest,
