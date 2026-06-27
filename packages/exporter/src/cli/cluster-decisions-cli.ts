@@ -17,12 +17,13 @@
  * CLAUDE.md. The extra signal we DO carry is `landedRate`: the share of
  * cluster members whose joined outcome was 'good'.
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { clusterByThreshold, sha256Hex, THRESHOLDS } from '@chat-arch/analysis';
 import type { DecisionClustersFile, DecisionPattern } from '@chat-arch/schema';
 import { embed, DEFAULT_EMBEDDING_MODEL } from '../embeddings/index.js';
+import { atomicWriteJson } from '../lib/atomicWrite.js';
 
 /** One classified decision the skill hands to the clusterer. */
 export interface ClassifiedDecisionInput {
@@ -313,7 +314,12 @@ async function main(): Promise<void> {
   );
 
   await mkdir(path.dirname(args.output), { recursive: true });
-  await writeFile(args.output, JSON.stringify(out, null, 2) + '\n', 'utf8');
+  // Atomic tmp+rename (with Windows transient-lock retry) so the skip
+  // marker / clusters land whole — a half-written file would defeat the
+  // very disclosure #122 adds (the viewer would parse-fail → null → show
+  // nothing, indistinguishable from "no recurring decisions"). Matches the
+  // analysis-sidecar writers (decisionsBuilder, archetypesBuilder).
+  await atomicWriteJson(args.output, JSON.stringify(out, null, 2) + '\n');
 }
 
 const entry = process.argv[1];
