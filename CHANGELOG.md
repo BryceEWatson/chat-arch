@@ -14,6 +14,62 @@ on-disk shape with this changelog.
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-06-26
+
+Honest disclosure of skipped / withheld / unverified state — three related
+"silent disclosure" bugs where a surface showed *nothing* in a state that
+should have shown *why there's nothing*, so "skipped / withheld / unverified"
+read as "no data / verified" (#122, #119, #120).
+
+> **Version note:** `decision-clusters.json` is a *skill*-written sidecar (the
+> exporter never emits it), but `EXPORTER_VERSION` is the bundle-wide
+> provenance label in `meta.json`, and the documented bump trigger is "the
+> shape of an existing artifact changes" — which it does here. Precedent:
+> 1.9.0 bumped for the decisions pipeline, whose classification is also
+> skill-merged. If #113 (project-identity-v2) already claimed the 1.11.0 slot
+> on merge, the second-merged reconciles to the next free version (Step-5
+> convention).
+
+### Fixed
+
+- **`mine-decisions` clustering no longer fails silently when Ollama is down**
+  (#122). `cluster-decisions-cli` previously threw and exited 1 on an
+  unreachable embedding backend, writing no `decision-clusters.json` — so the
+  DECISIONS surface showed no recurring section, indistinguishable from "no
+  recurring decisions found." Now the clusterer soft-skips: it writes
+  `decision-clusters.json` with a visible marker (`{ clusters: [],
+  skipped: true, skipReason: 'embeddings-unavailable' }`) and exits 0, and the
+  viewer renders "clustering skipped — embeddings unavailable (Ollama not
+  reachable)" in the RECURRING section. Genuine errors (bad args, unreadable
+  input, a vectors/decisions length mismatch on a *successful* embed) still
+  hard-fail. The `/mine-decisions` skill no longer uses its Ollama pre-probe to
+  bypass the CLI, so the marker is written on the Ollama-down path too.
+- **Recurring-cluster landed-rate floor now discloses instead of blanking**
+  (#119). When a recurring-decision cluster has fewer than
+  `THRESHOLDS.display.minNForRate` (8) decided members, its landed-rate was
+  set to `null` and the row simply showed nothing. It now shows
+  "landed-rate hidden — n=k of 8", at parity with the Trust-cell and
+  Trajectory-bootstrap disclosures that already existed.
+
+### Changed
+
+- **Curator feed discloses its scaffold status** (#120). The PRACTICE curator
+  feed presented `VERIFIED` falsifier badges and "passed the falsifier" copy,
+  but the curator ranker (F3), falsifier verifier (F4), and meta-validation
+  (F8) kernels are not wired into any production path. A new
+  `CURATOR_PIPELINE_LIVE` gate (currently `false`, with a flip-guardrail) now
+  drives a standing scaffold disclaimer, suppresses the affirmative
+  "passed the falsifier" claim, and renders any falsifier tag as a
+  `(placeholder)`. The gate must not be flipped true until real per-item
+  verdict provenance exists. Wiring the F3/F4/F8 kernels and the MCP transport
+  remains separate project work.
+
+### Schema
+
+- `DecisionClustersFile` gains two additive optional fields — `skipped?:
+  boolean` and `skipReason?: 'embeddings-unavailable'`. Existing readers ignore
+  them; the loader already passes unknown fields through.
+
 ## [1.10.0] — 2026-05-30
 
 Automation classify + collapse — programmatic / templated `claude` runs

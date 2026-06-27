@@ -353,7 +353,12 @@ analysis/` (all gitignored — locally generated, may carry PII):
 - `decision-clusters.json` — recurring-decision clusters
   (`DecisionPattern[]`) produced by the `/mine-decisions` clustering
   stage. Skill-only writer (the exporter never touches it). PII: decision
-  prose. Reset by `/api/clear-decisions`.
+  prose. Reset by `/api/clear-decisions`. As of EXPORTER_VERSION 1.11.0
+  (#122) the file may also carry a soft-skip marker — `skipped: true` +
+  `skipReason: 'embeddings-unavailable'` with `clusters: []` — written by
+  `cluster-decisions-cli` when the Ollama embedding backend is unreachable,
+  so the viewer can disclose "clustering skipped" instead of showing nothing.
+  Non-PII (the marker carries no decision prose).
 - `archetypes.json` — k-means workflow-archetype centroids + per-
   session assignments. PII: session-archetype mapping.
 - `project-trajectories.json` — Theil-Sen slope per project +

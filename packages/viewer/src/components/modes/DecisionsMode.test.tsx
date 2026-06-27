@@ -219,6 +219,82 @@ describe('DecisionsMode', () => {
     expect(recurring.textContent).toMatch(/2 sessions/);
   });
 
+  it('discloses a skipped clustering run instead of hiding it (issue #122)', () => {
+    const clustersFile: DecisionClustersFile = {
+      generatedAt: 1,
+      clusters: [],
+      skipped: true,
+      skipReason: 'embeddings-unavailable',
+    };
+    render(
+      <DecisionsMode
+        file={buildFile([decision('d1', 'explicit-go-with', 'good')])}
+        clustersFile={clustersFile}
+      />,
+    );
+    const skipped = screen.getByTestId('decisions-recurring-skipped');
+    expect(skipped.textContent).toMatch(/Clustering skipped/i);
+    expect(skipped.textContent).toMatch(/Ollama not reachable/i);
+    // The normal recurring section must NOT render alongside the skip note.
+    expect(screen.queryByTestId('decisions-recurring')).toBeNull();
+  });
+
+  it('discloses the n<minN landed-rate floor on a recurring cluster (issue #119)', () => {
+    const min = THRESHOLDS.display.minNForRate;
+    const clustersFile: DecisionClustersFile = {
+      generatedAt: 1,
+      clusters: [
+        {
+          id: 'dpat_low',
+          canonicalDecision: 'use ripgrep instead of grep',
+          instanceIds: ['d1', 'd2'],
+          occurrenceCount: 2,
+          firstSeen: 0,
+          lastSeen: 0,
+          landedRate: null,
+          landedDenom: 2,
+        },
+      ],
+    };
+    render(
+      <DecisionsMode
+        file={buildFile([decision('d1', 'explicit-go-with', 'good')])}
+        clustersFile={clustersFile}
+      />,
+    );
+    const hidden = screen.getByTestId('cluster-rate-hidden-dpat_low');
+    expect(hidden.textContent).toContain(`of ${min}`);
+    expect(hidden.textContent).toMatch(/n=2/);
+  });
+
+  it('does NOT show skip/floor disclosures for a normal clusters file (absence check)', () => {
+    const clustersFile: DecisionClustersFile = {
+      generatedAt: 1,
+      clusters: [
+        {
+          id: 'dpat_ok',
+          canonicalDecision: 'use ripgrep instead of grep',
+          instanceIds: ['d1', 'd2'],
+          occurrenceCount: 2,
+          firstSeen: 0,
+          lastSeen: 0,
+          landedRate: 0.5,
+          landedDenom: 2,
+        },
+      ],
+    };
+    render(
+      <DecisionsMode
+        file={buildFile([decision('d1', 'explicit-go-with', 'good')])}
+        clustersFile={clustersFile}
+      />,
+    );
+    expect(screen.getByTestId('decisions-recurring')).toBeDefined();
+    expect(screen.queryByTestId('decisions-recurring-skipped')).toBeNull();
+    expect(screen.queryByTestId('cluster-rate-hidden-dpat_ok')).toBeNull();
+    expect(screen.getByText(/landed 50% of 2 decided/)).toBeDefined();
+  });
+
   it('shows the clear-classifications control when classified rows exist (probe ok)', async () => {
     render(<DecisionsMode file={buildFile([decision('d1', 'explicit-go-with', 'good')])} />);
     // Probe resolves in an effect → control appears asynchronously.

@@ -4817,6 +4817,20 @@
   font-size: 12px;
   color: color-mix(in srgb, var(--lcars-text) 70%, transparent);
 }
+/* Standing scaffold disclaimer (#120). Deliberately MUTED/informational
+   — a dashed quiet caption, NOT the peach warning of the drift banner —
+   because it's permanent; a warning-styled permanent banner trains
+   banner-blindness against the transient actionable notices. */
+.lcars-curator-feed__scaffold-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px dashed color-mix(in srgb, var(--lcars-text) 30%, transparent);
+  background: color-mix(in srgb, var(--lcars-bg-1) 70%, transparent);
+  color: color-mix(in srgb, var(--lcars-text) 65%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .lcars-curator-feed__list {
   list-style: none;
   margin: 0;
@@ -4892,6 +4906,16 @@
 .lcars-curator-feed__falsifier--skipped-by-user,
 .lcars-curator-feed__falsifier--unavailable {
   color: var(--lcars-peach);
+}
+/* Placeholder treatment (#120) — while the falsifier pipeline is a
+   scaffold, de-emphasize the tag so a placeholder can't read as an
+   affirmative verdict. Declared AFTER the per-status colors so it wins
+   the cascade. */
+.lcars-curator-feed__falsifier--placeholder {
+  color: color-mix(in srgb, var(--lcars-text) 45%, transparent);
+  font-weight: 400;
+  opacity: 0.75;
+  border-style: dashed;
 }
 .lcars-curator-feed__reasoning {
   flex: 1 0 100%;
@@ -10664,6 +10688,14 @@ button.lcars-applied-summary__stale--button:focus-visible {
   font-size: 12px;
   color: color-mix(in srgb, var(--lcars-text) 70%, var(--lcars-bg-1));
   margin: 2px 0 8px;
+}
+/* Soft clustering-skip note (#122) — muted/informational, not a warning;
+   an OPTIONAL skip must not read as a must-fix error. */
+.lcars-decisions__recurring-skip {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--lcars-text) 60%, var(--lcars-bg-1));
+  margin: 2px 0 8px;
+  line-height: 1.5;
 }
 .lcars-decisions__show-all {
   margin-top: 8px;

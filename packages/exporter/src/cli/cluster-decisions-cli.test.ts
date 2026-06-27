@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { THRESHOLDS } from '@chat-arch/analysis';
 import {
+  buildClustersFileOrSkip,
   buildDecisionClusters,
   normalizeDecision,
   parseArgs,
@@ -107,6 +108,64 @@ describe('buildDecisionClusters', () => {
 
   it('returns [] for empty input', () => {
     expect(buildDecisionClusters([], [], OPTS)).toEqual([]);
+  });
+});
+
+describe('buildClustersFileOrSkip — soft skip on embed failure (issue #122)', () => {
+  const FILE_OPTS = {
+    clusterThreshold: 0.65,
+    minOccurrences: 2,
+    landedRateMinN: 2,
+    model: 'mxbai-embed-large',
+  };
+
+  it('returns a visible skip marker (no throw) when embeddings are unavailable', async () => {
+    const embedFn = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:11434');
+    });
+    const decisions = [
+      dec('d1', 'sessA', 'use ripgrep instead of grep'),
+      dec('d2', 'sessB', 'switch from grep to ripgrep'),
+    ];
+    const out = await buildClustersFileOrSkip(decisions, FILE_OPTS, embedFn, 1234);
+    expect(out.skipped).toBe(true);
+    expect(out.skipReason).toBe('embeddings-unavailable');
+    expect(out.clusters).toEqual([]);
+    expect(out.generatedAt).toBe(1234);
+    expect(embedFn).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT mark empty input as skipped (honest empty result, embedFn never called)', async () => {
+    const embedFn = vi.fn(async () => [] as Float32Array[]);
+    const out = await buildClustersFileOrSkip([], FILE_OPTS, embedFn, 9);
+    expect(out.skipped).toBeUndefined();
+    expect(out.skipReason).toBeUndefined();
+    expect(out.clusters).toEqual([]);
+    expect(embedFn).not.toHaveBeenCalled();
+  });
+
+  it('builds real clusters (no skip marker) when embeddings succeed', async () => {
+    const embedFn = vi.fn(async (texts: string[]) =>
+      texts.map(() => unitVec([1, 0, 0])),
+    );
+    const decisions = [
+      dec('d1', 'sessA', 'use ripgrep instead of grep', 'good', 100),
+      dec('d2', 'sessB', 'switch from grep to ripgrep', 'bad', 300),
+    ];
+    const out = await buildClustersFileOrSkip(decisions, FILE_OPTS, embedFn, 7);
+    expect(out.skipped).toBeUndefined();
+    expect(out.clusters).toHaveLength(1);
+    expect(out.clusters[0]?.occurrenceCount).toBe(2);
+  });
+
+  it('still throws on a genuine length mismatch from a successful embed (hard-fail)', async () => {
+    // embedFn returns the wrong number of vectors — a bug, not an
+    // availability problem, so it must NOT be soft-skipped.
+    const embedFn = vi.fn(async () => [unitVec([1, 0, 0])]);
+    const decisions = [dec('d1', 'sessA', 'a'), dec('d2', 'sessB', 'b')];
+    await expect(
+      buildClustersFileOrSkip(decisions, FILE_OPTS, embedFn, 1),
+    ).rejects.toThrow(/length mismatch/);
   });
 });
 

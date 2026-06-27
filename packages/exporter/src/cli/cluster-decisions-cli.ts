@@ -17,12 +17,13 @@
  * CLAUDE.md. The extra signal we DO carry is `landedRate`: the share of
  * cluster members whose joined outcome was 'good'.
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { clusterByThreshold, sha256Hex, THRESHOLDS } from '@chat-arch/analysis';
 import type { DecisionClustersFile, DecisionPattern } from '@chat-arch/schema';
 import { embed, DEFAULT_EMBEDDING_MODEL } from '../embeddings/index.js';
+import { atomicWriteJson } from '../lib/atomicWrite.js';
 
 /** One classified decision the skill hands to the clusterer. */
 export interface ClassifiedDecisionInput {
@@ -223,6 +224,73 @@ interface ClassifiedFile {
   decisions?: readonly ClassifiedDecisionInput[];
 }
 
+/** Embedding function shape — injectable so the skip path is testable without Ollama. */
+export type EmbedFn = (
+  texts: string[],
+  opts: { model: string; baseUrl?: string },
+) => Promise<readonly Float32Array[]>;
+
+export interface BuildClustersFileOptions extends BuildDecisionClustersOptions {
+  model: string;
+  baseUrl?: string;
+}
+
+/**
+ * Compute the `DecisionClustersFile` to persist, embedding the
+ * `distilledDecision` text via `embedFn`.
+ *
+ * Clustering is an OPTIONAL enhancement of the decision-mining pipeline
+ * (unlike corrections, classification doesn't need embeddings). So on an
+ * embed failure — the Ollama backend unreachable, mid-run or up-front —
+ * this does NOT throw: it returns a soft *skip marker* (`skipped: true`,
+ * `skipReason: 'embeddings-unavailable'`, empty clusters). The caller
+ * still writes a file, so the viewer can disclose "clustering skipped —
+ * Ollama unavailable" rather than showing nothing (which is
+ * indistinguishable from "no recurring decisions found"). See issue #122.
+ *
+ * Empty input is NOT a skip — it's an honest empty result. A
+ * vectors/decisions length mismatch on a *successful* embed still throws
+ * (a genuine bug, not an availability problem), so the CLI hard-fails.
+ */
+export async function buildClustersFileOrSkip(
+  decisions: readonly ClassifiedDecisionInput[],
+  opts: BuildClustersFileOptions,
+  embedFn: EmbedFn,
+  now: number,
+): Promise<DecisionClustersFile> {
+  if (decisions.length === 0) {
+    return { generatedAt: now, clusters: [] };
+  }
+
+  const texts = decisions.map((d) => d.distilledDecision);
+  const embedOpts: { model: string; baseUrl?: string } = { model: opts.model };
+  if (opts.baseUrl !== undefined) embedOpts.baseUrl = opts.baseUrl;
+
+  let vectors: readonly Float32Array[];
+  try {
+    vectors = await embedFn(texts, embedOpts);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `cluster-decisions-cli: embeddings unavailable — clustering skipped ` +
+        `(${msg}). Wrote a soft-skip marker; classification is unaffected.\n`,
+    );
+    return {
+      generatedAt: now,
+      clusters: [],
+      skipped: true,
+      skipReason: 'embeddings-unavailable',
+    };
+  }
+
+  const patterns = buildDecisionClusters(decisions, vectors, {
+    clusterThreshold: opts.clusterThreshold,
+    minOccurrences: opts.minOccurrences,
+    landedRateMinN: opts.landedRateMinN,
+  });
+  return { generatedAt: now, clusters: patterns };
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
@@ -232,22 +300,26 @@ async function main(): Promise<void> {
     (d) => typeof d.distilledDecision === 'string' && d.distilledDecision.trim().length > 0,
   );
 
-  let patterns: DecisionPattern[] = [];
-  if (decisions.length > 0) {
-    const texts = decisions.map((d) => d.distilledDecision);
-    const embedOpts: { model: string; baseUrl?: string } = { model: args.model };
-    if (args.baseUrl !== undefined) embedOpts.baseUrl = args.baseUrl;
-    const vectors = await embed(texts, embedOpts);
-    patterns = buildDecisionClusters(decisions, vectors, {
+  const out = await buildClustersFileOrSkip(
+    decisions,
+    {
       clusterThreshold: args.clusterThreshold,
       minOccurrences: args.minOccurrences,
       landedRateMinN: args.landedRateMinN,
-    });
-  }
+      model: args.model,
+      ...(args.baseUrl !== undefined ? { baseUrl: args.baseUrl } : {}),
+    },
+    (texts, embedOpts) => embed(texts, embedOpts),
+    Date.now(),
+  );
 
-  const out: DecisionClustersFile = { generatedAt: Date.now(), clusters: patterns };
   await mkdir(path.dirname(args.output), { recursive: true });
-  await writeFile(args.output, JSON.stringify(out, null, 2) + '\n', 'utf8');
+  // Atomic tmp+rename (with Windows transient-lock retry) so the skip
+  // marker / clusters land whole — a half-written file would defeat the
+  // very disclosure #122 adds (the viewer would parse-fail → null → show
+  // nothing, indistinguishable from "no recurring decisions"). Matches the
+  // analysis-sidecar writers (decisionsBuilder, archetypesBuilder).
+  await atomicWriteJson(args.output, JSON.stringify(out, null, 2) + '\n');
 }
 
 const entry = process.argv[1];
